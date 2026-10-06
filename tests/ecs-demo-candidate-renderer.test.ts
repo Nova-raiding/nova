@@ -38,16 +38,26 @@ function fixture() {
     'postgres-migration': `registry.invalid/postgres:17-alpine@sha256:${'c'.repeat(64)}`,
     clamav: `registry.invalid/merchant/clamav@sha256:${'d'.repeat(64)}`,
   }
+  const imageMetadata = Object.fromEntries(Object.entries(eightImages).map(([artifact, reference]) => [artifact, {
+    reference,
+    digest: reference.slice(reference.lastIndexOf('@') + 1),
+    labels: {
+      'org.opencontainers.image.revision': gitSha,
+      'com.storenova.release.id': 'release-b77b551a-review',
+      'com.storenova.release.source_sha256': sourceSha,
+    },
+  }]))
   const releaseImages = join(root, 'release-images.json')
   const eightImageSet = join(root, 'eight-image-set.json')
   const rootEnv = join(root, 'relay.env')
   writeFileSync(releaseImages, `${JSON.stringify({
     schema_version: 1, release_id: 'release-b77b551a-review', release_git_sha: gitSha, source_sha256: sourceSha,
-    image_digests: Object.fromEntries(Object.entries(images).map(([key, ref]) => [key, ref.slice(ref.lastIndexOf('@') + 1)])), image_references: images,
+    image_digests: Object.fromEntries(Object.entries(images).map(([key, ref]) => [key, ref.slice(ref.lastIndexOf('@') + 1)])), image_references: images, image_metadata: Object.fromEntries(Object.entries(imageMetadata).filter(([key]) => imageKeys.includes(key))),
   })}\n`, { mode: 0o600 })
   writeFileSync(eightImageSet, `${JSON.stringify({
     schema_version: 1, release_id: 'release-b77b551a-review', release_git_sha: gitSha, source_sha256: sourceSha,
     image_digests: Object.fromEntries(Object.entries(eightImages).map(([key, ref]) => [key, ref.slice(ref.lastIndexOf('@') + 1)])), image_references: eightImages,
+    image_metadata: imageMetadata,
   })}\n`, { mode: 0o600 })
   writeFileSync(rootEnv, 'MODEL_RELAY_API_KEY=relay-private-test-key\n', { mode: 0o600 })
   writeFileSync(identity, `release_id=release-b77b551a-review\ngit_sha=${gitSha}\nsource_sha256=${sourceSha}\n`, { mode: 0o600 })

@@ -9,6 +9,10 @@ function argument(name) {
   if (index < 0 || !process.argv[index + 1]) fail(`${name} is required`)
   return process.argv[index + 1]
 }
+function optionalArgument(name) {
+  const index = process.argv.indexOf(name)
+  return index < 0 ? undefined : process.argv[index + 1]
+}
 function regular(path, label) {
   const stat = lstatSync(path)
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`${label} must be a regular non-symlink file`)
@@ -25,6 +29,8 @@ function atomic(path, value) {
 
 const metadataPath = resolve(argument('--release-images'))
 const identityPath = resolve(argument('--candidate-identity'))
+const ociMetadataArgument = optionalArgument('--oci-image-metadata')
+const ociMetadataPath = ociMetadataArgument ? resolve(ociMetadataArgument) : undefined
 const output = resolve(argument('--output'))
 const migrationRef = argument('--migration-image-ref')
 const clamavRef = argument('--clamav-image-ref')
@@ -64,6 +70,21 @@ const clamavDigest = immutable(clamavRef, 'ClamAV image reference')
 
 const digests = { ...metadata.image_digests, 'postgres-migration': migrationDigest, clamav: clamavDigest }
 const references = { ...metadata.image_references, 'postgres-migration': migrationRef, clamav: clamavRef }
+let ociMetadata
+if (!ociMetadataPath) fail('--oci-image-metadata is required to produce a verified eight-image set')
+regular(ociMetadataPath, 'OCI image metadata')
+try { ociMetadata = JSON.parse(readFileSync(ociMetadataPath, 'utf8')) } catch { fail('OCI image metadata is invalid JSON') }
+const labelKeys = ['org.opencontainers.image.revision', 'com.storenova.release.id', 'com.storenova.release.source_sha256']
+if (!ociMetadata || typeof ociMetadata !== 'object' || Array.isArray(ociMetadata) ||
+    Object.keys(ociMetadata).sort().join('\n') !== Object.keys(references).sort().join('\n')) fail('OCI image metadata must contain exactly the approved eight images')
+for (const artifact of Object.keys(references)) {
+  const entry = ociMetadata[artifact]
+  if (!entry || entry.reference !== references[artifact] || entry.digest !== digests[artifact] ||
+      !entry.labels || typeof entry.labels !== 'object' || labelKeys.some(key =>
+        entry.labels[key] !== { 'org.opencontainers.image.revision': identity.git_sha, 'com.storenova.release.id': identity.release_id, 'com.storenova.release.source_sha256': identity.source_sha256 }[key])) {
+    fail(`${artifact} OCI image metadata does not match the candidate identity`)
+  }
+}
 const envNames = {
   'postgres-migration': 'MIGRATION_IMAGE_REF',
   'merchant-api': 'API_IMAGE_REF',
@@ -84,5 +105,6 @@ atomic(join(output, 'eight-image-set.json'), `${JSON.stringify({
   source_sha256: metadata.source_sha256,
   image_digests: digests,
   image_references: references,
+  image_metadata: ociMetadata,
 }, null, 2)}\n`)
 console.log(`prepared immutable eight-image set for ${metadata.release_id}: ${output}`)

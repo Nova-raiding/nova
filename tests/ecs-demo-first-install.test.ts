@@ -24,6 +24,12 @@ function fixture() {
     services: Object.fromEntries(services.map(name => [name, { image, environment: {} }])),
     volumes: { pgdata: {}, redisdata: {} },
   }
+  ;(compose as any)['x-candidate-image-oci-metadata'] = Object.fromEntries([
+    'merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway', 'postgres-migration', 'clamav',
+  ].map(artifact => [artifact, {
+      reference: image, digest: `sha256:${'b'.repeat(64)}`,
+      labels: { 'com.storenova.release.id': 'release-check', 'org.opencontainers.image.revision': sha, 'com.storenova.release.source_sha256': `sha256:${'c'.repeat(64)}` },
+    }]))
   compose.services.api.environment = {
     RELEASE_ID: 'release-check', RELEASE_GIT_SHA: sha, NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs',
     RUN_MIGRATIONS_ON_STARTUP: 'false', CONNECTOR_FIXTURE_MODE: 'false', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
@@ -54,7 +60,7 @@ function fixture() {
       },
     })
   }
-  return { compose, run, identityPath, marker }
+  return { compose, run, identityPath, marker, dockerPath }
 }
 
 describe('isolated ECS demo candidate first install', () => {
@@ -148,6 +154,34 @@ describe('isolated ECS demo candidate first install', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain('must enforce all MCP authorization domains')
     expect(() => readFileSync(value.marker)).toThrow()
+  })
+
+  it('rejects an image assembled from another candidate before invoking Docker', () => {
+    const value = fixture()
+    ;(value.compose as any)['x-candidate-image-oci-metadata']['merchant-api'].labels['org.opencontainers.image.revision'] = 'd'.repeat(40)
+    const result = value.run()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('injected OCI metadata does not match candidate identity')
+    expect(() => readFileSync(value.marker)).toThrow()
+  })
+
+  it('rejects real Docker OCI labels from another candidate', () => {
+    const value = fixture()
+    const script = [
+      '#!/bin/sh',
+      `touch '${value.marker}'`,
+      'case "$*" in',
+      `  *"{{.Id}}"*) printf '%s\\n' 'sha256:${'e'.repeat(64)}' ;;`,
+      `  *"{{json .Config.Labels}}"*) printf '%s\\n' '{"com.storenova.release.id":"release-other","org.opencontainers.image.revision":"${'f'.repeat(40)}","com.storenova.release.source_sha256":"sha256:${'d'.repeat(64)}"}' ;;`,
+      'esac',
+      'exit 0',
+      '',
+    ].join('\n')
+    writeFileSync(value.dockerPath, script, { mode: 0o700 })
+    const result = value.run()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('image OCI labels do not match candidate source')
+    expect(() => readFileSync(value.marker)).not.toThrow()
   })
 
   it('does not depend on old runtime readiness, rollback, or public cutover commands', () => {

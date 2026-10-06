@@ -247,6 +247,15 @@ const selected = process.env.SELECTED_COMPONENTS.trim().split(/\s+/u)
 if (rows.some(row => row.length !== 3) || rows.map(row => row[0]).sort().join(',') !== selected.sort().join(',')) throw new Error('release image record set is incomplete')
 const digests = Object.fromEntries(rows.map(([artifact, digest]) => [artifact, digest]))
 const references = Object.fromEntries(rows.map(([artifact, , reference]) => [artifact, reference]))
+const image_metadata = Object.fromEntries(rows.map(([artifact, digest, reference]) => [artifact, {
+  reference,
+  digest,
+  labels: {
+    'org.opencontainers.image.revision': process.env.RELEASE_REVISION,
+    'com.storenova.release.id': process.env.RELEASE_NAME,
+    'com.storenova.release.source_sha256': process.env.SOURCE_DIGEST,
+  },
+}]))
 const metadata = {
   schema_version: 1,
   release_id: process.env.RELEASE_NAME,
@@ -255,6 +264,7 @@ const metadata = {
   npm_registry: process.env.NPM_REGISTRY,
   image_digests: digests,
   image_references: references,
+  image_metadata,
 }
 const output = process.env.OUTPUT_DIR
 function atomicWrite(name, value) {

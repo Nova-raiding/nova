@@ -27,6 +27,34 @@ required = {
 }
 services = document.is_a?(Hash) && document['services'].is_a?(Hash) ? document['services'] : {}
 errors = []
+oci_metadata = document['x-candidate-image-oci-metadata']
+candidate_metadata = oci_metadata.is_a?(Hash)
+if candidate_metadata && oci_metadata.keys.sort != required.keys.sort
+  errors << 'candidate Compose OCI metadata must contain exactly the required image artifacts'
+end
+
+identity = nil
+if candidate_metadata
+  required.each_key do |artifact|
+    entry = oci_metadata[artifact]
+    labels = entry.is_a?(Hash) ? entry['labels'] : nil
+    reference = entry.is_a?(Hash) ? entry['reference'] : nil
+    digest = entry.is_a?(Hash) ? entry['digest'] : nil
+    unless entry.is_a?(Hash) && labels.is_a?(Hash) && reference.is_a?(String) && digest.is_a?(String) &&
+           labels['com.storenova.release.id'].is_a?(String) && labels['org.opencontainers.image.revision'].is_a?(String) &&
+           labels['com.storenova.release.source_sha256'].is_a?(String) &&
+           labels['org.opencontainers.image.revision'].match?(/\A[0-9a-f]{40}\z/) &&
+           labels['com.storenova.release.source_sha256'].match?(/\Asha256:[0-9a-f]{64}\z/)
+      errors << "#{artifact} OCI metadata is incomplete"
+      next
+    end
+    identity ||= labels
+    %w[com.storenova.release.id org.opencontainers.image.revision com.storenova.release.source_sha256].each do |key|
+      errors << "#{artifact} OCI identity label #{key} differs across images" unless labels[key] == identity[key]
+    end
+    errors << "#{artifact} OCI metadata digest does not match its reference" unless reference.end_with?("@#{digest}")
+  end
+end
 
 required.each do |artifact, service_names|
   digest = digests[artifact]
@@ -43,10 +71,20 @@ required.each do |artifact, service_names|
     errors << "#{service_name} must not contain a build directive" if service.key?('build') && service['build']
     image = service['image']
     errors << "#{service_name} image must be an immutable repository@#{digest} reference" unless image.is_a?(String) && image.end_with?("@#{digest}")
-    if !%w[--print-image-set-digest --print-manifest-sha256].include?(mode)
+    if candidate_metadata
+      artifact_metadata = oci_metadata[artifact]
+      unless artifact_metadata.is_a?(Hash) && artifact_metadata['reference'] == image && artifact_metadata['digest'] == digest
+        errors << "#{service_name} image does not match injected OCI metadata"
+      end
+    else
       labels = service['labels']
       errors << "#{service_name} release id label does not match the ECS release contract" unless labels.is_a?(Hash) && labels['com.storenova.release.id'] == ENV['RELEASE_ID']
       errors << "#{service_name} release git label does not match the ECS release contract" unless labels.is_a?(Hash) && labels['org.opencontainers.image.revision'] == ENV['RELEASE_GIT_SHA']
+    end
+    if candidate_metadata && identity.is_a?(Hash)
+      unless %w[RELEASE_ID RELEASE_GIT_SHA].all? { |key| ENV[key].nil? || identity[{ 'RELEASE_ID' => 'com.storenova.release.id', 'RELEASE_GIT_SHA' => 'org.opencontainers.image.revision' }[key]] == ENV[key] }
+        errors << "#{service_name} OCI metadata does not match the frozen release environment"
+      end
     end
   end
 end

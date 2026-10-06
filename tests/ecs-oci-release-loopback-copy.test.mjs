@@ -85,7 +85,11 @@ async function fixture({ releaseId, arch = 'amd64' }) {
     digests[artifact] = root.digest
   }
   return { schema_version: 1, release_id: releaseId, release_git_sha: gitSha, source_sha256: sourceSha,
-    image_references: references, image_digests: digests }
+    image_references: references, image_digests: digests,
+    image_metadata: Object.fromEntries(artifacts.map(artifact => [artifact, {
+      reference: references[artifact], digest: digests[artifact],
+      labels: { 'org.opencontainers.image.revision': gitSha, 'com.storenova.release.id': releaseId, 'com.storenova.release.source_sha256': sourceSha },
+    }])) }
 }
 
 before(async () => {
@@ -142,6 +146,7 @@ test('rejects source identity and non-amd64 runtime before publishing a tag', as
 test('rejects a source repository prefix outside the reviewed storenova path', async () => {
   const release = await fixture({ releaseId: `release-prefix-${randomBytes(4).toString('hex')}` })
   release.image_references['merchant-api'] = release.image_references['merchant-api'].replace('/storenova/merchant-api@', '/other/merchant-api@')
+  release.image_metadata['merchant-api'].reference = release.image_references['merchant-api']
   await assert.rejects(copyRelease({ releaseImages: release, sourceRegistry: source, targetRegistry: target,
     targetReferenceHost: '127.0.0.1:5000', expectedGitSha: release.release_git_sha,
     expectedSourceSha256: release.source_sha256 }), /REPOSITORY_merchant-api_INVALID/u)
@@ -164,8 +169,10 @@ test('rejects a forged digest header and refuses registry redirects', async () =
   const address = server.address()
   assert.ok(address && typeof address !== 'string')
   const fake = `http://127.0.0.1:${address.port}`
-  for (const artifact of artifacts) release.image_references[artifact] =
-    release.image_references[artifact].replace(new URL(source).host, new URL(fake).host)
+  for (const artifact of artifacts) {
+    release.image_references[artifact] = release.image_references[artifact].replace(new URL(source).host, new URL(fake).host)
+    release.image_metadata[artifact].reference = release.image_references[artifact]
+  }
   const input = { releaseImages: release, sourceRegistry: fake, targetRegistry: target,
     targetReferenceHost: '127.0.0.1:5000', expectedGitSha: release.release_git_sha,
     expectedSourceSha256: release.source_sha256 }

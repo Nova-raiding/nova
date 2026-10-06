@@ -43,10 +43,23 @@ function fixture() {
       labels: {
         'com.storenova.release.id': 'release-test',
         'org.opencontainers.image.revision': 'a'.repeat(40),
+        'com.storenova.release.source_sha256': digest('9'),
       },
     }
   }
-  return { services }
+  const imageMetadata = Object.fromEntries(Object.entries(groups).map(([artifact, names]) => {
+    const reference = (services[names[0]!] as any).image
+    return [artifact, {
+      reference,
+      digest: digests[artifact as keyof typeof digests],
+      labels: {
+        'com.storenova.release.id': 'release-test',
+        'org.opencontainers.image.revision': 'a'.repeat(40),
+        'com.storenova.release.source_sha256': digest('9'),
+      },
+    }]
+  }))
+  return { services, 'x-candidate-image-oci-metadata': imageMetadata }
 }
 
 function run(document: unknown, digestSet: Record<string, string> = digests) {
@@ -61,6 +74,24 @@ function runContract(document: unknown, env: Record<string, string>) {
   const path = join(directory, 'compose.json')
   writeFileSync(path, JSON.stringify(document))
   return execFileSync('ruby', ['infra/scripts/validate-ecs-compose-release.rb', path, JSON.stringify(digests)], { encoding: 'utf8', env: { ...process.env, ...env } })
+}
+
+function bindContractIdentity(document: any, releaseId: string) {
+  const imageSet = run(document)
+  for (const name of ['api', 'api-replica']) {
+    document.services[name].environment = {
+      RELEASE_ID: releaseId,
+      RELEASE_GIT_SHA: 'a'.repeat(40),
+      RELEASE_MANIFEST_SHA256: '',
+      RELEASE_IMAGE_SET_DIGEST: imageSet,
+    }
+  }
+  const directory = mkdtempSync(join(tmpdir(), 'ecs-compose-contract-identity-'))
+  const path = join(directory, 'compose.json')
+  writeFileSync(path, JSON.stringify(document))
+  const manifest = execFileSync('ruby', ['infra/scripts/validate-ecs-compose-release.rb', path, JSON.stringify(digests), '--print-manifest-sha256'], { encoding: 'utf8' }).trim()
+  for (const name of ['api', 'api-replica']) document.services[name].environment.RELEASE_MANIFEST_SHA256 = manifest
+  return document
 }
 
 /**
@@ -190,6 +221,7 @@ describe('ECS Compose release gate', () => {
   it('binds API runtime release metadata to the normalized Compose contract', () => {
     const document = fixture() as any
     for (const service of Object.values(document.services) as any[]) service.labels['com.storenova.release.id'] = 'release-1'
+    for (const metadata of Object.values(document['x-candidate-image-oci-metadata']) as any[]) metadata.labels['com.storenova.release.id'] = 'release-1'
     for (const name of ['api', 'api-replica']) document.services[name].environment = {}
     const directory = mkdtempSync(join(tmpdir(), 'ecs-compose-hash-'))
     const path = join(directory, 'compose.json')
@@ -207,11 +239,15 @@ describe('ECS Compose release gate', () => {
     expect(() => runContract(document, { RELEASE_ID: 'release-1', RELEASE_GIT_SHA: 'a'.repeat(40) })).toThrow(/api RELEASE_ID does not match/)
   })
 
-  it('requires every release service to carry the container release identity labels', () => {
+  it('does not treat Compose labels as OCI image identity evidence', () => {
     const document = fixture() as any
     delete document.services.api.labels['com.storenova.release.id']
+    bindContractIdentity(document, 'release-test')
+    expect(runContract(document, { RELEASE_ID: 'release-test', RELEASE_GIT_SHA: 'a'.repeat(40) }))
+      .toContain('ECS Compose release gate passed')
+    delete document['x-candidate-image-oci-metadata']['merchant-api'].labels['com.storenova.release.id']
     expect(() => runContract(document, { RELEASE_ID: 'release-test', RELEASE_GIT_SHA: 'a'.repeat(40) }))
-      .toThrow(/api release id label does not match/)
+      .toThrow(/merchant-api OCI metadata is incomplete/)
   })
 
   it('closes the fixed release manifest: every required variable has a producer, every required artifact is pinned', () => {

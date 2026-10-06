@@ -86,6 +86,33 @@ function immutableReference(value, label) {
   return value
 }
 
+// The renderer is intentionally Docker-free.  The build/inspect step injects
+// this evidence into the image manifests; the renderer only verifies that the
+// evidence is complete, digest-bound, and frozen to this candidate identity.
+// The start verifier performs the non-substitutable Docker image inspect.
+function validateImageMetadata(metadata, references, identity, label) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
+      Object.keys(metadata).sort().join(',') !== Object.keys(references).sort().join(',')) {
+    fail(`${label} must contain OCI metadata for exactly the approved images`)
+  }
+  for (const artifact of Object.keys(references).sort()) {
+    const entry = metadata[artifact]
+    const reference = references[artifact]
+    const digest = reference.slice(reference.lastIndexOf('@') + 1)
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.reference !== reference || entry.digest !== digest) {
+      fail(`${label} ${artifact} metadata is not bound to its immutable reference`)
+    }
+    const labels = entry.labels
+    if (!labels || typeof labels !== 'object' || Array.isArray(labels) ||
+        labels['org.opencontainers.image.revision'] !== identity.git_sha ||
+        labels['com.storenova.release.id'] !== identity.release_id ||
+        labels['com.storenova.release.source_sha256'] !== identity.source_sha256) {
+      fail(`${label} ${artifact} OCI labels do not match the candidate identity`)
+    }
+  }
+  return structuredClone(metadata)
+}
+
 function assertSourceBoundToIdentity(sourceRoot, identityPath, identity) {
   if (identityPath !== join(sourceRoot, '.candidate-identity')) fail('candidate identity must come from the selected source root')
   const bundledIdentity = parseIdentity(join(sourceRoot, '.candidate-identity'))
@@ -186,6 +213,25 @@ export function validateDemoCompose(compose, project) {
   if (api.env_file?.length !== 1 || api.env_file[0]?.path !== compose['x-candidate-env-path'] || api.env_file[0]?.required !== true) fail('candidate relay key must come from the protected generated env file')
   if (JSON.stringify(compose).includes('MODEL_RELAY_API_KEY=')) fail('candidate Compose must not inline the relay key')
   immutableReference(api.image, 'api image')
+  const imageMetadata = compose['x-candidate-image-oci-metadata']
+  const serviceArtifacts = {
+    migrate: 'postgres-migration', api: 'merchant-api', 'api-replica': 'merchant-api',
+    'worker-sync': 'merchant-worker', 'worker-generation': 'merchant-worker', 'worker-publish': 'merchant-worker',
+    'worker-reconcile': 'merchant-worker', 'worker-automation': 'merchant-worker', 'worker-scan': 'merchant-worker',
+    ui: 'merchant-ui', 'ops-ui': 'merchant-ops-ui', 'payment-gateway': 'payment-gateway',
+    'pilot-gateway': 'pilot-gateway', clamav: 'clamav',
+  }
+  const expectedRefs = Object.fromEntries(Object.entries(compose.services)
+    .filter(([name]) => !['postgres', 'redis'].includes(name))
+    .map(([name, service]) => [name, { artifact: serviceArtifacts[name], reference: service.image }]))
+  if (!imageMetadata || typeof imageMetadata !== 'object') fail('candidate Compose must carry injected OCI image metadata')
+  for (const [serviceName, expected] of Object.entries(expectedRefs)) {
+    const entry = imageMetadata[expected.artifact]
+    if (!expected.artifact || !entry || entry.reference !== expected.reference || entry.digest !== expected.reference.slice(expected.reference.lastIndexOf('@') + 1) ||
+        entry.labels?.['org.opencontainers.image.revision'] !== env.RELEASE_GIT_SHA ||
+        entry.labels?.['com.storenova.release.id'] !== env.RELEASE_ID ||
+        entry.labels?.['com.storenova.release.source_sha256'] !== api.labels?.['com.storenova.release.source_sha256']) fail(`${serviceName} injected OCI image metadata is invalid`)
+  }
   const parseDb = (value, role) => {
     let url
     try { url = new URL(value) } catch { fail(`${role} database URL is invalid`) }
@@ -212,7 +258,7 @@ export function validateDemoCompose(compose, project) {
   return true
 }
 
-function render({ identity, images, eightImageSet, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget, runtimeEnvironment, commercialRuntimeEnv={} }) {
+function render({ identity, images, eightImageSet, imageMetadata, project, sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey, withMerchantUi, migrationTarget, runtimeEnvironment, commercialRuntimeEnv={} }) {
   const rendererSha256 = hash(readFileSync(new URL(import.meta.url)))
   const roles = { merchant_app: newSecret(), merchant_ops: newSecret(), merchant_alert_receiver: newSecret() }
   const adminPassword = newSecret()
@@ -241,6 +287,7 @@ function render({ identity, images, eightImageSet, project, sourceRoot, envPath,
     name: project,
     'x-candidate-runtime-environment': runtimeEnvironment,
     'x-eight-image-set-digest': imageSetDigest,
+    'x-candidate-image-oci-metadata': imageMetadata,
     ...(withMerchantUi ? { 'x-merchant-ui-image': images.image_references['merchant-ui'] } : {}),
     services: {
       postgres: {
@@ -406,6 +453,7 @@ export function main(argv = process.argv.slice(2)) {
     const ref = immutableReference(images.image_references[artifact], `${artifact} image`)
     if (images.image_digests[artifact] !== ref.slice(ref.lastIndexOf('@') + 1)) fail('six-image digest/reference mismatch')
   }
+  const sixImageMetadata = validateImageMetadata(images.image_metadata, images.image_references, identity, 'six-image manifest')
   let eightImageSet
   try { eightImageSet = JSON.parse(readFileSync(paths.eightImageSet, 'utf8')) } catch { fail('eight-image set is invalid JSON') }
   if (eightImageSet?.schema_version !== 1 || eightImageSet.release_id !== identity.release_id || eightImageSet.release_git_sha !== identity.git_sha || eightImageSet.source_sha256 !== identity.source_sha256) fail('eight-image set does not match the candidate identity')
@@ -415,6 +463,10 @@ export function main(argv = process.argv.slice(2)) {
     if (eightImageSet.image_digests[artifact] !== ref.slice(ref.lastIndexOf('@') + 1)) fail('eight-image digest/reference mismatch')
     if (allowedArtifacts.includes(artifact) && images.image_references[artifact] !== ref) fail('six-image manifest and eight-image set disagree')
   }
+  const eightImageMetadata = validateImageMetadata(eightImageSet.image_metadata, eightImageSet.image_references, identity, 'eight-image set')
+  for (const artifact of allowedArtifacts) {
+    if (JSON.stringify(sixImageMetadata[artifact]) !== JSON.stringify(eightImageMetadata[artifact])) fail('six-image manifest and eight-image OCI metadata disagree')
+  }
   const postgresImage = eightImageSet.image_references['postgres-migration']
   const migrationImage = postgresImage
   const relayKey = parseRootRelayEnvironment(paths.rootEnv)
@@ -422,7 +474,7 @@ export function main(argv = process.argv.slice(2)) {
   if (!/(?:^|\/)postgres:17-alpine@sha256:[0-9a-f]{64}$/u.test(migrationImage)) fail('migration image must be immutable postgres:17-alpine')
   const redisImage = immutableReference(args['redis-image'], 'redis image')
   if (!/(?:^|\/)redis:7-alpine@sha256:[0-9a-f]{64}$/u.test(redisImage)) fail('isolated redis image must be immutable redis:7-alpine')
-  const rendered = render({ identity, images, eightImageSet, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey,
+  const rendered = render({ identity, images, eightImageSet, imageMetadata: eightImageMetadata, project, sourceRoot: paths.sourceRoot, envPath, embeddingModel, postgresImage, redisImage, migrationImage, relayKey,
     withMerchantUi: args['merchant-ui'] === 'enabled', migrationTarget, runtimeEnvironment, commercialRuntimeEnv:args['commercial-runtime-env']?readCommercialRuntimeEnvironment(resolve(args['commercial-runtime-env'])):{} })
   const created = []
   try {

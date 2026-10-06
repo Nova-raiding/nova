@@ -44,17 +44,24 @@ function checkInput(input) {
   assert(SHA.test(expectedGitSha ?? '') && DIGEST.test(expectedSourceSha256 ?? ''), 'EXPECTED_SOURCE_IDENTITY_INVALID')
   assert(releaseImages?.schema_version === 1 && /^release-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(releaseImages.release_id ?? '')
     && releaseImages.release_git_sha === expectedGitSha && releaseImages.source_sha256 === expectedSourceSha256
-    && sameKeys(releaseImages.image_digests, ARTIFACTS) && sameKeys(releaseImages.image_references, ARTIFACTS),
+    && sameKeys(releaseImages.image_digests, ARTIFACTS) && sameKeys(releaseImages.image_references, ARTIFACTS)
+    && sameKeys(releaseImages.image_metadata, ARTIFACTS),
   'SIX_IMAGE_IDENTITY_INVALID')
   const images = ARTIFACTS.map(artifact => {
     const reference = releaseImages.image_references[artifact]
+    const metadata = releaseImages.image_metadata[artifact]
+    assert(metadata?.reference === reference && metadata.digest === releaseImages.image_digests[artifact] &&
+      metadata.labels?.['org.opencontainers.image.revision'] === expectedGitSha &&
+      metadata.labels?.['com.storenova.release.id'] === releaseImages.release_id &&
+      metadata.labels?.['com.storenova.release.source_sha256'] === expectedSourceSha256, `OCI_METADATA_${artifact}_INVALID`)
     const match = /^([^@]+)@(sha256:[0-9a-f]{64})$/u.exec(reference ?? '')
     assert(match && match[2] === releaseImages.image_digests[artifact], `REFERENCE_${artifact}_INVALID`)
     const slash = match[1].indexOf('/')
     const registry = match[1].slice(0, slash)
     const repo = match[1].slice(slash + 1)
     assert(registry === source.host && REPO.test(repo) && repo === `storenova/${artifact}`, `REPOSITORY_${artifact}_INVALID`)
-    return { artifact, repo, digest: match[2], targetReference: `${targetReferenceHost}/${repo}@${match[2]}` }
+    return { artifact, repo, digest: match[2], targetReference: `${targetReferenceHost}/${repo}@${match[2]}`,
+      metadata: { reference: `${targetReferenceHost}/${repo}@${match[2]}`, digest: match[2], labels: metadata.labels } }
   })
   assert(new Set(images.map(item => item.repo)).size === ARTIFACTS.length, 'REPOSITORIES_NOT_DISTINCT')
   return { source, target, images }
@@ -228,6 +235,7 @@ export async function copyRelease(input) {
       source_sha256: identity.source_sha256, npm_registry: identity.npm_registry,
       image_digests: Object.fromEntries(records.map(item => [item.artifact, item.digest])),
       image_references: Object.fromEntries(records.map(item => [item.artifact, item.target_reference])),
+      image_metadata: Object.fromEntries(records.map(item => [item.artifact, item.metadata])),
     }
     return Object.freeze({ schema_version: 'oci-release-loopback-copy/1', status: 'copied_and_verified',
       release_id: identity.release_id, release_git_sha: identity.release_git_sha, source_sha256: identity.source_sha256,

@@ -207,6 +207,12 @@ describe('bounded ECS release image builder', () => {
     expect(manifest.npm_registry).toBe('https://registry.npmmirror.com/')
     expect(Object.keys(manifest.image_digests)).toHaveLength(6)
     expect(Object.values(manifest.image_digests)).toEqual(Array(6).fill(digest))
+    expect(Object.keys(manifest.image_metadata)).toHaveLength(6)
+    expect(manifest.image_metadata['merchant-api'].labels).toEqual({
+      'org.opencontainers.image.revision': revision,
+      'com.storenova.release.id': releaseId,
+      'com.storenova.release.source_sha256': `sha256:${sha}`,
+    })
     const dockerLog = readFileSync(log, 'utf8')
     expect(dockerLog.match(/build --pull=false --platform linux\/amd64/gu)).toHaveLength(6)
     expect(dockerLog.match(/builder prune -f --keep-storage 1GB/gu)).toHaveLength(4)

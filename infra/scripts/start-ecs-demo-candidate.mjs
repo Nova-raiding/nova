@@ -62,6 +62,13 @@ if (api.environment.PLUGIN_WRITE_ENABLED !== 'false' ||
 const required = ['postgres', 'redis', 'migrate', 'api']
 if (services.ui) required.push('ui')
 const immutableImage = /^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$/
+const serviceArtifacts = {
+  migrate: 'postgres-migration', api: 'merchant-api', 'api-replica': 'merchant-api',
+  'worker-sync': 'merchant-worker', 'worker-generation': 'merchant-worker', 'worker-publish': 'merchant-worker',
+  'worker-reconcile': 'merchant-worker', 'worker-automation': 'merchant-worker', 'worker-scan': 'merchant-worker',
+  ui: 'merchant-ui', 'ops-ui': 'merchant-ops-ui', 'payment-gateway': 'payment-gateway',
+  'pilot-gateway': 'pilot-gateway', clamav: 'clamav',
+}
 for (const name of required) {
   const service = services[name]
   if (!service || typeof service !== 'object') fail(`candidate Compose lacks ${name}`)
@@ -118,6 +125,38 @@ for (const [key, value] of Object.entries(compose.volumes ?? {})) {
   if (value?.external || !name.startsWith(`${project}_`)) fail('candidate cannot use an external or shared volume')
 }
 
+// This metadata is an injected, Docker-free review input. It is not trusted
+// as proof of authenticity: the Docker inspect below must agree with it for
+// every application image actually present in the candidate Compose.
+const imageMetadata = compose['x-candidate-image-oci-metadata']
+const expectedArtifacts = ['merchant-api', 'merchant-worker', 'merchant-ui', 'merchant-ops-ui', 'payment-gateway', 'pilot-gateway', 'postgres-migration', 'clamav']
+if (!imageMetadata || typeof imageMetadata !== 'object' || Array.isArray(imageMetadata) ||
+    Object.keys(imageMetadata).sort().join(',') !== expectedArtifacts.sort().join(',')) fail('candidate OCI metadata must contain all six business and two required images')
+for (const artifact of expectedArtifacts) {
+  const entry = imageMetadata[artifact]
+  if (!entry || typeof entry.reference !== 'string' || !immutableImage.test(entry.reference) ||
+      entry.digest !== entry.reference.slice(entry.reference.lastIndexOf('@') + 1) ||
+      entry.labels?.['com.storenova.release.id'] !== releaseId ||
+      entry.labels?.['org.opencontainers.image.revision'] !== gitSha ||
+      entry.labels?.['com.storenova.release.source_sha256'] !== identity.source_sha256) {
+    fail(`${artifact} injected OCI metadata does not match candidate identity`)
+  }
+}
+const identityServices = Object.keys(services).filter(name => serviceArtifacts[name])
+if (!identityServices.length) fail('candidate Compose has no application images to verify')
+for (const name of identityServices) {
+  const service = services[name]
+  if (!immutableImage.test(service.image ?? '')) fail(`${name} image must be digest-pinned`)
+  const artifact = serviceArtifacts[name]
+  const entry = imageMetadata?.[artifact]
+  if (!entry || entry.reference !== service.image || entry.digest !== service.image.slice(service.image.lastIndexOf('@') + 1) ||
+      entry.labels?.['com.storenova.release.id'] !== releaseId ||
+      entry.labels?.['org.opencontainers.image.revision'] !== gitSha ||
+      entry.labels?.['com.storenova.release.source_sha256'] !== identity.source_sha256) {
+    fail(`${name} injected OCI metadata does not match candidate identity`)
+  }
+}
+
 function docker(args, { capture = false, input } = {}) {
   const result = spawnSync(dockerBinary, ['--host', 'unix:///var/run/docker.sock', ...args], {
     encoding: 'utf8', timeout: 300_000, maxBuffer: 2 * 1024 * 1024,
@@ -140,18 +179,19 @@ for (const [key, value] of Object.entries(compose.networks ?? { default: {} })) 
   const name = value?.name ?? `${project}_${key}`
   if (existingNetworks.has(name)) fail('candidate project network already exists; refusing to adopt existing network')
 }
-for (const name of required) {
+function inspectCandidateImage(name) {
   const ref = services[name].image
   const imageId = docker(['image', 'inspect', '--format', '{{.Id}}', ref], { capture: true })
   if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) fail(`${name} image is unavailable`)
-  if (name === 'api') {
-    const labels = docker(['image', 'inspect', '--format', '{{json .Config.Labels}}', ref], { capture: true })
-    let value
-    try { value = JSON.parse(labels) } catch { fail(`${name} image labels are invalid`) }
-    if (value?.['com.storenova.release.id'] !== releaseId ||
-        value?.['org.opencontainers.image.revision'] !== gitSha ||
-        value?.['com.storenova.release.source_sha256'] !== identity.source_sha256) fail(`${name} image does not match candidate source`)
-  }
+  const labels = docker(['image', 'inspect', '--format', '{{json .Config.Labels}}', ref], { capture: true })
+  let value
+  try { value = JSON.parse(labels) } catch { fail(`${name} image labels are invalid`) }
+  if (value?.['com.storenova.release.id'] !== releaseId ||
+      value?.['org.opencontainers.image.revision'] !== gitSha ||
+      value?.['com.storenova.release.source_sha256'] !== identity.source_sha256) fail(`${name} image OCI labels do not match candidate source`)
+}
+for (const name of identityServices) {
+  inspectCandidateImage(name)
 }
 docker([...composeArgs, 'up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'postgres', 'redis'])
 for (const name of ['postgres', 'redis']) {
