@@ -78,7 +78,7 @@ describe('protected PostgreSQL 17 isolated restore input contract', () => {
     const input = fixture()
     const digests = input.imageSet.image_digests as Record<string, string>
     const references = input.imageSet.image_references as Record<string, string>
-    const services: Record<string, { image: string }> = {}
+    const services: Record<string, { image: string; labels?: Record<string, string> }> = {}
     const groups: Record<string, string[]> = {
       'merchant-api': ['api', 'api-replica'],
       'postgres-migration': ['migrate'],
