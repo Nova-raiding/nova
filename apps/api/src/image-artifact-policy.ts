@@ -47,6 +47,14 @@ export function trustedDashScopeImageArtifactHost(raw: string): string | undefin
   return /^dashscope-[a-z0-9-]{1,96}\.oss-(?:accelerate|cn-[a-z0-9-]{1,48})\.aliyuncs\.com$/u.test(host) ? host : undefined
 }
 
+// DashScope video artifacts use the same documented short-lived OSS host
+// shape as image artifacts. Keep the validation narrow and request-scoped;
+// never trust all of aliyuncs.com and never turn this into a general URL
+// bypass.
+export function trustedDashScopeVideoArtifactHost(raw: string): string | undefined {
+  return trustedDashScopeImageArtifactHost(raw)
+}
+
 const ARTIFACT_DOWNLOAD_TIMEOUT_MS = Math.max(1_000, Number(process.env.ARTIFACT_DOWNLOAD_TIMEOUT_MS ?? 30_000))
 
 /**
@@ -102,12 +110,17 @@ let videoArtifactFetcherForTests: typeof fetch | undefined
 function videoArtifactAllowedHosts(): readonly string[] | undefined {
   const configured = (process.env.VIDEO_ARTIFACT_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
   if (configured.length) return configured
-  if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') throw new DomainError('VIDEO_ARTIFACT_ALLOWLIST_MISSING', '生产环境必须配置视频 artifact 域名白名单', 503)
   return undefined
 }
 
 export async function assertVideoArtifactUrl(raw: string): Promise<void> {
-  await assertOutboundUrl(raw, { environment: process.env.NODE_ENV, allowedHosts: videoArtifactAllowedHosts(), resolveDns: true })
+  const configuredHosts = videoArtifactAllowedHosts()
+  const trustedDynamicHost = trustedDashScopeVideoArtifactHost(raw)
+  if (!configuredHosts?.length && !trustedDynamicHost && (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging')) {
+    throw new DomainError('VIDEO_ARTIFACT_ALLOWLIST_MISSING', '生产环境必须配置视频 artifact 域名白名单', 503)
+  }
+  const allowedHosts = trustedDynamicHost ? [...(configuredHosts ?? []), trustedDynamicHost] : configuredHosts
+  await assertOutboundUrl(raw, { environment: process.env.NODE_ENV, allowedHosts, resolveDns: true })
 }
 
 export function setVideoArtifactFetcherForTests(fetcher?: typeof fetch) {

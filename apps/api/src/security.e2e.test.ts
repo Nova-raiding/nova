@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
 import argon2 from 'argon2'
 import { request as httpRequest } from 'node:http'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, creativePointsForTests, deriveWorkerContinuationAuthorizationSnapshot, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, creativePointsForTests, deriveWorkerContinuationAuthorizationSnapshot, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, productionReadinessDiagnostics, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setPasswordAuthRepositoryForTests, setOAuthStateStoreForTests, setPaymentProviderForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, trustedDashScopeVideoArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
@@ -210,6 +210,15 @@ describe('security and access-control acceptance gates', () => {
     await expect(assertVideoArtifactUrl('https://evil.example.com/video.mp4')).rejects.toThrow('HOST_NOT_ALLOWLISTED')
     vi.stubEnv('VIDEO_ARTIFACT_ALLOWED_HOSTS', '')
     await expect(assertVideoArtifactUrl('https://cdn.example.com/video.mp4')).rejects.toThrow('生产环境必须配置视频 artifact 域名白名单')
+  })
+  it('accepts only the documented narrow DashScope OSS video artifact host shape', async () => {
+    vi.stubEnv('VIDEO_ARTIFACT_ALLOWED_HOSTS', '')
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(trustedDashScopeVideoArtifactHost('https://dashscope-a717.oss-accelerate.aliyuncs.com/result.mp4')).toBe('dashscope-a717.oss-accelerate.aliyuncs.com')
+    await expect(assertVideoArtifactUrl('https://dashscope-a717.oss-accelerate.aliyuncs.com/result.mp4')).resolves.toBeUndefined()
+    expect(trustedDashScopeVideoArtifactHost('https://evil.aliyuncs.com/result.mp4')).toBeUndefined()
+    vi.stubEnv('VIDEO_ARTIFACT_ALLOWED_HOSTS', 'cdn.example.com')
+    await expect(assertVideoArtifactUrl('https://dashscope-a717.oss-accelerate.aliyuncs.com.evil.example/result.mp4')).rejects.toThrow('HOST_NOT_ALLOWLISTED')
   })
   it('fails closed in staging instead of trusting caller supplied identity headers', async () => {
     const workspaceId = `ws_staging_auth_${Date.now()}`
