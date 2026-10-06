@@ -71,6 +71,13 @@
 - 本轮已用平台运营凭据完成 Ops 规则页桌面浏览；由于审批凭证分离职责仍被服务端拒绝，没有执行规则激活。商家已授权的 MCP stdio 只读探针仍显示工作区暂无可执行规则/品牌偏好，商业 entitlement 也未形成可用证据。
 - 未覆盖路径：需真实账号才能验证的商家工作区数据、Ops 权限菜单、真实模型调用、支付/账务写入和发布确认；这些不是本轮可安全伪造的黑盒证据。
 
+## 续测记录（2026-10-06 晚间）
+
+- 修复并提交 `e85edb3d`：显式有效的 Demo evaluation entitlement 在商业准入中优先于付费 qualification；新增 1 条回归，连续 entitlement 测试共 20 项通过。
+- Demo 101 已从该提交仅更新 API 双副本；迁移 268 已应用，PostgreSQL 运行角色校验通过，镜像 digest 为 `sha256:d67d9d659cc4d6523dda68d825a4825a583b50159d0f2711194c0eba91c89f86`，双副本 healthy。
+- 重新从已安装本地 stdio bridge 调用 `catalog.search(scope=workspace, query=贵人鸟)`：成功读取 7 个商品、1 个 SKU；商品数据仍明确标记未绑定候选、手工导入或规则数据不可用，不把它们冒充为平台实时授权数据。
+- 已通过的 typecheck、迁移兼容性和 bridge 安装探针未重复执行。规则激活、品牌档案、真实五模态 provider 回执和 ChatGPT 原生桌面 UI 仍未通过，继续保持阻断。
+
 ## 健康评分
 
 本轮只做未覆盖路径回归，不把未登录预期 401 计为缺陷。按报告规则估算：Console 70（可复现 404 请求）；Links 100；Visual 100；Functional 85（admin 入口问题）；UX 90；Performance 90；Content 90；Accessibility 100。加权健康分：**89/100**。
