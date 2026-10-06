@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   ContinuousFeatureEntitlementService,
+  type DemoEvaluationEntitlement,
   type ContinuousFeatureEntitlementSnapshotV2,
   type LegacyCommercialShadowSource,
 } from './continuous-feature-entitlement.js'
@@ -91,6 +92,22 @@ describe('ContinuousFeatureEntitlementService C14', () => {
     await expect(harness([snapshot(), snapshot({ id: 'entitlement-v2-2', subscriptionPeriodId: 'period-2', checksum: 'b'.repeat(64) })]).service.decide({
       workspace_id: 'workspace-1',
     })).resolves.toMatchObject({ allowed: false, code: 'COMMERCIAL_ENTITLEMENT_AMBIGUOUS' })
+  })
+
+  it('uses an active explicit demo grant before paid qualification', async () => {
+    const grant: DemoEvaluationEntitlement = {
+      id: 'dee_demo_1', workspaceId: 'ws_guirenniaoniao',
+      startsAt: '2026-09-01T00:00:00.000Z', expiresAt: '2026-10-01T00:00:00.000Z',
+      createdAt: '2026-09-01T00:00:00.000Z', checksum: 'c'.repeat(64), status: 'active',
+    }
+    const service = new ContinuousFeatureEntitlementService({
+      projection: { listV2EntitlementSnapshots: async () => [snapshot({ executable: false })] },
+      demoEvaluation: { workspaceId: 'ws_guirenniaoniao', projection: { listDemoEvaluationEntitlements: async () => [grant] } },
+      now: () => now,
+    })
+    await expect(service.decide({ workspace_id: 'ws_guirenniaoniao' })).resolves.toMatchObject({
+      allowed: true, snapshot_id: grant.id, subscription_period_id: `demo-evaluation:${grant.id}`, catalog_version_id: 'demo-evaluation:v1',
+    })
   })
 
   it('keeps every legacy source shadow-only and incapable of contributing allow', async () => {

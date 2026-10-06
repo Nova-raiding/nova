@@ -180,16 +180,14 @@ export class ContinuousFeatureEntitlementService {
     if (!Array.isArray(snapshots)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
 
     const authoritative = snapshots.filter(snapshot => isAuthoritativeSnapshot(snapshot, input.workspace_id, current.valueOf()))
-    if (authoritative.length === 0) {
-      if (!this.#demoEvaluation || input.workspace_id !== this.#demoEvaluation.workspaceId) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
+    if (this.#demoEvaluation && input.workspace_id === this.#demoEvaluation.workspaceId) {
       let demo: readonly DemoEvaluationEntitlement[]
       try {
         demo = await this.#demoEvaluation.projection.listDemoEvaluationEntitlements({ workspace_id: input.workspace_id })
       } catch {
-        return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
+        demo = []
       }
-      if (!Array.isArray(demo)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
-      const active = demo.filter(item => {
+      const active = Array.isArray(demo) ? demo.filter(item => {
         const start = canonicalInstant(item.startsAt)
         const end = canonicalInstant(item.expiresAt)
         const created = canonicalInstant(item.createdAt)
@@ -197,17 +195,20 @@ export class ContinuousFeatureEntitlementService {
           && identifier(item.id) && SHA256.test(item.checksum)
           && start !== undefined && end !== undefined && created !== undefined
           && start < end && start <= current.valueOf() && current.valueOf() < end && created <= current.valueOf()
-      })
-      if (active.length === 0) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
-      if (active.length !== 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
-      const grant = active[0]!
-      return {
-        allowed: true, code: 'OK', snapshot_id: grant.id,
-        subscription_period_id: `demo-evaluation:${grant.id}`,
-        catalog_version_id: 'demo-evaluation:v1', checksum: grant.checksum,
-        ignored_legacy_sources: ignored,
+      }) : []
+      if (active.length === 1) {
+        const grant = active[0]!
+        return {
+          allowed: true, code: 'OK', snapshot_id: grant.id,
+          subscription_period_id: `demo-evaluation:${grant.id}`,
+          catalog_version_id: 'demo-evaluation:v1', checksum: grant.checksum,
+          ignored_legacy_sources: ignored,
+        }
       }
+      if (active.length > 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
+      if (authoritative.length === 0) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
     }
+    if (authoritative.length === 0) return denied('COMMERCIAL_ENTITLEMENT_REQUIRED', ignored)
     if (authoritative.length !== 1) return denied('COMMERCIAL_ENTITLEMENT_AMBIGUOUS', ignored)
 
     const snapshot = authoritative[0]!
