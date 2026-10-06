@@ -924,6 +924,48 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   }
 }
 
+export interface ContentExportArtifact {
+  blob: Blob
+  filename: string
+  sha256?: string
+  verified?: boolean
+}
+
+export async function downloadContentExport(baseUrl: string, contentVersionId: string, format: 'manifest' | 'json' | 'markdown' | 'bundle' = 'bundle', workspaceId = configuredWorkspaceId()): Promise<ContentExportArtifact> {
+  if (authExpired) {
+    const error = new Error('登录会话已失效') as ApiError
+    error.code = 'AUTH_SESSION_EXPIRED'
+    error.status = 401
+    throw error
+  }
+  const token = runtimeConfig('VITE_API_TOKEN')?.trim()
+  const sameOriginProxy = baseUrl.trim().startsWith('/')
+  if (!token && !sameOriginProxy) {
+    const error = new Error('商家工作区鉴权未配置，已阻止请求') as ApiError
+    error.code = 'API_AUTH_TOKEN_MISSING'
+    error.status = 401
+    throw error
+  }
+  if (!workspaceId?.trim() && !sameOriginProxy) {
+    const error = new Error('商家工作区未配置，已阻止请求') as ApiError
+    error.code = 'API_WORKSPACE_ID_MISSING'
+    error.status = 400
+    throw error
+  }
+  const headers = new Headers({ accept: 'application/octet-stream, application/json, text/markdown' })
+  if (workspaceId?.trim() && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
+  if (token) headers.set('authorization', `Bearer ${token}`)
+  const response = await fetch(apiUrl(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/export?format=${encodeURIComponent(format)}`), { credentials: 'include', headers })
+  if (!response.ok) throw new Error(`导出失败（HTTP ${response.status}）`)
+  const blob = await response.blob()
+  if (!blob.size) throw new Error('服务端返回了空的导出文件')
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/iu)?.[1]
+  const plain = disposition.match(/filename="?([^";]+)"?/iu)?.[1]
+  const filename = encoded ? decodeURIComponent(encoded) : plain || `merchant-content-${contentVersionId}.${format === 'bundle' ? 'zip' : format}`
+  return { blob, filename, sha256: response.headers.get('x-delivery-bundle-sha256') ?? undefined, verified: response.headers.get('x-delivery-bundle-verified') === 'true' }
+}
+
 export function isNotConfigured(error: unknown) {
   return (error as ApiError | undefined)?.code === 'NOT_CONFIGURED'
 }

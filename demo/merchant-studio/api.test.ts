@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, downloadContentExport, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { buildCatalogPlatforms } from './src/catalog-data.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
@@ -190,6 +190,26 @@ describe('merchant product response normalization', () => {
       method: 'campaign.batch.generate',
       params: { campaign_id: 'campaign_1', request_text: '按事实生成', idempotency_key: 'merchant-studio-campaign-generate-campaign_1' },
     })
+  })
+
+  it('downloads an approved content delivery bundle with server verification evidence', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['bundle']), {
+      status: 200,
+      headers: {
+        'content-disposition': "attachment; filename*=UTF-8''%E5%95%86%E5%93%81%E4%BA%A4%E4%BB%98.zip",
+        'x-delivery-bundle-sha256': 'sha256-test',
+        'x-delivery-bundle-verified': 'true',
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const artifact = await downloadContentExport('/api', 'content-1')
+    expect(artifact.filename).toBe('商品交付.zip')
+    expect(artifact.sha256).toBe('sha256-test')
+    expect(artifact.verified).toBe(true)
+    expect(await artifact.blob.text()).toBe('bundle')
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/content-versions/content-1/export?format=bundle')
   })
 
   it('normalizes the registration application id returned by the HTTP API', async () => {

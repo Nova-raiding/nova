@@ -130,6 +130,7 @@ import {
   fetchImageGenerationJobs,
   fetchCatalogCategories,
   fetchContentVersions,
+  downloadContentExport,
   fetchPlatformAccounts,
   registerManualStoreRecord,
   fetchPlatformModelStatus,
@@ -9415,6 +9416,7 @@ function TaskWorkspace({
   const [direction, setDirection] = useState(0)
   const [version, setVersion] = useState<'v4' | 'diff'>('v4')
   const [approved, setApproved] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
   const [task, setTask] = useState<Task | null>(null)
   const [content, setContent] = useState<ContentVersion | null>(null)
   const [contentVersions, setRawContentVersions] = useState<ContentVersion[]>(
@@ -9562,6 +9564,7 @@ function TaskWorkspace({
     setRemoteDirections(null)
     setDirectionsError('')
     setApproved(false)
+    setExportMessage('')
     setContent(null)
     setContentVersions([])
     setFindings([])
@@ -9937,6 +9940,26 @@ function TaskWorkspace({
       })
       .catch((cause) => setError(describeApiError(cause)))
       .finally(() => setOperation(''))
+  }
+
+  const exportApprovedContent = async () => {
+    if (!baseUrl || !content || !approved || reviewStatus !== 'succeeded') return
+    setOperation('导出交付包中…')
+    setExportMessage('')
+    try {
+      const artifact = await downloadContentExport(baseUrl, content.id, 'bundle')
+      const url = URL.createObjectURL(artifact.blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = artifact.filename
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+      setExportMessage(artifact.verified === false ? '导出已生成，但服务端未提供有效性确认，请勿直接交付。' : `导出已生成：${artifact.filename}${artifact.sha256 ? `（SHA-256 ${artifact.sha256.slice(0, 12)}…）` : ''}`)
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : '导出失败，请查看服务端门禁提示后重试')
+    } finally {
+      setOperation('')
+    }
   }
   const sendFeedback = (rating: FeedbackRating) => {
     setFeedbackRating(rating)
@@ -10534,6 +10557,16 @@ function TaskWorkspace({
                 >
                   下一页
                 </button>
+                <button
+                  className="secondary wide"
+                  type="button"
+                  disabled={!approved || Boolean(operation) || !content || reviewStatus !== 'succeeded'}
+                  onClick={() => void exportApprovedContent()}
+                >
+                  <Download size={16} />
+                  {operation === '导出交付包中…' ? '生成导出包…' : '导出已审核交付包'}
+                </button>
+                {exportMessage && <div className="info-notice" role="status">{exportMessage}</div>}
               </div>
             </div>
           </section>
