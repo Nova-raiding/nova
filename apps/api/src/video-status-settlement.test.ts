@@ -7,7 +7,7 @@ describe('video.get settlement delivery boundary', () => {
   function runtime() {
     const context = { workspaceId: 'workspace-a', actionId: 'video:a', runKey: 'run:a', providerJobId: 'job-a', model: 'video-model', providerRequestId: 'generation-a' }
     const getStatus = vi.fn(async () => ({ status: 'queued', providerJobId: 'job-a', settlementStatus: 'pending_receipt', videoUrl: undefined as string | undefined }))
-    const archive = vi.fn(async (workspaceId: string, value: unknown) => ({ ...(value as object), assetId: `${workspaceId}-asset`, archiveState: 'archived' }))
+    const archive = vi.fn(async (workspaceId: string, value: unknown) => ({ ...(value as object), assetId: `${workspaceId}-asset`, archiveState: 'archived', status: 'completed' as const }))
     const persistEvent = vi.fn()
     const scope = vi.fn(async () => context)
     const nextEventSequence = vi.fn(async () => 1)

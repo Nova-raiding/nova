@@ -3971,6 +3971,8 @@ async function handle(request) {
   }
   const id = request.id ?? null
   if (request.jsonrpc !== '2.0') return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
+  if (typeof request.method !== 'string' || !request.method.trim()) return jsonRpcError(id, -32600, 'JSON-RPC method 必须是非空字符串')
+  if (request.params !== undefined && (!request.params || typeof request.params !== 'object' || Array.isArray(request.params))) return jsonRpcError(id, -32602, 'JSON-RPC params 必须是对象')
   if (request.method === 'notifications/initialized') return null
   if (request.method === 'ping') return jsonRpc(id, {})
   if (request.method === 'initialize') {

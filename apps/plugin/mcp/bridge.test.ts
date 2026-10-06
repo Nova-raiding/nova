@@ -541,6 +541,10 @@ describe('Codex stdio MCP bridge', () => {
       expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32600 } })
       child.stdin.write('[1,2,3]\n')
       expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32600 } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 42 })}\n`)
+      expect(await nextLine(child.stdout)).toMatchObject({ id: 3, error: { code: -32600 } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'ping', params: [] })}\n`)
+      expect(await nextLine(child.stdout)).toMatchObject({ id: 4, error: { code: -32602 } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping', params: {} })}\n`)
       expect(await nextLine(child.stdout)).toEqual({ jsonrpc: '2.0', id: 2, result: {} })
     } finally {
