@@ -186,6 +186,16 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.publicVersions).toHaveLength(1)
     expect(repository.publicVersions[0]).toMatchObject({ status: 'draft', sourceKind: 'internal', sourceReference: 'https://www.yangkeduo.com/home/help/' })
 
+    const retry = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
+      jsonrpc: '2.0', id: 11, method: 'rule.publish', params: {
+        pack_id: 'manual-public', name: '人工平台规则', version: '1', scope: 'platform', category: 'platform', public_scope: 'platform', target_id: 'pinduoduo',
+        source_kind: 'internal', source_reference: 'https://www.yangkeduo.com/home/help/', source_checked_at: new Date().toISOString(),
+        checks_json: JSON.stringify({ content: '不得使用未验证承诺' }), reason: 'manual import retry',
+      },
+    }) }).then(json)
+    expect(retry.error).toBeNull()
+    expect(repository.publicVersions).toHaveLength(1)
+
     const approval = { approval_ref: 'approval://manual-test', approved_by: 'reviewer_2', approved_at: new Date().toISOString() }
     const activation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({
       jsonrpc: '2.0', id: 2, method: 'rule.status', params: {

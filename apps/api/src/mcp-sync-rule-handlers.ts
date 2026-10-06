@@ -199,6 +199,21 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
           if (sourceKind !== 'internal' || sourceReference.startsWith('manual://') || governanceCategory !== 'platform') throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '人工公共平台规则必须使用平台类别、内部导入类型和可追溯的官方文章 URL', 409)
           if (!isApprovedPlatformRuleSource(params.target_id as RuleSyncPlatform, sourceReference)) throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', '公共平台规则来源必须是该平台批准域名和路径下的 HTTPS 规则页面', 409)
           if (status === 'active') throw new DomainError('RULE_ACTIVATION_REQUIRES_APPROVAL', '公共平台规则必须先创建草稿，再通过独立审批激活', 409)
+          // Browser ZIP imports are intentionally retryable. A retry of the
+          // same immutable platform card must not turn a successful first
+          // write into a generic 500 from the database unique constraint.
+          // Return the existing version only when the source and checksum are
+          // identical; a changed card with the same pack/version remains a
+          // conflict and is never silently accepted.
+          if (repository.getPublicVersion) {
+            const existing = await repository.getPublicVersion(params.target_id, packId, versionValue)
+            if (existing) {
+              if (existing.sourceReference !== sourceReference || existing.checksum !== checksum || existing.name !== name) {
+                throw new DomainError('RULE_VERSION_CONFLICT', '相同平台规则包和版本已存在，但来源或内容校验值不同', 409)
+              }
+              return result(existing.version)
+            }
+          }
           const publicId = `public_rule_${randomBytes(12).toString('hex')}`
           const publicVersion = await repository.insertPublicVersionWithAudit({
             version: { id: publicId, packId, name, version: versionValue, scope, category: 'platform', status: 'draft', sourceKind, sourceReference, sourceCheckedAt: new Date(sourceCheckedAt).toISOString(), checksum, checks: { ...checks, __public_scope: 'platform' }, createdBy: principal.actorId, revision: 1, scopeValue: params.target_id, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) },
