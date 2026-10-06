@@ -14,9 +14,9 @@ type ImageArchiveRuntime = ReturnType<typeof imageArchiveRuntime>
  * that narrow generated-candidate shape to the demo's explicit `unscanned`
  * state; never reinterpret an uploaded/customer asset or a clean verdict.
  */
-export function promoteLegacyDemoGeneratedAsset(workspaceId: string, asset: { workspaceId: string; storageKey: string; scanStatus: string; scanVerdict?: string; scanReceiptId?: string; scanReceiptDigest?: string; revision?: number }): boolean {
-  const prefix = `quarantine/${workspaceId}/generated_pending_`
-  if (asset.workspaceId !== workspaceId || asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith(prefix)) return false
+export function promoteLegacyDemoGeneratedAsset(workspaceId: string, asset: { id: string; name: string; workspaceId: string; storageKey: string; scanStatus: string; scanVerdict?: string; scanReceiptId?: string; scanReceiptDigest?: string; revision?: number }): boolean {
+  const prefix = `quarantine/${workspaceId}/${asset.id}/`
+  if (asset.workspaceId !== workspaceId || asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith(prefix) || !/^candidate-\d+\.(?:png|jpe?g|webp)$/iu.test(asset.name)) return false
   asset.scanStatus = 'unscanned'
   delete asset.scanVerdict
   delete asset.scanReceiptId

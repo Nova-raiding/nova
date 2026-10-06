@@ -18,7 +18,9 @@ describe('legacy demo generated-image promotion', () => {
   it('promotes only generated quarantine assets to explicit unscanned state', () => {
     const asset = {
       workspaceId: 'ws_demo',
-      storageKey: 'quarantine/ws_demo/generated_pending_abc/candidate-1.png',
+      id: 'asset_generated',
+      name: 'candidate-1.png',
+      storageKey: 'quarantine/ws_demo/asset_generated/candidate-1.png',
       scanStatus: 'quarantined',
       scanVerdict: 'pending',
       scanReceiptId: 'old-receipt',
@@ -34,9 +36,9 @@ describe('legacy demo generated-image promotion', () => {
 
   it('does not reinterpret uploaded assets or assets from another workspace', () => {
     for (const asset of [
-      { workspaceId: 'ws_demo', storageKey: 'quarantine/ws_demo/uploaded/file.png', scanStatus: 'quarantined' },
-      { workspaceId: 'ws_other', storageKey: 'quarantine/ws_other/generated_pending_abc/candidate-1.png', scanStatus: 'quarantined' },
-      { workspaceId: 'ws_demo', storageKey: 'quarantine/ws_demo/generated_pending_abc/candidate-1.png', scanStatus: 'clean' },
+      { workspaceId: 'ws_demo', id: 'asset_upload', name: 'file.png', storageKey: 'quarantine/ws_demo/asset_upload/file.png', scanStatus: 'quarantined' },
+      { workspaceId: 'ws_other', id: 'asset_generated', name: 'candidate-1.png', storageKey: 'quarantine/ws_other/asset_generated/candidate-1.png', scanStatus: 'quarantined' },
+      { workspaceId: 'ws_demo', id: 'asset_generated', name: 'candidate-1.png', storageKey: 'quarantine/ws_demo/asset_generated/candidate-1.png', scanStatus: 'clean' },
     ]) {
       expect(promoteLegacyDemoGeneratedAsset('ws_demo', asset)).toBe(false)
       expect(asset.scanStatus).not.toBe('unscanned')
