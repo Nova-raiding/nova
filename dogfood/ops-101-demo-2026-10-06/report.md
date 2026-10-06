@@ -6,6 +6,10 @@
 - 浏览器：gstack browse，1440×900
 - 业务写入：未执行。当前没有可用的 Ops 平台账号会话；未猜测密码、未创建线上账号。
 
+修复已部署到 101 Demo：`release-2bd59afa`，Ops UI 镜像 digest 为
+`sha256:d3b1ea79eb594fb71c0c26b67ece389ce6469bd614ecb66bf8e8c04849fe00f8`。
+`/ops/build-meta.json` 返回提交 `2bd59afac84f0ea2e8b893b2b30fec8d9bf9fb19`，Ops UI 容器 healthy；公网 Ops `/healthz` 200。API `/releasez` 仍是未变更的 `release-82151d7f`，这是本轮只替换 Ops UI 的预期混合组件版本。
+
 ## 当前页面证据
 
 当前 release 的以下路由均返回 HTTP 200 的桌面应用壳，并在未认证时显示同一登录页：
@@ -24,6 +28,7 @@
 - `screenshots/users-unauth.png`
 - `screenshots/tenants-unauth.png`
 - `screenshots/permissions-unauth.png`
+- `screenshots/post-deploy-tasks-login.png`
 
 ## 已修复
 
@@ -34,6 +39,8 @@
 修复：`apps/ops-console/src/components/tasks/knowledge/MarketingQueuePanel.tsx` 将三种状态纳入绿色成功样式，并导出映射函数供测试使用。
 
 验证：`MarketingQueuePanel.test.ts` 20/20 通过，新增断言覆盖三种成功状态、`pending_receipt` 橙色和 `archive_failed` 红色。
+
+部署后再次访问 `/ops/tasks`，页面保持登录守卫且无 console error；证据见 `screenshots/post-deploy-tasks-login.png`。
 
 ## 发现但未在本轮改动
 
