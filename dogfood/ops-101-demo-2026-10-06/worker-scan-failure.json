@@ -1,0 +1,28 @@
+{
+  "container": "merchant-demo-85575f9c-worker-scan-1",
+  "status": "unhealthy",
+  "observed": "2026-10-06",
+  "heartbeat": {
+    "ready": false,
+    "recoveryCapable": false,
+    "checks": {
+      "databaseReady": true,
+      "apiReady": true,
+      "redisReady": true
+    },
+    "clamav": {
+      "reachable": true,
+      "eicarPassed": true
+    },
+    "queue": {
+      "backlog": 0,
+      "deadLetter": 0
+    },
+    "notReadyReasons": [
+      "definitions_stale",
+      "scanner_callback_not_capable",
+      "scanner_callback_stale"
+    ]
+  },
+  "scope": "101 Demo runtime evidence; no container or business data mutation performed"
+}

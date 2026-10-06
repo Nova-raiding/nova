@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { hasAmbiguousManualPublishJob, parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, videoQueueState, visualEvidenceState } from './MarketingQueuePanel.js'
+import { hasAmbiguousManualPublishJob, parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, stateColor, videoQueueState, visualEvidenceState } from './MarketingQueuePanel.js'
 
 const panelSource = readFileSync(new URL('./MarketingQueuePanel.tsx', import.meta.url), 'utf8')
 const imageEvidenceModalSource = readFileSync(new URL('./ImageExecutionEvidenceModal.tsx', import.meta.url), 'utf8')
@@ -28,6 +28,14 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('manual_publish_reported')).toBe('人工已报告，待复核')
     expect(queueStateLabel('platform_verified')).toBe('平台 API 已验证')
     expect(queueStateLabel('future_state')).toBe('状态待确认')
+  })
+
+  it('uses success styling for settled and deliverable states', () => {
+    expect(stateColor('settled')).toBe('green')
+    expect(stateColor('export_ready')).toBe('green')
+    expect(stateColor('platform_verified')).toBe('green')
+    expect(stateColor('pending_receipt')).toBe('orange')
+    expect(stateColor('archive_failed')).toBe('red')
   })
 
   it.each([

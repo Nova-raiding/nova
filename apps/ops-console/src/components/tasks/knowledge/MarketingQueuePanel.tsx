@@ -77,7 +77,7 @@ export function parsePublishBatchDetail(value: unknown): PublishBatchDetail {
   return { id: candidate.id, state: candidate.state, pauseReason: typeof candidate.pauseReason === "string" ? candidate.pauseReason : undefined, items };
 }
 
-function stateColor(state: string) {
+export function stateColor(state: string) {
   if (
     ["failed", "rejected", "unknown", "outcome_unknown", "quarantined", "archive_failed", "manual_attention", "blocked"].includes(
       state,
@@ -85,7 +85,7 @@ function stateColor(state: string) {
   )
     return "red";
   if (
-    ["succeeded", "published", "completed", "passed", "ready"].includes(state)
+    ["succeeded", "published", "completed", "passed", "ready", "settled", "export_ready", "platform_verified"].includes(state)
   )
     return "green";
   return "orange";
