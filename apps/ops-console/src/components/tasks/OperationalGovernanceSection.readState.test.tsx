@@ -4,6 +4,7 @@ import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { marketingQueueCount, marketingQueueTabLabel, OperationalGovernanceSection } from "./OperationalGovernanceSection";
 
 const EMPTY_QUEUE: OpsConsoleModel["marketingQueue"] = {
+  videoProviderJobs: [],
   generation: [],
   publish: [],
   visuals: [],

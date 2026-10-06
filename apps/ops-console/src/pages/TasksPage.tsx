@@ -70,6 +70,8 @@ export function TasksPage({ model }: TasksPageProps) {
                     <Col span={6}><Statistic title="素材风险" value={model.platformMarketingSummary.assetRiskCount} /></Col>
                     <Col span={6}><Statistic title="学习建议" value={model.platformMarketingSummary.learningSuggestionCount} /></Col>
                     <Col span={6}><Statistic title="生成失败" value={model.platformMarketingSummary.generationByState.failed ?? 0} /></Col>
+                    <Col span={6}><Statistic title="视频待对账" value={model.platformMarketingSummary.videoPendingReconciliationCount} /></Col>
+                    <Col span={6}><Statistic title="视频归档风险" value={model.platformMarketingSummary.videoArchiveRiskCount} /></Col>
                   </Row>
                   {model.platformMarketingSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformMarketingSummary.failedWorkspaceCount} 个企业主体营销数据暂未纳入汇总`} /> : null}
                 </Card>

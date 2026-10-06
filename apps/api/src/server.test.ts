@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { alertingSelfMetricLines, connectorUserFacingMessage, jobQueueMetricLines } from './server.js'
+import { alertingSelfMetricLines, connectorUserFacingMessage, jobQueueMetricLines, marketingVideoProviderJobsFromEvents } from './server.js'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, platformRuleDataRecoveryActions, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, satisfiedAuthorizationObligations, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
@@ -16,6 +16,25 @@ import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
 import { ConnectorFailure } from '../../../packages/connectors/src/fake-connector.js'
+
+describe('marketing video provider queue projection', () => {
+  const event = (eventType: string, payload: Record<string, unknown>, createdAt: string, id: string) => ({ id, workspaceId: 'ws-video', aggregateId: 'video-job:1', eventType, sequence: 1, payload, createdAt })
+
+  it('keeps accepted jobs queued and pending until a real status event exists', () => {
+    expect(marketingVideoProviderJobsFromEvents([
+      event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-1', providerRequestId: 'request-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),
+    ], 10)).toEqual([expect.objectContaining({ providerJobId: 'job-1', providerRequestId: 'request-1', state: 'queued', settlementStatus: 'pending_receipt', archiveState: 'not_started', taskId: null, productId: null })])
+  })
+
+  it('only projects a status event for a previously owned accepted job', () => {
+    const jobs = marketingVideoProviderJobsFromEvents([
+      event('multimodal.video.accepted', { billing_context: { providerJobId: 'job-1', providerRequestId: 'request-1' } }, '2026-10-06T00:00:00.000Z', 'accepted'),
+      event('multimodal.video_status_observed', { provider_job_id: 'job-1', rendering: { status: 'completed', assetId: 'asset-1', archiveState: 'quarantined' } }, '2026-10-06T00:01:00.000Z', 'observed'),
+      event('multimodal.video_status_observed', { provider_job_id: 'foreign-job', rendering: { status: 'completed', assetId: 'asset-foreign', archiveState: 'archived' } }, '2026-10-06T00:02:00.000Z', 'foreign'),
+    ], 10)
+    expect(jobs).toEqual([expect.objectContaining({ providerJobId: 'job-1', state: 'completed', settlementStatus: 'settled', archiveState: 'quarantined', assetId: 'asset-1' })])
+  })
+})
 
 describe('connector user-facing errors', () => {
   it.each([

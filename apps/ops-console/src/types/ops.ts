@@ -437,6 +437,19 @@ export type AssetScanFailure = {
   failedAt?: string | null;
 };
 export type MarketingQueue = {
+  videoProviderJobs: Array<{
+    providerJobId: string;
+    providerRequestId: string | null;
+    taskId: string | null;
+    productId: string | null;
+    state: "queued" | "provider_started" | "completed" | "failed" | "unknown";
+    settlementStatus: "pending_receipt" | "settled" | "unknown";
+    archiveState: "not_started" | "quarantined" | "archived" | "failed";
+    assetId: string | null;
+    errorCode: string | null;
+    updatedAt: string;
+    nextAction: string;
+  }>;
   generation: Array<{
     id: string;
     taskId: string;
@@ -640,6 +653,10 @@ export type PlatformMarketingSummary = {
   visualReviewCount: number;
   assetRiskCount: number;
   learningSuggestionCount: number;
+  videoByState: Record<string, number>;
+  videoBySettlementStatus: Record<string, number>;
+  videoArchiveRiskCount: number;
+  videoPendingReconciliationCount: number;
 };
 export type QueueFilters = {
   platform?: Platform;

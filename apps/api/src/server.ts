@@ -4285,6 +4285,92 @@ function publishRejectionKnowledgeObservation(job: import('../../../packages/app
 
 type VideoBillingContext = import('../../../packages/ai/src/video-generator.js').VideoBillingContext & { candidateOnly?: true; publishable?: false }
 
+type MarketingVideoProviderJob = {
+  providerJobId: string
+  providerRequestId: string | null
+  taskId: string | null
+  productId: string | null
+  state: 'queued' | 'provider_started' | 'completed' | 'failed' | 'unknown'
+  settlementStatus: 'pending_receipt' | 'settled' | 'unknown'
+  archiveState: 'not_started' | 'quarantined' | 'archived' | 'failed'
+  assetId: string | null
+  errorCode: string | null
+  updatedAt: string
+  nextAction: string
+}
+
+export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limit: number): MarketingVideoProviderJob[] {
+  const jobs = new Map<string, MarketingVideoProviderJob>()
+  const ordered = [...events].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+  for (const event of ordered) {
+    if (event.eventType === 'multimodal.video.accepted') {
+      const context = recordValue(event.payload.billing_context)
+      const providerJobId = typeof context?.providerJobId === 'string' ? context.providerJobId : undefined
+      if (!providerJobId) continue
+      const providerRequestId = typeof context?.providerRequestId === 'string' ? context.providerRequestId : null
+      jobs.set(providerJobId, {
+        providerJobId,
+        providerRequestId,
+        // The accepted event currently has no durable task/product binding.
+        // Keep these null rather than inferring them from an unrelated request event.
+        taskId: null,
+        productId: null,
+        state: 'queued',
+        settlementStatus: 'pending_receipt',
+        archiveState: 'not_started',
+        assetId: null,
+        errorCode: null,
+        updatedAt: event.createdAt,
+        nextAction: '等待 provider 状态回执和真实成本结算；禁止按完成处理',
+      })
+      continue
+    }
+    if (event.eventType !== 'multimodal.video_status_observed') continue
+    const providerJobId = typeof event.payload.provider_job_id === 'string' ? event.payload.provider_job_id : undefined
+    if (!providerJobId) continue
+    const current = jobs.get(providerJobId)
+    if (!current) continue
+    const rendering = recordValue(event.payload.rendering)
+    const archiveState = rendering?.archiveState === 'archived' || rendering?.archiveState === 'quarantined' ? rendering.archiveState : 'failed'
+    const providerStatus = rendering?.status === 'completed' ? 'completed' : 'provider_started'
+    jobs.set(providerJobId, {
+      ...current,
+      state: providerStatus,
+      settlementStatus: 'settled',
+      archiveState,
+      assetId: typeof rendering?.assetId === 'string' ? rendering.assetId : null,
+      updatedAt: event.createdAt,
+      nextAction: archiveState === 'archived'
+        ? '已归档，可继续按现有内容和资产门禁处理'
+        : archiveState === 'quarantined'
+          ? '已完成但仍在隔离区，等待安全扫描；禁止下载或发布'
+          : '归档状态异常，保持人工核对；禁止下载或发布',
+    })
+  }
+  return [...jobs.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.providerJobId.localeCompare(left.providerJobId)).slice(0, limit)
+}
+
+async function listMarketingVideoProviderJobs(workspaceId: string, limit: number): Promise<MarketingVideoProviderJob[]> {
+  await persistenceReady
+  let events: OutboxEvent[]
+  if (persistence.outbox?.listWorkspaceEventsAfter) {
+    events = []
+    let cursor: { createdAt: string; eventId: string } | undefined
+    for (let page = 0; page < 1000; page += 1) {
+      const next = await persistence.outbox.listWorkspaceEventsAfter(workspaceId, cursor, 5000)
+      events.push(...next)
+      if (next.length < 5000) break
+      const last = next[next.length - 1]!
+      cursor = { createdAt: last.createdAt, eventId: last.id }
+    }
+  } else {
+    events = persistence.outbox?.listWorkspaceEvents
+      ? await persistence.outbox.listWorkspaceEvents(workspaceId, 5000)
+      : (inMemoryTimelineEvents.get(workspaceId) ?? [])
+  }
+  return marketingVideoProviderJobsFromEvents(events.filter(event => event.workspaceId === workspaceId), limit)
+}
+
 async function videoBillingAggregateEvents(workspaceId: string, aggregateId: string) {
   await persistenceReady
   return persistence.outbox
@@ -12264,12 +12350,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             .reduce((count, job) => count + (job.outputs ?? []).filter(output => output.reviewStatus !== 'passed').length, 0)
           const assetRiskCount = (await filterActiveAssets(targetWorkspaceId, service.listAssets(targetWorkspaceId))).filter(asset => asset.readiness.status !== 'ready').length
           const learningSuggestionCount = knowledgeForWorkspace(targetWorkspaceId).listLearningSuggestions(targetWorkspaceId, 'pending').length
-          return { failed: false, taskCount: tasks.length, generationByState, publishByState, visualReviewCount, assetRiskCount, learningSuggestionCount }
+          const videoProviderJobs = await listMarketingVideoProviderJobs(targetWorkspaceId, 5000)
+          const videoByState = videoProviderJobs.reduce((counts, job) => { counts[job.state] = (counts[job.state] ?? 0) + 1; return counts }, {} as Record<string, number>)
+          const videoBySettlementStatus = videoProviderJobs.reduce((counts, job) => { counts[job.settlementStatus] = (counts[job.settlementStatus] ?? 0) + 1; return counts }, {} as Record<string, number>)
+          return { failed: false, taskCount: tasks.length, generationByState, publishByState, visualReviewCount, assetRiskCount, learningSuggestionCount, videoByState, videoBySettlementStatus, videoArchiveRiskCount: videoProviderJobs.filter(job => job.archiveState !== 'archived').length, videoPendingReconciliationCount: videoProviderJobs.filter(job => job.settlementStatus !== 'settled' || job.state === 'unknown').length }
         } catch {
-          return { failed: true, taskCount: 0, generationByState: {}, publishByState: {}, visualReviewCount: 0, assetRiskCount: 0, learningSuggestionCount: 0 }
+          return { failed: true, taskCount: 0, generationByState: {}, publishByState: {}, visualReviewCount: 0, assetRiskCount: 0, learningSuggestionCount: 0, videoByState: {}, videoBySettlementStatus: {}, videoArchiveRiskCount: 0, videoPendingReconciliationCount: 0 }
         }
       })
       const sumCounts = (key: 'generationByState' | 'publishByState') => summaries.reduce((counts, summary) => {
+        for (const [state, count] of Object.entries(summary[key])) counts[state] = (counts[state] ?? 0) + count
+        return counts
+      }, {} as Record<string, number>)
+      const sumVideoCounts = (key: 'videoByState' | 'videoBySettlementStatus') => summaries.reduce((counts, summary) => {
         for (const [state, count] of Object.entries(summary[key])) counts[state] = (counts[state] ?? 0) + count
         return counts
       }, {} as Record<string, number>)
@@ -12283,6 +12376,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         visualReviewCount: summaries.reduce((sum, summary) => sum + summary.visualReviewCount, 0),
         assetRiskCount: summaries.reduce((sum, summary) => sum + summary.assetRiskCount, 0),
         learningSuggestionCount: summaries.reduce((sum, summary) => sum + summary.learningSuggestionCount, 0),
+        videoByState: sumVideoCounts('videoByState'),
+        videoBySettlementStatus: sumVideoCounts('videoBySettlementStatus'),
+        videoArchiveRiskCount: summaries.reduce((sum, summary) => sum + summary.videoArchiveRiskCount, 0),
+        videoPendingReconciliationCount: summaries.reduce((sum, summary) => sum + summary.videoPendingReconciliationCount, 0),
       })
     }
     case 'ops.marketing.queue': {
@@ -12374,6 +12471,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           return [{ jobId: job.id, taskId: job.taskId ?? null, productId: job.productId, state: execution.state, archiveState: job.archiveState, eventId: execution.eventId, attempt: execution.attempt, providerRequestId: execution.providerRequestId ?? null, errorCode: execution.errorCode ?? null, errorMessage: execution.errorMessage ?? null, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, updatedAt: execution.updatedAt, reconciliationStatus: reconciliation?.status ?? null, reconciliationRevision: reconciliation?.revision ?? null, reconciliationEvidenceRef: typeof reconciliation?.details.evidenceRef === 'string' ? reconciliation.details.evidenceRef : null, reconciliationReason: typeof reconciliation?.details.reason === 'string' ? reconciliation.details.reason : null, alertState, lastAction, closureEvidence: reconciliation?.details.evidenceRef ?? null, nextAction: '查询真实 provider 状态或人工确认；禁止自动重试' }]
         }))).flat()
         : []
+      const videoProviderJobs = (await listMarketingVideoProviderJobs(workspaceId, limit)).filter(job => {
+        // The current accepted/status event contract has no task/product/account
+        // binding. Unknown scope must never satisfy a caller-supplied filter.
+        if (filterTaskId || filterProductId || filterAccountId || filterPlatform) return false
+        return !filterState || job.state === filterState
+      })
       const matchingAssets = (await filterActiveAssets(workspaceId, service.listAssets(workspaceId))).filter(asset => asset.readiness.status !== 'ready' && !filterProductId && !filterTaskId && !filterAccountId && (!filterPlatform || !asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(filterPlatform)))
       const matchingAssetIds = new Set(matchingAssets.map(asset => asset.id))
       const durableScanFailures = persistence.assetScanRedrive && matchingAssets.length
@@ -12407,7 +12510,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (asset.rightsStatus !== 'approved' || asset.rightsScope === 'unusable') return { ...base, nextAction: { method: 'asset.rights.update', label: '确认素材商用权益', requiredInputs: ['asset_id', 'rights_status'] } }
         return { ...base, nextAction: { method: 'asset.facts.confirm', label: '确认素材事实', requiredInputs: ['asset_id', 'facts_json', 'reason'] } }
       })
-      return result({ generatedAt: new Date().toISOString(), filters: { platform: filterPlatform ?? null, accountId: filterAccountId ?? null, productId: filterProductId ?? null, taskId: filterTaskId ?? null, state: filterState ?? null }, generation, publish, batches, visuals, imageExecutions, learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'pending'), assetRisks: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }).filter(asset => asset.approvalStatus !== 'approved' || asset.rightsStatus !== 'cleared').map(asset => ({ id: asset.id, kind: asset.kind, name: asset.name, approvalStatus: asset.approvalStatus, rightsStatus: asset.rightsStatus, source: asset.source ?? null, revision: asset.revision, updatedAt: asset.updatedAt })), uploadedAssetRisks })
+      return result({ generatedAt: new Date().toISOString(), filters: { platform: filterPlatform ?? null, accountId: filterAccountId ?? null, productId: filterProductId ?? null, taskId: filterTaskId ?? null, state: filterState ?? null }, generation, publish, batches, visuals, imageExecutions, videoProviderJobs, learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'pending'), assetRisks: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }).filter(asset => asset.approvalStatus !== 'approved' || asset.rightsStatus !== 'cleared').map(asset => ({ id: asset.id, kind: asset.kind, name: asset.name, approvalStatus: asset.approvalStatus, rightsStatus: asset.rightsStatus, source: asset.source ?? null, revision: asset.revision, updatedAt: asset.updatedAt })), uploadedAssetRisks })
     }
     case 'ops.marketing.queue.assign': {
       const actorId = requireWorkspaceDataRole(req)

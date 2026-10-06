@@ -4,6 +4,15 @@ import type { ImageGenerationExecutionRepository } from '../../../packages/persi
 
 type ImageJob = ReturnType<MerchantService['getImageGenerationJob']>
 
+function imageJobRightsAreReadable(service: MerchantService, job: ImageJob, workspaceId: string): boolean {
+  if (!job.taskId && !job.contentVersionId) return true
+  return (job.outputs ?? []).every(output => {
+    if (!output.assetId) return true
+    const asset = service.assets.get(output.assetId)
+    return Boolean(asset && asset.workspaceId === workspaceId && asset.rightsStatus === 'approved' && asset.rightsScope !== 'unusable')
+  })
+}
+
 export interface HttpImageGenerationJobReadDependencies {
   service: MerchantService
   resolveWorkspace: (req: IncomingMessage, candidate?: unknown) => string
@@ -37,7 +46,7 @@ export async function handleHttpImageGenerationJobRead(req: IncomingMessage, res
     )
     const page = paginationRequest(url)
     const items = await Promise.all(all.slice(page.offset, page.offset + page.limit).map(async job => {
-      const candidatesReadable = await chargedImageCandidatesReadable(workspaceId, job)
+      const candidatesReadable = (await chargedImageCandidatesReadable(workspaceId, job)) && imageJobRightsAreReadable(service, job, workspaceId)
       const executionProjection = await publicImageJobExecutionProjection(workspaceId, job.id)
       return {
         ...publicImageJobForCommercialRead(job, candidatesReadable),
@@ -55,7 +64,7 @@ export async function handleHttpImageGenerationJobRead(req: IncomingMessage, res
     const workspaceId = resolveWorkspace(req)
     await hydrateWorkspace(workspaceId)
     let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
-    const candidatesReadable = await chargedImageCandidatesReadable(workspaceId, job)
+    const candidatesReadable = (await chargedImageCandidatesReadable(workspaceId, job)) && imageJobRightsAreReadable(service, job, workspaceId)
     enrichRequestObservation(req, { jobId: job.id })
     // `catalog.image.get` is workspace scoped, so the brand boundary has to be
     // enforced here (the MCP read does the same, through the same predicate).

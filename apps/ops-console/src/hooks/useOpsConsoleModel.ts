@@ -607,6 +607,7 @@ export function useOpsConsoleModel() {
   const [workspaceMetrics, setWorkspaceMetrics] = useState<WorkspaceMetrics>();
   const [storageReconciliationWorkspaces, setStorageReconciliationWorkspaces] = useState<NonNullable<WorkspaceMetrics["storageReconciliation"]>[]>([]);
   const [marketingQueue, setMarketingQueue] = useState<MarketingQueue>({
+    videoProviderJobs: [],
     generation: [],
     publish: [],
     visuals: [],
@@ -768,7 +769,7 @@ export function useOpsConsoleModel() {
     setCompetitors(undefined);
     setWorkspaceMetrics(undefined);
     setStorageReconciliationWorkspaces([]);
-    setMarketingQueue({ generation: [], publish: [], visuals: [], batches: [], learningSuggestions: [], assetRisks: [], uploadedAssetRisks: [], imageExecutions: [] });
+    setMarketingQueue({ videoProviderJobs: [], generation: [], publish: [], visuals: [], batches: [], learningSuggestions: [], assetRisks: [], uploadedAssetRisks: [], imageExecutions: [] });
     setMarketingQueueLoadedAt(undefined);
     setPlatformTaskSummary(undefined);
     setPlatformBrandUnitSummary(undefined);
@@ -1120,6 +1121,7 @@ export function useOpsConsoleModel() {
         // count as if it had just been measured.
         setMarketingQueueLoadedAt(new Date());
         setMarketingQueue({
+          videoProviderJobs: [],
           generation: [],
           publish: [],
           visuals: [],

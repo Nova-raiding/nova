@@ -277,6 +277,8 @@ describe('product image review API', () => {
     for (const candidate of generated.data.result.job.candidates) if (candidate.assetId) {
       const scanned = await fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers, body: JSON.stringify({ scan_evidence_ref: 'scanner://visual-select-e2e' }) }).then(response => response.json()) as { data: { scanStatus: string } }
       expect(scanned.data.scanStatus).toBe('clean')
+      const rights = await call(20, 'asset.rights.update', { asset_id: candidate.assetId, rights_status: 'approved', rights_scope: 'commercial_authorized', ai_modification_allowed: 'true' }) as { data: { result: { rightsStatus: string } } }
+      expect(rights.data.result.rightsStatus).toBe('approved')
     }
 
     const reviewed = await call(21, 'catalog.image.review', { product_id: product.id, visual_refs_json: JSON.stringify(refs) }) as { data: { result: { persistedReviewStatus: string } } }

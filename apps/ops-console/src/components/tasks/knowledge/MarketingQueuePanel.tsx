@@ -94,6 +94,7 @@ function stateColor(state: string) {
 export function queueStateLabel(state: string) {
   return ({
     queued: "排队中",
+    video_started: "模型已受理，等待结果",
     running: "处理中",
     processing: "处理中",
     archiving: "归档中",
@@ -385,6 +386,15 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
   };
 
   const rows: QueueRow[] = [
+    ...marketingQueue.videoProviderJobs.map((job) => ({
+      id: `video:${job.providerJobId}`,
+      kind: "视频 Provider 任务",
+      taskId: job.taskId ?? "未绑定任务",
+      state: job.settlementStatus === "pending_receipt" ? "unknown" : job.state,
+      detail: `Provider job：${job.providerJobId}；请求：${job.providerRequestId ?? "未返回"}；结算：${job.settlementStatus}；归档：${job.archiveState}；资产：${job.assetId ?? "未归档"}；${job.nextAction}`,
+      updatedAt: job.updatedAt,
+      action: <Typography.Text type="secondary">只读观测；视频不支持队列分派或自动重试</Typography.Text>,
+    })),
     ...marketingQueue.batches.map((batch) => ({
       id: `batch:${batch.id}`,
       kind: "批量发布",

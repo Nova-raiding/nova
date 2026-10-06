@@ -921,6 +921,7 @@ export type ImageGenerationCandidateUsabilityReason =
   | 'candidate_blocked'
   | 'asset_missing_or_scope_mismatch'
   | 'asset_scan_required'
+  | 'asset_rights_required'
   | 'asset_metadata_mismatch'
   | 'archive_receipt_missing'
   | 'archive_receipt_invalid'
@@ -947,6 +948,7 @@ export function imageGenerationCandidateUsability(input: { workspaceId: string; 
   else if (output.reviewStatus === 'blocked') reason = 'candidate_blocked'
   else if (!asset || asset.workspaceId !== input.workspaceId || asset.id !== output.assetId) reason = 'asset_missing_or_scope_mismatch'
   else if (!isUsableAssetWithoutScan(asset, input.allowUnscannedAssets)) reason = 'asset_scan_required'
+  else if ((job.taskId || job.contentVersionId) && (asset.rightsStatus !== 'approved' || asset.rightsScope === 'unusable')) reason = 'asset_rights_required'
   else if (asset.sha256 !== output.sha256 || asset.sizeBytes !== output.sizeBytes || asset.mimeType !== output.mimeType) reason = 'asset_metadata_mismatch'
   else if (!output.archiveReceiptId || !output.archiveReceiptDigest) reason = 'archive_receipt_missing'
   else if (!/^[a-f0-9]{64}$/u.test(output.archiveReceiptDigest)) reason = 'archive_receipt_invalid'
@@ -3271,6 +3273,7 @@ export class MerchantService {
     if (!usability.currentlyUsable) {
       if (usability.reason === 'candidate_blocked') throw new DomainError('VISUAL_BLOCKED', '已阻断的图片候选不能记录为偏好', 409, { job_id: job.id, visual_ref: visualRef })
       if (usability.reason === 'asset_missing_or_scope_mismatch' || usability.reason === 'asset_scan_required') throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材尚未通过可信安全扫描，不能记录偏好', 409, { visual_ref: visualRef, asset_id: output.assetId ?? null, scan_status: asset?.scanStatus ?? 'missing', next_step: '等待平台自动安全检查完成后重新选择图片候选' })
+      if (usability.reason === 'asset_rights_required') throw new DomainError('VISUAL_RIGHTS_REQUIRED', '图片候选对应素材尚未通过商用权益确认，不能记录偏好', 409, { visual_ref: visualRef, asset_id: output.assetId ?? null, rights_status: asset?.rightsStatus ?? 'missing', rights_scope: asset?.rightsScope ?? null, next_step: '确认素材商用权益后重新选择图片候选' })
       throw new DomainError('VISUAL_ARCHIVE_INTEGRITY_FAILED', '图片候选归档证据不一致，不能记录偏好', 409, { job_id: job.id, visual_ref: visualRef, reason: usability.reason })
     }
     if (job.revision !== input.expectedRevision) throw new DomainError('IMAGE_GENERATION_REVISION_CONFLICT', '图片任务已变化，请刷新后重试', 409, { current_revision: job.revision, expected_revision: input.expectedRevision, job_id: job.id })
@@ -3320,6 +3323,7 @@ export class MerchantService {
       if (output.assetId) {
         const asset = this.assets.get(output.assetId)
         if (!asset || asset.workspaceId !== input.workspaceId || !isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)) throw new DomainError('VISUAL_SCAN_REQUIRED', '图片候选对应素材不可用，不能选择', 409, { visual_ref: visualRef, asset_id: output.assetId, scan_status: asset?.scanStatus ?? 'missing' })
+        if (asset.rightsStatus !== 'approved' || asset.rightsScope === 'unusable') throw new DomainError('VISUAL_RIGHTS_REQUIRED', '图片候选对应素材尚未通过商用权益确认，不能选择', 409, { visual_ref: visualRef, asset_id: output.assetId, rights_status: asset.rightsStatus, rights_scope: asset.rightsScope ?? null, next_step: '确认素材商用权益后重新选择图片候选' })
       }
       return { visualRef, role: index === 0 ? 'main' as const : 'secondary' as const, ...(job.skuIds?.length ? { skuIds: [...job.skuIds] } : {}), ordinal: output.ordinal, sha256: output.sha256, mimeType: output.mimeType, sizeBytes: output.sizeBytes, sourceProductVersion: job.sourceProductVersion, reviewStatus: 'passed' as const, ...(output.authenticity ? { authenticity: clone(output.authenticity) } : {}) }
     })
