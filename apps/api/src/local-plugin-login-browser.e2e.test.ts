@@ -57,7 +57,11 @@ it('returns from merchant login to the original local plugin consent in a browse
     for (const [name, value] of Object.entries({ response_type: 'code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:49191/merchant-mcp-callback', state, code_challenge: createHash('sha256').update('v'.repeat(43)).digest('base64url'), code_challenge_method: 'S256', scope: 'merchant', resource: `${base}/mcp`, workspace_id: workspaceId })) authorization.searchParams.set(name, value)
     await page.goto(authorization.toString())
     await page.getByRole('link', { name: '登录商家账号' }).click()
-    await page.getByRole('heading', { name: '欢迎使用Store Nova' }).waitFor({ state: 'visible' })
+    try {
+      await page.getByRole('heading', { name: '欢迎使用Store Nova' }).waitFor({ state: 'visible' })
+    } catch {
+      throw new Error(`Merchant login page did not load: ${page.url()} ${String(await page.locator('body').innerText()).slice(0, 800)}`)
+    }
     await page.locator('#merchant-login-account').fill(login)
     await page.locator('#merchant-login-password').fill(password)
     await page.getByRole('button', { name: '登录商家工作台' }).click()

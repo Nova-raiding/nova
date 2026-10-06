@@ -678,7 +678,7 @@ export class PostgresCommercialContractRepository {
       const loaded = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null; snapshot: { schema_version?: string; sku: CommercialCatalogSkuSnapshot }; snapshotChecksum: string; snapshotCatalogChecksum: string }>(
         `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode",NULL::bigint AS "accessRevision",s.snapshot,s.checksum AS "snapshotChecksum",s.catalog_checksum AS "snapshotCatalogChecksum"
            FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
-          WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE`, [workspaceId, input.orderId],
+           WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE OF o`, [workspaceId, input.orderId],
       )
       const row = loaded.rows[0]
       if (!row) throw new CommercialContractError('COMMERCIAL_ORDER_NOT_FOUND', 'commercial order was not found')

@@ -110,8 +110,10 @@ CodeGraph 已同步 190 个变化文件，之后增量同步至当前索引（2,
 
 恢复并完善隔离桌面生命周期Playwright spec：短用例1/1通过，证据`artifacts/ops-jit-isolation/2026-10-05T22-10-03.694Z-19b86449-137e-41dd-b382-008a364796df/`；完整生命周期1/1通过、0 flaky、0 retry。真实隔离PostgreSQL/API/浏览器覆盖included/standalone权益包草稿，提交审批/通过/拒绝、拒绝后修订、草稿删除、新版本编辑、套餐草稿绑定已批准v3、查看v3权益与SKU引用、创建并批准新版本后历史SKU仍引用v3、停用新绑定与归档。所有操作只写owned临时fixture，API返回200；终态`leftRunning=[]`、`externalContainersTouched=false`。完整运行证据：`artifacts/ops-jit-isolation/2026-10-05T22-27-23.054Z-a1463b14-1f31-46d8-ad8d-84964991679e/`。失败尝试仅定位并修正了测试对AntD可见标签/可访问按钮名称和注册权益代码文案的误假设，均无共享容器或生产数据影响。
 
-此验收证明权益包管理及套餐引用生命周期，不代表通用storage/feature/service权益已有独立SKU、消费/到期和退款回收闭环；当前独立出售已验证的是创意点包。未经确认不得扩展其他独立权益的售价、有效期、限额或退款语义。101仍保持此前NO-GO，本轮没有上传候选、执行生产迁移或部署；新spec及本轮验收记录已纳入main提交`015d0e33`。
+此验收证明权益包管理及套餐引用生命周期，不代表通用storage/feature/service权益已有独立SKU、消费/到期和退款回收闭环；当前独立出售已验证的是创意点包。未经确认不得扩展其他独立权益的售价、有效期、限额或退款语义。101仍保持此前NO-GO，本轮没有上传候选、执行生产迁移或部署；新spec纳入`015d0e33`，本轮验收记录纳入`7f88ad8d`。
 
 十角色交叉复核追加发现并修复两处fail-closed缺口：套餐编辑器权益包版本选项分页现在验证total合法且跨页稳定、末页未截断及唯一版本总数完整；权益包MCP写入会在持久化前验证每项benefit的结构和字段类型，畸形输入返回400，不再因`[null]`/非字符串code等造成未捕获500。新增的Ops分页模型定向测试21/21通过，权益包MCP mutation及references.list游标契约测试25/25通过；随后`npm run typecheck` exit 0，`git diff --check`通过，CodeGraph重新同步后complete、0 pending。既有42项定向测试、桌面短用例及全生命周期E2E均未重复执行。
+
+上述fail-closed修复和MCP游标测试纳入`b7534c1b`。
 
 验证边界：分页期间若引用记录发生等量替换，total/唯一行数校验不能提供跨页数据库快照保证；当前没有snapshot token。生命周期桌面spec证明运营详情保留SKU编码与旧v3引用，但没有核对JSON-RPC结果对象中的revision/idempotency，也没有覆盖新上架权益包到商家通知、购买、到账、消费或退款回收的通用独立售卖链；商家销售隔离E2E现有证据仅覆盖创意点包。不得扩大本地隔离证据或对101作成功声明。

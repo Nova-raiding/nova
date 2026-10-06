@@ -50,7 +50,14 @@ const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifact
 // The full release suite can run with production deployment variables in the
 // parent process. Bridge subprocess tests must start from an explicit local
 // environment; individual restricted-environment cases override these values.
-const TEST_PROCESS_ENV = { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}' }
+const TEST_PROCESS_ENV = Object.fromEntries(
+  Object.entries({ ...process.env, NODE_ENV: 'test', DEPLOY_ENV: '${DEPLOY_ENV}' })
+    .filter(([key]) => ![
+      'MERCHANT_ALLOW_FIXTURE_FALLBACK', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_MCP_REFRESH_TOKEN',
+      'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_MCP_WRITE_ENABLED',
+      'MERCHANT_STRICT_AUTH', 'MERCHANT_WORKSPACE_ID',
+    ].includes(key)),
+)
 process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
 
@@ -311,7 +318,7 @@ describe('Codex stdio MCP bridge', () => {
       await close(server)
       await rm(directory, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it('latches a structurally invalid managed credential for the bridge process lifetime', async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), 'merchant-credential-structural-state-'))

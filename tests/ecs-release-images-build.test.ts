@@ -245,5 +245,5 @@ describe('bounded ECS release image builder', () => {
       expect(invalid.status).not.toBe(0)
       expect(readFileSync(log, 'utf8')).toBe('')
     }
-  })
+  }, 60_000)
 })

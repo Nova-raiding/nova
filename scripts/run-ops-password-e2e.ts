@@ -80,7 +80,7 @@ export function validateOpsE2eBrowserTimeout(source: NodeJS.ProcessEnv): number 
   if (raw === undefined) return 300_000
   if (!/^\d+$/u.test(raw)) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
   const value = Number(raw)
-  if (!Number.isSafeInteger(value) || value < 10_000 || value > 1_200_000) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
+  if (!Number.isSafeInteger(value) || value < 10_000 || value > 600_000) throw new Error('OPS_E2E_BROWSER_TIMEOUT_INVALID')
   return value
 }
 

@@ -1,0 +1,14 @@
+import { readFile } from 'node:fs/promises'
+import { describe, expect, it } from 'vitest'
+import { loadMigrations } from './migration.js'
+
+describe('asset snapshot lifecycle repair migration 267', () => {
+  it('registers the forward-only repair at the migration tail', async () => {
+    const migrations = await loadMigrations()
+    const sql = await readFile(new URL('./migrations/267_asset_snapshot_lifecycle_repair.sql', import.meta.url), 'utf8')
+    expect(migrations.at(-1)).toEqual({ version: 267, name: 'asset_snapshot_lifecycle_repair', sql })
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS snapshot_entity_type')
+    expect(sql).toContain('merchant_asset_lifecycle_asset_snapshot_fk')
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS merchant_asset_lifecycle_snapshot_fk_idx')
+  })
+})

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
+import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresCommercialCatalogRepository } from './commercial-catalog-repository.js'
 import { PostgresCommercialBenefitBundleRepository } from './commercial-benefit-bundle-repository.js'
 const source=process.env.PERSISTENCE_RELEASE_DATABASE_URL
@@ -14,14 +15,12 @@ describe('commercial catalog v3 real PostgreSQL isolated evidence',()=>{
   try{
    await admin.query(`CREATE DATABASE "${name}"`)
    const url=new URL(source!);url.pathname=`/${name}`;db=new Pool({connectionString:url.toString()})
-   await db.query(await readFile(new URL('./migrations/146_commercial_catalog_v2.sql',import.meta.url),'utf8'))
-   await db.query(await readFile(new URL('./migrations/260_commercial_catalog_sales_and_bundles.sql',import.meta.url),'utf8'))
+   await new MigrationRunner(db, await loadMigrations()).run()
    const bootstrap=await readFile(new URL('../../../infra/local/ensure-app-role.sql',import.meta.url),'utf8')
    const acl=bootstrap.slice(bootstrap.indexOf('-- Versioned catalog facts and mutable sales projections:'),bootstrap.indexOf('-- Publication notifications:'))
    expect(acl).toContain('GRANT SELECT, INSERT ON TABLE')
    await db.query('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO merchant_app')
    await db.query(acl)
-   await db.query(`CREATE TABLE commercial_catalog_publish_outbox(event_id uuid PRIMARY KEY,sku_code text,version integer,visibility text,payload jsonb)`)
    await db.query('GRANT USAGE ON SCHEMA public TO merchant_ops; GRANT SELECT,INSERT ON commercial_catalog_publish_outbox TO merchant_ops')
    const opsPool = { connect: async () => { const client = await db!.connect(); await client.query('SET ROLE merchant_ops'); return {query:client.query.bind(client),release:() => { void client.query('RESET ROLE').finally(() => client.release()) }} } }
    const bundles=new PostgresCommercialBenefitBundleRepository(opsPool),repo=new PostgresCommercialCatalogRepository(opsPool)

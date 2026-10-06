@@ -556,6 +556,10 @@ services:
       # reviewed legacy digests embedded in that script; every unknown digest
       # mismatch still fails closed.
       MIGRATION_BASELINE_ACCEPTED: "true"
+      # The long-lived local volume recorded the reviewed pre-finalization
+      # bytes for 256/257. Keep those exact historical identities local-only;
+      # migration 267 repairs the missing 257 snapshot binding forward-only.
+      MIGRATION_BASELINE_CHECKSUMS: "256=9c4f5232d8df3cbbcde2117886ba3318aeebd8643e1cb5c6044657ade8a742c4,257=4154c785be8e0e12bf762a35800280ba6722379a52d926f46f7f3fd4383aadc7"
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
       ALERT_RECEIVER_DATABASE_URL: postgres://merchant_alert_receiver:merchant_alert_receiver_local_only@postgres:5432/merchant

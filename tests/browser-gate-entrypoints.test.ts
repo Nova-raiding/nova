@@ -126,6 +126,7 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('merchant-workspace-roles.spec.js'),
   spec('ops-account-label-isolated.spec.js'),
   spec('ops-account-ownership-isolated.spec.js'),
+  spec('ops-commercial-benefit-bundles-isolated.spec.js'),
   spec('ops-delivery-account-access.spec.js'),
   spec('ops-delivery-auth-boundary.spec.js'),
   spec('ops-delivery-contract-link.spec.js'),

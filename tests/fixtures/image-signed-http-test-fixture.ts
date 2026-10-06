@@ -22,6 +22,7 @@ export async function startImageSignedFixture(options: { redis?: boolean } = {})
   const credential = { token: `fixture-${randomUUID()}`, signing_secret: `fixture-${randomUUID()}` }
   const reconcileCredential = { token: `fixture-${randomUUID()}`, signing_secret: `fixture-${randomUUID()}` }
   vi.stubEnv('NODE_ENV', 'development'); vi.stubEnv('DATABASE_URL', appUrl.toString()); vi.stubEnv('OPS_DATABASE_URL', opsUrl.toString())
+  vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true'); vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
   vi.stubEnv('PORT', '0'); vi.stubEnv('API_BIND_HOST', '127.0.0.1'); vi.stubEnv('PERSISTENCE_MODE', 'postgres'); vi.stubEnv('RUN_MIGRATIONS_ON_STARTUP', 'false'); vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: credential, reconcile: reconcileCredential })); vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '100000')
   const api = await import('../../apps/api/src/server.js')

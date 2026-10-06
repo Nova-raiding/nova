@@ -1,6 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { hostname, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Pool } from 'pg'
 import { describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +27,7 @@ function databaseUrl(base: URL, databaseName: string, user?: string, password?: 
   return value.toString()
 }
 
-async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; callbackSecret: string }) {
+async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; callbackSecret: string; runtimeEvidencePath: string; runtimeEvidenceSha256: string; fleetObservationPath: string }) {
   const program = [
     "import { setPaymentProviderForTests } from './apps/api/src/server.ts'",
     "setPaymentProviderForTests({ createCheckout: async value => ({ paymentUrl: `https://fixture.invalid/alipay/${value.orderId}`, providerOrderId: `fixture-${value.orderId}` }), refund: async () => ({ providerRefundId: 'fixture-refund' }) })",
@@ -43,11 +46,19 @@ async function startApi(input: { databaseUrl: string; opsDatabaseUrl: string; ca
       PORT: '0',
       API_BIND_HOST: '127.0.0.1',
       AUTH_ENFORCEMENT: 'strict',
+      CONNECTOR_FIXTURE_MODE: 'true',
+      MERCHANT_TEST_APPROVED_RATES: 'true',
       MCP_INTEGRATION_MODE: 'local_stdio',
       COMMERCIAL_PAYMENT_PROVIDER: 'alipay',
       PAYMENT_MODE: 'provider',
       PAYMENT_CALLBACK_BASE_URL: 'https://fixture.invalid/callbacks',
       PAYMENT_CALLBACK_SECRET: input.callbackSecret,
+      COMMERCIAL_RUNTIME_EVIDENCE_PATH: input.runtimeEvidencePath,
+      COMMERCIAL_RUNTIME_EVIDENCE_SHA256: input.runtimeEvidenceSha256,
+      COMMERCIAL_RUNTIME_CANDIDATE_SHA256: 'a'.repeat(64),
+      COMMERCIAL_RUNTIME_SCHEMA_SHA256: 'a'.repeat(64),
+      COMMERCIAL_RUNTIME_FLEET_ATTESTER_REF: 'isolated-test-fleet',
+      COMMERCIAL_RUNTIME_FLEET_OBSERVATION_PATH: input.fleetObservationPath,
       API_RATE_LIMIT_PER_MINUTE: '10000',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -135,6 +146,7 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
     let application: Pool | undefined
     let operations: Pool | undefined
     let api: ChildProcessWithoutNullStreams | undefined
+    let runtimeEvidenceDir: string | undefined
     let primaryFailure: unknown
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
@@ -145,6 +157,28 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
       const workspaceId = `ws_oauth_commercial_${suffix}`
       const otherWorkspaceId = `ws_oauth_commercial_other_${suffix}`
       await database.query('INSERT INTO workspaces(id,status) VALUES ($1,\'active\'),($2,\'active\')', [workspaceId, otherWorkspaceId])
+      // This vertical test starts after onboarding. The prerequisite is a
+      // durable, explicitly test-owned qualification fixture; the point-pack
+      // order and payment remain exercised through the real OAuth/MCP path.
+      const onboardingSku = (await database.query<{ skuId: string; versionId: string }>(
+        `SELECT s.id AS "skuId", v.id AS "versionId"
+           FROM commercial_catalog_skus s
+           JOIN commercial_catalog_sku_versions v ON v.sku_id=s.id
+          WHERE s.code='onboarding_once' AND v.lifecycle='approved' AND v.executable
+          ORDER BY v.version DESC LIMIT 1`,
+      )).rows[0]!
+      const fixtureOnboardingOrderId = `fixture-onboarding-${suffix}`
+      await database.query(
+        `INSERT INTO commercial_orders_v2
+          (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,created_at,paid_at)
+         VALUES ($1,$2,$3,$4,500000,'CNY','fixture','paid',$5,$6,'isolated-test-operator',now(),now())`,
+        [fixtureOnboardingOrderId, workspaceId, onboardingSku.skuId, onboardingSku.versionId, `fixture-onboarding-key-${suffix}`, 'a'.repeat(64)],
+      )
+      await database.query(
+        `INSERT INTO workspace_commercial_onboarding_v3(workspace_id,onboarding_order_id,status,activated_at)
+         VALUES ($1,$2,'active',now())`,
+        [workspaceId, fixtureOnboardingOrderId],
+      )
       const otherExternalSubject = `other-${suffix}@example.test`
       await database.query(
         `INSERT INTO workspace_members (id, workspace_id, external_subject, display_name, role, status, invited_by)
@@ -190,7 +224,19 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
       }))
 
       const callbackSecret = `isolated-commercial-callback-${suffix}`
-      const running = await startApi({ databaseUrl: appUrl, opsDatabaseUrl: opsUrl, callbackSecret })
+      runtimeEvidenceDir = mkdtempSync(join(tmpdir(), 'merchant-commercial-runtime-'))
+      const runtimeEvidencePath = join(runtimeEvidenceDir, 'lease.json')
+      const fleetObservationPath = join(runtimeEvidenceDir, 'fleet.json')
+      const candidateSha256 = 'a'.repeat(64)
+      const schemaSha256 = 'a'.repeat(64)
+      const instance = { instanceId: hostname(), salesProtocol: 'commercial.sales.v3', candidateSha256, schemaSha256 }
+      const now = Date.now()
+      const fleet = { schema: 'commercial.fleet.observation.v1', attesterRef: 'isolated-test-fleet', capturedAt: new Date(now).toISOString(), completeInventory: true, inventory: [instance.instanceId], instances: [instance] }
+      writeFileSync(fleetObservationPath, JSON.stringify(fleet), { mode: 0o600 })
+      const runtimeEvidence = { schema: 'commercial.runtime.evidence.v1', issuedAt: new Date(now - 1000).toISOString(), expiresAt: new Date(now + 10 * 60_000).toISOString(), fleetAttesterRef: 'isolated-test-fleet', policy: { mode: 'sale', policyRevision: 'isolated-commercial-payment-test', approvedEvidenceRef: 'isolated-test-approval', catalogManualAuditRef: 'isolated-test-catalog-audit', runtimeAcceptanceRef: 'isolated-test-runtime-acceptance', catalogAuditSha256: 'a'.repeat(64), candidateSha256, schemaSha256, fleetEvidenceRef: 'isolated-test-fleet-evidence', deploymentEvidenceVerified: true, activeInstances: [instance] } }
+      const evidenceRaw = JSON.stringify(runtimeEvidence)
+      writeFileSync(runtimeEvidencePath, evidenceRaw, { mode: 0o600 })
+      const running = await startApi({ databaseUrl: appUrl, opsDatabaseUrl: opsUrl, callbackSecret, runtimeEvidencePath, runtimeEvidenceSha256: createHash('sha256').update(evidenceRaw).digest('hex'), fleetObservationPath })
       api = running.child
       const resource = `${running.base}/mcp`
       const authorizeAndExchange = async (merchant: (typeof merchants)[number]) => {
@@ -230,13 +276,19 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
       expect(createdViaBridge.result).toMatchObject({ isError: false })
       const created = { status: 200, body: { result: createdViaBridge.result } }
       expect(created.status, JSON.stringify({ body: created.body, logs: running.logs() })).toBe(200)
-      const order = created.body.result?.structuredContent as { order_id: string; status: string; amount_fen: number; payment_provider: string; payment_url: string }
+      const order = created.body.result?.structuredContent as { order_id: string; status: string; amount_fen: number; payment_provider: string; payment_url: string | null; created_at: string }
       expect(order).toMatchObject({ status: 'pending', amount_fen: 30000, payment_provider: 'alipay' })
-      expect(order.payment_url).toMatch(/^https:\/\/fixture\.invalid\/alipay\//u)
+      const paymentViaBridge = await bridgeCall(bridgeA, 2, 'commercial.order.payment.create', { order_id: order.order_id, idempotency_key: `oauth-point-pack-payment-${suffix}` })
+      expect(paymentViaBridge.result).toMatchObject({ isError: false })
+      const payment = paymentViaBridge.result?.structuredContent as { payment_url: string; provider_order_id: string }
+      expect(payment.payment_url).toMatch(/^https:\/\/fixture\.invalid\/alipay\//u)
 
-      const providerTradeId = `fixture-commercial-${suffix}`
+      const providerTradeId = payment.provider_order_id
       const callbackPayload = { workspace_id: workspaceId, order_id: order.order_id, provider_trade_id: providerTradeId, amount_fen: 30000, currency: 'CNY' as const, state: 'paid' as const }
-      const timestamp = String(Math.floor(Date.now() / 1000))
+      const timestampSeconds = Math.floor(Date.parse(order.created_at) / 1000) + 1
+      const waitForSignedAt = timestampSeconds * 1000 - Date.now()
+      if (waitForSignedAt > 0) await new Promise(resolve => setTimeout(resolve, waitForSignedAt))
+      const timestamp = String(timestampSeconds)
       const nonce = `commercial-${randomUUID().replaceAll('-', '')}`
       const signature = signPaymentCallback({ secret: callbackSecret, channel: 'alipay', workspaceId, orderId: order.order_id, providerTradeId, amountFen: 30000, currency: 'CNY', state: 'paid', timestamp, nonce })
       const callbackHeaders = { 'content-type': 'application/json', 'x-payment-signature': signature, 'x-payment-timestamp': timestamp, 'x-payment-nonce': nonce }
@@ -248,11 +300,11 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
       }
 
       const paidViaBridge = await bridgeCall(bridgeA, 3, 'commercial.order.payment.get', { order_id: order.order_id })
-      expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 1 } })
+      expect(paidViaBridge.result).toMatchObject({ isError: false, structuredContent: { order_id: order.order_id, status: 'paid', access_revision: 2 } })
       const balanceViaBridge = await bridgeCall(bridgeA, 4, 'creative-points.balance.get', {})
       // The merchant bridge exposes the authenticated wallet balance so the
       // user can decide whether another paid generation is affordable.
-      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '1', available_points: 500 } })
+      expect(balanceViaBridge.result).toMatchObject({ isError: false, structuredContent: { balance_state: 'known', access_revision: '2', available_points: 10500 } })
 
       const hiddenFromB = await bridgeCall(bridgeB, 5, 'commercial.order.payment.get', { order_id: order.order_id })
       expect(hiddenFromB.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_ORDER_NOT_FOUND' } })
@@ -284,6 +336,7 @@ describe('local stdio plugin commercial point-pack payment PostgreSQL vertical',
         await operations?.end()
         await database?.end()
         await dropDrainedPostgresFixture(admin, databaseName)
+        if (runtimeEvidenceDir) rmSync(runtimeEvidenceDir, { recursive: true, force: true })
       }, primaryFailure, [() => admin.end()])
     }
   }, 240_000)

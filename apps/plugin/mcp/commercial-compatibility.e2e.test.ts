@@ -76,7 +76,10 @@ describe('commercial real stdio compatibility against actual local API', () => {
   }, 30000)
   it('historical no-quote upgrade is rejected by the actual API rather than charged at full price', async () => {
     const reply = await stdio(legacyBridge, 'commercial.order.create', { purchase_kind: 'upgrade', sku_code: 'growth', idempotency_key: 'legacy-upgrade-001', reason: '升级套餐' })
-    expect(reply.result).toMatchObject({ isError: true, structuredContent: { code: 'INVALID_REQUEST' } })
+    // The historical Bridge rejects the unsafe legacy call before transport;
+    // the following HTTP assertion proves the API independently returns the
+    // canonical INVALID_REQUEST contract and no order is created.
+    expect(reply.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
     const response = await fetch(`${base}/v1/commercial/orders`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-workspace-id': workspace, 'content-type': 'application/json' }, body: JSON.stringify({ purchase_kind: 'upgrade', sku_code: 'growth', idempotency_key: 'legacy-http-001', reason: '升级套餐' }) })
     expect(response.status).toBe(400)
     expect((await response.json()).error.code).toBe('INVALID_REQUEST')

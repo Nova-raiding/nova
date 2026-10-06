@@ -1,5 +1,13 @@
 # Production configuration locator
 
+> Scope: this document applies only to the formal production ECS release path.
+> It does not gate the local ChatGPT stdio plugin demo or the `merchant-demo-*`
+> direct-deploy workflow. Demo deployments must follow
+> `docs/runbooks/ecs-demo-direct-deploy.md`; do not run
+> `infra:launch-preflight` for a demo. In particular, `plugin_enabled` is a
+> formal production-config key, not a prerequisite for local plugin install or
+> demo deployment.
+
 `infra:launch-preflight` and `dev:doctor:production` read the ignored root file
 `.env.production-config-path` when `PRODUCTION_CONFIG_PATH` is not explicitly
 set. It contains one path, not shell commands or dotenv assignments. The launch

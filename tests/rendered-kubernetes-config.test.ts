@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const config = () => ({
+  deployment_mode: 'full',
   merchant_bearer_hostname: 'merchant.production.test',
   public_endpoints: { app_base_url: 'https://merchant.production.test', ops_base_url: 'https://ops.production.test', oauth_callback_base_url: 'https://merchant.production.test/v1/oauth/callback' },
   codex: { mcp: { base_url: 'https://merchant.production.test' } },

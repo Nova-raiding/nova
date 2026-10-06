@@ -580,6 +580,18 @@ BEGIN
 END
 $$;
 
+-- Workspace member display names are tenant-owned identity data.  The
+-- activation flow may update its binding columns, but merchant_ops must not
+-- rewrite operator-visible names through the broad bootstrap grants.
+DO $$
+BEGIN
+  IF to_regclass('public.workspace_members') IS NOT NULL THEN
+    REVOKE UPDATE ON workspace_members FROM merchant_ops;
+    GRANT UPDATE (identity_id, revision, updated_at) ON workspace_members TO merchant_ops;
+  END IF;
+END
+$$;
+
 -- Publication notifications: retain least privilege after the blanket grants.
 DO $$
 BEGIN
@@ -713,4 +725,14 @@ BEGIN
   END IF;
  END IF;
 END $commercial_source_usage_acl$;
+
+-- The merchant API reads immutable order snapshots while attaching payment
+-- resources. Keep this read surface explicit after all later ACL repairs.
+DO $commercial_order_snapshot_runtime_acl$
+BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='merchant_app')
+    AND to_regclass('public.commercial_order_snapshots_v2') IS NOT NULL THEN
+  GRANT SELECT ON commercial_order_snapshots_v2 TO merchant_app;
+ END IF;
+END $commercial_order_snapshot_runtime_acl$;
 COMMIT;

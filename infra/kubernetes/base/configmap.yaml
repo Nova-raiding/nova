@@ -6,6 +6,7 @@ data:
   NODE_ENV: production
   CONNECTOR_FIXTURE_MODE: "false"
   PLATFORM_OPERATIONS_MODE: "manual"
+  DEPLOYMENT_MODE: full
   # Retired Kubernetes path only. Current production is ECS and password-only;
   # this value is rejected by active production config and ECS release gates.
   OPS_AUTH_MODE: password
