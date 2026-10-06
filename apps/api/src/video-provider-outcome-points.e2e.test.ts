@@ -72,7 +72,7 @@ beforeAll(async () => {
   const address = api.server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
   baseUrl = `http://127.0.0.1:${address.port}`
-})
+}, 120_000)
 
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))

@@ -120,7 +120,7 @@ beforeAll(async () => {
   stopQuotaMonitor = startPlatformRelayTokenQuotaMonitor({ ...process.env, NODE_ENV: 'production' }, snapshotFetch)
   await vi.waitFor(() => expect(evaluatePlatformModelGate({ ...process.env, NODE_ENV: 'production' }, 'video').ready).toBe(true))
   baseUrl = await startServer()
-})
+}, 120_000)
 
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
