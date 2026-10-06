@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError, isUsableAssetWithoutScan, type Platform } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { imageMcpRuntime } from './server.js'
+import { promoteLegacyDemoGeneratedAsset } from './image-archive-helpers.js'
 
 type ImageMcpRuntime = ReturnType<typeof imageMcpRuntime>
 export const MCP_IMAGE_METHODS = new Set(['catalog.image.generate', 'catalog.image.retry', 'catalog.image.get', 'catalog.image.select', 'catalog.image.review', 'content.visual.select'])
@@ -35,6 +36,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
     requirePlatformModelCostGate, required, platformGovernanceGatesRequired,
     reviewProductImagesForMcp, parseImageListForMcp, archiveGeneratedImages,
     readArchivedGeneratedImages, imageJobOutputsAreClean, sourceImagesForImageJob,
+    persistAssetSnapshotAndEvent,
     publicImageJob, publicImageJobForCommercialRead, assetForWorkspace,
     requireApprovedAssetForImageGeneration, issueImageSelectionTickets,
     consumeImageSelectionTicket, resolveCanonicalTaskScope, assertCanonicalTaskScopeForAction,
@@ -488,6 +490,16 @@ export async function handleImageMcpMethod(method: string, params: Record<string
         await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
       }
       const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id })
+      // A demo task may have been created immediately before the deferred
+      // scanner profile was enabled. Reconcile that exact generated asset
+      // in-place; do not regenerate or touch customer/uploaded assets.
+      if (demoUnscannedAssetsEnabled()) {
+        for (const output of job.outputs ?? []) {
+          const asset = output.assetId ? service.assets.get(output.assetId) : undefined
+          if (!asset || !promoteLegacyDemoGeneratedAsset(workspaceId, asset)) continue
+          await persistAssetSnapshotAndEvent(workspaceId, asset, 'asset.generated_unscanned', { asset_id: asset.id, job_id: job.id, storage_key: asset.storageKey, scan_status: asset.scanStatus, migration: 'demo_deferred_scanner_legacy_candidate' }, asset as unknown as Record<string, unknown>)
+        }
+      }
       const commercialReady = await chargedImageCandidatesReadable(workspaceId, job, aggregateEvents, execution?.providerRequestId)
       // A scan callback can make quarantined outputs clean after the provider
       // callback originally left the job in `pending`. Promote that durable

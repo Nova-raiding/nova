@@ -248,7 +248,17 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const observedArtifactCount = defaults.context?.observedArtifactCount
   const observedArtifactCountValid = observedArtifactCount !== undefined && Number.isSafeInteger(observedArtifactCount) && observedArtifactCount >= 0
   const imageArtifactCountMismatch = reportedOutputImageCount !== undefined && observedArtifactCountValid && reportedOutputImageCount !== observedArtifactCount
-  const parsedProviderDurationSeconds = firstNumber(usage?.duration_seconds, usage?.durationSeconds)
+  // New API/DashScope video responses use `duration` (and in some
+  // responses `output_video_duration`) for the provider-observed duration.
+  // Treat these as equivalent provider evidence; they are not the request
+  // estimate and must remain distinct from preauthorizationDurationSeconds.
+  const parsedProviderDurationSeconds = firstNumber(
+    usage?.duration_seconds,
+    usage?.durationSeconds,
+    usage?.duration,
+    usage?.output_video_duration,
+    usage?.outputVideoDuration,
+  )
   const providerDurationSeconds = parsedProviderDurationSeconds !== undefined && parsedProviderDurationSeconds > 0 ? parsedProviderDurationSeconds : undefined
   // Artifact arrays may identify a body request ID, but never prove billed
   // image units by themselves.

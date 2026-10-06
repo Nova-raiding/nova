@@ -10929,6 +10929,7 @@ export function imageMcpRuntime() {
     withCommercialWorkerSnapshot,
     commercialWorkerSnapshotForReservation,
     persistEvent,
+    persistAssetSnapshotAndEvent,
     persistSnapshot,
     persistSnapshotsAndEvent,
     workerAuthorizationSnapshot,

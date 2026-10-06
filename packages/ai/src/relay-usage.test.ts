@@ -65,6 +65,24 @@ describe('relay usage normalization', () => {
     expect(usage).toMatchObject({ metadata: { usage_observed: true, duration_seconds: 7, duration_evidence: 'provider_usage', preauthorization_duration_seconds: 5 } })
   })
 
+  it('settles the New API video envelope using provider duration evidence', () => {
+    const usage = parseRelayUsage({
+      code: 'success',
+      data: {
+        task_id: 'task_new_api_video',
+        status: 'SUCCESS',
+        data: {
+          request_id: 'new-api-video-request',
+          usage: { duration: 5, output_video_duration: 5 },
+        },
+      },
+    }, new Headers(), { modality: 'video', model: 'wan3.0-video', context: { preauthorizationDurationSeconds: 5 } })
+    expect(usage).toMatchObject({
+      providerRequestId: 'new-api-video-request',
+      metadata: { usage_observed: true, duration_seconds: 5, duration_evidence: 'provider_usage', preauthorization_duration_seconds: 5 },
+    })
+  })
+
   it('rejects accepted-only video jobs as observed usage', async () => {
     await expect(emitRelayUsage(
       () => ({ recorded: true, costEvidence: true }),

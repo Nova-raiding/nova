@@ -7,6 +7,24 @@ import type { imageArchiveRuntime } from './server.js'
 
 type ImageArchiveRuntime = ReturnType<typeof imageArchiveRuntime>
 
+/**
+ * The demo scanner profile is explicitly deferred. Jobs created just before
+ * that profile was enabled can still contain a generated asset left in the
+ * quarantine state, even though its bytes were durably archived. Promote only
+ * that narrow generated-candidate shape to the demo's explicit `unscanned`
+ * state; never reinterpret an uploaded/customer asset or a clean verdict.
+ */
+export function promoteLegacyDemoGeneratedAsset(workspaceId: string, asset: { workspaceId: string; storageKey: string; scanStatus: string; scanVerdict?: string; scanReceiptId?: string; scanReceiptDigest?: string; revision?: number }): boolean {
+  const prefix = `quarantine/${workspaceId}/generated_pending_`
+  if (asset.workspaceId !== workspaceId || asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith(prefix)) return false
+  asset.scanStatus = 'unscanned'
+  delete asset.scanVerdict
+  delete asset.scanReceiptId
+  delete asset.scanReceiptDigest
+  asset.revision = (asset.revision ?? 1) + 1
+  return true
+}
+
 export function parseRequestedImageSize(value: string | undefined): { width: number; height: number } | undefined {
   if (value === undefined) return undefined
   const match = /^(\d+)x(\d+)$/u.exec(value.trim())
