@@ -76,6 +76,7 @@ interface AssetTypePolicy {
 const MAX_ASSET_BYTES = 100 * 1024 * 1024
 const extensionPolicies = new Map<string, AssetTypePolicy>([
   ['.pdf', { mimes: ['application/pdf'], signatures: ['pdf'] }],
+  ['.zip', { mimes: ['application/zip'], signatures: ['zip'] }],
   ['.docx', { mimes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], signatures: ['zip'] }],
   ['.xlsx', { mimes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], signatures: ['zip'] }],
   ['.csv', { mimes: ['text/csv', 'application/csv', 'text/plain'], signatures: ['text'] }],

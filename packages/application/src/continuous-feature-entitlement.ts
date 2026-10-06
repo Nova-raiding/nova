@@ -172,12 +172,24 @@ export class ContinuousFeatureEntitlementService {
     if (!(current instanceof Date) || Number.isNaN(current.valueOf()) || (input.decided_at !== undefined && current.toISOString() !== input.decided_at)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
 
     let snapshots: readonly ContinuousFeatureEntitlementSnapshotV2[]
+    let paidProjectionAvailable = true
     try {
       snapshots = await this.#projection.listV2EntitlementSnapshots({ workspace_id: input.workspace_id })
     } catch {
+      // The explicitly configured Demo Evaluation grant is an independent,
+      // time-bounded authority. A missing paid-entitlement projection must not
+      // mask that grant; production workspaces still fail closed below.
+      snapshots = []
+      paidProjectionAvailable = false
+    }
+    if (!Array.isArray(snapshots)) {
+      snapshots = []
+      paidProjectionAvailable = false
+    }
+
+    if (!paidProjectionAvailable && (!this.#demoEvaluation || input.workspace_id !== this.#demoEvaluation.workspaceId)) {
       return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
     }
-    if (!Array.isArray(snapshots)) return denied('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', ignored)
 
     const authoritative = snapshots.filter(snapshot => isAuthoritativeSnapshot(snapshot, input.workspace_id, current.valueOf()))
     if (this.#demoEvaluation && input.workspace_id === this.#demoEvaluation.workspaceId) {

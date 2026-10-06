@@ -110,6 +110,22 @@ describe('ContinuousFeatureEntitlementService C14', () => {
     })
   })
 
+  it('uses the active demo grant when the paid entitlement projection is unavailable', async () => {
+    const grant: DemoEvaluationEntitlement = {
+      id: 'dee_demo_projection_unavailable', workspaceId: 'ws_guirenniaoniao',
+      startsAt: '2026-09-01T00:00:00.000Z', expiresAt: '2026-10-01T00:00:00.000Z',
+      createdAt: '2026-09-01T00:00:00.000Z', checksum: 'd'.repeat(64), status: 'active',
+    }
+    const service = new ContinuousFeatureEntitlementService({
+      projection: { listV2EntitlementSnapshots: async () => { throw new Error('paid projection unavailable') } },
+      demoEvaluation: { workspaceId: 'ws_guirenniaoniao', projection: { listDemoEvaluationEntitlements: async () => [grant] } },
+      now: () => now,
+    })
+    await expect(service.decide({ workspace_id: 'ws_guirenniaoniao' })).resolves.toMatchObject({
+      allowed: true, snapshot_id: grant.id, catalog_version_id: 'demo-evaluation:v1',
+    })
+  })
+
   it('keeps every legacy source shadow-only and incapable of contributing allow', async () => {
     const legacy: LegacyCommercialShadowSource[] = ['rmb_wallet', 'task_quota', 'addon', 'image_entitlement']
     await expect(harness([]).service.decide({ workspace_id: 'workspace-1', observed_legacy_sources: legacy })).resolves.toEqual({

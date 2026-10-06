@@ -4,6 +4,7 @@ import { classifyAssetUpload, classifyAssetUploadBatch, type AssetUploadSecurity
 
 const utf8 = (value: string) => new TextEncoder().encode(value)
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+const zip = new Uint8Array([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 
 describe('asset upload security', () => {
   it('allows a signature-consistent asset and emits a filename-hash-only audit payload', () => {
@@ -57,6 +58,16 @@ describe('asset upload security', () => {
 
   it('keeps ordinary dotted version names and Chinese filenames valid', () => {
     expect(classifyAssetUpload({ fileName: '商品主图.v2.png', declaredMime: 'image/png', bytes: png }).decision).toBe('allow')
+  })
+
+  it('allows a standard ZIP rule pack into quarantine', () => {
+    const result = classifyAssetUpload({
+      fileName: 'StoreNova_淘宝平台规则_v0.1.zip',
+      declaredMime: 'application/zip',
+      bytes: zip,
+    })
+    expect(result).toMatchObject({ decision: 'allow', reasonCode: null, reasonCodes: [] })
+    expect(result.audit.signature_class).toBe('zip')
   })
 
   it.each([
