@@ -48,6 +48,10 @@ it('returns from merchant login to the original local plugin consent in a browse
     vi.stubEnv('PUBLIC_APP_BASE_URL', base)
     vi.stubEnv('VITE_API_BASE_URL', '/api')
     vite = await createViteServer({ root: resolve('demo/merchant-studio'), server: { middlewareMode: true } })
+    // Vite performs dependency optimization on the first browser request. Warm
+    // the entry module before the page's 5s interaction timeout starts, or a
+    // cold test runner can report a blank app before React mounts.
+    await vite.transformRequest('/src/main.tsx')
     const executablePath = [process.env.CHROME_BIN, chromium.executablePath(), '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].find(path => path && existsSync(path))
     browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
     const page = await browser.newPage()
