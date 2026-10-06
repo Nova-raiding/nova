@@ -16,16 +16,21 @@ const client = await pool.connect()
 try {
   await client.query('BEGIN')
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['demo-evaluation:ws_guirenniaoniao'])
+  await client.query("SELECT set_config('app.demo_evaluation_admin', 'true', true)")
   const workspace = await client.query('SELECT id FROM workspaces WHERE id=$1', [workspaceId])
   if (workspace.rowCount !== 1) throw new Error('first-install workspace does not exist')
   const existing = await client.query<{ id: string; expires_at: Date; checksum: string }>(
     'SELECT id, expires_at, checksum FROM demo_evaluation_entitlements WHERE workspace_id=$1 AND status=$2',
     [workspaceId, 'active'],
   )
-  if (existing.rowCount) {
+  const current = existing.rows[0]
+  if (current && current.expires_at.getTime() > Date.now()) {
     await client.query('COMMIT')
-    console.log(JSON.stringify({ workspace_id: workspaceId, entitlement_id: existing.rows[0]!.id, expires_at: existing.rows[0]!.expires_at.toISOString(), replayed: true }))
+    console.log(JSON.stringify({ workspace_id: workspaceId, entitlement_id: current.id, expires_at: current.expires_at.toISOString(), replayed: true }))
   } else {
+    if (current) {
+      await client.query('UPDATE demo_evaluation_entitlements SET status=$1 WHERE id=$2 AND workspace_id=$3 AND status=$4', ['revoked', current.id, workspaceId, 'active'])
+    }
     const startsAt = new Date()
     const expiresAt = new Date(startsAt.valueOf() + 7 * 24 * 60 * 60 * 1000)
     const id = `dee_${randomUUID()}`

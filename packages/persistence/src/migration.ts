@@ -771,6 +771,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const commercialBundleReferenceReader = await readFile(new URL('./migrations/265_commercial_bundle_reference_reader.sql', import.meta.url), 'utf8')
   const commercialOrderBeneficiaries = await readFile(new URL('./migrations/266_commercial_order_beneficiaries.sql', import.meta.url), 'utf8')
   const assetSnapshotLifecycleRepair = await readFile(new URL('./migrations/267_asset_snapshot_lifecycle_repair.sql', import.meta.url), 'utf8')
+  const demoEvaluationRegrantGuard = await readFile(new URL('./migrations/268_demo_evaluation_regrant_guard.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1039,6 +1040,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 265, name: 'commercial_bundle_reference_reader', sql: commercialBundleReferenceReader },
     { version: 266, name: 'commercial_order_beneficiaries', sql: commercialOrderBeneficiaries },
     { version: 267, name: 'asset_snapshot_lifecycle_repair', sql: assetSnapshotLifecycleRepair },
+    { version: 268, name: 'demo_evaluation_regrant_guard', sql: demoEvaluationRegrantGuard },
   ]
 }
 
