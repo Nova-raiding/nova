@@ -415,8 +415,9 @@ describe('product image review API', () => {
     expect(executable.error.code).toBe('ASSET_EXECUTABLE_REJECTED')
     const mismatch = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'asset.upload', params: { name: 'logo.png', mime_type: 'image/png', content_base64: Buffer.from('plain text').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
     expect(mismatch.error.code).toBe('ASSET_EXTENSION_SIGNATURE_MISMATCH')
-    const archive = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'asset.upload', params: { name: 'encrypted.zip', mime_type: 'application/zip', content_base64: Buffer.from('PK\x03\x04encrypted archive').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
-    expect(archive.error.code).toBe('ASSET_TYPE_UNSUPPORTED')
+    const archive = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'asset.upload', params: { name: 'encrypted.zip', mime_type: 'application/zip', content_base64: Buffer.from('PK\x03\x04encrypted archive').toString('base64') } }) }).then(response => response.json()) as { error?: unknown; data: { result: { scanStatus: string } } }
+    expect(archive.error).toBeNull()
+    expect(archive.data.result.scanStatus).toBe('quarantined')
     const svgBody = '<svg xmlns="http://www.w3.org/2000/svg"><script>token-in-svg</script></svg>'
     const svg = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'asset.upload', params: { name: 'unsafe-customer-name.svg', mime_type: 'image/svg+xml', content_base64: Buffer.from(svgBody).toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
     expect(svg.error.code).toBe('ASSET_SVG_SCRIPT_REJECTED')
@@ -451,7 +452,7 @@ describe('product image review API', () => {
     expect(restSvg.error.code).toBe('ASSET_SVG_SCRIPT_REJECTED')
 
     const audits = securityAuditEventsForTests(workspaceId)
-    expect(audits).toHaveLength(8)
+    expect(audits).toHaveLength(7)
     expect(audits.map(event => event.payload)).toEqual(expect.arrayContaining([
       expect.objectContaining({ decision: 'reject', reason_code: 'ASSET_EXECUTABLE_REJECTED', request_id: 'asset-security-request', file_name_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
       expect.objectContaining({ decision: 'reject', reason_code: 'ASSET_SVG_SCRIPT_REJECTED' }),
