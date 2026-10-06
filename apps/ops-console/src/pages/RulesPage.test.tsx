@@ -50,7 +50,7 @@ describe("rules page error scope", () => {
 
   it("keeps workspace-only rule lifecycle controls out of platform governance", () => {
     const html = render({ platform: true, canReadRules: true });
-    expect(html).toContain("上传平台规则 Markdown");
+    expect(html).toContain("上传平台规则（Markdown/ZIP）");
     expect(html).not.toContain("标记过期");
     expect(html).not.toContain("工作区规则审计");
   });

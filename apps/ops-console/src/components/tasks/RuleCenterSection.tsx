@@ -260,8 +260,8 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
   if (platformOnly) return <Card title="提交公共平台规则草稿">
     <Alert type="info" showIcon title="人工资料须独立审核" description="上传 Markdown 只创建公共草稿。规则管理员核对官方依据并完成独立审批后，规则才可能生效。" style={{ marginBottom: 16 }} />
     <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
-    <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
-    {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role="status" title={markdownImportResult.failedCard ? "Markdown 导入未完成" : "Markdown 草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
+    <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则（Markdown/ZIP）</Button>
+    {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role="status" title={markdownImportResult.failedCard ? "规则文件导入未完成" : "规则草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
   </Card>;
 
   return (
@@ -270,7 +270,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
       extra={
         <Space>
           <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
-          <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则 Markdown</Button>
+          <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则（Markdown/ZIP）</Button>
           <Tag color={unverifiedRules.length ? "orange" : rules.length ? "green" : "orange"}>
             {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不展示）` : `${verifiedRules.length} 条可信规则`}
           </Tag>
@@ -301,7 +301,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
           showIcon
           type={markdownImportResult.failedCard ? "error" : "success"}
           role="status"
-          title={markdownImportResult.failedCard ? "Markdown 导入未完成" : "Markdown 草稿导入完成"}
+          title={markdownImportResult.failedCard ? "规则文件导入未完成" : "规则草稿导入完成"}
           description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`}
           style={{ marginBottom: 16 }}
         />

@@ -184,7 +184,7 @@ describe("trusted platform rule boundary", () => {
     expect(publish).toHaveBeenCalledTimes(3);
     expect(publish.mock.calls.map(([draft]) => draft.packId)).toEqual(["jd-manual-pdd-001", "taobao-manual-pdd-002", "tmall-manual-pdd-003"]);
     const component = readFileSync(new URL("./RuleCenterSection.tsx", import.meta.url), "utf8");
-    expect(component).toContain("Markdown 导入未完成");
+    expect(component).toContain("规则文件导入未完成");
     expect(component).toContain("成功 ${markdownImportResult.succeeded} 张");
     expect(component).toContain("失败卡片 ${markdownImportResult.failedCard}");
   });
