@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest'
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 
 describe('material library image preview contract', () => {
-  it('only downloads verified image assets and bounds thumbnail work', () => {
+  it('loads clean images and explicitly demo-allowed unscanned images, with bounded work', () => {
     expect(app).toContain("asset.scanStatus === 'clean'")
+    expect(app).toContain("asset.scanStatus === 'unscanned'")
     expect(app).toContain("asset.mimeType.toLowerCase().startsWith('image/')")
     expect(app).toContain('.slice(0, 24)')
     expect(app).toContain('fetchAssetBlob(baseUrl, asset.id, controller.signal)')

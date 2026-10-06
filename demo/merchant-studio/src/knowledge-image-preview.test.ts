@@ -20,8 +20,9 @@ describe('knowledge library image preview contract', () => {
     expect(app).toContain('title: \'文件\'')
   })
 
-  it('keeps preview downloads fail closed to clean image assets', () => {
+  it('keeps preview downloads behind the API clean-or-demo gate', () => {
     expect(app).toMatch(/asset\.scanStatus\s*===\s*'clean'/)
+    expect(app).toMatch(/asset\.scanStatus\s*===\s*'unscanned'/)
     expect(app).toContain("asset.mimeType.toLowerCase().startsWith('image/')")
     expect(app).toContain('if (!baseUrl ||')
     expect(app).toContain('!assetStorageReady')

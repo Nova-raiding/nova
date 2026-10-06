@@ -3557,9 +3557,12 @@ function AssetLibrary({
     }
     const controller = new AbortController()
     const objectUrls: string[] = []
-    // Only clean image objects can be downloaded by the API.  Older assets
-    // may still be quarantined or have an expired object, so attempting every
-    // row creates a burst of guaranteed 403s (and can trip the relay limiter).
+    // The API may expose clean images and, only in the explicitly enabled Demo
+    // profile, authenticated unscanned image bytes.  The latter is still
+    // enforced server-side by the download route; including it here lets the
+    // 101 Demo show the real uploaded image instead of a misleading placeholder.
+    // Older quarantined assets remain excluded because their API read is
+    // guaranteed to fail and attempting every row creates a burst of 403s.
     // Keep the image grid responsive for the safe preview subset.
     // Some historical scanner callback records declare image/png but contain
     // only a tiny callback marker rather than a decodable image.  Prioritise
@@ -3569,7 +3572,7 @@ function AssetLibrary({
     const imageAssets = orderedAssets
       .filter(
         (asset) =>
-          asset.scanStatus === 'clean' &&
+          (asset.scanStatus === 'clean' || asset.scanStatus === 'unscanned') &&
           asset.mimeType.toLowerCase().startsWith('image/'),
       )
       .sort((left, right) => right.sizeBytes - left.sizeBytes)
