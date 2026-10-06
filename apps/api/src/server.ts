@@ -170,7 +170,7 @@ import { createImageArchiveHelpers } from './image-archive-helpers.js'
 import { aggregateContentExecutionEvidence } from './content-execution-evidence.js'
 import { createPublicAssetDisplayHelpers } from './public-asset-display.js'
 import { createPromotionCleanup } from './asset-promotion-cleanup.js'
-export { trustedDashScopeImageArtifactHost, assertVideoArtifactUrl, setVideoArtifactFetcherForTests, videoSignatureMatches } from './image-artifact-policy.js'
+export { trustedDashScopeImageArtifactHost, trustedDashScopeVideoArtifactHost, assertVideoArtifactUrl, setVideoArtifactFetcherForTests, videoSignatureMatches } from './image-artifact-policy.js'
 import { handleMcpCanonicalBackfill } from './mcp-canonical-backfill-handlers.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
@@ -2922,7 +2922,13 @@ async function putQuarantineObject(input: PutQuarantineObjectInput) {
     // transaction. Upgrades replace the limit while retaining usage and holds.
     const snapshot = await quota.getSnapshot(input.workspaceId)
     try {
-      await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: isProduction() ? 0 : snapshot?.limitBytes ?? configuredStorageQuotaLimit(), commercialEntitlement: isProduction() })
+      // The ECS Demo deliberately runs the hardened production container image
+      // with deferred scanning and local durable storage. It must not inherit
+      // the commercial production storage entitlement gate: Demo candidates
+      // are isolated, unscanned and non-publishable, but still need to be
+      // archived so the ChatGPT workflow can be demonstrated end-to-end.
+      const demoStorage = demoUnscannedAssetsEnabled()
+      await quota.reserve({ workspaceId: input.workspaceId, reservationKey, assetId: input.assetId, bytes: input.body.byteLength, limitBytes: isProduction() && !demoStorage ? 0 : snapshot?.limitBytes ?? configuredStorageQuotaLimit(), commercialEntitlement: isProduction() && !demoStorage })
     } catch (error) {
       if (error instanceof CommercialStorageEntitlementError) throw new DomainError(error.code, '当前套餐存储额度未通过准入，请查询套餐状态或联系运营支持', error.status, { retryable: error.status === 503, next_actions: ['commercial.subscription.get', 'commercial.catalog.get'] })
       if (error instanceof StorageQuotaExceededError) throw new DomainError(error.code, '工作区存储空间不足，请清理不再使用的素材或联系管理员调整配额', 413, { ...error.details })
