@@ -56,7 +56,14 @@ describe('authorization RLS/ACL boundary PostgreSQL probe', () => {
         'subscription_status', 'used_tasks', 'workspace_id',
       ])
       await ops.query('COMMIT')
-      for (const table of ['workspace_operation_audit', 'products', 'content_versions']) {
+      // merchant_ops intentionally has scoped SELECT/INSERT access to the
+      // operation audit ledger (migrations 200/234/263) so the desktop
+      // workbench can reconstruct its own audit trail.  The audit-specific
+      // RLS and immutable-write checks live below and in
+      // authorization-audit-rls.postgres.test.ts; only customer business
+      // tables must be inaccessible to this role.
+      expect((await ops.query('SELECT * FROM workspace_operation_audit')).rows).toEqual([])
+      for (const table of ['products', 'content_versions']) {
         await expect(ops.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' })
       }
       expect((await ops.query('SELECT * FROM ops_access_grants')).rows).toEqual([])
