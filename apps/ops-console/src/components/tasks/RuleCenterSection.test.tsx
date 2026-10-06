@@ -246,4 +246,15 @@ describe("rule activation approval transport", () => {
     expect(paramsLiteral).toContain("approved_by");
     expect(paramsLiteral).not.toContain("ruleApprovalToken");
   });
+
+  it("checks the dedicated rule capability before lifecycle mutations", () => {
+    const updateRuleStatusStart = modelSource.indexOf("const updateRuleStatus = async (");
+    const publishRuleDraftStart = modelSource.indexOf("const publishRuleDraft = async (");
+    expect(updateRuleStatusStart).toBeGreaterThan(-1);
+    expect(publishRuleDraftStart).toBeGreaterThan(updateRuleStatusStart);
+    const lifecycleSource = modelSource.slice(updateRuleStatusStart, publishRuleDraftStart);
+    expect(lifecycleSource).toContain("if (!canRules)");
+    expect(lifecycleSource).toContain("缺少规则管理员权限");
+    expect(lifecycleSource).not.toContain("if (!canKnowledge)");
+  });
 });

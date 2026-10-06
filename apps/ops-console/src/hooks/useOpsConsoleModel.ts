@@ -1371,8 +1371,8 @@ export function useOpsConsoleModel() {
     status: "active" | "inactive" | "expired",
     options?: { reason?: string; approvalRef?: string; approvedBy?: string; approvedAt?: string; ruleApprovalToken?: string },
   ) => {
-    if (!canKnowledge) {
-      message.error("当前会话为只读，缺少知识库编辑权限");
+    if (!canRules) {
+      message.error("当前会话为只读，缺少规则管理员权限");
       return false;
     }
     if (ruleMutationInFlight.current) return false;
