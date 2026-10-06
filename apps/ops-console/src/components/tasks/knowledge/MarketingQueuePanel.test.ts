@@ -13,6 +13,7 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('scanning')).toBe('安全扫描中')
     expect(queueStateLabel('failed')).toBe('失败')
     expect(queueStateLabel('unknown')).toBe('待对账')
+    expect(queueStateLabel('pending_receipt')).toBe('等待成本回执')
     expect(queueStateLabel('outcome_unknown')).toBe('结果待对账')
     expect(queueStateLabel('provider_reserved')).toBe('生成请求已登记，等待提交')
     expect(queueStateLabel('provider_dispatching')).toBe('正在提交模型请求，等待受理确认')

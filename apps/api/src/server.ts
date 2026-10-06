@@ -4308,13 +4308,12 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
       const providerJobId = typeof context?.providerJobId === 'string' ? context.providerJobId : undefined
       if (!providerJobId) continue
       const providerRequestId = typeof context?.providerRequestId === 'string' ? context.providerRequestId : null
+      const productId = typeof context?.productId === 'string' ? context.productId : null
       jobs.set(providerJobId, {
         providerJobId,
         providerRequestId,
-        // The accepted event currently has no durable task/product binding.
-        // Keep these null rather than inferring them from an unrelated request event.
         taskId: null,
-        productId: null,
+        productId,
         state: 'queued',
         settlementStatus: 'pending_receipt',
         archiveState: 'not_started',
@@ -4348,6 +4347,13 @@ export function marketingVideoProviderJobsFromEvents(events: OutboxEvent[], limi
     })
   }
   return [...jobs.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.providerJobId.localeCompare(left.providerJobId)).slice(0, limit)
+}
+
+export function marketingVideoProviderJobMatchesState(job: MarketingVideoProviderJob, filterState: string | undefined): boolean {
+  if (!filterState) return true
+  if (filterState === 'pending_receipt') return job.settlementStatus === 'pending_receipt'
+  if (filterState === 'unknown') return job.state === 'unknown' || job.settlementStatus === 'pending_receipt'
+  return job.state === filterState
 }
 
 async function listMarketingVideoProviderJobs(workspaceId: string, limit: number): Promise<MarketingVideoProviderJob[]> {
@@ -4434,7 +4440,11 @@ export async function generateOwnedVideo(input: Parameters<NonNullable<typeof vi
   if (!workspaceId || !actionId || !runKey || !input.beforeDispatch) throw new DomainError('VIDEO_BILLING_CONTEXT_REQUIRED', '视频生成缺少计费上下文', 503)
   const aggregateId = `video-billing:${createHash('sha256').update(actionId).digest('hex')}`
   return videoGenerator.generate({ ...input, onAccepted: async acceptedContext => {
-    const context: VideoBillingContext = { ...acceptedContext, ...(purpose === 'internal_candidate_render' ? { candidateOnly: true as const, publishable: false as const } : {}) }
+    const context: VideoBillingContext = {
+      ...acceptedContext,
+      ...(purpose === 'internal_candidate_render' ? { candidateOnly: true as const, publishable: false as const } : {}),
+      ...(purpose === 'platform_render' && input.productId ? { productId: input.productId } : {}),
+    }
     const jobAggregateId = `video-job:${createHash('sha256').update(context.providerJobId).digest('hex')}`
     await persistEvent(workspaceId, jobAggregateId, 'multimodal.video.accepted', 1, { billing_context: context })
     const stored = (await videoBillingAggregateEvents(workspaceId, jobAggregateId)).find(event => event.eventType === 'multimodal.video.accepted')
@@ -12472,10 +12482,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }))).flat()
         : []
       const videoProviderJobs = (await listMarketingVideoProviderJobs(workspaceId, limit)).filter(job => {
-        // The current accepted/status event contract has no task/product/account
-        // binding. Unknown scope must never satisfy a caller-supplied filter.
-        if (filterTaskId || filterProductId || filterAccountId || filterPlatform) return false
-        return !filterState || job.state === filterState
+        // Task/account/platform remain unbound and must never be inferred from
+        // an unrelated request. Formal product renders carry an explicit product
+        // binding in the accepted event and may be filtered safely.
+        if (filterTaskId || filterAccountId || filterPlatform) return false
+        if (filterProductId && job.productId !== filterProductId) return false
+        return marketingVideoProviderJobMatchesState(job, filterState)
       })
       const matchingAssets = (await filterActiveAssets(workspaceId, service.listAssets(workspaceId))).filter(asset => asset.readiness.status !== 'ready' && !filterProductId && !filterTaskId && !filterAccountId && (!filterPlatform || !asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(filterPlatform)))
       const matchingAssetIds = new Set(matchingAssets.map(asset => asset.id))

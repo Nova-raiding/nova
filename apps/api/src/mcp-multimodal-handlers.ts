@@ -297,7 +297,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           })
           if ((request.value.output as string) === 'rendering') {
             if (!videoGenerator) throw new DomainError('VIDEO_GENERATION_NOT_CONFIGURED', '未配置视频生成中转服务', 503, { provider_executed: false })
-            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }, renderingPurpose))
+            rendering = await archiveAcceptedVideo(await generateOwnedVideo({ beforeDispatch, prompt: request.value.prompt, output: 'rendering', context: request.value.context, ...(renderingPurpose === 'platform_render' ? { productId: request.value.context.product.id } : {}), ...(sourceImage ? { sourceImage } : {}), usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey } }, renderingPurpose))
           }
           if (generatedPlan) requireRuleSafeGenerationText(rulePreflight, [generatedPlan], '视频脚本或分镜命中当前平台规则禁用表达')
         } catch (error) {
