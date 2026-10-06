@@ -43,7 +43,7 @@ async function start() {
   return base
 }
 
-async function call(base: string, token: string, workbench: string, method = 'ops.rules.public.drafts.get', params: Record<string, unknown> = { platform: 'pinduoduo', pack_id: 'pdd-claims', version: '4' }) {
+async function call(base: string, token: string, workbench: string, method = 'ops.rules.public.drafts.get', params: Record<string, unknown> = { platform: 'pinduoduo', pack_id: 'pdd-claims', version: '4' }, options: { approvalToken?: string } = {}) {
   return nativeFetch(`${base}/mcp`, {
     method: 'POST',
     headers: {
@@ -51,6 +51,7 @@ async function call(base: string, token: string, workbench: string, method = 'op
       'x-test-commercial-fixture': 'server-e2e',
       'x-workspace-id': 'ws_public_rule_review',
       'x-ops-workbench': workbench,
+      ...(options.approvalToken ? { 'x-rule-approval-token': options.approvalToken } : {}),
       'content-type': 'application/json',
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: `${token}-${workbench}`, method, params }),
@@ -171,6 +172,28 @@ describe('authenticated public rule draft preview MCP boundary', () => {
     expect(workspaceDeactivate.error?.code).toBeTruthy()
     expect(insertPublicVersionWithAudit).not.toHaveBeenCalled()
     expect(transitionPublicStatus).not.toHaveBeenCalled()
+  })
+
+  it('binds public rule activation approval to the control-plane workspace', async () => {
+    const target = fixtureRule()
+    const transitionPublicStatus = vi.fn(async () => ({ version: { ...target, status: 'active', revision: 2 } }))
+    setRuleRepositoryForTests({
+      list: async () => [],
+      getPublicVersion: async () => target,
+      transitionPublicStatus,
+    } as unknown as RuleRepositoryPort)
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'public-rule-review-session-secret')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ reviewer: { workspaces: ['ws_public_rule_review'], roles: ['rules_admin'], workbenches: ['platform'], actor_id: 'platform-operator' } }))
+    vi.stubEnv('RULE_APPROVAL_TOKENS', JSON.stringify({ approval: { workspaces: ['__platform_rules__'], actor_id: 'reviewer-2' } }))
+    const base = await start()
+    const response = await call(base, 'reviewer', 'platform', 'rule.status', {
+      pack_id: 'pdd-claims', version: '4', status: 'active', public_scope: 'platform', platform: 'pinduoduo', expected_revision: '1', reason: 'independent approval',
+      approval_json: JSON.stringify({ approval_ref: 'approval://public-rule', approved_by: 'reviewer-2', approved_at: '2026-09-25T11:00:00.000Z' }),
+    }, { approvalToken: 'approval' })
+    expect(response.error).toBeNull()
+    expect(transitionPublicStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'pinduoduo', packId: 'pdd-claims', status: 'active', actorId: 'platform-operator', auditData: { approved_by: 'reviewer-2', approval_ref: 'approval://public-rule', approved_at: '2026-09-25T11:00:00.000Z' } }))
   })
 
   it('denies an authenticated platform role without rules_admin before repository access', async () => {

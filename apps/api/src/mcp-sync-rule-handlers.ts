@@ -187,7 +187,14 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       const action = ['block', 'warn', 'review', 'allow'].includes(String(params.action)) ? String(params.action) : params.action === undefined ? 'block' : undefined
       if (!severity || !action) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则 severity/action 无效', 400)
       const input: JsonObject = { approval: typeof params.approval_json === 'string' ? parseJsonObjectParameter(params, 'approval_json') : undefined }
-      const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, input) : undefined
+      // Public rule lifecycle is stored in the control-plane workspace. A
+      // platform session may legitimately have no merchant workspace header,
+      // so binding its approval token to the request tenant would either use
+      // an empty scope or the operator's first merchant workspace. Keep the
+      // maker/checker grant bound to the same durable scope as the public
+      // rule repository instead.
+      const approvalWorkspaceId = params.public_scope === 'platform' ? '__platform_rules__' : workspaceId
+      const approval = status === 'active' ? parseApprovalGrant(req, approvalWorkspaceId, principal.actorId, input) : undefined
       const at = new Date().toISOString()
       const checksum = createHash('sha256').update(canonicalJson(checks)).digest('hex')
       const repository = ruleRepository()
@@ -237,7 +244,8 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       const principal = requireRuleAdmin(req)
       const packId = required(params, 'pack_id'); const versionValue = required(params, 'version'); const status = required(params, 'status'); const reason = required(params, 'reason')
       if (!['active', 'inactive', 'expired'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则状态无效', 400)
-      const approval = status === 'active' ? parseApprovalGrant(req, workspaceId, principal.actorId, { approval: typeof params.approval_json === 'string' ? parseJsonObjectParameter(params, 'approval_json') : undefined }) : undefined
+      const approvalWorkspaceId = params.public_scope === 'platform' ? '__platform_rules__' : workspaceId
+      const approval = status === 'active' ? parseApprovalGrant(req, approvalWorkspaceId, principal.actorId, { approval: typeof params.approval_json === 'string' ? parseJsonObjectParameter(params, 'approval_json') : undefined }) : undefined
       const repository = ruleRepository()
       if (repository) {
         if (params.public_scope === 'platform') {
