@@ -41,6 +41,25 @@ const PLATFORM_RULE_SOURCE_PATHS: Readonly<Record<RuleSyncPlatform, readonly Reg
   douyin: [/^\/doudian\/(?:web|wap)\/(?:home|rules|article)(?:\/|$)/u],
 }
 
+// Manual rule packages may cite an approved platform knowledge center in
+// addition to the platform's canonical landing page. Keep these sources in
+// the shared API policy so browser-side validation and server-side admission
+// cannot drift apart.
+const ADDITIONAL_PLATFORM_RULE_SOURCES: Readonly<Record<RuleSyncPlatform, readonly { host: string; paths: readonly RegExp[] }[]>> = {
+  jd: [
+    { host: 'helpcenter.jd.com', paths: [/^\/vender\/issue\//u] },
+    { host: 'media.shop.jd.com', paths: [/^\/app\/html\/(?:list|upload)\.html$/u] },
+  ],
+  taobao: [{ host: 'rulechannel.taobao.com', paths: [/^\/$/u] }],
+  tmall: [{ host: 'developer.alibaba.com', paths: [/^\/(?:doc|docs|api\.htm|support\/announcementDetail\.htm)/u] }],
+  pinduoduo: [{ host: 'mms.pinduoduo.com', paths: [/^\/other\/rule$/u] }],
+  xiaohongshu: [],
+  douyin: [
+    { host: 'open.douyin.com', paths: [/^\/platform\/resource\/docs\//u] },
+    { host: 'op.jinritemai.com', paths: [/^\/$/u] },
+  ],
+}
+
 /**
  * Bind an executable rule to a traceable page on the platform's approved
  * official host and path. Query strings are retained because several official
@@ -52,8 +71,10 @@ export function isApprovedPlatformRuleSource(platform: RuleSyncPlatform, referen
   try { url = new URL(reference) } catch { return false }
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) return false
   const source = PLATFORM_RULE_SOURCES.find(item => item.platform === platform)
-  if (!source || url.hostname !== new URL(source.officialUrl).hostname) return false
-  return PLATFORM_RULE_SOURCE_PATHS[platform].some(pattern => pattern.test(url.pathname))
+  if (!source) return false
+  if (url.hostname === new URL(source.officialUrl).hostname && PLATFORM_RULE_SOURCE_PATHS[platform].some(pattern => pattern.test(url.pathname))) return true
+  return ADDITIONAL_PLATFORM_RULE_SOURCES[platform].some(candidate =>
+    url.hostname === candidate.host && candidate.paths.some(pattern => pattern.test(url.pathname)))
 }
 
 function validDate(value: string | undefined): string | null {

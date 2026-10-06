@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultRuleCenterSeeds, RuleCenter } from './rule-center.js'
-import { PLATFORM_RULE_SOURCES, platformRuleSyncStatus } from './platform-rule-sync.js'
+import { isApprovedPlatformRuleSource, PLATFORM_RULE_SOURCES, platformRuleSyncStatus } from './platform-rule-sync.js'
 
 describe('platform rule sync status', () => {
   it('links JD to its official rules directory, not an unrelated rule notice', () => {
@@ -8,6 +8,14 @@ describe('platform rule sync status', () => {
     expect(jd).toMatchObject({ officialUrl: 'https://rule.jd.com/rule/list.action', machineReadable: false })
     expect(platformRuleSyncStatus([], { now: '2026-09-28T00:00:00.000Z' }).find(item => item.platform === 'jd'))
       .toMatchObject({ officialUrl: jd?.officialUrl, state: 'not_configured', latestVersion: null })
+  })
+
+  it('accepts approved secondary official sources used by manual platform packages', () => {
+    expect(isApprovedPlatformRuleSource('taobao', 'https://rulechannel.taobao.com/')).toBe(true)
+    expect(isApprovedPlatformRuleSource('jd', 'https://helpcenter.jd.com/vender/issue/1000-44348.html')).toBe(true)
+    expect(isApprovedPlatformRuleSource('pinduoduo', 'https://mms.pinduoduo.com/other/rule?listId=3&id=75')).toBe(true)
+    expect(isApprovedPlatformRuleSource('douyin', 'https://open.douyin.com/platform/resource/docs/ability/content-management/douyin-publish-solution')).toBe(true)
+    expect(isApprovedPlatformRuleSource('taobao', 'https://rulechannel.taobao.com.evil.example/')).toBe(false)
   })
 
   it('reports missing trusted manifest configuration fail-closed', () => {
