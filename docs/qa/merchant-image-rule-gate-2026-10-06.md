@@ -8,13 +8,13 @@
 
 ## 验证结果
 
-- `merchant-ops-console` 定向测试：17/17 通过。
+- `merchant-ops-console` 定向测试：25/25 通过（RuleCenterSection 与 useOpsConsoleModel 回归均包含在内）。
 - CodeGraph 已同步，索引为最新。
 - 远端 Ops UI 生产构建（`tsc` + Vite）通过。
 - Demo 101 `ops-ui` 已更新到提交 `a102ba64`，镜像：
-  `127.0.0.1:5000/storenova/merchant-ops-ui@sha256:49d038b90ed39a0a9b26d603a81a96517484ae6d00e6d7e53fce572b21858373`
+  `127.0.0.1:5000/storenova/merchant-ops-ui@sha256:3a8232e7ced35d66ea8e804b68c79211b8b8367d324e8a2d4a6e36ea1462afd3`
 - `ops-ui`、API、worker、商家 UI、Redis、Postgres、ClamAV 均 healthy；`/api/readyz` 与 `/ops/healthz` 返回 200。
-- gstack 浏览器回归：规则页面可访问，服务端授权已验证，账号角色为 `ops_admin、rules_admin`，六平台规则表和公共草稿分页显示正常。
+- gstack 浏览器回归：规则页面 HTTP 200，未认证边界正常，页面无 console error；本轮没有可复用的真实登录凭据，因此不把未认证页面当作已验证的正向角色流程。
 
 ## 仍然阻断（按设计 fail-closed）
 
