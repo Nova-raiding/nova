@@ -527,17 +527,20 @@ describe('MerchantService', () => {
   })
 
   it('allows Demo preview of a rights-pending generated candidate without making it publishable', () => {
+    const createdAt = '2026-08-25T00:00:00.000Z'
     const job = {
       id: 'imggen_preview', workspaceId: 'ws_demo', productId: 'prod_fixture_1', state: 'succeeded' as const,
       archiveState: 'archived' as const, idempotencyKey: 'preview-rights', direction: '主图', imageMode: 'create' as const,
-      count: 1, sourceProductVersion: 1, intentHash: 'intent', taskId: 'task_preview', revision: 1,
+      count: 1, sourceProductVersion: 1, intentHash: 'intent', taskId: 'task_preview', artifactRole: 'candidate' as const,
+      createdAt, updatedAt: createdAt, revision: 1,
     }
     const asset = {
       id: 'asset_preview', workspaceId: 'ws_demo', name: 'candidate-1.webp', mimeType: 'image/webp', sizeBytes: 9,
       sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_demo/asset_preview/candidate-1.webp', scanStatus: 'unscanned' as const,
-      rightsStatus: 'pending' as const, rightsScope: 'unknown' as const,
+      rightsStatus: 'pending' as const, rightsScope: 'unknown' as const, parseStatus: 'succeeded' as const,
+      contentTrust: { classification: 'untrusted' as const, mode: 'data_only' as const, canOverrideInstructions: false as const, canTriggerTools: false as const, requiresMerchantConfirmation: true as const }, references: [{ name: 'candidate-1.webp', mimeType: 'image/webp', firstSeenAt: createdAt }],
+      revision: 1, createdAt,
     }
-    const createdAt = '2026-08-25T00:00:00.000Z'
     const output = { visualRef: 'dvis_preview', assetId: asset.id, ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' as const, archiveReceiptId: 'image_archive_preview', archiveReceiptDigest: imageArchiveReceiptDigest({ archiveReceiptId: 'image_archive_preview', workspaceId: job.workspaceId, jobId: job.id, assetId: asset.id, objectSha256: asset.sha256, sizeBytes: asset.sizeBytes, mimeType: asset.mimeType, createdAt }) }
     expect(imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset, allowUnscannedAssets: true })).toMatchObject({ currentlyUsable: false, reason: 'asset_rights_required' })
     expect(imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset, allowUnscannedAssets: true, allowPendingRightsForPreview: true })).toMatchObject({ currentlyUsable: true, publishable: false })
