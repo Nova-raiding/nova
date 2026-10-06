@@ -221,6 +221,9 @@ import {
   type WorkspaceMetrics,
   type MerchantAuthAccount,
 } from './api'
+
+const MATERIAL_PAGE_SIZE = 12
+
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
 import { pluginAuthorizationReturnPath } from './plugin-authorization-return'
@@ -6502,6 +6505,7 @@ export function MaterialLibraryWorkspace({
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<'全部' | StoreMaterialCategory>('全部')
   const [series, setSeries] = useState<string>('全部')
+  const [materialPage, setMaterialPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   // Materials this browser itself selected and handed to the workspace. They
   // are kept per store because the merchant picked the store; nothing else is
@@ -6679,6 +6683,14 @@ export function MaterialLibraryWorkspace({
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return matchesCategory && matchesSeries && (!normalizedQuery || `${item.name} ${item.category} ${item.series} ${item.format}`.toLocaleLowerCase().includes(normalizedQuery))
   })
+  const materialPageCount = Math.max(1, Math.ceil(visibleMaterials.length / MATERIAL_PAGE_SIZE))
+  const pagedVisibleMaterials = visibleMaterials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE)
+  useEffect(() => {
+    setMaterialPage(1)
+  }, [activeStoreId, category, query, series])
+  useEffect(() => {
+    setMaterialPage((page) => Math.min(page, materialPageCount))
+  }, [materialPageCount])
   // A read that has not answered may not be rendered as 「找到 0 项素材」: the
   // page has to say which of the four states it is in, exactly like the rest of
   // the workspace. The count only appears once `GET /v1/assets` has answered.
@@ -7205,7 +7217,7 @@ export function MaterialLibraryWorkspace({
           {materialDownloadError && <p className="material-download-error" role="alert">{materialDownloadError}</p>}
           {visibleMaterials.length ? (
             <div className="material-card-grid">
-              {visibleMaterials.map((item, index) => {
+              {pagedVisibleMaterials.map((item, index) => {
                 const selected = selectedIds.includes(item.id)
                 return (
                   <article className={selected ? 'selected' : ''} key={item.id}>
@@ -7226,6 +7238,7 @@ export function MaterialLibraryWorkspace({
           ) : (
             <div className="material-empty"><FolderOpen size={28} /><strong>{materialEmptyTitle}</strong><span>{materialEmptyDetail}</span></div>
           )}
+          {materialPageCount > 1 && <nav className="catalog-asset-pagination" aria-label="素材分页"><span>共 {visibleMaterials.length} 项 · 第 {materialPage} / {materialPageCount} 页</span><div><button type="button" onClick={() => setMaterialPage((page) => Math.max(1, page - 1))} disabled={materialPage === 1}>上一页</button>{Array.from({ length: materialPageCount }, (_, index) => index + 1).map((page) => <button type="button" className={page === materialPage ? 'active' : ''} aria-current={page === materialPage ? 'page' : undefined} key={page} onClick={() => setMaterialPage(page)}>{page}</button>)}<button type="button" onClick={() => setMaterialPage((page) => Math.min(materialPageCount, page + 1))} disabled={materialPage === materialPageCount}>下一页</button></div></nav>}
           {materialStorageError && <p className="material-detail-metadata-error" role="alert">{materialStorageError}</p>}
         </section>
       )}
