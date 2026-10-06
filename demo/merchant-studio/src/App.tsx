@@ -5274,7 +5274,7 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; onOpenKnowledge: () => void }) {
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
@@ -5293,6 +5293,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }:
   const [manualStoreSubmitting, setManualStoreSubmitting] = useState(false)
   const [manualStoreError, setManualStoreError] = useState('')
   const [manualStoreMessage, setManualStoreMessage] = useState('')
+  const [imageGenerationOpen, setImageGenerationOpen] = useState(false)
+  const [imageGenerationDirection, setImageGenerationDirection] = useState('保留商品本体，生成适合电商首图的干净背景与克制光影')
+  const [imageGenerationSize, setImageGenerationSize] = useState<import('./api.js').ProductImageSize>('1024x1024')
+  const [imageGenerationCount, setImageGenerationCount] = useState('1')
+  const [imageGenerationBusy, setImageGenerationBusy] = useState(false)
+  const [imageGenerationError, setImageGenerationError] = useState('')
+  const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
+  const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
+  const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
   // This page owns no catalogue data of its own. Stores come from
   // `/v1/platform-accounts` and products from `/v1/products`; `null` means the
   // read has not answered and must be reported as unread rather than as an empty
@@ -5388,6 +5397,19 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }:
     [storeItems],
   )
   const selectedProduct = storeProducts.find((product) => product.id === selectedProductId) ?? null
+  const selectedApiProduct = products?.find((product) => product.id === selectedProductId) ?? null
+  const imageModelReady = modelStatusRead && modelStatus?.state === 'ready' && modelStatus.capabilities?.image_generation !== false
+  const imageModelBlocker = !baseUrl
+    ? '尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。'
+    : !modelStatusRead
+      ? '正在检查模型中转配置；配置确认前不会生成或扣费。'
+      : !modelStatus
+        ? '模型中转状态读取失败，系统不会生成或扣费。请重新检查。'
+        : modelStatus.state !== 'ready'
+          ? '模型中转尚未就绪，系统不会生成、扣费或发布。'
+          : modelStatus.capabilities?.image_generation === false
+            ? '当前模型中转未开放图片生成能力，系统不会生成或扣费。'
+            : ''
   const visibleStoreItems = useMemo(() => {
     const normalizedQuery = catalogQuery.trim().toLocaleLowerCase()
     const now = Date.now()
@@ -5437,9 +5459,49 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }:
     setSelectedSkuIndex(0)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const submitCatalogImageGeneration = async () => {
+    if (!baseUrl || !selectedApiProduct || !selectedStore || imageGenerationBusy) return
+    const direction = imageGenerationDirection.trim()
+    const count = Number(imageGenerationCount)
+    if (!direction) {
+      setImageGenerationError('请填写图片生成方向。')
+      setImageGenerationErrorField('direction')
+      return
+    }
+    if (!Number.isInteger(count) || count < 1 || count > 6) {
+      setImageGenerationError('候选数量必须是 1–6。')
+      setImageGenerationErrorField('count')
+      return
+    }
+    setImageGenerationBusy(true)
+    setImageGenerationError('')
+    setImageGenerationErrorField(null)
+    try {
+      const result = await generateProductImages(baseUrl, {
+        product_id: selectedApiProduct.id,
+        platform: selectedStore.platformId as PlatformId,
+        account_id: selectedStore.id,
+        direction,
+        mode: selectedApiProduct.sourceAssetIds?.length ? 'optimize' : 'create',
+        size: imageGenerationSize,
+        count: String(count),
+        idempotency_key: `merchant-studio-image-${selectedApiProduct.id}-${selectedStore.platformId}-${imageGenerationSize}-${count}-${direction}`,
+      })
+      setImageGenerationOpen(false)
+      window.location.href = `${window.location.pathname.replace(/\/merchant\/products\/?$/u, '/merchant/tasks')}?image_job=${encodeURIComponent(result.job_id)}`
+    } catch (cause) {
+      setImageGenerationError(describeApiError(cause))
+    } finally {
+      setImageGenerationBusy(false)
+    }
+  }
   const toggleCatalogProduct = (productId: string) => {
     setCatalogSelectedIds((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId])
   }
+  useEffect(() => {
+    if (!imageGenerationError || imageGenerationBusy || !imageGenerationOpen) return
+    window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))
+  }, [imageGenerationBusy, imageGenerationError, imageGenerationOpen])
   if (showUnboundDrafts) return <UnboundDraftCatalog
     baseUrl={baseUrl}
     products={unboundDrafts} readNote={productsNote} selectedProductId={selectedProductId}
@@ -5526,8 +5588,59 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, onOpenKnowledge }:
                 <p className="muted" role="status">服务端未返回该商品的规格明细，当前不显示可选规格；价格以商品事实为准。</p>
               )}
             </div>
+            <div className="catalog-detail-actions">
+              <button
+                type="button"
+                className="primary"
+                data-testid="catalog-generate-image"
+                disabled={!baseUrl || !selectedApiProduct?.factsConfirmed || !imageModelReady}
+                title={!baseUrl ? '尚未连接商家 API' : !selectedApiProduct?.factsConfirmed ? '请先确认商品事实' : !imageModelReady ? imageModelBlocker : undefined}
+                onClick={() => {
+                  setImageGenerationDirection('保留商品本体，生成适合电商首图的干净背景与克制光影')
+                  setImageGenerationSize('1024x1024')
+                  setImageGenerationCount('1')
+                  setImageGenerationError('')
+                  setImageGenerationErrorField(null)
+                  setImageGenerationOpen(true)
+                }}
+              >
+                <ImageIcon size={16} />生成图片
+              </button>
+              {!imageModelReady && <small className="catalog-detail-action-note">{imageModelBlocker || '正在检查模型中转配置'}</small>}
+            </div>
           </div>
         </section>
+        {imageGenerationOpen && (
+          <DialogFrame
+            testId="catalog-image-generation-dialog"
+            kicker="图片生成"
+            title={`为「${selectedProduct.title}」生成图片`}
+            onClose={() => { if (!imageGenerationBusy) setImageGenerationOpen(false) }}
+            busy={imageGenerationBusy}
+            actions={<><button className="secondary" type="button" onClick={() => setImageGenerationOpen(false)} disabled={imageGenerationBusy}>取消</button><button className="primary" type="button" onClick={() => void submitCatalogImageGeneration()} disabled={imageGenerationBusy || !imageModelReady}>{imageGenerationBusy ? '提交中…' : '确认生成'}</button></>}
+          >
+            <div className="dialog-form">
+              {imageModelBlocker && (
+                <div ref={imageGenerationConfigRef} className="error-notice image-generation-config-blocker" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true" aria-labelledby="catalog-image-generation-config-title" aria-describedby="catalog-image-generation-config-description">
+                  <strong id="catalog-image-generation-config-title">图片生成暂不可用</strong>
+                  <span id="catalog-image-generation-config-description">{imageModelBlocker}</span>
+                  {baseUrl && modelStatusRead && <button className="secondary-button" type="button" onClick={onRefreshModelStatus} disabled={imageGenerationBusy}>重新检查模型中转</button>}
+                </div>
+              )}
+              <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
+              <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
+              <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
+                <option value="1024x1024">主图 / 方图 · 1024×1024</option>
+                <option value="1024x1536">竖版内容图 · 1024×1536</option>
+                <option value="1536x1024">Banner / 横幅 · 1536×1024</option>
+                <option value="1024x3072">详情长图 · 1024×3072</option>
+                <option value="1024x4096">完整详情长图 · 1024×4096</option>
+              </select></label>
+              <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
+              {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#catalog-image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}</div>}
+            </div>
+          </DialogFrame>
+        )}
       </div>
     )
   }
@@ -13418,6 +13531,9 @@ export default function App() {
                       baseUrl={apiBaseUrl}
                       apiMode={apiMode}
                       canWrite={canImportCatalogForAccount(authAccount)}
+                      modelStatus={modelStatus}
+                      modelStatusRead={modelStatusRead}
+                      onRefreshModelStatus={refreshEnvironmentStatus}
                       onOpenKnowledge={() => navigateTo('products', { entry: 'knowledge' })}
                     />
                   ) : (

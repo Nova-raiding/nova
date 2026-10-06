@@ -1771,6 +1771,9 @@ body {
 .catalog-detail-thumbs button small { overflow:hidden; width:100%; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
 .catalog-detail-thumbs button:hover { border-color:#8aaf9d; color:#1d6b4b; }
 .catalog-detail-thumbs button.active { border:2px solid #1d6b4b; color:#1d6b4b; background:#f3f8f5; }
+.catalog-detail-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:22px; padding-top:18px; border-top:1px solid #e5ebe6; }
+.catalog-detail-actions .primary { display:inline-flex; align-items:center; gap:7px; min-height:44px; }
+.catalog-detail-action-note { flex:1 1 220px; color:#7b867e; font-size:11px; line-height:1.45; }
 .catalog-detail-info { padding:30px; }
 .catalog-detail-source { display:flex; align-items:center; gap:9px; }
 .catalog-detail-source span { padding:4px 7px; border-radius:5px; color:#fff; background:#174f3a; font-size:10px; font-weight:700; }
