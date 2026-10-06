@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { assertProductTargetIdentity, downloadContentExport, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { buildCatalogPlatforms } from './src/catalog-data.js'
 import { resolveLibraryData } from './src/library-data.js'
@@ -198,7 +199,7 @@ describe('merchant product response normalization', () => {
       status: 200,
       headers: {
         'content-disposition': "attachment; filename*=UTF-8''%E5%95%86%E5%93%81%E4%BA%A4%E4%BB%98.zip",
-        'x-delivery-bundle-sha256': 'sha256-test',
+        'x-delivery-bundle-sha256': `sha256:${createHash('sha256').update('bundle').digest('hex')}`,
         'x-delivery-bundle-verified': 'true',
       },
     }))
@@ -206,10 +207,33 @@ describe('merchant product response normalization', () => {
 
     const artifact = await downloadContentExport('/api', 'content-1')
     expect(artifact.filename).toBe('商品交付.zip')
-    expect(artifact.sha256).toBe('sha256-test')
+    expect(artifact.sha256).toBe(`sha256:${createHash('sha256').update('bundle').digest('hex')}`)
     expect(artifact.verified).toBe(true)
     expect(await artifact.blob.text()).toBe('bundle')
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/content-versions/content-1/export?format=bundle')
+  })
+
+  it('blocks a bundle when the server digest does not match the downloaded bytes', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['tampered']), {
+      status: 200,
+      headers: {
+        'content-disposition': 'attachment; filename="content.zip"',
+        'x-delivery-bundle-sha256': `sha256:${createHash('sha256').update('bundle').digest('hex')}`,
+        'x-delivery-bundle-verified': 'true',
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(downloadContentExport('/api', 'content-tampered')).rejects.toMatchObject({ code: 'CONTENT_EXPORT_INTEGRITY_FAILED', status: 502 })
+  })
+
+  it('blocks a bundle when the server omits verification evidence', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['bundle']), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(downloadContentExport('/api', 'content-unverified')).rejects.toMatchObject({ code: 'CONTENT_EXPORT_VERIFICATION_MISSING', status: 502 })
   })
 
   it('normalizes the registration application id returned by the HTTP API', async () => {

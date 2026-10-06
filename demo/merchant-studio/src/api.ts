@@ -931,6 +931,12 @@ export interface ContentExportArtifact {
   verified?: boolean
 }
 
+async function sha256Blob(blob: Blob): Promise<string> {
+  const digest = await globalThis.crypto?.subtle.digest('SHA-256', await blob.arrayBuffer())
+  if (!digest) throw Object.assign(new Error('当前环境不支持导出文件完整性校验'), { code: 'CONTENT_EXPORT_INTEGRITY_UNSUPPORTED', status: 500 })
+  return `sha256:${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
 export async function downloadContentExport(baseUrl: string, contentVersionId: string, format: 'manifest' | 'json' | 'markdown' | 'bundle' = 'bundle', workspaceId = configuredWorkspaceId()): Promise<ContentExportArtifact> {
   if (authExpired) {
     const error = new Error('登录会话已失效') as ApiError
@@ -959,11 +965,22 @@ export async function downloadContentExport(baseUrl: string, contentVersionId: s
   if (!response.ok) throw new Error(`导出失败（HTTP ${response.status}）`)
   const blob = await response.blob()
   if (!blob.size) throw new Error('服务端返回了空的导出文件')
+  const declaredSha256 = response.headers.get('x-delivery-bundle-sha256')?.trim()
+  const declaredVerified = response.headers.get('x-delivery-bundle-verified')
+  if (format === 'bundle') {
+    if (!declaredSha256 || declaredVerified !== 'true') {
+      throw Object.assign(new Error('服务端未提供已验证的交付包，已阻止下载'), { code: 'CONTENT_EXPORT_VERIFICATION_MISSING', status: 502 })
+    }
+    const actualSha256 = await sha256Blob(blob)
+    if (actualSha256.toLowerCase() !== declaredSha256.toLowerCase()) {
+      throw Object.assign(new Error('导出文件完整性校验失败，已阻止下载'), { code: 'CONTENT_EXPORT_INTEGRITY_FAILED', status: 502, expected: declaredSha256, actual: actualSha256 })
+    }
+  }
   const disposition = response.headers.get('content-disposition') ?? ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/iu)?.[1]
   const plain = disposition.match(/filename="?([^";]+)"?/iu)?.[1]
   const filename = encoded ? decodeURIComponent(encoded) : plain || `merchant-content-${contentVersionId}.${format === 'bundle' ? 'zip' : format}`
-  return { blob, filename, sha256: response.headers.get('x-delivery-bundle-sha256') ?? undefined, verified: response.headers.get('x-delivery-bundle-verified') === 'true' }
+  return { blob, filename, sha256: declaredSha256 || undefined, verified: declaredVerified === 'true' }
 }
 
 export function isNotConfigured(error: unknown) {
