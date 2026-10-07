@@ -82,6 +82,7 @@ async function sweepChild(job: Job) {
 }
 async function zeroDispatch() {
   const job = await f.seedJob({ unclaimed: true }); vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '0.1')
+  const apiResponses: Array<{ method?: string; path?: string; status: number; body: string }> = []
   const proxy = createServer(async (req, res) => {
     try {
       const chunks = []; for await (const chunk of req) chunks.push(chunk)
@@ -89,13 +90,15 @@ async function zeroDispatch() {
       expect(req.headers['x-internal-worker-signing-secret']).toBeUndefined()
       if (req.url !== '/readyz') expect(process.env.NODE_ENV).toBe('production')
       const response = await fetch(f.base + req.url, { method: req.method, headers: headers as Record<string,string>, ...(body ? { body } : {}) }); const text = await response.text()
+      if (req.url !== '/readyz') apiResponses.push({ method: req.method, path: req.url, status: response.status, body: text.slice(0, 1500) })
       if (req.url === '/readyz') { expect(response.status, text).toBe(200); const value=JSON.parse(text); expect(value.data.persistence.ready && value.data.redis.ready).toBe(true); vi.stubEnv('NODE_ENV','production') }
       res.statusCode=response.status;res.setHeader('content-type','application/json');res.end(text)
     } catch (error) { res.statusCode=500;res.end(JSON.stringify({error:String(error)})) }
   })
-  try { await runWorker(job.workspaceId, await listen(proxy)) } finally { await close(proxy) }
+  let workerOutput = ''
+  try { workerOutput = await runWorker(job.workspaceId, await listen(proxy)) } finally { await close(proxy) }
   const execution = await f.persistence.imageGenerationExecutions!.get({workspaceId:job.workspaceId,jobId:job.jobId})
-  expect(execution?.state).toBe('failed'); expect(execution?.providerStartedAt).toBeUndefined()
+  expect(execution?.state, JSON.stringify({ apiResponses, workerOutput: workerOutput.slice(-3000) })).toBe('failed'); expect(execution?.providerStartedAt).toBeUndefined()
   expect(await f.persistence.imageGenerationExecutions!.hasPreProviderFailureProof!({workspaceId:job.workspaceId,jobId:job.jobId,eventId:job.event.id})).toBe(true)
   const proof=(await f.admin.query("SELECT count(*)::int AS count FROM workspace_operation_audit WHERE workspace_id=$1 AND action='image.dispatch.closed_before_provider'",[job.workspaceId])).rows[0]
   expect(proof.count).toBe(1);expect((await facts(job)).point).toBe('active')

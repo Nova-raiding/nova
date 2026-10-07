@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RulesPage } from "./RulesPage.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 
-function rulesModel(options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean } = {}) {
+function rulesModel(options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean; canManageRules?: boolean } = {}) {
   return {
     // The console-level error is written by *any* failing optional dataset and
     // cleared whenever `loadRules` succeeds; it is not rule-scoped.
@@ -16,7 +16,7 @@ function rulesModel(options: { consoleError?: string; ruleError?: string; platfo
     rules: [],
     authorization: { scope: { kind: options.platform ? "platform" : "workspace", id: "ws-1" }, can: (capability: string) => capability === "rule.read" && options.canReadRules === true },
     ruleMutationKey: undefined,
-    canRules: false,
+    canRules: options.canManageRules === true,
     loadRules: async () => undefined,
     syncRulesNow: async () => false,
     updateRuleStatus: async () => undefined,
@@ -24,7 +24,7 @@ function rulesModel(options: { consoleError?: string; ruleError?: string; platfo
   } as unknown as OpsConsoleModel;
 }
 
-const render = (options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean } = {}) =>
+const render = (options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean; canManageRules?: boolean } = {}) =>
   renderToStaticMarkup(<RulesPage model={rulesModel(options)} />);
 
 describe("rules page error scope", () => {
@@ -53,5 +53,15 @@ describe("rules page error scope", () => {
     expect(html).toContain("上传平台规则（Markdown/ZIP）");
     expect(html).not.toContain("标记过期");
     expect(html).not.toContain("工作区规则审计");
+  });
+
+  it("shows the platform-rule upload entry to readers but enables it only for rule administrators", () => {
+    const readOnlyHtml = render({ platform: true, canReadRules: true });
+    const writableHtml = render({ platform: true, canReadRules: true, canManageRules: true });
+    const uploadButton = (html: string) => html.match(/<button\b[^>]*>[\s\S]*?上传平台规则（Markdown\/ZIP）[\s\S]*?<\/button>/u)?.[0];
+
+    expect(readOnlyHtml).toContain("上传平台规则（Markdown/ZIP）");
+    expect(uploadButton(readOnlyHtml)).toMatch(/\sdisabled=""/u);
+    expect(uploadButton(writableHtml)).not.toMatch(/\sdisabled=""/u);
   });
 });

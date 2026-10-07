@@ -39,6 +39,10 @@ export async function startImageSignedFixture(options: { redis?: boolean } = {})
     const workspaceId = options.workspaceId ?? `ws_image_${randomUUID().replaceAll('-', '')}`
     const identityId = randomUUID(); const actorId = `fixture-${identityId}`
     if (!workspaces.includes(workspaceId)) { await admin.query("INSERT INTO workspaces(id,status) VALUES($1,'active')", [workspaceId]); workspaces.push(workspaceId) }
+    // The API fixture can route worker entitlement reads to its in-memory
+    // commercial projection. Seed that projection explicitly instead of
+    // relying on an earlier access-decision request to lazily initialize it.
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     await admin.query('INSERT INTO platform_identities(id,issuer,external_subject,display_name) VALUES($1,$2,$3,$4)', [identityId, 'http://fixture.invalid', actorId, 'Isolated image actor'])
     await admin.query("INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by,identity_id) VALUES($1,$2,$3,'fixture','workspace_owner','active','fixture',$4)", [randomUUID(), workspaceId, actorId, identityId])
     const productId = `product-${randomUUID()}`; const jobId = `imggen_${randomUUID()}`; const idempotencyKey = `fixture-${jobId}`; const action = `image:${idempotencyKey}`
