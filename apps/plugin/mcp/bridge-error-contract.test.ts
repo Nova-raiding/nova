@@ -29,16 +29,16 @@ async function runBridge(requests: unknown[]) {
 }
 
 describe('local stdio bridge JSON-RPC error contract', () => {
-  it('rejects missing and non-scalar request ids as invalid requests', async () => {
+  it('rejects malformed request objects and non-scalar request ids', async () => {
     const responses = await runBridge([
-      { jsonrpc: '2.0', method: 'ping' },
+      { jsonrpc: '2.0' },
       { jsonrpc: '2.0', id: true, method: 'ping' },
       { jsonrpc: '2.0', id: {}, method: 'ping' },
       { jsonrpc: '2.0', id: [], method: 'ping' },
     ])
 
     expect(responses).toEqual([
-      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
+      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC method 必须是非空字符串' } },
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
@@ -46,6 +46,11 @@ describe('local stdio bridge JSON-RPC error contract', () => {
   })
 
   it('keeps notifications without ids silent', async () => {
-    await expect(runBridge([{ jsonrpc: '2.0', method: 'notifications/initialized' }])).resolves.toEqual([])
+    await expect(runBridge([
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 41 } },
+      { jsonrpc: '2.0', method: 'notifications/custom-event', params: { ignored: true } },
+      { jsonrpc: '2.0', id: 'after-notifications', method: 'ping' },
+    ])).resolves.toEqual([{ jsonrpc: '2.0', id: 'after-notifications', result: {} }])
   })
 })

@@ -81,9 +81,9 @@ async function installRoutes(page, { canonicalStatus = 'verified' } = {}) {
     contentType: 'application/json',
     body: JSON.stringify(envelope({
       status: 'ok',
-      writesEnabled: true,
+      writesEnabled: false,
       connectors: {},
-      persistence: { mode: 'postgres', ready: true },
+      persistence: { mode: 'fixture', ready: true },
     })),
   }))
   await page.route('**/v1/platform-accounts*', route => route.fulfill({

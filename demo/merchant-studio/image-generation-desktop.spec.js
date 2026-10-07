@@ -4,6 +4,7 @@ test.setTimeout(60_000)
 
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
 let browserDiagnostics = []
+let unexpectedApiRequests = []
 const envelope = (data) => ({
   request_id: 'browser-image-request',
   trace_id: 'browser-image-trace',
@@ -70,14 +71,20 @@ test.afterEach(async ({}, testInfo) => {
   const report = JSON.stringify(browserDiagnostics, null, 2)
   await testInfo.attach('browser-diagnostics.json', { body: Buffer.from(report), contentType: 'application/json' })
   console.log(`BROWSER_DIAGNOSTICS ${report}`)
+  expect(unexpectedApiRequests, 'all browser API requests must use an explicit fixture').toEqual([])
 })
 
 async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false, detailDelayMs = 0 } = {}) {
-  // Keep unrelated background reads local; specific routes registered below take precedence.
-  await page.route('**/v1/**', route => route.fulfill({
+  unexpectedApiRequests = []
+  // Unmodeled API calls fail closed instead of receiving an empty success that
+  // could hide an endpoint or contract change.
+  await page.route('**/v1/**', route => {
+    unexpectedApiRequests.push(route.request().url())
+    return route.fulfill({ status: 501,
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })),
-  }))
+    body: JSON.stringify(envelope(null, { code: 'UNMOCKED_BROWSER_API', message: 'No fixture was declared for this API request.' })),
+  })
+  })
   await page.route('**/v1/auth/session', route => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(envelope({ account: {
@@ -115,6 +122,7 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
     contentType: 'application/json',
     body: JSON.stringify(envelope({ items: jobs, total: jobs.length, limit: 50, offset: 0 })),
   }))
+  await page.route('**/v1/publish-jobs*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) }))
   await page.route('**/v1/image-generation-jobs/*', async route => {
     if (detailDelayMs) await new Promise(resolve => setTimeout(resolve, detailDelayMs))
     if (!detail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null)) })

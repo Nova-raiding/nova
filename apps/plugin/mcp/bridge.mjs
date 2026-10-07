@@ -3977,12 +3977,14 @@ async function handle(request) {
     return jsonRpcError(null, -32600, 'JSON-RPC 请求格式无效')
   }
   const hasId = Object.prototype.hasOwnProperty.call(request, 'id')
-  const validId = !hasId
-    ? request.method === 'notifications/initialized'
-    : request.id === null || typeof request.id === 'string' || (typeof request.id === 'number' && Number.isFinite(request.id))
-  const id = hasId && validId ? request.id : null
-  if (request.jsonrpc !== '2.0' || (!hasId && request.method !== 'notifications/initialized') || !validId) return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
-  if (typeof request.method !== 'string' || !request.method.trim()) return jsonRpcError(id, -32600, 'JSON-RPC method 必须是非空字符串')
+  if (request.jsonrpc !== '2.0') return jsonRpcError(hasId ? request.id : null, -32600, 'JSON-RPC 请求格式无效')
+  if (typeof request.method !== 'string' || !request.method.trim()) return jsonRpcError(hasId ? request.id : null, -32600, 'JSON-RPC method 必须是非空字符串')
+  // JSON-RPC notifications never receive responses, including notifications
+  // this bridge does not currently act on (for example cancellation events).
+  if (!hasId) return null
+  const validId = request.id === null || typeof request.id === 'string' || (typeof request.id === 'number' && Number.isFinite(request.id))
+  const id = validId ? request.id : null
+  if (!validId) return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
   if (request.params !== undefined && (!request.params || typeof request.params !== 'object' || Array.isArray(request.params))) return jsonRpcError(id, -32602, 'JSON-RPC params 必须是对象')
   if (request.method === 'notifications/initialized') return null
   if (request.method === 'ping') return jsonRpc(id, {})

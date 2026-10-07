@@ -380,6 +380,28 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('does not repeat handler side effects when queue ack fails after durable success', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(1_000))
+    const store = new Store(event({ id: 'evt_queue_ack_failure' }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'completed-once' }))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { now: () => Date.now() })
+    vi.spyOn(queue, 'ack').mockRejectedValueOnce(new Error('queue ack unavailable'))
+
+    await dispatcher.restore('ws_1')
+    await expect(dispatcher.dispatchOnce()).rejects.toThrow('queue ack unavailable')
+    expect(store.events.get('evt_queue_ack_failure')?.publishedAt).toBeTruthy()
+    expect(await queue.contains('evt_queue_ack_failure')).toBe(true)
+
+    // The queue retries its stale envelope, but the durable success is
+    // authoritative and must suppress a second handler invocation.
+    await vi.advanceTimersByTimeAsync(30_001)
+    await expect(dispatcher.dispatchOnce()).resolves.toMatchObject({ state: 'queued' })
+    expect(handler).toHaveBeenCalledOnce()
+    expect(await queue.contains('evt_queue_ack_failure')).toBe(false)
+  })
+
   it('preserves an authoritative unknown outcome when a duplicate delivery arrives', async () => {
     const unknownAt = new Date().toISOString()
     const current = event({ id: 'evt_duplicate_unknown', leaseToken: 'lease_unknown', leaseUntil: new Date(Date.now() + 30_000).toISOString(), unknownAt })
