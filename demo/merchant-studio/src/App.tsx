@@ -32,6 +32,8 @@ import {
   formatMaterialFileSize,
   isImageMaterial,
   materialDownloadHref,
+  MATERIAL_PAGE_SIZE,
+  paginateMaterials,
   materialEmptyCopy,
   materialStoreCategories,
   materialSummaryText,
@@ -221,8 +223,6 @@ import {
   type WorkspaceMetrics,
   type MerchantAuthAccount,
 } from './api'
-
-const MATERIAL_PAGE_SIZE = 12
 
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
@@ -6683,8 +6683,9 @@ export function MaterialLibraryWorkspace({
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return matchesCategory && matchesSeries && (!normalizedQuery || `${item.name} ${item.category} ${item.series} ${item.format}`.toLocaleLowerCase().includes(normalizedQuery))
   })
-  const materialPageCount = Math.max(1, Math.ceil(visibleMaterials.length / MATERIAL_PAGE_SIZE))
-  const pagedVisibleMaterials = visibleMaterials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE)
+  const materialPagination = paginateMaterials(visibleMaterials, materialPage, MATERIAL_PAGE_SIZE)
+  const materialPageCount = materialPagination.pageCount
+  const pagedVisibleMaterials = materialPagination.items
   useEffect(() => {
     setMaterialPage(1)
   }, [activeStoreId, category, query, series])

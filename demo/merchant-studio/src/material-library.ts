@@ -68,6 +68,17 @@ export const materialStoreCategories: Array<'全部' | StoreMaterialCategory> = 
   '未分类',
 ]
 
+export const MATERIAL_PAGE_SIZE = 12
+
+/** Keep page boundaries deterministic so the UI cannot render an empty page
+ * after filters shrink the result set or after a stale deep-link page number. */
+export function paginateMaterials<T>(items: readonly T[], page: number, pageSize = MATERIAL_PAGE_SIZE): { page: number; pageCount: number; items: T[] } {
+  const safePageSize = Number.isSafeInteger(pageSize) && pageSize > 0 ? pageSize : MATERIAL_PAGE_SIZE
+  const pageCount = Math.max(1, Math.ceil(items.length / safePageSize))
+  const safePage = Number.isSafeInteger(page) ? Math.min(pageCount, Math.max(1, page)) : 1
+  return { page: safePage, pageCount, items: items.slice((safePage - 1) * safePageSize, safePage * safePageSize) }
+}
+
 const mimeFormatLabels: Record<string, string> = {
   'image/jpeg': 'JPG',
   'image/jpg': 'JPG',

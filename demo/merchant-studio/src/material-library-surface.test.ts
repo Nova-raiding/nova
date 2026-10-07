@@ -152,8 +152,8 @@ describe('material metadata editing follows the reference card layout and persis
 describe('material library pagination', () => {
   it('pages a large material result without changing the server-backed total', () => {
     const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
-    expect(appSource).toContain('const MATERIAL_PAGE_SIZE = 12')
-    expect(appSource).toContain('const pagedVisibleMaterials = visibleMaterials.slice')
+    expect(appSource).toContain('MATERIAL_PAGE_SIZE')
+    expect(appSource).toContain('const materialPagination = paginateMaterials(visibleMaterials, materialPage, MATERIAL_PAGE_SIZE)')
     expect(appSource).toContain('aria-label="素材分页"')
     expect(appSource).toContain('共 {visibleMaterials.length} 项 · 第 {materialPage} / {materialPageCount} 页')
   })

@@ -12,6 +12,7 @@ import {
   materialFormatFromMimeType,
   materialItemFromAsset,
   materialSummaryText,
+  paginateMaterials,
   resolveMaterialRead,
 } from './material-library'
 import assetsCapture from './fixtures/assets.capture.json'
@@ -105,6 +106,28 @@ describe('a material card is built from the server row', () => {
     expect(materialDownloadHref(item, 'http://127.0.0.1:28181')).toBe(`http://127.0.0.1:28181/v1/assets/${item.assetId}/download`)
     // A session upload has no server id and keeps its own object URL.
     expect(materialDownloadHref({ downloadUrl: 'blob:session-upload' }, '/api')).toBe('blob:session-upload')
+  })
+})
+
+describe('material pagination keeps page boundaries safe', () => {
+  const items = Array.from({ length: 25 }, (_, index) => `asset-${index + 1}`)
+
+  it('returns the first, middle and final page without dropping or duplicating rows', () => {
+    expect(paginateMaterials(items, 1)).toEqual({ page: 1, pageCount: 3, items: items.slice(0, 12) })
+    expect(paginateMaterials(items, 2)).toEqual({ page: 2, pageCount: 3, items: items.slice(12, 24) })
+    expect(paginateMaterials(items, 3)).toEqual({ page: 3, pageCount: 3, items: ['asset-25'] })
+    expect([...paginateMaterials(items, 1).items, ...paginateMaterials(items, 2).items, ...paginateMaterials(items, 3).items]).toEqual(items)
+  })
+
+  it('clamps stale, negative and non-integer page values to a real page', () => {
+    expect(paginateMaterials(items, 0).page).toBe(1)
+    expect(paginateMaterials(items, -3).page).toBe(1)
+    expect(paginateMaterials(items, 99).page).toBe(3)
+    expect(paginateMaterials(items, Number.NaN).page).toBe(1)
+  })
+
+  it('keeps an empty filtered result on one empty page', () => {
+    expect(paginateMaterials([], 4)).toEqual({ page: 1, pageCount: 1, items: [] })
   })
 })
 
