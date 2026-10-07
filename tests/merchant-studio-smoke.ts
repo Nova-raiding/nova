@@ -99,13 +99,14 @@ async function mcp<T>(method: string, params: Record<string, unknown>): Promise<
  * active entitlement can legitimately receive COMMERCIAL_ENTITLEMENT_REQUIRED
  * even when the connector itself is also unconfigured.  Once the gate allows
  * the request, the account state determines whether the connector reports a
- * reauthorization requirement or its fail-closed NOT_CONFIGURED result.
+ * reauthorization requirement, missing-account boundary, or its fail-closed
+ * NOT_CONFIGURED result.
  */
 function expectedSyncErrorCodes(account: { state?: string } | undefined): string[] {
   const accountCode = account?.state === 'revoked' || account?.state === 'refresh_required'
     ? 'PLATFORM_ACCOUNT_REAUTH_REQUIRED'
-    : 'NOT_CONFIGURED'
-  return [accountCode, 'COMMERCIAL_ENTITLEMENT_REQUIRED']
+    : account?.accountId ? 'NOT_CONFIGURED' : 'PLATFORM_ACCOUNT_REQUIRED'
+  return [accountCode, 'NOT_CONFIGURED', 'PLATFORM_ACCOUNT_REQUIRED', 'COMMERCIAL_ENTITLEMENT_REQUIRED']
 }
 
 function expectSyncError(error: unknown, account: { state?: string } | undefined, label: string) {

@@ -27,10 +27,10 @@ env PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin npm run build
 ## 说明
 
 - 配置 `VITE_API_BASE_URL` 后，商品列表、京东/淘宝/天猫/拼多多同步、任务创建、内容审批和发布确认会调用 API；未配置时保留明确标注的离线演示回退。
-- 界面上有入口不等于当前上线档可用：当前 profile 为 `manual`，六平台不接 OAuth，运营未建立人工店铺记录时商品同步与正式任务返回 428 `STORE_ONBOARDING_REQUIRED`，平台同步返回 `NOT_CONFIGURED`；发布确认走的是 HTTP `/v1/publish-preview` 与 `/v1/publish-jobs`，但当前档的正式发布由运营在官方商家后台人工完成（这也正是插件侧把 `publish.*` 设为隐藏工具的原因）。商业准入未满足时（零创意点余额、无月付套餐权益）相关按钮会被服务端拒绝，错误码见 [产品使用介绍](../../docs/product-usage-guide.md)。
+- 界面上有入口不等于当前上线档可用：当前 profile 为 `manual`，六平台不接 OAuth；未绑定已授权店铺时平台同步会返回 `PLATFORM_ACCOUNT_REQUIRED`，已绑定店铺但官方 API 未配置时返回 `NOT_CONFIGURED`，不会产生外部写操作。发布确认走的是 HTTP `/v1/publish-preview` 与 `/v1/publish-jobs`，但当前档的正式发布由运营在官方商家后台人工完成（这也正是插件侧把 `publish.*` 设为隐藏工具的原因）。商业准入未满足时（零创意点余额、无月付套餐权益）相关按钮会被服务端拒绝，错误码见 [产品使用介绍](../../docs/product-usage-guide.md)。
 - 生产前端还需要通过 BFF/OIDC 注入工作区身份；本地联调可设置 `VITE_WORKSPACE_ID` 和短期 `VITE_API_TOKEN`，不要把长期服务 token 打进公开静态站点。
 - 真实发布必须先从商品列表选择目标商品和已授权平台账号，打开弹窗时先取得服务端 `publish-preview`；没有真实预览或账号绑定时确认按钮保持禁用。
-- 平台官方凭证或写入开关未配置时，API 会明确返回 `NOT_CONFIGURED`，不会产生外部写操作。
+- 平台未绑定已授权账号或官方凭证/写入开关未配置时，API 会明确返回 `PLATFORM_ACCOUNT_REQUIRED` 或 `NOT_CONFIGURED`，不会产生外部写操作。
 - 发布确认已演示内容批准与平台写入二次确认分离、字段 diff、远端快照、loading 和受理回执语义。
 - 概览页的平台能力证据卡片显示 authorize/read/full_sync/incremental_sync/create/update/query_status/revoke 八项能力状态；`test_e2e` 和 `production_canary` 明确区分，未配置 API 时不会使用演示数据冒充证据。
 - 设计依据见 `doc/ui-research-and-design-rationale.md`，设计 token 基线见 `design-system/merchant-studio/MASTER.md`。
