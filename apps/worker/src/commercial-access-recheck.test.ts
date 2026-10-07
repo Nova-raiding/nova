@@ -145,4 +145,23 @@ describe('worker commercial recheck ordering', () => {
     })
     expect(provider).not.toHaveBeenCalled()
   })
+
+  it('fails closed on image entitlement drift before the image executor can dispatch', async () => {
+    const executionAuthorization = { assertAuthorized: vi.fn(async () => ({} as never)) } satisfies WorkerExecutionAuthorizationGuard
+    const commercialAccess = {
+      assertCommercialAccess: vi.fn(async () => {
+        throw Object.assign(new Error('image entitlement snapshot changed'), {
+          code: 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', retryable: true, unknown: false,
+        })
+      }),
+    } satisfies WorkerCommercialAccessGuard
+    const imageProvider = vi.fn()
+    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, imageGenerationRequested: imageProvider })
+
+    await expect(handler({ event: event('image.generation.requested', 'image_generation.execute'), attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', retryable: false, unknown: false, decisionId: 'commercial_enqueue', entitlementSnapshotId: 'entitlement_1', entitlementSnapshotChecksum: 'b'.repeat(64) } })
+    expect(executionAuthorization.assertAuthorized).toHaveBeenCalledOnce()
+    expect(commercialAccess.assertCommercialAccess).toHaveBeenCalledOnce()
+    expect(imageProvider).not.toHaveBeenCalled()
+  })
 })
