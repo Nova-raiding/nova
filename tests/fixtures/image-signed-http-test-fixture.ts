@@ -42,6 +42,26 @@ export async function startImageSignedFixture(options: { redis?: boolean } = {})
     await admin.query('INSERT INTO platform_identities(id,issuer,external_subject,display_name) VALUES($1,$2,$3,$4)', [identityId, 'http://fixture.invalid', actorId, 'Isolated image actor'])
     await admin.query("INSERT INTO workspace_members(id,workspace_id,external_subject,display_name,role,status,invited_by,identity_id) VALUES($1,$2,$3,'fixture','workspace_owner','active','fixture',$4)", [randomUUID(), workspaceId, actorId, identityId])
     const productId = `product-${randomUUID()}`; const jobId = `imggen_${randomUUID()}`; const idempotencyKey = `fixture-${jobId}`; const action = `image:${idempotencyKey}`
+    const orderId = `order-${randomUUID()}`
+    const orderSnapshotId = `order-snapshot-${randomUUID()}`
+    const periodId = `period-${randomUUID()}`
+    const entitlementId = `entitlement-${randomUUID()}`
+    await admin.query(`INSERT INTO commercial_orders_v2
+      (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id,provider_order_id,paid_at)
+      VALUES ($1,$2,'sku-monthly-basic','sku-version-monthly-basic-v2',200000,'CNY','fixture','paid',$3,$4,'image-fixture',$5,now())`,
+      [orderId, workspaceId, `image-fixture-entitlement:${jobId}`, 'a'.repeat(64), `image-fixture-${jobId}`])
+    await admin.query(`INSERT INTO commercial_order_snapshots_v2
+      (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum)
+      VALUES ($1,$2,$3,'sku-monthly-basic','sku-version-monthly-basic-v2',$4,$5::jsonb,$6)`,
+      [orderSnapshotId, workspaceId, orderId, 'b'.repeat(64), JSON.stringify({ fixture: 'image-signed-http', simulated: true }), 'c'.repeat(64)])
+    await admin.query(`INSERT INTO workspace_subscription_periods_v2
+      (id,workspace_id,order_snapshot_id,period_start,period_end,status,revision)
+      VALUES ($1,$2,$3,now() - interval '1 day',now() + interval '30 days','active',1)`,
+      [periodId, workspaceId, orderSnapshotId])
+    await admin.query(`INSERT INTO workspace_entitlement_snapshots_v2
+      (id,workspace_id,subscription_period_id,subscription_period_revision,catalog_version_id,rate_card_version_id,resolved_benefits,unresolved_blockers,executable,checksum)
+      VALUES ($1,$2,$3,1,'sku-version-monthly-basic-v2',NULL,$4::jsonb,'[]'::jsonb,true,$5)`,
+      [entitlementId, workspaceId, periodId, JSON.stringify([{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }, { code: 'monthly_creative_points', quantity: 5000 }]), 'd'.repeat(64)])
     await persistence.business!.save({ workspaceId, entityType: 'product', entityId: productId, entityVersion: 1, payload: { id: productId, workspaceId, title: 'Isolated image', platform: 'jd', source: 'fixture', remoteId: productId, storeName: 'fixture', version: 1, skuCount: 1, stock: 0 } })
     const job = { id: jobId, workspaceId, productId, idempotencyKey, intentHash: 'a'.repeat(64), sourceProductVersion: 1, direction: 'fixture', count: 1, state: 'queued', archiveState: 'pending', revision: 1 }
     await persistence.business!.save({ workspaceId, entityType: 'image_generation_job', entityId: jobId, entityVersion: 1, payload: job })
