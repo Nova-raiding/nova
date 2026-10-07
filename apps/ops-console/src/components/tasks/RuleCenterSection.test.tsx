@@ -93,6 +93,82 @@ describe("trusted platform rule boundary", () => {
     }
   });
 
+  it("reads a multi-platform ZIP in stable path order and ignores non-platform Markdown", async () => {
+    const zip = new JSZip();
+    const platformCards: Array<[string, string, string]> = [
+      ["京东", "JD-GEN-001", sourceForPlatform("京东")],
+      ["淘宝", "TB-GEN-001", sourceForPlatform("淘宝")],
+      ["天猫", "TM-GEN-001", sourceForPlatform("天猫")],
+      ["拼多多", "PDD-GEN-001", sourceForPlatform("拼多多")],
+      ["小红书", "XHS-GEN-001", sourceForPlatform("小红书")],
+      ["抖店", "DY-GEN-001", sourceForPlatform("douyin")],
+    ];
+    for (const [platform, cardId, source] of platformCards) {
+      zip.file(`包/01_上传文件/${platform}平台规则.md`, [
+        `# Store Nova｜${platform}平台规则知识库 v0.1`,
+        `## ${cardId}｜规则卡片`,
+        `- 平台：${platform}`,
+        `- 官方依据：${source}`,
+        "规则内容",
+      ].join("\n"));
+    }
+    zip.file("包/02_查阅资料/待核实参数.md", "## PENDING-001｜不应导入");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const file = {
+      name: "six-platform-rules.zip",
+      text: async () => "",
+      arrayBuffer: async () => bytes.buffer,
+    } as unknown as File;
+
+    const documents = await readRuleMarkdownDocuments(file);
+    const expectedNames = [
+      "six-platform-rules.zip:包/01_上传文件/京东平台规则.md",
+      "six-platform-rules.zip:包/01_上传文件/天猫平台规则.md",
+      "six-platform-rules.zip:包/01_上传文件/小红书平台规则.md",
+      "six-platform-rules.zip:包/01_上传文件/抖店平台规则.md",
+      "six-platform-rules.zip:包/01_上传文件/拼多多平台规则.md",
+      "six-platform-rules.zip:包/01_上传文件/淘宝平台规则.md",
+    ];
+    expect(documents.map(document => document.name)).toEqual(expectedNames);
+    const drafts = documents.flatMap(document => parseMarkdownDraftInputs(document.text, document.name));
+    expect(drafts.map(draft => draft.targetId)).toEqual(["jd", "tmall", "xiaohongshu", "douyin", "pinduoduo", "taobao"]);
+    expect(drafts.some(draft => draft.packId.includes("pending"))).toBe(false);
+  });
+
+  it("keeps direct Markdown support and fails closed for category, empty, and corrupt ZIP inputs", async () => {
+    const markdown = markdownCard("001", "小红书");
+    const direct = {
+      name: "xiaohongshu.md",
+      text: async () => markdown,
+      arrayBuffer: async () => new TextEncoder().encode(markdown).buffer,
+    } as unknown as File;
+    await expect(readRuleMarkdownDocuments(direct)).resolves.toEqual([{ name: "xiaohongshu.md", text: markdown }]);
+
+    const categoryZip = new JSZip();
+    categoryZip.file("品类包/01_上传文件/食品饮料品类规则.md", markdown);
+    const categoryBytes = await categoryZip.generateAsync({ type: "uint8array" });
+    const category = {
+      name: "category-rules.zip",
+      text: async () => "",
+      arrayBuffer: async () => categoryBytes.buffer,
+    } as unknown as File;
+    await expect(readRuleMarkdownDocuments(category)).rejects.toThrow("ZIP 内未找到平台规则 Markdown");
+
+    const empty = {
+      name: "empty.zip",
+      text: async () => "",
+      arrayBuffer: async () => new Uint8Array().buffer,
+    } as unknown as File;
+    await expect(readRuleMarkdownDocuments(empty)).rejects.toThrow();
+
+    const corrupt = {
+      name: "corrupt.zip",
+      text: async () => "",
+      arrayBuffer: async () => new TextEncoder().encode("not a zip").buffer,
+    } as unknown as File;
+    await expect(readRuleMarkdownDocuments(corrupt)).rejects.toThrow();
+  });
+
   it("accepts the card prefixes and official source hosts used by the supplied platform rule packages", () => {
     const cases: Array<[string, string, string]> = [
       ["JD-GEN-001", "京东", "https://helpcenter.jd.com/vender/issue/1000-44348.html"],
