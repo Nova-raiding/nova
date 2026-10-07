@@ -27,6 +27,7 @@ export function parsePublicRuleDraftList(value: unknown): { items: ReviewRule[];
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("公共规则草稿记录格式无效");
     const row = item as Record<string, unknown>;
     if (!["id", "platform", "pack_id", "name", "version", "status", "checksum", "created_by", "created_at"].every(key => typeof row[key] === "string")
+      || !platforms.includes(row.platform as Platform) || !Number.isSafeInteger(row.revision) || (row.revision as number) < 1
       || typeof row.checksum_valid !== "boolean" || !row.source || typeof row.source !== "object" || Array.isArray(row.source)
       || !["kind", "reference", "checked_at", "trust"].every(key => typeof (row.source as Record<string, unknown>)[key] === "string")) throw new Error("公共规则草稿记录字段不完整");
   }

@@ -18,6 +18,8 @@ describe("public platform rule draft review", () => {
   it("validates list response shape and pagination cursor", () => {
     expect(parsePublicRuleDraftList({ items: [pending], next_cursor: "next" })).toMatchObject({ items: [pending], nextCursor: "next" });
     expect(() => parsePublicRuleDraftList({ items: [{ ...pending, checksum_valid: "yes" }] })).toThrow("字段不完整");
+    expect(() => parsePublicRuleDraftList({ items: [{ ...pending, platform: "unknown-platform" }] })).toThrow("字段不完整");
+    expect(() => parsePublicRuleDraftList({ items: [{ ...pending, revision: 0 }] })).toThrow("字段不完整");
     expect(() => parsePublicRuleDraftList({ items: [], next_cursor: {} })).toThrow("游标格式无效");
   });
 
@@ -68,5 +70,12 @@ describe("public platform rule draft review", () => {
     expect(readOnly).toContain("公共平台规则草稿审核");
     expect(readOnly).toContain("只读审核视图");
     expect(readOnly).not.toContain("审批并激活");
+  });
+
+  it("does not expose batch approval without the dedicated publish capability", () => {
+    const html = renderToStaticMarkup(<PublicRuleDraftReviewPanel authorization={authorization("platform", ["rule.read", "rule.update"])} />);
+    expect(html).toContain("公共平台规则草稿审核");
+    expect(html).not.toContain("一键审批选中");
+    expect(html).not.toContain("审批并激活");
   });
 });
