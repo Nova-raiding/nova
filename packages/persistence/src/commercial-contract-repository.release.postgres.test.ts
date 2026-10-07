@@ -419,10 +419,15 @@ describe('commercial contract PostgreSQL E2', () => {
           payloadHash: 'e'.repeat(64), amountFen: 200000, currency: 'CNY', paidAt, period,
         })
       }
+      // Keep this scenario ahead of the real database clock. The repository
+      // deliberately expires windows with PostgreSQL `now()`, while the
+      // entitlement service below uses a deterministic test clock. Using a
+      // historical 2026 window would make the database correctly expire the
+      // first period before the service evaluates it on a later test run.
       // Two orders paid in the same month, verified at the same moment.
       await Promise.all([
-        grant('concurrent-order-1', 'concurrent-event-1', '2026-09-02T00:00:00.000Z', { start: '2026-09-02T00:00:00.000Z', end: '2026-10-02T00:00:00.000Z' }),
-        grant('concurrent-order-2', 'concurrent-event-2', '2026-09-20T00:00:00.000Z', { start: '2026-09-20T00:00:00.000Z', end: '2026-10-20T00:00:00.000Z' }),
+        grant('concurrent-order-1', 'concurrent-event-1', '2027-09-02T00:00:00.000Z', { start: '2027-09-02T00:00:00.000Z', end: '2027-10-02T00:00:00.000Z' }),
+        grant('concurrent-order-2', 'concurrent-event-2', '2027-09-20T00:00:00.000Z', { start: '2027-09-20T00:00:00.000Z', end: '2027-10-20T00:00:00.000Z' }),
       ])
 
       const windows = (await database.query<{ start: string | Date; end: string | Date }>(
@@ -434,7 +439,7 @@ describe('commercial contract PostgreSQL E2', () => {
 
       const entitlement = new ContinuousFeatureEntitlementService({
         projection: { listV2EntitlementSnapshots: input => repository.listEntitlementSnapshots(input.workspace_id) },
-        now: () => new Date('2026-09-25T00:00:00.000Z'),
+        now: () => new Date('2027-09-25T00:00:00.000Z'),
       })
       await expect(entitlement.decide({ workspace_id: 'ws-concurrent' })).resolves.toMatchObject({ allowed: true, code: 'OK' })
     } finally {

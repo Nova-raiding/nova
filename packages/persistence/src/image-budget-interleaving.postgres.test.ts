@@ -72,14 +72,33 @@ describe('image dispatch budget PostgreSQL interleaving acceptance', () => {
       const setup = async () => {
         const { owned, failure } = await prepare('provider_reserved')
         const action = `image:idempotency-${owned.jobId}`
+        const reservationId = `reservation-${owned.jobId}`
+        const operationId = `operation-${owned.jobId}`
+        // The production pre-dispatch proof is intentionally bound to a real
+        // charged creative-point reservation. Keep the fixture on that same
+        // durable path so a missing commercial snapshot cannot accidentally
+        // make budget cleanup look successful.
+        await database.query(`INSERT INTO creative_point_operations
+          (id,workspace_id,kind,idempotency_key,status,request,result,completed_at)
+          VALUES ($1,$2,'reserve',$3,'completed',$4::jsonb,$5::jsonb,now())`, [
+          operationId, workspaceId, `commercial.reserve:${action}`, JSON.stringify({ action_key: action, points: 1, rate_card_version: 'test' }), JSON.stringify({ entity_id: reservationId }),
+        ])
+        await database.query(`INSERT INTO creative_point_reservations
+          (id,workspace_id,operation_id,action_key,points,status,rate_card_version)
+          VALUES ($1,$2,$3,$4,1,'active','test')`, [reservationId, workspaceId, operationId, action])
         const budgetInput = { workspaceId, reservationKey: action, runKey: action, modality: 'image' as const,
           model: 'isolated-no-provider', estimateCny: 0.2, estimateVersion: 'test', dailyLimitCny: 100, runLimitCny: 2 }
         const event = { id: failure.eventId, workspaceId, aggregateId: owned.jobId, eventType: 'image.generation.requested', payload: {
-          action_id: action, run_key: action, authorization_snapshot: {
+          job_id: owned.jobId, workspace_id: workspaceId, product_id: productId, intent_hash: 'a'.repeat(64), action_id: action, run_key: action, commercial_access_snapshot: {
+            access_mode: 'POINT_CHARGED', workspace_id: workspaceId, operation: 'image_generation.execute', reservation_id: reservationId, quoted_points: 1, rate_version: 'test',
+          }, authorization_snapshot: {
             schema_version: 1, decision_id: 'decision', actor_id: 'actor', identity_id: 'identity', workspace_id: workspaceId,
             workbench: 'workspace', context_id: `workspace:${workspaceId}`, context_version: '1', policy_version: '1', grant_revision: '1', grant_ids: ['grant'], scope_hash: 'a'.repeat(64), capability: 'image_generation.execute', resource_id: owned.jobId, resource_revision: '1', request_id: 'request', trace_id: 'trace', authorized: true, decided_at: new Date().toISOString(),
           },
         } }
+        await database.query(`INSERT INTO outbox_events
+          (id,workspace_id,aggregate_id,event_type,sequence,payload)
+          VALUES ($1,$2,$3,'image.generation.requested',1,$4::jsonb)`, [failure.eventId, workspaceId, owned.jobId, JSON.stringify(event.payload)])
         const reserve = vi.fn(() => budgets.reserveDailyBudget(budgetInput))
         const release = vi.fn(() => budgets.releaseDailyBudget({ workspaceId, reservationKey: action }))
         const context = {
