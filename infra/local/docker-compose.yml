@@ -11,11 +11,10 @@ x-worker-environment: &worker-environment
   MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
   DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
   REDIS_URL: redis://redis:6379
-  # The local database contains historical QA workspaces. Do not make every
-  # local reconcile cycle fan out across that archive; production/staging can
-  # explicitly set WORKER_WORKSPACES=auto when catalog-wide reconciliation is
-  # intended.
-  WORKER_WORKSPACES: ${WORKER_WORKSPACES:-ws_demo,workspace_demo,demo-workspace}
+  # The local seed owns one durable demo workspace. Keep the default scoped to
+  # that seeded workspace; production/staging must explicitly set
+  # WORKER_WORKSPACES (or auto) for their authoritative scope.
+  WORKER_WORKSPACES: ${WORKER_WORKSPACES:-ws_demo}
   WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
   STORAGE_RECONCILIATION_INTERVAL_MS: ${STORAGE_RECONCILIATION_INTERVAL_MS:-900000}
   WORKER_BATCH_SIZE: 100
