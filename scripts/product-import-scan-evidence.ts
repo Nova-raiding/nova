@@ -61,7 +61,8 @@ export async function collectProductImportScanEvidence(input: { fixture: Isolate
             (SELECT id FROM commercial_order_snapshots_v2 WHERE workspace_id=o.workspace_id AND order_id=o.id)
           JOIN workspace_entitlement_snapshots_v2 e ON e.workspace_id=s.workspace_id AND e.subscription_period_id=s.id
           WHERE o.workspace_id=$1 AND o.id=$2`, [input.fixture.workspaceId, entitlementFixture.orderId])).rows
-        requireEvidence(entitlement.length === 1 && entitlement[0].status === 'paid' && Number(entitlement[0].amount_fen) === 0
+        requireEvidence(entitlement.length === 1 && entitlement[0].status === 'paid'
+          && Number(entitlement[0].amount_fen) === entitlementFixture.paidAmountFen
           && entitlement[0].provider === 'synthetic_fixture' && entitlement[0].verified === true
           && entitlement[0].executable === true && entitlement[0].resolved_benefits.some((item: { code?: string }) => item.code === 'max_brands')
           && entitlement[0].resolved_benefits.some((item: { code?: string }) => item.code === 'max_stores'), 'ENTITLEMENT_NOT_DURABLE')

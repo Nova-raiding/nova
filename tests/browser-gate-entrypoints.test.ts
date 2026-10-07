@@ -199,7 +199,7 @@ describe('browser gate entrypoints', () => {
 
   it('runs product import only with its dedicated real-scanner fixture and exact spec', () => {
     const command = script('test:browser:ops:product-import')
-    expect(command).toContain('OPS_E2E_DELIVERY_SCAN=true OPS_E2E_SCAN_PURPOSE=product_import')
+    expect(command).toContain('OPS_E2E_DELIVERY_SCAN=true OPS_E2E_SCAN_PURPOSE=product_import OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS=300000')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual(OPS_PRODUCT_IMPORT_SPECS)
     expect(command).not.toContain('--config')
