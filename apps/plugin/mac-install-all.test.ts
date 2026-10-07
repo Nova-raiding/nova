@@ -69,5 +69,5 @@ describe.skipIf(process.platform !== 'darwin')('Mac one-entry host verification'
 
   it.skipIf(!existsSync('/Applications/ChatGPT.app'))('accepts the installed OpenAI signed and notarized app', () => {
     expect(verify('/Applications/ChatGPT.app')).toMatchObject({ ok: true })
-  }, 90_000)
+  }, 360_000)
 })

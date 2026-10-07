@@ -1,6 +1,26 @@
 import JSZip from "jszip";
 import { spreadsheetFactsToBatchProducts } from "../../../../../packages/application/src/spreadsheet-batch.js";
 
+export interface ManualProductImportDraft {
+  products: Record<string, unknown>[];
+  sha256: string;
+  fileName: string;
+  sourceRef: string;
+  reason: string;
+  assignmentConfirmed: boolean;
+  error: string;
+  success: string;
+}
+
+/** Preview, source and confirmation evidence are bound to the selected store. */
+export function emptyManualProductImportDraft(): ManualProductImportDraft {
+  return { products: [], sha256: "", fileName: "", sourceRef: "", reason: "", assignmentConfirmed: false, error: "", success: "" };
+}
+
+export function manualProductStoreSelection(storeKey: string) {
+  return { storeKey, draft: emptyManualProductImportDraft() };
+}
+
 export function scopeManualProductsToStore(
   products: ReadonlyArray<Record<string, unknown>>,
   store: { platform: string; account_id: string; store_alias?: string | null },

@@ -48,13 +48,18 @@ export async function handleHttpImageGenerationJobRead(req: IncomingMessage, res
     const items = await Promise.all(all.slice(page.offset, page.offset + page.limit).map(async job => {
       const candidatesReadable = (await chargedImageCandidatesReadable(workspaceId, job)) && imageJobRightsAreReadable(service, job, workspaceId)
       const executionProjection = await publicImageJobExecutionProjection(workspaceId, job.id)
+      // Job ownership is tenant-scoped, but legacy/corrupt associations can
+      // still point at a globally keyed product from another workspace. Never
+      // project that product's display fields into this tenant's response.
+      const product = service.products.get(job.productId)
+      const scopedProduct = product?.workspaceId === workspaceId ? product : undefined
       return {
         ...publicImageJobForCommercialRead(job, candidatesReadable),
         ...executionProjection,
         reconciliationRequired: !candidatesReadable || executionProjection.reconciliationRequired,
-        productTitle: service.products.get(job.productId)?.title ?? null,
-        platform: service.products.get(job.productId)?.platform ?? null,
-        storeName: service.products.get(job.productId)?.storeName ?? null,
+        productTitle: scopedProduct?.title ?? null,
+        platform: scopedProduct?.platform ?? null,
+        storeName: scopedProduct?.storeName ?? null,
       }
     }))
     return respond(res, 200, workspaceId, { items, total: all.length, ...page }, req)

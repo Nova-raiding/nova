@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseManualProductFile, scopeManualProductsToStore } from "./manualProductFile.js";
+import { emptyManualProductImportDraft, manualProductStoreSelection, parseManualProductFile, scopeManualProductsToStore } from "./manualProductFile.js";
 import { productImportTemplate } from "./ProductSpreadsheetImport.js";
 
 function file(name: string, bytes: Uint8Array) {
@@ -7,6 +7,11 @@ function file(name: string, bytes: Uint8Array) {
 }
 
 describe("platform assisted product import file parsing", () => {
+  it("discards preview, provenance, and store-assignment confirmation when the selected store changes", () => {
+    const selection = manualProductStoreSelection("jd:store_b");
+    expect(selection).toEqual({ storeKey: "jd:store_b", draft: emptyManualProductImportDraft() });
+    expect(selection.draft).toEqual({ products: [], sha256: "", fileName: "", sourceRef: "", reason: "", assignmentConfirmed: false, error: "", success: "" });
+  });
   it("uses the explicitly selected manual store when the source omits its account, while rejecting conflicting scope", () => {
     const store = { platform: "jd", account_id: "store_qa", store_alias: "贵人鸟官方旗舰店" };
     const missing = scopeManualProductsToStore([{ platform: "jd", title: "QA item" }], store);

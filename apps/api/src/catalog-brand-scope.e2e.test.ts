@@ -268,4 +268,30 @@ describe('catalog brand scope on the HTTP surface', () => {
     expect((await allowed.json() as Envelope<{ product_id: string }>).data).toMatchObject({ product_id: genuineCandidate.id })
     expect((await mcp(context.viewerHeaders, 4, 'catalog.image.get', { job_id: genuineJob.id })).error).toBeNull()
   })
+
+  it('does not treat a foreign workspace product as an unbound image candidate', async () => {
+    const context = await setupBrandScopedWorkspace()
+    const foreignWorkspaceId = `${context.workspaceId}_foreign`
+    const foreignProduct = service.importProduct({
+      workspaceId: foreignWorkspaceId,
+      platform: 'taobao',
+      localProductKey: `foreign-unbound-${Date.now()}`,
+      title: '另一工作区的私有商品',
+      storeName: '未绑定商品',
+      stock: 1,
+    })
+    const foreignJob = imageJob(context.workspaceId, foreignProduct.id, 'foreign-product', `imggen_foreign_product_${Date.now()}`)
+    service.imageGenerationJobs.set(foreignJob.id, foreignJob as never)
+
+    const denied = await fetch(`${context.base}/v1/image-generation-jobs/${foreignJob.id}`, { headers: context.viewerHeaders })
+    expect(denied.status).toBe(404)
+    expect((await denied.json() as Envelope).error?.code).toBe('PRODUCT_NOT_FOUND')
+
+    // The list may omit the inconsistent job entirely; if another authorized
+    // path projects it, it must not copy another workspace's product fields.
+    const listed = await fetch(`${context.base}/v1/image-generation-jobs`, { headers: context.ownerHeaders })
+    expect(listed.status).toBe(200)
+    const body = await listed.text()
+    expect(body).not.toContain('另一工作区的私有商品')
+  })
 })

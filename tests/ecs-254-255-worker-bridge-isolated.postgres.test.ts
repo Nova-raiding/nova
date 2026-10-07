@@ -99,6 +99,10 @@ async function runWorkerOnce(input: { databaseUrl: string; redisUrl: string; wor
 }
 
 describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
+  // This acceptance test creates and fully migrates a private PostgreSQL
+  // fixture, then starts every worker role across four migration prefixes.
+  // The 120s limit expired during that valid cold-start path, before fixture
+  // teardown could run; keep the bound finite but allow the complete check.
   it('checks each migration prefix through the production app role and starts every worker role on 256/257', async () => {
     const evidenceDir = resolve('artifacts/bridge-254-255-worker-isolation', randomUUID())
     await mkdir(evidenceDir, { recursive: true, mode: 0o700 })
@@ -343,5 +347,5 @@ describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
       await admin.end()
       await fixture.dispose()
     }
-  }, 120_000)
+  }, 180_000)
 })

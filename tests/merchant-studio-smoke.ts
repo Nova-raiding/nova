@@ -102,14 +102,14 @@ async function mcp<T>(method: string, params: Record<string, unknown>): Promise<
  * reauthorization requirement, missing-account boundary, or its fail-closed
  * NOT_CONFIGURED result.
  */
-function expectedSyncErrorCodes(account: { state?: string } | undefined): string[] {
+function expectedSyncErrorCodes(account: { accountId?: string; state?: string } | undefined): string[] {
   const accountCode = account?.state === 'revoked' || account?.state === 'refresh_required'
     ? 'PLATFORM_ACCOUNT_REAUTH_REQUIRED'
     : account?.accountId ? 'NOT_CONFIGURED' : 'PLATFORM_ACCOUNT_REQUIRED'
   return [accountCode, 'NOT_CONFIGURED', 'PLATFORM_ACCOUNT_REQUIRED', 'COMMERCIAL_ENTITLEMENT_REQUIRED']
 }
 
-function expectSyncError(error: unknown, account: { state?: string } | undefined, label: string) {
+function expectSyncError(error: unknown, account: { accountId?: string; state?: string } | undefined, label: string) {
   const actual = error as { code?: string; status?: number }
   const expected = expectedSyncErrorCodes(account)
   assert(expected.includes(actual.code ?? ''), `${label}: expected ${expected.join(' or ')}, got ${actual.code ?? actual.status ?? 'unknown'}`)

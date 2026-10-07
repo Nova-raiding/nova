@@ -10030,7 +10030,7 @@ async function enforceProductBrandAccess(req: IncomingMessage, workspaceId: stri
  */
 async function isExemptUnboundImageCandidateProduct(workspaceId: string, productId: string) {
   const product = service.products.get(productId)
-  if (!product || product.accountId || product.storeName !== '未绑定商品') return false
+  if (!product || product.workspaceId !== workspaceId || product.accountId || product.storeName !== '未绑定商品') return false
   const repository = persistence.brandUnits ?? memoryBrandUnits
   const canonical = await repository.listCanonicalProducts({ workspaceId, sourceProductIds: [productId] })
   return canonical.length === 0

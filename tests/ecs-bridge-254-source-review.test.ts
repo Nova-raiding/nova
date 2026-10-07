@@ -19,6 +19,8 @@ describe('B-derived 254 source review package', () => {
     expect(() => verifyMigrationInputs('not-a-commit')).toThrow('full Git SHA')
   })
 
+  // Archiving the pinned repository and hashing both source trees can exceed
+  // Vitest's default 5s budget when this gate runs alongside the full suite.
   it('creates a review-only tree with the exact allowlisted source difference', () => {
     const parent = mkdtempSync(join(tmpdir(), 'bridge-254-source-review-'))
     temporary.push(parent)
@@ -34,5 +36,5 @@ describe('B-derived 254 source review package', () => {
     expect(newSql.equals(execFileSync('git', ['show', `${MIGRATION_COMMIT}:packages/persistence/src/migrations/254_merchant_entitlement_snapshot_cursor.sql`]))).toBe(true)
     expect(readFileSync(join(output, 'review-manifest.json'), 'utf8')).toContain('"deployable": false')
     expect(() => buildBridgeReview({ migrationCommit: MIGRATION_COMMIT, output })).toThrow('new absolute canonical path')
-  })
+  }, 30_000)
 })
