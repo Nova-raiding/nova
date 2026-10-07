@@ -1114,9 +1114,15 @@ paths:
   /v1/products/import/batch:
     post:
       tags: [Catalog]
-      summary: Atomically import up to 50 products across explicitly selected stores
+      summary: Import up to 50 products across explicitly selected stores; use idempotency to replay safely
       operationId: importProductsBatch
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+          description: Optional replay key. Same key and normalized payload replays the original result; a different payload returns 409. Without a key, retries are not deduplicated.
       requestBody:
         required: true
         content:
@@ -1126,6 +1132,7 @@ paths:
               additionalProperties: false
               required: [products]
               properties:
+                idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
                 products:
                   type: array
                   minItems: 1
@@ -1152,6 +1159,7 @@ paths:
                       store_differentiation: { type: string }
       responses:
         '201': { $ref: '#/components/responses/Envelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/products/import:
@@ -2298,6 +2306,7 @@ components:
         source_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
         store_assignment_confirmed: { type: string, enum: ['true'], description: Required when source store identity is missing or cannot be verified; explicit operator confirmation only. }
         reason: { type: string, minLength: 3, maxLength: 1000 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
       additionalProperties: false
     McpRequest:
       type: object

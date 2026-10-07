@@ -6,6 +6,9 @@ import { projectImportedProductsToKnowledge } from '../../../packages/applicatio
 import { assertUniqueBatchProductImportIdentities } from './product-import-identity.js'
 import { batchFactsConfirmation, productFactsConfirmation } from './brand-product-helpers.js'
 import type { ApiPersistence } from './server.js'
+import { CatalogBatchImportIdempotencyError, hashCatalogBatchImportIntent, MemoryCatalogBatchImportIdempotencyRepository, type CatalogBatchImportIdempotencyRepository } from '../../../packages/persistence/src/catalog-batch-import-idempotency-repository.js'
+
+const memoryBatchImportIdempotency = new MemoryCatalogBatchImportIdempotencyRepository()
 
 type Params = Record<string, unknown>
 type ProductAsset = MerchantService['assets'] extends Map<string, infer Asset> ? Asset : never
@@ -25,6 +28,7 @@ export interface CatalogBatchImportDependencies {
   rollbackBatchProducts: typeof import('./server.js').rollbackBatchProducts
   actor(): string
   manualSource?: { reference: string; sha256: string; reason: string }
+  idempotency?: CatalogBatchImportIdempotencyRepository
 }
 
 export async function handleCatalogBatchImport(workspaceId: string, params: Params, deps: CatalogBatchImportDependencies) {
@@ -94,12 +98,31 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
       })
       assertUniqueBatchProductImportIdentities(items)
       for (const assetId of new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]))) await enforceAssetAccess(workspaceId, assetId, 'viewer')
+      const rawKey = params.idempotency_key
+      const idempotencyKey = rawKey === undefined ? undefined : typeof rawKey === 'string' ? rawKey.trim() : ''
+      if (rawKey !== undefined && (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'idempotency_key 必须为 8 至 200 位字母、数字或 . _ : -', 400)
+      const idempotency = deps.idempotency ?? memoryBatchImportIdempotency
+      const idempotencyInput = idempotencyKey ? { workspaceId, actorId: actor(), key: idempotencyKey, requestHash: hashCatalogBatchImportIntent({ draftOnly, items, sourceAssetId: typeof params.source_asset_id === 'string' ? params.source_asset_id.trim() : null, manualSource: deps.manualSource ? { reference: deps.manualSource.reference, sha256: deps.manualSource.sha256 } : null }) } : undefined
       const created: ReturnType<typeof service.importProduct>[] = []
       const writes: BatchProductWrite[] = []
       const importedKnowledge = knowledgeRepository
       const beforeProducts = new Map([...service.products.entries()]
         .filter(([, product]) => product.workspaceId === workspaceId)
         .map(([id, product]) => [id, structuredClone(product)] as const))
+      let idempotencyToken: string | undefined
+      let durableSideEffectsStarted = false
+      if (idempotencyInput) {
+        try {
+          const claim = await idempotency.claim(idempotencyInput)
+          if (claim.kind === 'completed') return claim.result
+          if (claim.kind === 'in_progress') throw new DomainError('PRODUCT_IMPORT_IDEMPOTENCY_IN_PROGRESS', '相同幂等请求仍在处理中，请稍后查询或重试', 409)
+          if (claim.kind === 'needs_reconciliation') throw new DomainError('PRODUCT_IMPORT_IDEMPOTENCY_RECONCILIATION_REQUIRED', '该幂等请求可能已产生部分写入，需要运营核对后使用新幂等键', 409)
+          idempotencyToken = claim.token
+        } catch (error) {
+          if (error instanceof CatalogBatchImportIdempotencyError) throw new DomainError(error.code, error.message, 409)
+          throw error
+        }
+      }
       try {
         for (const item of items) {
           const product = service.importProduct({ workspaceId, ...item })
@@ -107,14 +130,24 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
           created.push(product)
           writes.push({ product, version: product.version ?? 0 })
         }
+        if (idempotencyInput && idempotencyToken) {
+          await idempotency.start({ ...idempotencyInput, token: idempotencyToken })
+          durableSideEffectsStarted = true
+        }
         const knowledgeProjection = await projectImportedProductsToKnowledge({ repository: importedKnowledge, workspaceId, products: created, ...(typeof params.source_asset_id === 'string' && params.source_asset_id.trim() ? { sourceAssetId: params.source_asset_id.trim() } : {}), sourceMetadata: { importMode: deps.manualSource ? 'platform_manual_upload' : typeof params.products_json === 'string' ? 'products_json' : 'spreadsheet', ...(deps.manualSource ? { sourceReference: deps.manualSource.reference, sourceSha256: deps.manualSource.sha256 } : {}) } })
         const batchId = `catalog_import_batch_${randomUUID()}`
         await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id), ...(deps.manualSource ? { source_ref: deps.manualSource.reference, source_sha256: deps.manualSource.sha256, import_mode: 'platform_manual_upload' } : {}) } })
-        await recordOperationAudit({ workspaceId, actorId: actor(), action: deps.manualSource ? 'platform.catalog.import.batch' : 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true, ...(deps.manualSource ? { source_ref: deps.manualSource.reference, source_sha256: deps.manualSource.sha256, import_mode: 'platform_manual_upload' } : {}) }, reason: deps.manualSource?.reason ?? '批量导入商品并建立持久化快照' })
+        await recordOperationAudit({ workspaceId, actorId: actor(), action: deps.manualSource ? 'platform.catalog.import.batch' : 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, ...(deps.manualSource ? { source_ref: deps.manualSource.reference, source_sha256: deps.manualSource.sha256, import_mode: 'platform_manual_upload' } : {}) }, reason: deps.manualSource?.reason ?? '批量导入商品并建立持久化快照' })
         const factsConfirmation = batchFactsConfirmation(created)
-        return ({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product), ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })), atomic: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions, ...(draftOnly ? { draft_only: true } : {}), knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
+        const response = { batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product), ...(draftOnly ? { draft_only: true, candidate_status: '未绑定商品、仅草稿、不可发布', publishable: false } : {}) })), atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions, ...(draftOnly ? { draft_only: true } : {}), knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } }
+        if (idempotencyInput && idempotencyToken) await idempotency.complete({ ...idempotencyInput, token: idempotencyToken, result: response })
+        return response
       } catch (error) {
         rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
+        if (idempotencyInput && idempotencyToken) {
+          if (durableSideEffectsStarted) await idempotency.markNeedsReconciliation({ ...idempotencyInput, token: idempotencyToken })
+          else await idempotency.releaseBeforeSideEffects({ ...idempotencyInput, token: idempotencyToken })
+        }
         throw error
       }
     }

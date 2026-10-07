@@ -4,6 +4,9 @@ import { DomainError, type MerchantService, type Platform, type Product } from '
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import { assertUniqueBatchProductImportIdentities } from './product-import-identity.js'
 import { batchFactsConfirmation, productFactsConfirmation } from './brand-product-helpers.js'
+import { CatalogBatchImportIdempotencyError, hashCatalogBatchImportIntent, MemoryCatalogBatchImportIdempotencyRepository, type CatalogBatchImportIdempotencyRepository } from '../../../packages/persistence/src/catalog-batch-import-idempotency-repository.js'
+
+const memoryHttpBatchImportIdempotency = new MemoryCatalogBatchImportIdempotencyRepository()
 
 type Params = Record<string, unknown>
 type BatchProductWrite = { product: Product; version: number }
@@ -24,6 +27,8 @@ export interface HttpProductWriteDependencies {
   enforceProductBrandAccess(workspaceId: string, productId: string): Promise<unknown>
   confirmProductFactsTransition(input: { workspaceId: string; productId: string; source: 'rest' }): ReturnType<typeof import('./brand-product-helpers.js').confirmProductFactsTransition>
   send(res: ServerResponse, status: number, workspaceId: string, data: unknown, error: null, req: IncomingMessage): void
+  idempotency?: CatalogBatchImportIdempotencyRepository
+  enforceAssetAccess?(workspaceId: string, assetId: string, role: 'viewer'): Promise<unknown>
 }
 
 /** Returns false only when none of the product write routes matched. */
@@ -46,15 +51,45 @@ export async function handleHttpProductWrite(req: IncomingMessage, res: ServerRe
       if (sourceAssetIds && (sourceAssetIds.length > 50 || new Set(sourceAssetIds).size !== sourceAssetIds.length)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 asset_ids 必须是最多 50 个不重复素材 ID`, 400)
       const skus = Array.isArray(raw.skus) ? raw.skus.map((sku: any, skuIndex: number) => {
         if (!sku || typeof sku !== 'object' || typeof sku.id !== 'string' || typeof sku.name !== 'string' || typeof sku.price !== 'number' || typeof sku.stock !== 'number') throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 格式无效`, 400)
-        return { id: sku.id.trim(), name: sku.name.trim(), price: sku.price, stock: sku.stock, ...(Array.isArray(sku.images) ? { images: sku.images.filter((value: unknown): value is string => typeof value === 'string') } : {}), ...(sku.attributes && typeof sku.attributes === 'object' && !Array.isArray(sku.attributes) ? { attributes: Object.fromEntries(Object.entries(sku.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}) }
+        if (sku.sourceAssetIds !== undefined && (!Array.isArray(sku.sourceAssetIds) || sku.sourceAssetIds.length > 50 || sku.sourceAssetIds.some((value: unknown) => typeof value !== 'string' || !value.trim()) || new Set(sku.sourceAssetIds).size !== sku.sourceAssetIds.length)) throw new DomainError('PRODUCT_IMPORT_BATCH_INVALID', `第 ${index + 1} 项 SKU ${skuIndex + 1} 原图素材必须是最多 50 个不重复素材 ID`, 400)
+        return { id: sku.id.trim(), name: sku.name.trim(), price: sku.price, stock: sku.stock, ...(Array.isArray(sku.sourceAssetIds) ? { sourceAssetIds: sku.sourceAssetIds.map((value: string) => value.trim()) } : {}), ...(Array.isArray(sku.images) ? { images: sku.images.filter((value: unknown): value is string => typeof value === 'string') } : {}), ...(sku.attributes && typeof sku.attributes === 'object' && !Array.isArray(sku.attributes) ? { attributes: Object.fromEntries(Object.entries(sku.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}) }
       }) : undefined
       const sellingPoints = Array.isArray(raw.selling_points) ? raw.selling_points.map((point: any, pointIndex: number) => ({ id: typeof point?.id === 'string' ? point.id : `sp_${pointIndex + 1}`, text: typeof point?.text === 'string' ? point.text : '', proofStatus: point?.proof_status === 'confirmed' || point?.proof_status === 'rejected' ? point.proof_status : 'pending', sourceIds: Array.isArray(point?.source_ids) ? point.source_ids.filter((value: unknown): value is string => typeof value === 'string') : [] })) : undefined
-      return { workspaceId, platform, ...(accountId ? { accountId } : {}), ...(typeof raw.remote_id === 'string' && raw.remote_id.trim() ? { remoteId: raw.remote_id.trim() } : {}), ...(typeof raw.local_product_key === 'string' ? { localProductKey: raw.local_product_key } : {}), title, ...(typeof raw.sku_count === 'number' ? { skuCount: raw.sku_count } : {}), ...(skus ? { skus } : {}), ...(typeof raw.stock === 'number' ? { stock: raw.stock } : {}), ...(typeof raw.price === 'number' ? { price: raw.price } : {}), ...(typeof raw.category === 'string' ? { category: raw.category } : {}), ...(Array.isArray(raw.images) ? { images: raw.images.filter((value): value is string => typeof value === 'string') } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(raw.attributes && typeof raw.attributes === 'object' && !Array.isArray(raw.attributes) ? { attributes: Object.fromEntries(Object.entries(raw.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(typeof raw.store_name === 'string' ? { storeName: raw.store_name } : {}), ...(typeof raw.store_differentiation === 'string' ? { storeDifferentiation: raw.store_differentiation } : {}) }
+      return { workspaceId, platform, ...(accountId ? { accountId } : {}), ...(typeof raw.remote_id === 'string' && raw.remote_id.trim() ? { remoteId: raw.remote_id.trim() } : {}), ...(typeof raw.local_product_key === 'string' ? { localProductKey: raw.local_product_key } : {}), title, ...(typeof raw.sku_count === 'number' ? { skuCount: raw.sku_count } : skus ? { skuCount: skus.length } : {}), ...(skus ? { skus } : {}), ...(typeof raw.stock === 'number' ? { stock: raw.stock } : {}), ...(typeof raw.price === 'number' ? { price: raw.price } : {}), ...(typeof raw.category === 'string' ? { category: raw.category } : {}), ...(Array.isArray(raw.images) ? { images: raw.images.filter((value): value is string => typeof value === 'string').map(value => value.trim()).filter(Boolean) } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(raw.attributes && typeof raw.attributes === 'object' && !Array.isArray(raw.attributes) ? { attributes: Object.fromEntries(Object.entries(raw.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(typeof raw.store_name === 'string' ? { storeName: raw.store_name } : {}), ...(typeof raw.store_differentiation === 'string' ? { storeDifferentiation: raw.store_differentiation } : {}) }
     })
     assertUniqueBatchProductImportIdentities(items)
+    const rawHeaderKey = req.headers['idempotency-key']
+    const headerKey = Array.isArray(rawHeaderKey) ? rawHeaderKey[0]?.trim() : rawHeaderKey?.trim()
+    const bodyKey = typeof input.idempotency_key === 'string' ? input.idempotency_key.trim() : undefined
+    if (input.idempotency_key !== undefined && bodyKey === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'idempotency_key 必须是字符串', 400)
+    if (headerKey && bodyKey && headerKey !== bodyKey) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'Idempotency-Key 与 body.idempotency_key 不一致', 400)
+    const rawKey = headerKey ?? bodyKey
+    if (rawKey !== undefined && (!rawKey || rawKey.length < 8 || rawKey.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(rawKey))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'Idempotency-Key 必须为 8 至 200 位字母、数字或 . _ : -', 400)
+    const assetIds = new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap((sku: any) => sku.sourceAssetIds ?? [])]))
+    for (const assetId of assetIds) {
+      if (!deps.enforceAssetAccess) throw new DomainError('ASSET_ACCESS_UNAVAILABLE', '商品素材权限校验不可用，批量导入已阻止', 503)
+      await deps.enforceAssetAccess(workspaceId, assetId, 'viewer')
+    }
+    const idempotency = deps.idempotency ?? memoryHttpBatchImportIdempotency
+    const normalizedItems = items.map(({ workspaceId: _workspaceId, ...item }) => item)
+    const idempotencyInput = rawKey ? { workspaceId, actorId: actor(), key: rawKey, requestHash: hashCatalogBatchImportIntent({ items: normalizedItems }) } : undefined
     const beforeProducts = new Map([...service.products.entries()].filter(([, product]) => product.workspaceId === workspaceId).map(([id, product]) => [id, structuredClone(product)] as const))
     const created: ReturnType<typeof service.importProduct>[] = []
     const writes: BatchProductWrite[] = []
+    let idempotencyToken: string | undefined
+    if (idempotencyInput) {
+      try {
+        const claim = await idempotency.claim(idempotencyInput)
+        if (claim.kind === 'completed') return send(res, 200, workspaceId, claim.result, null, req)
+        if (claim.kind === 'in_progress') throw new DomainError('PRODUCT_IMPORT_IDEMPOTENCY_IN_PROGRESS', '相同幂等请求仍在处理中，请稍后查询或重试', 409)
+        if (claim.kind === 'needs_reconciliation') throw new DomainError('PRODUCT_IMPORT_IDEMPOTENCY_RECONCILIATION_REQUIRED', '该幂等请求可能已产生部分写入，需要运营核对后使用新幂等键', 409)
+        idempotencyToken = claim.token
+      } catch (error) {
+        if (error instanceof CatalogBatchImportIdempotencyError) throw new DomainError(error.code, error.message, 409)
+        throw error
+      }
+    }
+    let durableSideEffectsStarted = false
     try {
       for (const item of items) {
         const product = service.importProduct(item)
@@ -62,13 +97,23 @@ export async function handleHttpProductWrite(req: IncomingMessage, res: ServerRe
         created.push(product)
         writes.push({ product, version: product.version ?? 0 })
       }
+      if (idempotencyInput && idempotencyToken) {
+        await idempotency.start({ ...idempotencyInput, token: idempotencyToken })
+        durableSideEffectsStarted = true
+      }
       const batchId = `catalog_import_batch_${randomUUID()}`
       await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id), transport: 'rest' } })
-      await recordOperationAudit({ workspaceId, actorId: actor(), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true, transport: 'rest' }, reason: '批量导入商品并建立持久化快照' })
+      await recordOperationAudit({ workspaceId, actorId: actor(), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, transport: 'rest' }, reason: '批量导入商品并建立持久化快照' })
       const factsConfirmation = batchFactsConfirmation(created)
-      return send(res, 201, workspaceId, { batchId, count: created.length, products: created.map(product => ({ ...product, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product) })), atomic: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions }, null, req)
+      const response = { batchId, count: created.length, products: created.map(product => ({ ...product, factsConfirmationRequired: !product.factsConfirmed, facts_confirmation: productFactsConfirmation(product) })), atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, factsConfirmationRequired: factsConfirmation.required, facts_confirmation: factsConfirmation, next_actions: factsConfirmation.next_actions }
+      if (idempotencyInput && idempotencyToken) await idempotency.complete({ ...idempotencyInput, token: idempotencyToken, result: response })
+      return send(res, 201, workspaceId, response, null, req)
     } catch (error) {
       rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
+      if (idempotencyInput && idempotencyToken) {
+        if (durableSideEffectsStarted) await idempotency.markNeedsReconciliation({ ...idempotencyInput, token: idempotencyToken })
+        else await idempotency.releaseBeforeSideEffects({ ...idempotencyInput, token: idempotencyToken })
+      }
       throw error
     }
   }

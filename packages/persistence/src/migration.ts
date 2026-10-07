@@ -773,6 +773,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const assetSnapshotLifecycleRepair = await readFile(new URL('./migrations/267_asset_snapshot_lifecycle_repair.sql', import.meta.url), 'utf8')
   const demoEvaluationRegrantGuard = await readFile(new URL('./migrations/268_demo_evaluation_regrant_guard.sql', import.meta.url), 'utf8')
   const merchantActivationStatusAcl = await readFile(new URL('./migrations/269_merchant_activation_status_acl.sql', import.meta.url), 'utf8')
+  const catalogBatchImportIdempotency = await readFile(new URL('./migrations/270_catalog_batch_import_idempotency.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1043,6 +1044,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 267, name: 'asset_snapshot_lifecycle_repair', sql: assetSnapshotLifecycleRepair },
     { version: 268, name: 'demo_evaluation_regrant_guard', sql: demoEvaluationRegrantGuard },
     { version: 269, name: 'merchant_activation_status_acl', sql: merchantActivationStatusAcl },
+    { version: 270, name: 'catalog_batch_import_idempotency', sql: catalogBatchImportIdempotency },
   ]
 }
 

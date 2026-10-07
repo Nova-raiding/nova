@@ -81,7 +81,7 @@ describe('catalog batch import security and recovery boundaries', () => {
     expect(service.products.size).toBe(0)
 
     const retried = await handleCatalogBatchImport('ws_import_boundary', request, dependencies)
-    expect(retried).toMatchObject({ count: 1, atomic: true, products: [{ title: '回归商品' }] })
+    expect(retried).toMatchObject({ count: 1, atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, products: [{ title: '回归商品' }] })
     expect(service.products.size).toBe(1)
     expect(persistSnapshotsAndEvent).toHaveBeenCalledTimes(2)
   })

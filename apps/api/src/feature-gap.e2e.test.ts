@@ -122,7 +122,7 @@ describe('new commercial and operations capabilities', () => {
     expect(restUploaded.data).toMatchObject({ accountId: secondSocial.id, platform: 'xiaohongshu' })
     const restBatch = await fetch(`${base}/v1/products/import/batch`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ products: [{ platform: 'xiaohongshu', account_id: secondSocial.id, local_product_key: 'second-store-rest-batch-a', title: 'REST 批量商品 A', stock: 2 }, { platform: 'douyin', account_id: accounts.get('douyin'), local_product_key: 'douyin-rest-batch', title: '抖音 REST 批量商品', stock: 6 }] }) }).then(response => response.json() as Promise<Envelope>)
     expect(restBatch.error).toBeNull()
-    expect(restBatch.data).toMatchObject({ atomic: true, count: 2, products: expect.arrayContaining([expect.objectContaining({ title: 'REST 批量商品 A' }), expect.objectContaining({ title: '抖音 REST 批量商品' })]) })
+    expect(restBatch.data).toMatchObject({ atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, count: 2, products: expect.arrayContaining([expect.objectContaining({ title: 'REST 批量商品 A' }), expect.objectContaining({ title: '抖音 REST 批量商品' })]) })
     const firstMetrics = await call(base, workspaceId, 'workspace.metrics', { platform: 'xiaohongshu', account_id: accounts.get('xiaohongshu') })
     const secondMetrics = await call(base, workspaceId, 'workspace.metrics', { platform: 'xiaohongshu', account_id: secondSocial.id })
     expect(firstMetrics.data.result.selection).toMatchObject({ mode: 'single_store', matchedStores: 1 })
@@ -309,7 +309,7 @@ describe('new commercial and operations capabilities', () => {
       { platform: 'douyin', account_id: douyin.id, local_product_key: 'coat-douyin', title: '抖音防晒外套', price: '159.00', stock: '15', attributes: { 材质: '锦纶' } },
     ]) })
     expect(imported.error).toBeNull()
-    expect(imported.data.result).toMatchObject({ atomic: true, count: 2, factsConfirmationRequired: true })
+    expect(imported.data.result).toMatchObject({ atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, count: 2, factsConfirmationRequired: true })
     expect(imported.data.result.products).toEqual(expect.arrayContaining([
       expect.objectContaining({ platform: 'taobao', accountId: taobao.id, title: '淘宝防晒外套', skus: [expect.objectContaining({ id: 'tb-blue-m' })] }),
       expect.objectContaining({ platform: 'douyin', accountId: douyin.id, title: '抖音防晒外套' }),

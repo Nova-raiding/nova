@@ -125,7 +125,7 @@ describe('manual operations store records', () => {
     expect(missingStoreName.body.error?.code).toBe('MANUAL_PRODUCT_IMPORT_ASSIGNMENT_CONFIRMATION_REQUIRED')
     const imported = await mcpAt(base, ops, 'ops.platform.product.import.batch', input)
     expect(imported.body.error, JSON.stringify(imported.body.error)).toBeNull()
-    expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: true, factsConfirmationRequired: true } })
+    expect(imported.body.data!.result).toMatchObject({ workspace_id: workspaceId, source_mode: 'platform_manual_upload', result: { count: 1, atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, factsConfirmationRequired: true } })
     const productId = imported.body.data!.result.result.products[0].id as string
     expect(service.products.get(productId)).toMatchObject({ workspaceId, accountId: storeKey, localProductKey: 'QA-OPS-001', title: product.title, skuCount: 0, factsConfirmed: false })
     const byProductCode = await mcpAt(base, { ...merchant, 'x-test-commercial-fixture': 'server-e2e' }, 'catalog.search', { scope: 'workspace', query: 'QA-OPS-001' })

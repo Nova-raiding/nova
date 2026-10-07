@@ -302,6 +302,7 @@ import { IncidentContractError } from '../../../packages/contracts/src/ops/incid
 import { AuditCenterContractError, type AuditAccessRole, type AuditSource } from '../../../packages/contracts/src/ops/audit-center.js'
 import { MemorySupportRepository, PostgresSupportRepository, SupportTicketIdempotencyConflictError, SupportTicketNotFoundError, SupportTicketRevisionConflictError, type SupportRepository } from '../../../packages/persistence/src/support-repository.js'
 import { IncidentRepositoryError, MemoryIncidentRepository, PostgresIncidentRepository, type IncidentRepository, type IncidentSeverity, type IncidentStatus } from '../../../packages/persistence/src/incidents-repository.js'
+import { MemoryCatalogBatchImportIdempotencyRepository, PostgresCatalogBatchImportIdempotencyRepository, type CatalogBatchImportIdempotencyRepository } from '../../../packages/persistence/src/catalog-batch-import-idempotency-repository.js'
 import { FeatureFlagRepositoryError, MemoryFeatureFlagsRepository, PostgresFeatureFlagsRepository, type FeatureFlagsRepository } from '../../../packages/persistence/src/feature-flags-repository.js'
 import { FinanceRecordVersionConflictError, FinanceSearchAccessError, FinanceSearchCursorError, PostgresFinanceSearchRepository, type FinanceSearchRepository } from '../../../packages/persistence/src/finance-search-repository.js'
 import { AuditCenterCursorError } from '../../../packages/persistence/src/audit-center-repository.js'
@@ -778,6 +779,7 @@ export interface ApiPersistence {
   support?: SupportRepository
   supportSlaReporting?: SupportSlaReportingRepository
   incidents?: IncidentRepository
+  catalogBatchImportIdempotency?: CatalogBatchImportIdempotencyRepository
   featureFlags?: FeatureFlagsRepository
   financeSearch?: FinanceSearchRepository
   auditCenter?: AuditCenterRepository
@@ -931,6 +933,7 @@ function authorizationRepository() { return authorizationRepositoryOverride ?? p
 const memorySupport = new MemorySupportRepository()
 const memorySupportSlaReporting = new MemorySupportSlaReportingRepository()
 const memoryIncidents = new MemoryIncidentRepository()
+const memoryCatalogBatchImportIdempotency = new MemoryCatalogBatchImportIdempotencyRepository()
 const memoryFeatureFlags = new MemoryFeatureFlagsRepository()
 const memoryAssetParse = new MemoryAssetParseRepository()
 const memoryAssetScanReceipts = new MemoryAssetScanReceiptRepository()
@@ -1378,6 +1381,7 @@ const memoryCustomerDeliveries = new MemoryCustomerDeliveryRepository(async even
 } })
 
 const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, workspaceContentSetup: memoryWorkspaceContentSetup, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+memoryPersistence.catalogBatchImportIdempotency = memoryCatalogBatchImportIdempotency
 // Customer delivery is workspace-scoped and uses the in-memory adapter in test/fixture mode.
 memoryPersistence.customerDeliveries = memoryCustomerDeliveries
 let persistence: ApiPersistence = memoryPersistence
@@ -3333,6 +3337,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const support = new PostgresSupportRepository(sqlPool)
     const supportSlaReporting = new PostgresSupportSlaReportingRepository(sqlPool)
     const incidents = new PostgresIncidentRepository(sqlPool)
+    const catalogBatchImportIdempotency = new PostgresCatalogBatchImportIdempotencyRepository(sqlPool)
     const featureFlags = new PostgresFeatureFlagsRepository(opsSqlPool)
     // Finance search joins `commercial_catalog_skus`, which the tenant runtime
     // role is denied (migration 146's REVOKE, made effective by the role
@@ -3528,7 +3533,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', catalogBatchImportIdempotency, creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -11447,7 +11452,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       recordOperationAudit,
       manualPlatformOperations,
       hydrateWorkspace,
-      importManualProducts: (targetWorkspaceId, productsJson, source, request) => handleCatalogBatchImport(targetWorkspaceId, { products_json: productsJson }, {
+      importManualProducts: (targetWorkspaceId, productsJson, source, request, idempotencyKey) => handleCatalogBatchImport(targetWorkspaceId, { products_json: productsJson, ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}) }, {
         service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction,
         knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge,
         required,
@@ -11459,6 +11464,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         rollbackBatchProducts,
         actor: () => requestActor(request),
         manualSource: source,
+        idempotency: persistence.catalogBatchImportIdempotency,
       }),
     }))
   }
@@ -13756,7 +13762,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(await handleCatalogImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, brandUnits: persistence.brandUnits ?? memoryBrandUnits, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceBrandAccess: (workspaceId: string, brandId: string, role: 'editor') => enforceBrandAccess(req, workspaceId, brandId, role), scanImportedProductRules, persistSnapshot }))
     }
     case 'catalog.import.batch': {
-      return result(await handleCatalogBatchImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceAssetAccess: (workspaceId: string, assetId: string, role: 'editor' | 'viewer') => enforceAssetAccess(req, workspaceId, assetId, role), assetForWorkspace, scanImportedProductRules, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, actor: () => requestActor(req) }))
+      return result(await handleCatalogBatchImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceAssetAccess: (workspaceId: string, assetId: string, role: 'editor' | 'viewer') => enforceAssetAccess(req, workspaceId, assetId, role), assetForWorkspace, scanImportedProductRules, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, actor: () => requestActor(req), idempotency: persistence.catalogBatchImportIdempotency }))
     }
     case 'catalog.facts.confirm': {
       return result(await handleCatalogProductLifecycle(method, workspaceId, params, { service, brandUnits: persistence.brandUnits ?? memoryBrandUnits, persistenceReady, required, confirmProductFactsTransition, canonicalProductReadControl, persistSnapshot, persistEvent }))
@@ -15023,7 +15029,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   })) return
   await routeAssetHttp(req, res, path, url, assetRuntime)
   if (res.writableEnded) return
-  if ((await handleHttpProductWrite(req, res, path, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, body, resolveWorkspace, required, actor: () => requestActor(req), scanImportedProductRules, persistSnapshot, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, enforceProductBrandAccess: (workspaceId: string, productId: string) => enforceProductBrandAccess(req, workspaceId, productId), confirmProductFactsTransition, send })) !== false) return
+  if ((await handleHttpProductWrite(req, res, path, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, body, resolveWorkspace, required, actor: () => requestActor(req), scanImportedProductRules, persistSnapshot, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, enforceProductBrandAccess: (workspaceId: string, productId: string) => enforceProductBrandAccess(req, workspaceId, productId), enforceAssetAccess: (workspaceId, assetId, role) => enforceAssetAccess(req, workspaceId, assetId, role), idempotency: persistence.catalogBatchImportIdempotency, confirmProductFactsTransition, send })) !== false) return
   if (await handlePlatformAccountRoute(req, res, path, url, {
     service,
     connectorRuntime,

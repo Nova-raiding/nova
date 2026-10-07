@@ -35,7 +35,7 @@ export interface OpsOverviewDependencies {
   recordOperationAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
   manualPlatformOperations: () => boolean
   hydrateWorkspace: (workspaceId: string) => Promise<unknown>
-  importManualProducts: (workspaceId: string, productsJson: string, source: { reference: string; sha256: string; reason: string }, req: IncomingMessage) => Promise<unknown>
+  importManualProducts: (workspaceId: string, productsJson: string, source: { reference: string; sha256: string; reason: string }, req: IncomingMessage, idempotencyKey?: string) => Promise<unknown>
 }
 
 export async function handleOpsOverviewMcpMethod(method: string, params: Record<string, unknown>, workspaceId: string, req: IncomingMessage, dependencies: OpsOverviewDependencies): Promise<unknown> {
@@ -204,7 +204,7 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       // Record the operator's intent before any catalog or knowledge write. If
       // durable auditing is unavailable, the import must not begin.
       await recordOperationAudit({ workspaceId: targetWorkspaceId, actorId, action: 'platform.catalog.import.batch.attempt', resourceType: 'manual_product_source', resourceId: `${platform}:${accountId}:${sourceSha256}`, before: {}, after: { platform, account_id: accountId, source_ref: sourceReference, source_sha256: sourceSha256, requested_count: products.length, store_assignment_confirmed: params.store_assignment_confirmed === 'true' }, reason })
-      const imported = await importManualProducts(targetWorkspaceId, JSON.stringify(products), { reference: sourceReference, sha256: sourceSha256, reason }, req)
+      const imported = await importManualProducts(targetWorkspaceId, JSON.stringify(products), { reference: sourceReference, sha256: sourceSha256, reason }, req, typeof params.idempotency_key === 'string' ? params.idempotency_key : undefined)
       return ({ workspace_id: targetWorkspaceId, platform, account_id: accountId, imported_by: actorId, source_mode: 'platform_manual_upload', result: imported })
     }
     case 'ops.brand-units.summary': {

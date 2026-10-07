@@ -19,6 +19,7 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'quote_snapshot_',
   'campaign_lifecycle_',
   'catalog_146_',
+  'catalog_import_idem_',
   'commercial_catalog_166_',
   'creative_points_148_',
   'oauth_commercial_',

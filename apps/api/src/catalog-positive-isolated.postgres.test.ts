@@ -65,7 +65,7 @@ describe('isolated catalog API to PostgreSQL readback', () => {
         { platform: 'taobao', local_product_key: 'isolated-batch-a', title: '隔离验收批量商品 A', stock: 1 },
       ]) })
       expect(batch.error).toBeNull()
-      expect(batch.data!.result).toMatchObject({ atomic: true, count: 1 })
+      expect(batch.data!.result).toMatchObject({ atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, count: 1 })
       const batchId = String(batch.data!.result.products[0].id)
       expect((await repository.get(workspaceId!, 'product', batchId)).payload).toMatchObject({ title: '隔离验收批量商品 A' })
       const page = await repository.listProductsPage(workspaceId!, { limit: 20, offset: 0 })

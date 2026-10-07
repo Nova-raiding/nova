@@ -10,6 +10,7 @@ export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
   'packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts',
   'packages/persistence/src/commercial-allocation-replay-conflict.postgres.test.ts',
   'packages/persistence/src/commercial-quote-price-snapshot.regression.postgres.test.ts',
+  'packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts',
   'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts',
   'packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts',
 ].filter(file => (

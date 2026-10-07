@@ -855,7 +855,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     }, ['workspace_id', 'platform', 'account_id', 'reason']),
   },
   { method: 'ops.platform.manual-stores.list', description: 'List only credential-free manual store records in one explicitly selected merchant workspace for platform-assisted product import.', params: params({ workspace_id: boundedString(256) }, ['workspace_id']) },
-  { method: 'ops.platform.product.import.batch', description: 'Import 1-50 manually supplied products into one explicit merchant workspace and registered manual store. Requires source reference, source file SHA-256 and audit reason; missing or unverifiable source store names require explicit operator assignment confirmation; never claims platform sync.', params: params({ workspace_id: boundedString(256), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(256), products_json: boundedString(33000), source_ref: boundedString(1000), source_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' }, store_assignment_confirmed: { type: 'string', enum: ['true'] }, reason: reasonProperty }, ['workspace_id', 'platform', 'account_id', 'products_json', 'source_ref', 'source_sha256', 'reason']) },
+  { method: 'ops.platform.product.import.batch', description: 'Import 1-50 manually supplied products into one explicit merchant workspace and registered manual store. Requires source reference, source file SHA-256 and audit reason; missing or unverifiable source store names require explicit operator assignment confirmation; never claims platform sync. Optional idempotency_key makes exact retries replay-safe.', params: params({ workspace_id: boundedString(256), platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: boundedString(256), products_json: boundedString(33000), source_ref: boundedString(1000), source_sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' }, store_assignment_confirmed: { type: 'string', enum: ['true'] }, idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['workspace_id', 'platform', 'account_id', 'products_json', 'source_ref', 'source_sha256', 'reason']) },
   { method: 'ops.brand-units.summary', description: 'Return redacted brand-unit graph counts by workspace for platform operations. Requires explicit platform scope and never returns brand names, product titles, content, tokens, or customer data.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.tasks.summary', description: 'Return redacted platform-wide task and content queue counts for platform operations. Requires explicit platform scope and never returns task正文 or credentials.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.model-usage.summary', description: 'Return redacted platform-wide model usage totals grouped by modality, model and settlement status. Requires explicit platform scope and never returns prompts, credentials or provider request identifiers.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
@@ -1166,11 +1166,12 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.import.batch',
-    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
+    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；显式 draft_only=true 时只建立未绑定商品和待审核知识，不需要已授权店铺；否则每项必须明确平台和已授权店铺。可选 idempotency_key 用于安全重试：同键同请求回放原结果，同键不同请求冲突；省略时不保证去重。',
     params: params({
       products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' },
       source_asset_id: { type: 'string', description: '已解析且商家确认过的 XLSX/CSV 商品表格素材 ID。' },
       draft_only: { type: 'string', enum: ['true'], description: '仅建立未绑定商品和待审核知识，不连接店铺、不同步、不发布。' },
+      idempotency_key: idempotencyKeyProperty,
     }, [], ['products_json', 'source_asset_id']),
   },
   { method: 'catalog.sku.update', description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', params: params({ product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, ['product_id', 'sku_id']) },
