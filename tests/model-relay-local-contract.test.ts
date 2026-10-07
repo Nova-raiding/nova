@@ -25,6 +25,18 @@ describe('local model relay contract', () => {
     })
   })
 
+  it.each(modalities)('fails %s closed when relay credentials are absent', modality => {
+    const source = {
+      ...completeRelayEnvironment,
+      MODEL_RELAY_API_KEY: undefined,
+      VIDEO_MODEL_RELAY_API_KEY: undefined,
+    }
+    expect(evaluatePlatformModelGate(source, modality)).toMatchObject({
+      ready: false,
+      reasons: expect.arrayContaining(['api_key_missing']),
+    })
+  })
+
   it.each([
     [401, ProviderRequestFailedError, false, false],
     [403, ProviderRequestFailedError, false, false],

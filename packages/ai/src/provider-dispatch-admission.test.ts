@@ -81,6 +81,51 @@ describe('trusted provider dispatch admission', () => {
     expect(hook).toHaveBeenCalledOnce()
   })
 
+  it.each(adapters)('$operation sends configured relay authentication without exposing it in failure evidence', async adapter => {
+    const relayKey = 'local-contract-only-relay-key'
+    let requestedUrl = ''
+    let authorization: string | null = null
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      requestedUrl = String(input)
+      authorization = new Headers(init?.headers).get('authorization')
+      return new Response('', { status: 401 })
+    })
+    const usageSink = vi.fn<RelayUsageSink>()
+    const logSpies = [
+      vi.spyOn(console, 'log').mockImplementation(() => {}),
+      vi.spyOn(console, 'warn').mockImplementation(() => {}),
+      vi.spyOn(console, 'error').mockImplementation(() => {}),
+    ]
+    let failure: unknown
+    try {
+      await adapter.call({ ...common, apiKey: relayKey, fetch: fetchMock, usageSink })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(requestedUrl).toMatch(/^https:\/\/relay\.test\/v1\//u)
+    expect(authorization).toBe(`Bearer ${relayKey}`)
+    expect(failure).toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerSucceeded: false })
+    expect(String(failure)).not.toContain(relayKey)
+    expect(JSON.stringify(failure)).not.toContain(relayKey)
+    expect(logSpies.flatMap(spy => spy.mock.calls).flat().join(' ')).not.toContain(relayKey)
+    expect(usageSink).not.toHaveBeenCalled()
+  })
+
+  it.each(adapters)('$operation fails closed before fetch when production usage settlement is not configured', async adapter => {
+    const fetchMock = vi.fn<typeof fetch>()
+    let failure: unknown
+    try {
+      await adapter.call({ ...common, relaySecurity: { environment: 'production' }, fetch: fetchMock })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('keeps receipt queries separately classifiable without generation admission', async () => {
     const beforeRequest = vi.fn<ProviderBeforeRequest>(context => {
       if (!['image_query', 'video_query'].includes(context.operation)) throw new Error('generation denied')
