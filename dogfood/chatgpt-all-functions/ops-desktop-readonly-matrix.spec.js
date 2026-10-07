@@ -122,7 +122,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
   for (const label of ['总览', '用户中心', '客户交付']) {
     await expect(primaryRail.getByRole('button', { name: label, exact: true })).toBeVisible()
   }
-  expect((await primaryRail.getByRole('button').allTextContents()).map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '客服工作台'])
+  expect((await primaryRail.getByRole('button').allTextContents()).map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '平台与店铺', '规则中心', '客服工作台'])
   await expect(sidebar.getByRole('button', { name: '更多功能', exact: true })).toHaveCount(0)
   await page.goto(new URL('/ops/overview?workbench=platform', base).toString(), { waitUntil: 'domcontentloaded' })
   await expect(sidebar.getByRole('button', { name: '模型服务', exact: true })).toHaveCount(0)
@@ -184,7 +184,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
     const tabs = await page.getByRole('tab').allTextContents()
     const alerts = await page.getByRole('alert').allTextContents()
     const navigation = await page.getByRole('navigation', { name: '平台运营功能导航' }).getByRole('button').allTextContents()
-    expect(navigation.map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '客服工作台'])
+    expect(navigation.map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '平台与店铺', '规则中心', '客服工作台'])
     await expect(sidebar.getByRole('button', { name: '更多功能', exact: true })).toHaveCount(0)
     const denied = headings.some(value => value.startsWith('无权访问'))
     expect(new URL(page.url()).pathname, `${domain} must remain on its canonical route`).toBe(`/ops/${domain}`)

@@ -7,6 +7,7 @@ type Suite = {
   area: 'plugin' | 'api-mcp' | 'merchant-ui' | 'ops-ui' | 'authorization' | 'payments' | 'model'
   command: string
   args: string[]
+  env?: Record<string, string>
 }
 
 type Result = Suite & { status: 'passed' | 'failed'; exitCode: number | null; durationMs: number; output: string }
@@ -14,7 +15,9 @@ type Result = Suite & { status: 'passed' | 'failed'; exitCode: number | null; du
 const suites: Suite[] = [
   { id: 'plugin-contract', area: 'plugin', command: 'npm', args: ['run', 'test:plugin-import-contract'] },
   { id: 'api-mcp-contracts', area: 'api-mcp', command: 'node', args: ['--import', 'tsx', 'scripts/run-safe-tests.ts', '--no-file-parallelism', 'tests/mcp-surface-contract.test.ts', 'tests/mcp-integration-mode-release-gate.test.ts', 'tests/openapi-contract.test.ts'] },
-  { id: 'merchant-ui', area: 'merchant-ui', command: 'npm', args: ['run', 'test:merchant-studio-smoke'] },
+  // The local read-only tunnel uses 18787; 8787 is the intentionally degraded
+  // API probe and must not be mistaken for the demo candidate.
+  { id: 'merchant-ui', area: 'merchant-ui', command: 'npm', args: ['run', 'test:merchant-studio-smoke'], env: { SMOKE_API_URL: 'http://127.0.0.1:18787', SMOKE_UI_URL: 'http://127.0.0.1:18081' } },
   { id: 'ops-ui-readonly', area: 'ops-ui', command: 'npm', args: ['run', 'test:browser:ops:matrix'] },
   { id: 'authorization', area: 'authorization', command: 'npm', args: ['run', 'test:authorization-postgres'] },
   { id: 'payment-contracts', area: 'payments', command: 'npm', args: ['run', 'test:payment-callback-replay'] },
@@ -40,7 +43,7 @@ function runSuite(suite: Suite): Promise<Result> {
   return new Promise(resolveResult => {
     const child = spawn(suite.command, suite.args, {
       cwd: process.cwd(),
-      env: { ...process.env, CI: '1', E2E_READONLY: '1', READ_ONLY_E2E: '1' },
+      env: { ...process.env, CI: '1', E2E_READONLY: '1', READ_ONLY_E2E: '1', ...suite.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
