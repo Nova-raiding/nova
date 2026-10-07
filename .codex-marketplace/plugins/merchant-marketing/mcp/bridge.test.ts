@@ -86,7 +86,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'platform.media.spec.approve', 'platform.media.spec.expire',
   'platform.revoke',
   'platform.model.status',
-  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
+  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status', 'rule.approve.batch',
   'delivery.bundle.verify',
   'asset.scan',
   'upload.session.create', 'upload.session.part', 'upload.session.complete',
@@ -132,7 +132,13 @@ function literalSetFromBridge(source: string, name: string): Set<string> {
   return new Set([...block.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
 }
 
-type ListedTool = { name: string; description?: string; inputSchema: { properties?: Record<string, any> } }
+type ListedTool = {
+  name: string
+  description?: string
+  annotations?: Record<string, unknown>
+  _meta?: Record<string, unknown>
+  inputSchema: { properties?: Record<string, any>; required?: string[] }
+}
 
 // Spawns the real bridge exactly as the host does and performs one tools/list,
 // so surface assertions run against the shipped process rather than the source.

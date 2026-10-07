@@ -327,6 +327,25 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.versions.every(item => item.workspaceId === 'ws_rules')).toBe(true)
   })
 
+  it('fails closed when the split rule write cannot append its audit event', async () => {
+    const repository = new MemoryRuleRepository()
+    repository.appendAudit = async () => { throw new Error('audit sink unavailable') }
+    setRuleRepositoryForTests(repository)
+    const base = await start()
+    const response = await fetch(`${base}/v1/rules/catalog/versions`, {
+      method: 'POST',
+      headers: { 'x-workspace-id': 'ws_audit_failure', 'x-actor-id': 'rules_admin', 'x-role': 'rules_admin', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '审计失败回归规则', version: '1.0.0', scope: 'global', status: 'draft', source_kind: 'legal_review',
+        source_reference: 'legal://audit-failure/1', source_checked_at: '2026-08-23T01:00:00.000Z', checks: {}, reason: '验证审计失败时拒绝报告成功',
+      }),
+    }).then(json)
+
+    expect(response.error).toMatchObject({ code: 'RULE_AUDIT_WRITE_FAILED' })
+    expect(repository.versions).toHaveLength(1)
+    expect(repository.audits).toHaveLength(0)
+  })
+
   it('requires separation of duties and never persists a rejected activation', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)

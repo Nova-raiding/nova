@@ -41,6 +41,22 @@ describe('MCP method contract', () => {
     }).valid).toBe(false)
   })
 
+  it('declares and validates the batch rule approval stdio contract', () => {
+    expect(MCP_METHODS).toContain('rule.approve.batch')
+    expect(MCP_METHOD_SCHEMAS['rule.approve.batch']).toMatchObject({
+      required: ['items_json'],
+      properties: {
+        items_json: { type: 'string' },
+      },
+      additionalProperties: false,
+    })
+
+    const request = { jsonrpc: '2.0' as const, id: 'rule-batch', method: 'rule.approve.batch', params: { items_json: '[]' } }
+    expect(validateMcpRequest(request)).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ ...request, params: {} }).valid).toBe(false)
+    expect(validateMcpRequest({ ...request, params: { items_json: '[]', unexpected: 'x' } }).valid).toBe(false)
+  })
+
   it('requires an explicit tenant workspace for canonical backfill control-plane operations', () => {
     const list = { jsonrpc: '2.0' as const, id: 'canonical-conflicts', method: 'ops.canonical.backfill.conflicts.list', params: { workspace_id: 'ws_target', limit: '100' } }
     expect(validateMcpRequest(list)).toEqual({ valid: true, errors: [] })
