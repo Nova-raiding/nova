@@ -34,6 +34,20 @@ export function safeTestShardCount(source: NodeJS.ProcessEnv): number {
   return value
 }
 
+export function safeTestShardSelection(source: NodeJS.ProcessEnv, shardCount: number): number[] {
+  const raw = source.SAFE_TEST_SHARDS?.trim()
+  if (!raw) return Array.from({ length: shardCount }, (_, index) => index + 1)
+  const selected = raw.split(',').map(value => value.trim())
+  if (selected.some(value => !/^\d+$/u.test(value))) {
+    throw new Error(`SAFE_TEST_SHARDS must be comma-separated shard numbers between 1 and ${shardCount}`)
+  }
+  const numbers = selected.map(Number)
+  if (numbers.length === 0 || numbers.some(value => value < 1 || value > shardCount) || new Set(numbers).size !== numbers.length) {
+    throw new Error(`SAFE_TEST_SHARDS must contain unique shard numbers between 1 and ${shardCount}`)
+  }
+  return numbers.sort((left, right) => left - right)
+}
+
 function hasExplicitTestFileSelection(args: readonly string[]): boolean {
   return args.some(argument => /\.(?:test|spec)\.(?:[cm]?[jt]sx?)(?::\d+(?:-\d+)?)?$/u.test(argument))
 }
@@ -56,12 +70,13 @@ export async function runSafeTestShards(
   }
 
   const shardCount = safeTestShardCount(source)
+  const selectedShards = safeTestShardSelection(source, shardCount)
   const files = await listFiles(source)
   const shards = Array.from({ length: shardCount }, () => [] as string[])
   files.forEach((file, index) => shards[index % shardCount]!.push(file))
   const failures: Array<{ shard: number; exitCode: number }> = []
 
-  for (let shard = 1; shard <= shardCount; shard += 1) {
+  for (const shard of selectedShards) {
     const startedAt = Date.now()
     write(`[safe-tests] shard ${shard}/${shardCount} started`)
     let exitCode: number
@@ -80,7 +95,9 @@ export async function runSafeTestShards(
     write(`[safe-tests] failed shards: ${failures.map(({ shard, exitCode }) => `${shard}/${shardCount} (exit ${exitCode})`).join(', ')}`)
     return failures[0]!.exitCode
   }
-  write(`[safe-tests] all ${shardCount} shards passed`)
+  write(selectedShards.length === shardCount
+    ? `[safe-tests] all ${shardCount} shards passed`
+    : `[safe-tests] selected shards passed: ${selectedShards.join(',')}/${shardCount}`)
   return 0
 }
 
