@@ -587,7 +587,7 @@ DO $$
 BEGIN
   IF to_regclass('public.workspace_members') IS NOT NULL THEN
     REVOKE UPDATE ON workspace_members FROM merchant_ops;
-    GRANT UPDATE (identity_id, revision, updated_at) ON workspace_members TO merchant_ops;
+    GRANT UPDATE (status, identity_id, revision, updated_at) ON workspace_members TO merchant_ops;
   END IF;
 END
 $$;

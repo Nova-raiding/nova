@@ -7,7 +7,7 @@ describe('commercial benefit bundle reference reader migration 265', () => {
     const migrations = await loadMigrations()
     const sql = await readFile(new URL('./migrations/265_commercial_bundle_reference_reader.sql', import.meta.url), 'utf8')
     expect(migrations[264]).toEqual({ version: 265, name: 'commercial_bundle_reference_reader', sql })
-    expect(migrations.map(row => row.version)).toEqual(Array.from({ length: 268 }, (_, index) => index + 1))
+    expect(migrations.map(row => row.version)).toEqual(Array.from({ length: 269 }, (_, index) => index + 1))
     expect(migrations.filter(row => row.version === 265)).toHaveLength(1)
     expect(sql).toContain('commercial_catalog_bundle_refs_v3')
     expect(sql).toContain("jsonb_array_elements(")

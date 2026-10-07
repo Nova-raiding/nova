@@ -6,8 +6,8 @@ describe('asset snapshot lifecycle repair migration 267', () => {
   it('registers the forward-only repair at the migration tail', async () => {
     const migrations = await loadMigrations()
     const sql = await readFile(new URL('./migrations/267_asset_snapshot_lifecycle_repair.sql', import.meta.url), 'utf8')
-    expect(migrations.at(-2)).toEqual({ version: 267, name: 'asset_snapshot_lifecycle_repair', sql })
-    expect(migrations.at(-1)).toMatchObject({ version: 268, name: 'demo_evaluation_regrant_guard' })
+    expect(migrations.find(row => row.version === 267)).toEqual({ version: 267, name: 'asset_snapshot_lifecycle_repair', sql })
+    expect(migrations.at(-1)).toMatchObject({ version: 269, name: 'merchant_activation_status_acl' })
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS snapshot_entity_type')
     expect(sql).toContain('merchant_asset_lifecycle_asset_snapshot_fk')
     expect(sql).toContain('CREATE INDEX IF NOT EXISTS merchant_asset_lifecycle_snapshot_fk_idx')

@@ -39,7 +39,7 @@ describe('migration 166 executable commercial catalog PostgreSQL release evidenc
       // from migration 174 and its unresolved predecessor; keep this
       // assertion bound to the current executable catalog, not the older
       // pre-174 inventory.
-      expect(versions.rows[0]).toEqual({ total: 15, executable: 5, blocked: 2 })
+      expect(versions.rows[0]).toEqual({ total: 17, executable: 5, blocked: 2 })
 
       const rates = await database.query<{ rules: number; executable: number }>(`
         SELECT count(*)::int AS rules, count(*) FILTER (WHERE r.executable)::int AS executable

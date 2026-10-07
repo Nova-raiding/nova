@@ -69,6 +69,7 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
                has_table_privilege('merchant_ops', 'workspace_members', 'DELETE') AS "canDelete",
                has_table_privilege('merchant_ops', 'workspace_members', 'TRUNCATE') AS "canTruncate",
                has_column_privilege('merchant_ops', 'workspace_members', 'identity_id', 'UPDATE') AS "canBindIdentity",
+               has_column_privilege('merchant_ops', 'workspace_members', 'status', 'UPDATE') AS "canActivateStatus",
                has_column_privilege('merchant_ops', 'workspace_members', 'revision', 'UPDATE') AS "canBumpRevision",
                has_column_privilege('merchant_ops', 'workspace_members', 'updated_at', 'UPDATE') AS "canSetUpdatedAt",
                has_column_privilege('merchant_ops', 'workspace_members', 'display_name', 'UPDATE') AS "canRewriteDisplayName"`))
@@ -77,6 +78,7 @@ describe('password registration and enterprise projection PostgreSQL acceptance'
           canDelete: false,
           canTruncate: false,
           canBindIdentity: true,
+          canActivateStatus: true,
           canBumpRevision: true,
           canSetUpdatedAt: true,
           canRewriteDisplayName: false,
