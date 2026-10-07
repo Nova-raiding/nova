@@ -848,6 +848,7 @@ export interface RuleRepositoryPort {
   getPublicVersion?(platform: string, packId: string, version: string): Promise<PersistedRuleVersion | undefined>
   insertPublicVersionWithAudit?(input: { version: Omit<PersistedRuleVersion, 'workspaceId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }; audit: Omit<PersistedRuleAudit, 'workspaceId'> }): Promise<{ version: PersistedRuleVersion; audit: PersistedRuleAudit }>
   transitionPublicStatus?(input: { platform: string; packId: string; version: string; expectedRevision: number; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }): Promise<PersistedRuleVersion>
+  transitionPublicStatusBatch?(inputs: readonly { platform: string; packId: string; version: string; expectedRevision: number; status: string; actorId: string; reason: string; occurredAt: string; auditData?: Record<string, unknown> }[]): Promise<PersistedRuleVersion[]>
   insertVersion(input: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }): Promise<PersistedRuleVersion>
   appendAudit(input: PersistedRuleAudit): Promise<PersistedRuleAudit>
   listAudit(workspaceId: string, packId?: string): Promise<PersistedRuleAudit[]>

@@ -575,7 +575,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('automation.read', 'workspace', 'customer_metadata', ['automation.policy.get', 'automation.policy.list', 'automation.scan']),
   write('automation.update', 'workspace', 'customer_metadata', ['automation.policy.update', 'automation.tick', 'automation.pause']),
   write('rule.publish.approve', 'platform', 'customer_content', ['rule.publish'], 'mutation', ['reason']),
-  write('rule.update', 'platform', 'customer_metadata', ['rule.status', 'rule.sync.now']),
+  write('rule.update', 'platform', 'customer_metadata', ['rule.status', 'rule.sync.now', 'rule.approve.batch']),
   write('customer.content.update', 'workspace', 'customer_content', ['feedback.submit']),
 ]
 

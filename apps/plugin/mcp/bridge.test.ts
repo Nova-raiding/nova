@@ -2209,7 +2209,7 @@ describe('Codex stdio MCP bridge', () => {
       const names = tools.map(tool => tool.name)
       expect(names).toContain('multimodal.video.request')
       expect(names).toContain('multimodal.video.get')
-      expect(tools.find(tool => tool.name === 'multimodal.video.get')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+      expect((tools.find(tool => tool.name === 'multimodal.video.get') as ListedTool & { annotations?: unknown } | undefined)?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       // `ReturnType<typeof spawn>` widens the stdio tuple, so the pipes are
       // nullable from out here even though the helper always passes 'pipe'.
       if (!child.stdin || !child.stdout) throw new Error('bridge test child lost its stdio pipes')

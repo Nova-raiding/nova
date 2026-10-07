@@ -14,7 +14,7 @@ type RuleApproval = { approvalRef: string; approvedAt: string; approvedBy: strin
 
 export const MCP_SYNC_RULE_METHODS = new Set([
   'sync.retry_failed', 'rule.list', 'rule.sync.status', 'ops.rules.public.sync.status', 'rule.sync.now', 'rule.history',
-  'rule.audit', 'ops.rules.workspace.audit', 'rule.publish', 'rule.status',
+  'rule.audit', 'ops.rules.workspace.audit', 'rule.publish', 'rule.status', 'rule.approve.batch',
 ])
 
 export interface SyncRuleMcpDependencies {
@@ -297,6 +297,60 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
       }
       if (isProduction()) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '生产规则仓储未配置', 503)
       return result(service.setRuleStatus({ packId, version: versionValue, status: status as 'active' | 'inactive' | 'expired', actorId: principal.actorId, reason }))
+    }
+    case 'rule.approve.batch': {
+      const principal = requireRuleAdmin(req)
+      requirePlatformRuleReviewer(req)
+      const repository = ruleRepository()
+      if (!repository?.transitionPublicStatusBatch || !repository.getPublicVersion) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '公共平台规则批量审批需要持久化规则仓储', 503)
+      let items: unknown
+      try { items = JSON.parse(required(params, 'items_json')) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items_json 必须是 JSON 数组', 400) }
+      if (!Array.isArray(items) || items.length < 1 || items.length > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items_json 必须包含 1 到 100 条规则', 400)
+      const seen = new Set<string>()
+      const transitions: Array<{
+        platform: string; packId: string; version: string; expectedRevision: number; status: 'active'; actorId: string; reason: string; occurredAt: string; auditData: Record<string, unknown>
+      }> = []
+      for (const item of items) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '批量审批条目格式无效', 400)
+        const row = item as Record<string, unknown>
+        const text = (key: string) => {
+          if (typeof row[key] !== 'string' || !row[key].trim()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `批量审批条目缺少 ${key}`, 400)
+          return row[key].trim()
+        }
+        const platform = text('platform')
+        const packId = text('pack_id')
+        const versionValue = text('version')
+        const expectedRevisionText = text('expected_revision')
+        const reason = text('reason')
+        const approvalRef = text('approval_ref')
+        const approvedBy = text('approved_by')
+        const approvedAt = text('approved_at')
+        if (!SUPPORTED_PLATFORMS.includes(platform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '公共平台规则批量审批的平台无效', 400)
+        if (!/^[1-9][0-9]*$/u.test(expectedRevisionText) || !Number.isSafeInteger(Number(expectedRevisionText))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '批量审批 expected_revision 无效', 400)
+        if (!Number.isFinite(Date.parse(approvedAt))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '批量审批 approved_at 必须是合法时间', 400)
+        const key = `${platform}\u0000${packId}\u0000${versionValue}`
+        if (seen.has(key)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '批量审批不能重复包含同一规则版本', 400)
+        seen.add(key)
+        const target = await repository.getPublicVersion(platform, packId, versionValue)
+        if (!target) throw new DomainError('RULE_VERSION_NOT_FOUND', `公共平台规则版本不存在：${packId}@${versionValue}`, 404)
+        if (target.status !== 'draft') throw new DomainError('RULE_VERSION_STATE_INVALID', `只有草稿规则可以批量审批：${packId}@${versionValue}`, 409)
+        if (target.revision !== Number(expectedRevisionText)) throw new DomainError('RULE_REVISION_CONFLICT', `公共规则版本已变化：${packId}@${versionValue}，请刷新后重试`, 409)
+        const verifiedOfficial = target.sourceKind === 'official' && target.createdBy === 'signed-rule-sync' && target.scope === 'platform'
+          && (target.scopeValue ?? target.targetId) === platform && isApprovedPlatformRuleSource(platform as RuleSyncPlatform, target.sourceReference)
+        if (!verifiedOfficial && !isAllowedManualPublicRule(target)) throw new DomainError('OFFICIAL_RULE_IMPORT_REQUIRED', `公共平台规则来源未通过校验：${packId}@${versionValue}`, 409)
+        const approval = parseApprovalGrant(req, '__platform_rules__', principal.actorId, { approval: { approval_ref: approvalRef, approved_by: approvedBy, approved_at: approvedAt } })
+        if (approval.approvedBy === target.createdBy) throw new DomainError('RULE_SEPARATION_OF_DUTIES_REQUIRED', `规则创建人与审批人必须分离：${packId}@${versionValue}`, 409)
+        transitions.push({ platform, packId, version: versionValue, expectedRevision: Number(expectedRevisionText), status: 'active', actorId: principal.actorId, reason, occurredAt: new Date().toISOString(), auditData: { approval_ref: approval.approvalRef, approved_by: approval.approvedBy, approved_at: approval.approvedAt } })
+      }
+      try {
+        const approved = await repository.transitionPublicStatusBatch(transitions)
+        return result({ count: approved.length, approved: approved.map(publicRule) })
+      } catch (error) {
+        const code = (error as { code?: string }).code
+        if (code === 'PUBLIC_RULE_REVISION_CONFLICT') throw new DomainError('RULE_REVISION_CONFLICT', '公共规则版本已被其他审阅操作更新，请刷新后重试', 409)
+        if (code === 'PUBLIC_RULE_VERSION_NOT_FOUND') throw new DomainError('RULE_VERSION_NOT_FOUND', '公共平台规则版本不存在', 404)
+        throw error
+      }
     }
     default: throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
   }

@@ -53,6 +53,23 @@ class MemoryRuleRepository implements RuleRepositoryPort {
     return row
   }
 
+  async transitionPublicStatusBatch(inputs: Parameters<NonNullable<RuleRepositoryPort['transitionPublicStatusBatch']>>[0]) {
+    const rows = inputs.map(input => {
+      const row = this.publicVersions.find(item => item.scopeValue === input.platform && item.packId === input.packId && item.version === input.version)
+      if (!row) throw Object.assign(new Error('PUBLIC_RULE_VERSION_NOT_FOUND'), { code: 'PUBLIC_RULE_VERSION_NOT_FOUND' })
+      if (row.revision !== input.expectedRevision) throw Object.assign(new Error('PUBLIC_RULE_REVISION_CONFLICT'), { code: 'PUBLIC_RULE_REVISION_CONFLICT' })
+      if (row.status !== 'draft') throw Object.assign(new Error('PUBLIC_RULE_STATE_INVALID'), { code: 'PUBLIC_RULE_STATE_INVALID' })
+      return row
+    })
+    rows.forEach((row, index) => {
+      const input = inputs[index]!
+      row.status = input.status
+      row.revision += 1
+      this.audits.push({ id: `public-audit-${this.audits.length + 1}`, workspaceId: '__platform_rules__', rulePackId: input.packId, ruleVersionId: row.id, version: row.version, action: 'activated', actorId: input.actorId, reason: input.reason, occurredAt: input.occurredAt, data: input.auditData ?? {} })
+    })
+    return rows
+  }
+
   async insertVersion(input: Omit<PersistedRuleVersion, 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string }) {
     const created = { ...input, createdAt: input.createdAt ?? new Date().toISOString(), updatedAt: input.updatedAt ?? new Date().toISOString() } as PersistedRuleVersion
     this.versions.push(created)
@@ -221,6 +238,28 @@ describe('durable rule-center HTTP boundary', () => {
     }) }).then(json)
     expect(missingRevision.error?.code).toBe('INVALID_REQUEST')
     expect(await repository.listPublic(workspaceId, 'pinduoduo')).toHaveLength(1)
+  })
+
+  it('approves public rules through one server-side atomic batch with per-item CAS and audit', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const checksFor = (content: string) => ({ content, __public_scope: 'platform' })
+    const checksumFor = (content: string) => createHash('sha256').update(JSON.stringify({ content })).digest('hex')
+    for (const [packId, content] of [['batch-a', '第一条'], ['batch-b', '第二条']] as const) repository.publicVersions.push({
+      id: `public-${packId}`, workspaceId: '__platform_rules__', packId, name: packId, version: '1', scope: 'platform', scopeValue: 'pinduoduo', status: 'draft', sourceKind: 'internal', sourceReference: 'https://www.yangkeduo.com/home/help/', sourceCheckedAt: new Date().toISOString(), checksum: checksumFor(content), checks: checksFor(content), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: 'author', revision: 1,
+    })
+    const base = await start()
+    const headers = { 'x-workspace-id': 'ws_batch_review', 'x-actor-id': 'reviewer', 'x-role': 'rules_admin', 'x-ops-workbench': 'platform', 'content-type': 'application/json' }
+    const approval = { approval_ref: 'approval://batch-1', approved_by: 'independent-reviewer', approved_at: new Date().toISOString() }
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.approve.batch', params: { items_json: JSON.stringify(['batch-a', 'batch-b'].map(pack_id => ({ platform: 'pinduoduo', pack_id, version: '1', expected_revision: '1', reason: '批量人工复核', ...approval }))) } }) }).then(json)
+    expect(response.error).toBeNull()
+    expect(response.data?.result).toMatchObject({ count: 2, approved: expect.arrayContaining([expect.objectContaining({ packId: 'batch-a', status: 'active', revision: 2 }), expect.objectContaining({ packId: 'batch-b', status: 'active', revision: 2 })]) })
+    expect(repository.publicVersions.every(row => row.status === 'active' && row.revision === 2)).toBe(true)
+    expect(repository.audits.filter(item => item.action === 'activated')).toHaveLength(2)
+
+    const stale = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'rule.approve.batch', params: { items_json: JSON.stringify([{ platform: 'pinduoduo', pack_id: 'batch-a', version: '1', expected_revision: '1', reason: '过期批量审批', ...approval }]) } }) }).then(json)
+    expect(stale.error?.code).toBe('RULE_VERSION_STATE_INVALID')
+    expect(repository.audits.filter(item => item.action === 'activated')).toHaveLength(2)
   })
 
   it('rejects an unapproved or cross-platform source URL when creating a public draft', async () => {

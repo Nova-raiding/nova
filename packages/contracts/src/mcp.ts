@@ -318,6 +318,7 @@ export const MCP_METHODS = [
   'ops.rules.public.drafts.get',
   'rule.publish',
   'rule.status',
+  'rule.approve.batch',
   'asset.list',
   'asset.parse',
   'asset.facts.confirm',
@@ -1276,6 +1277,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'rule.status',
     description: 'Change a rule version to active, inactive or expired with an audit reason; activation requires approval_json with approval_ref, approved_by, and approved_at.',
     params: params({ pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'] }, platform: platformProperty, expected_revision: positiveIntegerString, reason: { type: 'string' }, approval_json: { type: 'string' } }, ['pack_id', 'version', 'status', 'reason']),
+  },
+  {
+    method: 'rule.approve.batch',
+    description: 'Atomically approve and activate public platform rules; the server validates every item\'s expected_revision, source, approval credential and writes one audit event per item, rolling back the batch on any failure.',
+    params: params({ items_json: { type: 'string', description: 'JSON array of platform, pack_id, version, expected_revision, reason, approval_ref, approved_by and approved_at per rule.' } }, ['items_json']),
   },
   {
     method: 'asset.list',

@@ -206,6 +206,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'rule.audit',
   'rule.publish',
   'rule.status',
+  'rule.approve.batch',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS = [

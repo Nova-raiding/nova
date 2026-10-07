@@ -364,7 +364,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'platform.media.spec.approve', 'platform.media.spec.expire',
   'platform.revoke',
   'platform.model.status',
-  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status',
+  'rule.sync.now', 'rule.audit', 'rule.publish', 'rule.status', 'rule.approve.batch',
   'delivery.bundle.verify',
   'asset.scan',
   // The API has no upload-session transport; all three methods currently
@@ -864,6 +864,10 @@ const METHODS = {
   'rule.status': {
     description: '变更规则版本状态并留下审计记录；激活时 approval_json 需包含 approval_ref、approved_by、approved_at。',
     inputSchema: { type: 'object', properties: { pack_id: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'expired'] }, public_scope: { type: 'string', enum: ['platform'], description: '声明变更公共平台规则状态；需同时提供 platform。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '公共平台规则所属平台；仅与 public_scope=platform 同时使用。' }, expected_revision: { type: 'string', description: '公共规则草稿变更必须与读取时的 revision 一致。' }, reason: { type: 'string' }, approval_json: { type: 'string' } }, required: ['pack_id', 'version', 'status', 'reason'], additionalProperties: false },
+  },
+  'rule.approve.batch': {
+    description: '服务端原子批量审批公共平台规则；每条规则分别校验 expected_revision、来源、审批凭证并写入独立审计，任一条失败则整批回滚。',
+    inputSchema: { type: 'object', properties: { items_json: { type: 'string', description: '规则条目 JSON 数组；每项包含 platform、pack_id、version、expected_revision、reason、approval_ref、approved_by、approved_at。' } }, required: ['items_json'], additionalProperties: false },
   },
   'asset.list': {
     description: '查看工作区素材、扫描和权益状态。',

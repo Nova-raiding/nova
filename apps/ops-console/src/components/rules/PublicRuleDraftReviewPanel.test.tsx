@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
-import { buildPublicRuleDraftListParams, buildPublicRuleStatusParams, canReviewPublicRuleDraft, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
+import { buildPublicRuleBatchApprovalParams, buildPublicRuleDraftListParams, buildPublicRuleStatusParams, canReviewPublicRuleDraft, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
 
 function authorization(scope: "platform" | "workspace", capabilities: string[]): AuthorizationProjection {
   const allowed = new Set(capabilities);
@@ -41,6 +41,16 @@ describe("public platform rule draft review", () => {
       .toMatchObject({ status: "active", expected_revision: "1", public_scope: "platform", platform: "pinduoduo", approval_json: JSON.stringify({ approval_ref: "APR-1", approved_by: "reviewer-2", approved_at: "2026-09-02T00:00:00.000Z" }) });
     expect(buildPublicRuleStatusParams(pending, "inactive", "拒绝", undefined))
       .toMatchObject({ status: "inactive", expected_revision: "1", public_scope: "platform", platform: "pinduoduo" });
+  });
+
+  it("builds one batch request with each rule's revision and approval evidence", () => {
+    const second = { ...pending, id: "public-rule-2", pack_id: "pdd-image", revision: 4 };
+    const params = buildPublicRuleBatchApprovalParams([pending, second], "批量复核", { approvalRef: "APR-BATCH", approvedBy: "reviewer-2", approvedAt: "2026-09-02T00:00:00.000Z" });
+    expect(Object.keys(params)).toEqual(["items_json"]);
+    expect(JSON.parse(params.items_json)).toEqual([
+      { platform: "pinduoduo", pack_id: "pdd-delivery", version: "1.0", expected_revision: "1", reason: "批量复核", approval_ref: "APR-BATCH", approved_by: "reviewer-2", approved_at: "2026-09-02T00:00:00.000Z" },
+      { platform: "pinduoduo", pack_id: "pdd-image", version: "1.0", expected_revision: "4", reason: "批量复核", approval_ref: "APR-BATCH", approved_by: "reviewer-2", approved_at: "2026-09-02T00:00:00.000Z" },
+    ]);
   });
 
   it("renders only for a platform rule reader and keeps approval controls behind write capability", () => {
