@@ -34,6 +34,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/migration-208-release.postgres.test.ts',
   'packages/persistence/src/migration-209-release.postgres.test.ts',
   'packages/persistence/src/migration-210-release.postgres.test.ts',
+  'packages/persistence/src/merchant-ops-cross-workspace-member-update.postgres.test.ts',
   'packages/persistence/src/migration-215-release.postgres.test.ts',
   'packages/persistence/src/local-212-collision-bridge.postgres.test.ts',
   'packages/persistence/src/migration-214-release.postgres.test.ts',
