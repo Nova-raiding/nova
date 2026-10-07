@@ -30,5 +30,5 @@ describe('bridge candidate map from real stopped Docker containers', () => {
       spawnSync('docker', [...args, 'down'], { stdio: 'pipe' })
       rmSync(dir, { recursive: true })
     }
-  }, 30_000)
+  }, 120_000)
 })

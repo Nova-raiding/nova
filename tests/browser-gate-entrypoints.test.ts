@@ -77,6 +77,7 @@ function playwrightInvocation(source: string): string {
 const MERCHANT_SPECS = [
   'demo/merchant-studio/image-visual-qa.spec.js',
   'demo/merchant-studio/overview-finance.browser.spec.js',
+  'demo/merchant-studio/upload-rules-journey.browser.spec.js',
   spec('merchant-all.spec.js'),
   spec('merchant-brand-scopes.spec.js'),
   spec('merchant-data-safety.spec.js'),
@@ -180,7 +181,7 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
-  it('delegates test:browser:merchant to a runner that names exactly seven spec files', () => {
+  it('delegates test:browser:merchant to a runner that names exactly eight spec files', () => {
     const command = script('test:browser:merchant')
     expect(command).toContain('scripts/merchant-browser-candidate.ts')
     expect(command).not.toContain('--config')
@@ -217,9 +218,9 @@ describe('browser gate entrypoints', () => {
     expect(runner).toContain('OPS_E2E_OVERRIDE_NOT_ALLOWED')
   })
 
-  it('composes test:browser:all from merchant and every dedicated Ops acceptance suite', () => {
+  it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 

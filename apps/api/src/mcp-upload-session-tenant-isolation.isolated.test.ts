@@ -34,6 +34,16 @@ describe('MCP upload session tenant isolation', () => {
     }, 'ws_upload_attacker', dependencies)).rejects.toMatchObject({ code: 'UPLOAD_SESSION_NOT_FOUND', status: 404 })
   })
 
+  it('does not reveal whether an unknown session exists when transport is configured', async () => {
+    const { dependencies } = await createFixture()
+    await expect(handleMcpUploadSessionMethod('upload.session.part', {
+      session_id: 'unknown-session', part_number: '1', content_base64: 'YWJj',
+    }, 'ws_upload_attacker', dependencies)).rejects.toMatchObject({ code: 'UPLOAD_SESSION_NOT_FOUND', status: 404 })
+    await expect(handleMcpUploadSessionMethod('upload.session.complete', {
+      session_id: 'unknown-session',
+    }, 'ws_upload_attacker', dependencies)).rejects.toMatchObject({ code: 'UPLOAD_SESSION_NOT_FOUND', status: 404 })
+  })
+
   it('rejects completion from a different authenticated workspace', async () => {
     const { body, dependencies, ownerWorkspace, session } = await createFixture()
     await handleMcpUploadSessionMethod('upload.session.part', {

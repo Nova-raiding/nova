@@ -8,12 +8,18 @@ type Dependencies = {
 
 export const MCP_UPLOAD_SESSION_METHODS = new Set(['upload.session.create', 'upload.session.part', 'upload.session.complete'])
 
+function requireUploadTransport(uploadSessions: UploadSessionManager): void {
+  if (!uploadSessions.configured) {
+    throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', '上传服务未配置真实对象存储 transport', 503)
+  }
+}
+
 export async function handleMcpUploadSessionMethod(method: string, params: Record<string, unknown>, workspaceId: string, dependencies: Dependencies): Promise<unknown> {
   const { uploadSessions, required } = dependencies
   if (method === 'upload.session.create') {
       // A session without a configured transport must fail closed; never report a fake upload.
       const size = Number(required(params, 'size_bytes'))
-      if (!uploadSessions.configured) throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', '上传服务未配置真实对象存储 transport', 503)
+      requireUploadTransport(uploadSessions)
       try {
         const session = uploadSessions.create({ workspaceId, fileName: required(params, 'file_name'), contentType: required(params, 'content_type'), sizeBytes: size, sha256: required(params, 'sha256'), ...(typeof params.idempotency_key === 'string' ? { idempotencyKey: params.idempotency_key } : {}) })
         return (session)
@@ -21,12 +27,14 @@ export async function handleMcpUploadSessionMethod(method: string, params: Recor
     }
   if (method === 'upload.session.part') {
       const sessionId = required(params, 'session_id')
+      requireUploadTransport(uploadSessions)
       if (!uploadSessions.belongsToWorkspace(sessionId, workspaceId)) throw new DomainError('UPLOAD_SESSION_NOT_FOUND', '上传会话不存在', 404)
       try { const bytes = Buffer.from(required(params, 'content_base64'), 'base64'); return (uploadSessions.putPart(sessionId, Number(required(params, 'part_number')), bytes)) }
       catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
   if (method === 'upload.session.complete') {
       const sessionId = required(params, 'session_id')
+      requireUploadTransport(uploadSessions)
       if (!uploadSessions.belongsToWorkspace(sessionId, workspaceId)) throw new DomainError('UPLOAD_SESSION_NOT_FOUND', '上传会话不存在', 404)
       try { return (await uploadSessions.complete(sessionId)) }
       catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }

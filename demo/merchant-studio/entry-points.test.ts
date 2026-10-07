@@ -30,7 +30,7 @@ describe('merchant new-session entry points', () => {
 
   it('keeps the bare product route and broad task destinations on the screenshot-backed materials page', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' })).toMatchObject({ page: 'products', entry: 'knowledge' })
-    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '', hash: '' })).toEqual({ page: 'task', searchQuery: '' })
     expect(merchantRouteFromLocation({ pathname: '/merchant/publish', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
     expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
   })

@@ -2786,6 +2786,9 @@ describe('Codex stdio MCP bridge', () => {
           const action = state === 'failed' ? 'regenerate_in_conversation' : 'refresh'
           expect(response.result).toHaveProperty('structuredContent')
           expect(response.result.structuredContent.candidate_state.presentation).toBe(state === 'failed' ? 'component_recovery' : 'native_status')
+          if (state === 'unknown') {
+            expect(response.result.structuredContent.poll_request).toEqual({ job_id: id, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 })
+          }
           if (state === 'failed') {
             expect(response.result.structuredContent.expected_input).toEqual({ kind: 'component_action', action, user_action_required: true })
             expect(response.result.structuredContent.recovery_request).toEqual({ job_id: id, action })
@@ -2935,6 +2938,20 @@ describe('Codex stdio MCP bridge', () => {
     } finally {
       child.kill()
       await close(server)
+    }
+  })
+
+  it('auto-polls reconciliation-pending image results without regenerating', async () => {
+    const { child } = await listBridgeTools({})
+    if (!child.stdin || !child.stdout) throw new Error('bridge stdio unavailable')
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 42, method: 'resources/read', params: { uri: 'ui://merchant-marketing/image-candidate-choice-v15.html' } })}\n`)
+      const read = await nextLine(child.stdout)
+      const html = read.result.contents[0].text as string
+      expect(html).toContain("currentState==='queued'||currentState==='processing'||currentState==='unknown'&&payload.poll_request")
+      expect(html).toContain("currentState==='unknown'?'图片结果正在确认':'图片正在准备'")
+    } finally {
+      child.kill()
     }
   })
 

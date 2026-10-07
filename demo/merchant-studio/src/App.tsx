@@ -2983,6 +2983,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
   const [rangeMode, setRangeMode] = useState<'day' | 'month'>('day')
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
+  const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
   // `null` while the ledger read is unresolved or failed; `[]` is a real read
   // that returned no entries. Neither case may fall back to sample numbers.
   const [statementEntries, setStatementEntries] = useState<CreativePointStatementEntry[] | null>(null)
@@ -2995,6 +2996,18 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
   const [statementNote, setStatementNote] = useState('正在读取创意点流水…')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [pricingDialog, setPricingDialog] = useState<'points' | 'storage' | null>(null)
+  useEffect(() => {
+    if (!baseUrl) {
+      setCurrentEntitlement(null)
+      return
+    }
+    let active = true
+    setCurrentEntitlement(null)
+    fetchCurrentCommercialEntitlement(baseUrl)
+      .then((entitlement) => { if (active) setCurrentEntitlement(entitlement) })
+      .catch(() => { if (active) setCurrentEntitlement(null) })
+    return () => { active = false }
+  }, [baseUrl])
   useEffect(() => {
     if (!baseUrl) {
       setStatementEntries(null)
@@ -3094,6 +3107,11 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
         <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p></div>
+        <section className="today-current-plan" aria-label="账号版本与有效期">
+          <span>当前账号版本</span>
+          <strong>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : '服务端未确认当前账号版本'}</strong>
+          <small>有效期至 {currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '服务端未确认有效期'}</small>
+        </section>
       </div>
       <div className="finance-summary-grid">
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>

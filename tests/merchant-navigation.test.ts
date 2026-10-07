@@ -5,7 +5,7 @@ describe('Merchant Studio navigation', () => {
   it.each([
     ['overview', 'overview'],
     ['products', 'products'],
-    ['tasks', 'products'],
+    ['tasks', 'task'],
     ['publish', 'products'],
     ['rules', 'products'],
   ] as const)('initializes /merchant/%s as %s', (path, page) => {

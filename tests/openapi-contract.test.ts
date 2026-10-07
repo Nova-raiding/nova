@@ -72,6 +72,7 @@ describe('OpenAPI security contract', () => {
     const mcpRequest = parseMcpRequestSchema(source)
     expect(mcpRequest.properties.has('enum'), 'enum must be nested under properties.method').toBe(false)
     expect(mcpRequest.methodEnum).toEqual([...MCP_METHODS])
+    expect(mcpRequest.methodEnum).toContain('rule.approve.batch')
     expect(new Set(mcpRequest.methodEnum).size).toBe(mcpRequest.methodEnum.length)
     expect(mcpRequest.methodEnum.filter(method => method.startsWith('ops.audit.'))).toEqual([
       'ops.audit.list', 'ops.audit.platform.list', 'ops.audit.detail', 'ops.audit.export',
