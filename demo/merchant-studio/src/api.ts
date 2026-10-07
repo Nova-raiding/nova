@@ -884,6 +884,17 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
       error.status = response.status
       throw error
     }
+    // A bearer token and an x-workspace-id are a pair. If an upstream or
+    // proxy returns a different workspace, fail closed instead of letting the
+    // merchant UI render another tenant's data. Same-origin sessions are
+    // cookie-scoped and intentionally omit the client-side workspace header;
+    // the server remains authoritative for that case.
+    if (!sameOriginProxy && workspaceId?.trim() && envelope.workspace_id !== workspaceId) {
+      const error = new Error('API 返回了不匹配的商家工作区') as ApiError
+      error.code = 'API_WORKSPACE_SCOPE_MISMATCH'
+      error.status = 502
+      throw error
+    }
     if (!response.ok || envelope.error) {
       const errorCode = envelope.error?.code
       const errorMessage = envelope.error?.message

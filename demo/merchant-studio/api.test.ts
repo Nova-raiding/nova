@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { assertProductTargetIdentity, downloadContentExport, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, registerMerchantAccount, requestApi, type Product } from './src/api.js'
+import { assertProductTargetIdentity, downloadContentExport, fetchImageGenerationJobs, fetchManualPublishRecords, fetchPlatformAccounts, fetchPlatformModelStatus, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTaskPage, fetchTasks, generateCampaignBatch, importProduct, MERCHANT_TASK_PAGE_SIZE, normalizeApiPage, registerMerchantAccount, requestApi, type Product } from './src/api.js'
 import { buildCatalogPlatforms } from './src/catalog-data.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
@@ -127,6 +127,11 @@ describe('merchant product response normalization', () => {
     )
   })
 
+  it('rejects a malformed paginated response instead of treating it as an empty page', () => {
+    expect(() => normalizeApiPage({ items: 'not-an-array' } as never, 50, 0))
+      .toThrow('API 分页响应格式无效')
+  })
+
   it('reads tenant-scoped manual publish reports without treating them as platform receipts', async () => {
     vi.stubGlobal('window', globalThis)
     const record = { id: 'manual-1', taskId: 'task-1', contentVersionId: 'content-1', platform: 'taobao', accountId: 'store-1', state: 'manual_publish_reported', recordedAt: '2026-09-17T00:00:00.000Z' }
@@ -158,6 +163,31 @@ describe('merchant product response normalization', () => {
       nextActions: ['commercial.access.get'],
       retryable: false,
     })
+  })
+
+  it('fails closed when an external API response belongs to another workspace', async () => {
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      request_id: 'req_scope_mismatch', trace_id: 'trace_scope_mismatch', workspace_id: 'ws_other',
+      data: { ok: true }, warnings: [], next_actions: [], error: null,
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
+
+    await expect(requestApi('https://api.example.test', '/v1/products', {}, 'ws_expected'))
+      .rejects.toMatchObject({ code: 'API_WORKSPACE_SCOPE_MISMATCH', status: 502 })
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    expect(new Headers(request?.headers).get('x-workspace-id')).toBe('ws_expected')
+  })
+
+  it('keeps same-origin cookie sessions authoritative instead of injecting a demo tenant header', async () => {
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      request_id: 'req_cookie_scope', trace_id: 'trace_cookie_scope', workspace_id: 'ws_live_session',
+      data: { ok: true }, warnings: [], next_actions: [], error: null,
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
+
+    await expect(requestApi('/api', '/v1/products', {}, 'ws_demo')).resolves.toEqual({ ok: true })
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    expect(new Headers(request?.headers).has('x-workspace-id')).toBe(false)
   })
 
   it('reads the workspace-scoped image task discovery page without inventing demo rows', async () => {

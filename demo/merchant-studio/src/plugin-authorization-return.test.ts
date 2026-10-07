@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { pluginAuthorizationReturnPath } from './plugin-authorization-return'
+import { describe, expect, it, vi } from 'vitest'
+import { pluginAuthorizationReturnPath, redirectToPluginAuthorization } from './plugin-authorization-return'
 
 describe('local plugin post-login return', () => {
   const authorization = '/v1/auth/local-plugin/authorize?client_id=local-desktop&response_type=code&state=once'
@@ -17,5 +17,17 @@ describe('local plugin post-login return', () => {
     `?plugin_authorize=${encodeURIComponent(authorization)}&plugin_authorize=${encodeURIComponent(authorization)}`,
   ])('rejects an unrelated or ambiguous return target', search => {
     expect(pluginAuthorizationReturnPath(search)).toBeNull()
+  })
+
+  it('redirects only after a valid post-login target is resolved', () => {
+    const assign = vi.fn()
+    expect(redirectToPluginAuthorization(`?plugin_authorize=${encodeURIComponent(authorization)}`, assign)).toBe(true)
+    expect(assign).toHaveBeenCalledExactlyOnceWith(authorization)
+  })
+
+  it('does not invoke navigation for an invalid target', () => {
+    const assign = vi.fn()
+    expect(redirectToPluginAuthorization('?plugin_authorize=%2F%2Fevil.example', assign)).toBe(false)
+    expect(assign).not.toHaveBeenCalled()
   })
 })

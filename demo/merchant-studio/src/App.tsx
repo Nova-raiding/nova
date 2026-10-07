@@ -226,7 +226,7 @@ import {
 
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
-import { pluginAuthorizationReturnPath } from './plugin-authorization-return'
+import { redirectToPluginAuthorization } from './plugin-authorization-return'
 import { LocalPluginConnection } from './LocalPluginConnection'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationDisplayState, imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
@@ -13014,9 +13014,7 @@ export default function App() {
     fetchMerchantSession(apiBaseUrl)
       .then(account => {
         if (cancelled) return
-        const pluginAuthorization = pluginAuthorizationReturnPath(window.location.search)
-        if (pluginAuthorization) {
-          window.location.assign(pluginAuthorization)
+        if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) {
           return
         }
         setAuthAccount(account)
@@ -13419,6 +13417,7 @@ export default function App() {
           setAuthError('')
           fetchMerchantSession(apiBaseUrl)
             .then(account => {
+              if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) return
               setAuthAccount(account)
               setAuthState('authenticated')
             })
@@ -13429,11 +13428,7 @@ export default function App() {
             })
         }}
         onAuthenticated={(account) => {
-          const pluginAuthorization = pluginAuthorizationReturnPath(window.location.search)
-          if (pluginAuthorization) {
-            window.location.assign(pluginAuthorization)
-            return
-          }
+          if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) return
           setAuthAccount(account)
           setAuthState('authenticated')
           setAuthError('')

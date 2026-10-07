@@ -14,3 +14,18 @@ export function pluginAuthorizationReturnPath(search: string): string | null {
     return null
   }
 }
+
+/**
+ * Redirect only after the merchant session has been established. Keeping the
+ * decision here makes the login-submit and login-retry paths use the same
+ * fail-closed return-target validation.
+ */
+export function redirectToPluginAuthorization(
+  search: string,
+  assign: (path: string) => void,
+): boolean {
+  const path = pluginAuthorizationReturnPath(search)
+  if (!path) return false
+  assign(path)
+  return true
+}

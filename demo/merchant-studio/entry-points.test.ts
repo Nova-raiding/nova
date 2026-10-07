@@ -41,6 +41,13 @@ describe('merchant new-session entry points', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
   })
 
+  it('does not trust malformed or cross-route deep-link identifiers as a local page state', () => {
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks/%E0%A4%A', search: '', hash: '' }))
+      .toMatchObject({ page: 'task', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=forged&q=%00', hash: '' }))
+      .toMatchObject({ page: 'products', entry: 'knowledge', searchQuery: '\u0000' })
+  })
+
   it('preserves unrelated query parameters while replacing route-owned parameters', () => {
     expect(urlForMerchantRoute(
       { pathname: '/merchant/products', search: '?source=codex&q=old&section=images&campaign=launch' },
