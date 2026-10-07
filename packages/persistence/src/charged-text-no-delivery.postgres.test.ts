@@ -33,7 +33,9 @@ describe('253 charged text no-delivery finance resolution', () => {
       db = new Pool({ connectionString: urlFor(base, name), max: 4 })
       const roleSql = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await db.query(roleSql)
-      expect((await new MigrationRunner(db, await loadMigrations()).run()).at(-1)).toBe(265)
+      const migrations = await loadMigrations()
+      const release = JSON.parse(await readFile(new URL('../../../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion: number }
+      expect((await new MigrationRunner(db, migrations).run()).at(-1)).toBe(release.expectedMigrationVersion)
       await db.query(roleSql)
       const role = await db.query<{ canReadToken: boolean; canReadEvidence: boolean; canResolve: boolean; opsResolve: boolean }>(`
         SELECT has_column_privilege('merchant_app','charged_text_dispatch_attempts','owner_token','SELECT') AS "canReadToken",
