@@ -53,6 +53,15 @@ describe("public platform rule draft review", () => {
     ]);
   });
 
+  it("omits an absent cursor and trims batch approval evidence before serialization", () => {
+    expect(buildPublicRuleDraftListParams("", undefined)).toEqual({ limit: "20" });
+    expect(JSON.parse(buildPublicRuleBatchApprovalParams([pending], "  批量复核  ", {
+      approvalRef: "  APR-TRIM  ", approvedBy: "  reviewer-2  ", approvedAt: "  2026-09-02T00:00:00.000Z  ",
+    }).items_json)).toEqual([expect.objectContaining({
+      reason: "批量复核", approval_ref: "APR-TRIM", approved_by: "reviewer-2", approved_at: "2026-09-02T00:00:00.000Z",
+    })]);
+  });
+
   it("renders only for a platform rule reader and keeps approval controls behind write capability", () => {
     expect(renderToStaticMarkup(<PublicRuleDraftReviewPanel authorization={authorization("workspace", ["rule.read"])} />)).toBe("");
     const readOnly = renderToStaticMarkup(<PublicRuleDraftReviewPanel authorization={authorization("platform", ["rule.read"])} />);
