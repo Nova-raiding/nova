@@ -13,7 +13,7 @@ vi.mock("antd", () => {
     Input,
     InputNumber: ({ placeholder }: any) => createElement("input", { placeholder }),
     Select: ({ options = [] }: any) => createElement("select", null, options.map((option: any) => createElement("option", { key: option.value }, option.label))),
-    Space: passthrough,
+    Space: ({ children }: any) => createElement("div", null, children),
     Typography: { Text: ({ children }: any) => createElement("span", null, children) },
   };
 });

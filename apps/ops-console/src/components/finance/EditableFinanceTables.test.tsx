@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("antd", () => ({
   Button: ({ children, disabled }: any) => createElement("button", { disabled }, children),
-  InputNumber: ({ disabled, value }: any) => createElement("input", { type: "number", disabled, value }),
+  InputNumber: ({ disabled, value, onChange }: any) => createElement("input", { type: "number", disabled, value, onChange }),
   Switch: ({ disabled, checked }: any) => createElement("input", { type: "checkbox", disabled, checked, readOnly: true }),
   Table: ({ dataSource, columns }: any) => createElement("table", null, dataSource.map((row: any) => createElement("tr", { key: row.id ?? row.code }, columns.map((column: any) => createElement("td", { key: column.title ?? column.dataIndex }, column.render ? column.render(row[column.dataIndex], row) : row[column.dataIndex])))),),
 }));

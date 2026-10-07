@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("antd", () => {
   const passthrough = ({ children, ...props }: any) => createElement("div", props, children);
-  const Descriptions = ({ children, ...props }: any) => createElement("dl", props, children);
+  const Descriptions = ({ children }: any) => createElement("dl", null, children);
   Descriptions.Item = ({ label, children }: any) => createElement("div", null, createElement("dt", null, label), createElement("dd", null, children));
   const Typography = {
     Text: ({ children }: any) => createElement("span", null, children),
