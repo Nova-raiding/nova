@@ -16,6 +16,23 @@ class Client implements SqlClient {
   release() {}
 }
 
+class PublicReviewClient implements SqlClient {
+  readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
+  async query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
+    this.calls.push({ text, values })
+    if (text.startsWith('SELECT id, \'__platform_rules__\'::text AS workspace_id')) {
+      return {
+        rows: [
+          { id: 'public-2', workspace_id: '__platform_rules__', pack_id: 'pdd-b', name: 'B', version: '2', scope: 'platform', status: 'draft', source_kind: 'internal', source_reference: 'manual://b', source_checked_at: '2026-09-25T00:00:00.000Z', checksum: 'b'.repeat(64), checks: {}, created_at: '2026-09-25T00:02:00.000Z', updated_at: '2026-09-25T00:02:00.000Z', created_by: 'owner', revision: 1, scope_value: 'pinduoduo' },
+          { id: 'public-1', workspace_id: '__platform_rules__', pack_id: 'pdd-a', name: 'A', version: '1', scope: 'platform', status: 'draft', source_kind: 'internal', source_reference: 'manual://a', source_checked_at: '2026-09-25T00:00:00.000Z', checksum: 'a'.repeat(64), checks: {}, created_at: '2026-09-25T00:01:00.000Z', updated_at: '2026-09-25T00:01:00.000Z', created_by: 'owner', revision: 1, scope_value: 'pinduoduo' },
+        ] as Row[],
+      }
+    }
+    return { rows: [] as Row[] }
+  }
+  release() {}
+}
+
 describe('PostgresRuleRepository', () => {
   it('keeps rule reads and writes inside a workspace transaction', async () => {
     const client = new Client()
@@ -59,5 +76,34 @@ describe('PostgresRuleRepository', () => {
     expect(result.version.status).toBe('inactive')
     const transition = client.calls.find(call => call.text.includes('SET status = $4::text'))
     expect(transition?.text).toContain('$5::timestamptz')
+  })
+
+  it('rejects invalid public review page sizes before opening a transaction', async () => {
+    const client = new PublicReviewClient()
+    const repo = new PostgresRuleRepository({ connect: async () => client })
+    await expect(repo.listPublicDraftsForReview({ limit: 0 })).rejects.toThrow('PUBLIC_RULE_REVIEW_LIMIT_INVALID')
+    await expect(repo.listPublicDraftsForReview({ limit: 101 })).rejects.toThrow('PUBLIC_RULE_REVIEW_LIMIT_INVALID')
+    expect(client.calls).toHaveLength(0)
+  })
+
+  it('trims the extra public draft row and encodes a stable descending-page cursor', async () => {
+    const client = new PublicReviewClient()
+    const repo = new PostgresRuleRepository({ connect: async () => client })
+    const page = await repo.listPublicDraftsForReview({ platform: 'pinduoduo', limit: 1, cursor: { createdAt: '2026-09-24T00:00:00.000Z', id: 'public-9' } })
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]).toMatchObject({ id: 'public-2', workspaceId: '__platform_rules__', scopeValue: 'pinduoduo' })
+    expect(page.nextCursor).toEqual({ createdAt: '2026-09-25T00:02:00.000Z', id: 'public-2' })
+    const select = client.calls.find(call => call.text.startsWith('SELECT id, \'__platform_rules__\'::text AS workspace_id'))
+    expect(select?.values).toEqual(['pinduoduo', '2026-09-24T00:00:00.000Z', 'public-9', 2])
+  })
+
+  it('rejects an empty or oversized public approval batch before opening a transaction', async () => {
+    const client = new PublicReviewClient()
+    const repo = new PostgresRuleRepository({ connect: async () => client })
+    await expect(repo.transitionPublicStatusBatch([])).rejects.toThrow('PUBLIC_RULE_BATCH_SIZE_INVALID')
+    await expect(repo.transitionPublicStatusBatch(Array.from({ length: 101 }, () => ({
+      platform: 'pinduoduo', packId: 'pdd-a', version: '1', expectedRevision: 1, status: 'active', actorId: 'reviewer', reason: 'approve', occurredAt: '2026-09-25T00:00:00.000Z',
+    })))).rejects.toThrow('PUBLIC_RULE_BATCH_SIZE_INVALID')
+    expect(client.calls).toHaveLength(0)
   })
 })

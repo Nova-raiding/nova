@@ -68,6 +68,22 @@ describe('public platform rule governance preview handler', () => {
     expect(repo.listPublicDraftsForReview).not.toHaveBeenCalled()
   })
 
+  it('fails closed when the public review repository or list method is unavailable', async () => {
+    const missingRepository = setup().deps
+    missingRepository.ruleRepository = () => undefined
+    await expect(handlePublicRuleDraftsList(request, {}, missingRepository)).rejects.toMatchObject({ status: 503, code: 'RULE_REPOSITORY_NOT_CONFIGURED' })
+
+    const missingList = setup().deps
+    missingList.ruleRepository = () => ({}) as never
+    await expect(handlePublicRuleDraftsList(request, {}, missingList)).rejects.toMatchObject({ status: 503, code: 'RULE_REPOSITORY_NOT_CONFIGURED' })
+  })
+
+  it('rejects control characters in exact rule identifiers before repository access', async () => {
+    const { deps, repo } = setup()
+    await expect(handlePublicRuleDraftsGet(request, { platform: 'pinduoduo', pack_id: 'pdd\u0000copy', version: '3' }, deps)).rejects.toMatchObject({ status: 400, code: 'INVALID_REQUEST' })
+    expect(repo.getPublicRuleForReview).not.toHaveBeenCalled()
+  })
+
   it('loads an exact platform version with its audit trail and strips workspace metadata', async () => {
     const { repo, deps } = setup()
     const result = await handlePublicRuleDraftsGet(request, { platform: 'pinduoduo', pack_id: 'pdd-copy', version: '3' }, deps) as { rule: Record<string, unknown>; audit: Array<Record<string, unknown>> }
