@@ -78,12 +78,12 @@ describe('image dispatch budget PostgreSQL interleaving acceptance', () => {
         // charged creative-point reservation. Keep the fixture on that same
         // durable path so a missing commercial snapshot cannot accidentally
         // make budget cleanup look successful.
-        await database.query(`INSERT INTO creative_point_operations
+        await database!.query(`INSERT INTO creative_point_operations
           (id,workspace_id,kind,idempotency_key,status,request,result,completed_at)
           VALUES ($1,$2,'reserve',$3,'completed',$4::jsonb,$5::jsonb,now())`, [
           operationId, workspaceId, `commercial.reserve:${action}`, JSON.stringify({ action_key: action, points: 1, rate_card_version: 'test' }), JSON.stringify({ entity_id: reservationId }),
         ])
-        await database.query(`INSERT INTO creative_point_reservations
+        await database!.query(`INSERT INTO creative_point_reservations
           (id,workspace_id,operation_id,action_key,points,status,rate_card_version)
           VALUES ($1,$2,$3,$4,1,'active','test')`, [reservationId, workspaceId, operationId, action])
         const budgetInput = { workspaceId, reservationKey: action, runKey: action, modality: 'image' as const,
@@ -96,7 +96,7 @@ describe('image dispatch budget PostgreSQL interleaving acceptance', () => {
             workbench: 'workspace', context_id: `workspace:${workspaceId}`, context_version: '1', policy_version: '1', grant_revision: '1', grant_ids: ['grant'], scope_hash: 'a'.repeat(64), capability: 'image_generation.execute', resource_id: owned.jobId, resource_revision: '1', request_id: 'request', trace_id: 'trace', authorized: true, decided_at: new Date().toISOString(),
           },
         } }
-        await database.query(`INSERT INTO outbox_events
+        await database!.query(`INSERT INTO outbox_events
           (id,workspace_id,aggregate_id,event_type,sequence,payload)
           VALUES ($1,$2,$3,'image.generation.requested',1,$4::jsonb)`, [failure.eventId, workspaceId, owned.jobId, JSON.stringify(event.payload)])
         const reserve = vi.fn(() => budgets.reserveDailyBudget(budgetInput))
