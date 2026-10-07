@@ -4,6 +4,7 @@ import { OpenAICompatibleImageGenerator } from './image-generator.js'
 import { OpenAICompatibleImageEditGenerator } from './image-editor.js'
 import { OpenAICompatibleImageFactsExtractor } from './image-facts.js'
 import { OpenAICompatibleVideoGenerator } from './video-generator.js'
+import { OpenAICompatibleEmbeddingClient } from './embedding.js'
 
 const common = { apiKey: 'local-test-key', model: 'local-test-model' }
 
@@ -14,6 +15,7 @@ describe('direct model adapters keep the relay boundary fail-closed', () => {
     ['image edit', (baseUrl: string) => new OpenAICompatibleImageEditGenerator({ ...common, baseUrl })],
     ['OCR', (baseUrl: string) => new OpenAICompatibleImageFactsExtractor({ ...common, baseUrl })],
     ['video', (baseUrl: string) => new OpenAICompatibleVideoGenerator({ ...common, baseUrl })],
+    ['embedding', (baseUrl: string) => new OpenAICompatibleEmbeddingClient({ ...common, baseUrl })],
   ])('%s rejects HTTP relay URLs before any request can be made', (_name, create) => {
     expect(() => create('http://relay.example.test')).toThrow('must use HTTPS')
   })

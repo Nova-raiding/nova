@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError } from './provider-request.js'
 import { emitRelayUsage } from './relay-usage.js'
 
-describe('five-modality relay contract audit', () => {
+const modalities = ['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'] as const
+
+describe('six-modality relay contract audit', () => {
   it.each([408, 500, 502, 503, 504])('keeps HTTP %s fail-closed as an ambiguous provider outcome', status => {
     expect(() => assertProviderResponseAccepted(new Response('', { status }), 'model_provider_audit', 'relay')).toThrowError(ProviderOutcomeUnknownError)
     try {
@@ -37,7 +39,7 @@ describe('five-modality relay contract audit', () => {
     }
   })
 
-  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('retains the %s relay request id on an ambiguous response', modality => {
+  it.each(modalities)('retains the %s relay request id on an ambiguous response', modality => {
     const requestId = `relay-${modality}-failure`
     try {
       assertProviderResponseAccepted(new Response('', { status: 503, headers: { 'x-oneapi-request-id': requestId } }), 'model_provider_audit', `${modality} relay`)
@@ -52,10 +54,11 @@ describe('five-modality relay contract audit', () => {
     throw new Error('expected provider outcome to be blocked')
   })
 
-  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('requires durable cost evidence for %s usage', async modality => {
+  it.each(modalities)('requires durable cost evidence for %s usage', async modality => {
     const payload = modality === 'image' || modality === 'image_edit'
       ? { usage: { output_image_count: 1 } }
-      : { usage: { total_tokens: 3 } }
+      : modality === 'embedding' ? { usage: { prompt_tokens: 3, total_tokens: 3 } }
+        : { usage: { total_tokens: 3 } }
     await expect(emitRelayUsage(
       async () => {},
       { id: `audit-${modality}`, ...payload },
@@ -64,10 +67,11 @@ describe('five-modality relay contract audit', () => {
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
   })
 
-  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('does not settle %s when request identity exists but cost evidence is absent', async modality => {
+  it.each(modalities)('does not settle %s when request identity exists but cost evidence is absent', async modality => {
     const usage = modality === 'image' || modality === 'image_edit'
       ? { output_image_count: 1 }
-      : { total_tokens: 3 }
+      : modality === 'embedding' ? { prompt_tokens: 3, total_tokens: 3 }
+        : { total_tokens: 3 }
     await expect(emitRelayUsage(
       async () => {},
       { data: { request_id: `relay-${modality}-usage`, usage } },
