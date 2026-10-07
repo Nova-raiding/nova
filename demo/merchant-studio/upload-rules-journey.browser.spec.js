@@ -1,7 +1,9 @@
 import { expect, test, chromium } from '@playwright/test'
 
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18084'
-const workspaceId = 'ws_upload_rules_fixture'
+// The Vite test bundle defaults to ws_demo when no explicit runtime workspace
+// is injected; keep the fixture envelope aligned with that authenticated scope.
+const workspaceId = 'ws_demo'
 const requestLog = []
 test.setTimeout(60_000)
 
