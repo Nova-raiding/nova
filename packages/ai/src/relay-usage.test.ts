@@ -1,7 +1,44 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
 
 describe('relay usage normalization', () => {
+  it('fails closed before production dispatch when the durable usage sink is absent', () => {
+    expect(() => assertUsageSinkConfiguredBeforeDispatch(undefined, 'production')).toThrow(expect.objectContaining({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING',
+      missing: 'sink',
+    }))
+    expect(() => assertUsageSinkConfiguredBeforeDispatch(undefined, 'test')).not.toThrow()
+    expect(() => assertUsageSinkConfiguredBeforeDispatch(undefined, 'development')).not.toThrow()
+  })
+
+  it.each([
+    ['text', { usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, cost_cny: 0.01 } }, {}],
+    ['image', { usage: { output_image_count: 1, cost_cny: 0.12 }, data: [{ url: 'https://cdn.example/image.png' }] }, { observedArtifactCount: 1 }],
+    ['image_edit', { usage: { output_image_count: 1, cost_cny: 0.13 }, data: [{ url: 'https://cdn.example/edited.png' }] }, { observedArtifactCount: 1 }],
+    ['ocr', { usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11, cost_cny: 0.02 } }, {}],
+    ['video', { data: { task_id: 'video-job-success', status: 'completed', usage: { duration_seconds: 4, cost_cny: 0.8 } } }, {}],
+    ['embedding', { usage: { prompt_tokens: 10, total_tokens: 10, cost_cny: 0.001 } }, {}],
+  ] as const)('settles complete usage, cost, and provider receipt for %s without external provider I/O', async (modality, payload, context) => {
+    const sink = vi.fn(async () => ({ recorded: true as const, costEvidence: true as const }))
+    const providerRequestId = `receipt-${modality}`
+    const usage = await emitRelayUsage(
+      sink,
+      payload,
+      new Headers({ 'x-provider-request-id': providerRequestId }),
+      { modality, model: `${modality}-stub-model`, context: { providerAttemptId: `attempt-${modality}`, ...context } },
+    )
+
+    expect(usage).toMatchObject({
+      modality,
+      model: `${modality}-stub-model`,
+      providerRequestId,
+      costCny: expect.any(Number),
+      metadata: { usage_observed: true, settlement: 'recorded' },
+    })
+    expect(sink).toHaveBeenCalledOnce()
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({ modality, providerRequestId, providerAttemptId: `attempt-${modality}` }))
+  })
+
   it('normalizes OpenAI-compatible token usage and provider request id', () => {
     const usage = parseRelayUsage({ id: 'req_123', usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20, cost_cny: '0.013' } }, new Headers({ 'x-request-id': 'header_req' }), { modality: 'text', model: 'merchant-v1', context: { workspaceId: 'ws_usage', actionId: 'task_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64) } })
     expect(usage).toMatchObject({ workspaceId: 'ws_usage', actionId: 'task_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), modality: 'text', model: 'merchant-v1', providerRequestId: 'header_req', inputTokens: 12, outputTokens: 8, totalTokens: 20, costCny: 0.013 })
