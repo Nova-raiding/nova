@@ -91,6 +91,44 @@ describe('Codex plugin package', () => {
     expect(manifest.interface.longDescription).toMatch(/不提供库存\/订单同步和自动发布/)
   })
 
+  it('keeps the ChatGPT launch descriptor local-stdio-only and secret-free', () => {
+    const manifest = JSON.parse(readPluginFile('.codex-plugin/plugin.json')) as {
+      mcpServers?: unknown
+    }
+    const mcp = JSON.parse(readPluginFile('.mcp.json')) as {
+      mcpServers?: Record<string, {
+        command?: unknown
+        args?: unknown
+        cwd?: unknown
+        env?: unknown
+        env_vars?: unknown
+        url?: unknown
+        headers?: unknown
+      }>
+    }
+    expect(manifest.mcpServers).toBe('./.mcp.json')
+    expect(Object.keys(mcp.mcpServers ?? {})).toEqual(['merchant-marketing'])
+
+    const server = mcp.mcpServers?.['merchant-marketing']
+    expect(server).toMatchObject({ command: 'node', args: ['./mcp/bridge.mjs'], cwd: '.' })
+    expect(server).not.toHaveProperty('env')
+    expect(server).not.toHaveProperty('url')
+    expect(server).not.toHaveProperty('headers')
+
+    const envVars = server?.env_vars
+    expect(Array.isArray(envVars)).toBe(true)
+    expect(new Set(envVars as string[]).size).toBe((envVars as string[]).length)
+    expect(envVars).toEqual(expect.arrayContaining([
+      'MERCHANT_MCP_BASE_URL',
+      'MERCHANT_WORKSPACE_ID',
+      'MERCHANT_MCP_TOKEN',
+      'MERCHANT_MCP_TOKEN_SOURCE',
+      'MERCHANT_STRICT_AUTH',
+    ]))
+    expect(envVars).not.toEqual(expect.arrayContaining(['MERCHANT_ACTOR_ID', 'MERCHANT_MCP_ROLE']))
+    expect(JSON.stringify(mcp)).not.toMatch(/(?:access[_-]?token|client[_-]?secret|private[_-]?key|password)\s*:/iu)
+  })
+
   it('requires Chinese merchant-facing replies in the installed entry skill', () => {
     expect(readPluginFile('skills/merchant-marketing/SKILL.md')).toContain('所有面向商家的自然语言回复、表格标题与列名、状态说明、错误解释、下一步提示和生成候选文案统一使用简体中文')
   })
