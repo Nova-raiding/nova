@@ -3,6 +3,7 @@ import { expect, test, chromium } from '@playwright/test'
 test.setTimeout(60_000)
 
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
+let browserDiagnostics = []
 const envelope = (data) => ({
   request_id: 'browser-image-request',
   trace_id: 'browser-image-trace',
@@ -65,10 +66,33 @@ const output = (overrides = {}) => ({
   ...overrides,
 })
 
+test.afterEach(async ({}, testInfo) => {
+  const report = JSON.stringify(browserDiagnostics, null, 2)
+  await testInfo.attach('browser-diagnostics.json', { body: Buffer.from(report), contentType: 'application/json' })
+  console.log(`BROWSER_DIAGNOSTICS ${report}`)
+})
+
 async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false, detailDelayMs = 0 } = {}) {
+  // Keep unrelated background reads local; specific routes registered below take precedence.
+  await page.route('**/v1/**', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })),
+  }))
   await page.route('**/v1/auth/session', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ account: { id: 'merchant_qa', accountType: 'merchant', displayName: '商家 QA', workspaceIds: ['ws_demo'] } })),
+    body: JSON.stringify(envelope({ account: {
+      id: 'merchant_qa',
+      login: 'merchant-qa@example.invalid',
+      accountType: 'merchant',
+      status: 'active',
+      roles: ['merchant_owner'],
+      displayName: '商家 QA',
+      workspaceIds: ['ws_demo'],
+    } })),
+  }))
+  await page.route('**/v1/auth/mcp-token', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ access_token: 'image-fixture-token', refresh_token: 'image-fixture-refresh', token_type: 'Bearer', expires_in: 3600, workspace_id: 'ws_demo', account_login: 'merchant-qa@example.invalid' })),
   }))
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
@@ -132,6 +156,10 @@ async function openPage(path, setup) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(8_000)
   const page = await context.newPage()
+  browserDiagnostics = []
+  page.on('console', message => browserDiagnostics.push({ type: 'console', level: message.type(), text: message.text() }))
+  page.on('pageerror', error => browserDiagnostics.push({ type: 'pageerror', text: error.message }))
+  page.on('requestfailed', request => browserDiagnostics.push({ type: 'requestfailed', url: request.url(), error: request.failure()?.errorText ?? 'unknown' }))
   await installApiRoutes(page, setup)
   await page.goto(`${studioUrl}${path}`, { waitUntil: 'domcontentloaded' })
   return { browser, context, page }

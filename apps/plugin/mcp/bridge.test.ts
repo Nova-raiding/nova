@@ -563,6 +563,21 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not emit a response for the MCP initialized notification', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9', MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' })}\n`)
+      expect(await nextLine(child.stdout)).toEqual({ jsonrpc: '2.0', id: 5, result: {} })
+    } finally {
+      child.kill()
+    }
+  })
+
   it('preserves UTF-8 request text when a host splits a multibyte frame across byte chunks', async () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),

@@ -20,11 +20,15 @@ export async function handleMcpUploadSessionMethod(method: string, params: Recor
       } catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
   if (method === 'upload.session.part') {
-      try { const bytes = Buffer.from(required(params, 'content_base64'), 'base64'); return (uploadSessions.putPart(required(params, 'session_id'), Number(required(params, 'part_number')), bytes)) }
+      const sessionId = required(params, 'session_id')
+      if (!uploadSessions.belongsToWorkspace(sessionId, workspaceId)) throw new DomainError('UPLOAD_SESSION_NOT_FOUND', '上传会话不存在', 404)
+      try { const bytes = Buffer.from(required(params, 'content_base64'), 'base64'); return (uploadSessions.putPart(sessionId, Number(required(params, 'part_number')), bytes)) }
       catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
   if (method === 'upload.session.complete') {
-      try { return (await uploadSessions.complete(required(params, 'session_id'))) }
+      const sessionId = required(params, 'session_id')
+      if (!uploadSessions.belongsToWorkspace(sessionId, workspaceId)) throw new DomainError('UPLOAD_SESSION_NOT_FOUND', '上传会话不存在', 404)
+      try { return (await uploadSessions.complete(sessionId)) }
       catch (error) { throw new DomainError('UPLOAD_TRANSPORT_NOT_CONFIGURED', error instanceof Error ? error.message : '上传服务未配置', 503) }
     }
   throw new Error(`Unsupported upload session MCP method: ${method}`)

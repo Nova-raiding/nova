@@ -123,6 +123,12 @@ export function parseMarkdownDraftInputs(markdown: string, fileName: string) {
     const platform = body.match(/^- 平台：([^；\n]+)/mu)?.[1]?.trim();
     const source = body.match(/^- 官方依据：(.+)$/mu)?.[1]?.trim();
     if (!platform || !source) throw new Error(`${cardId} 缺少平台或官方依据字段`);
+    const ruleContent = body
+      .split("\n")
+      .filter(line => !/^- (?:平台|官方依据)：/u.test(line))
+      .join("\n")
+      .trim();
+    if (!ruleContent) throw new Error(`${cardId} 缺少规则内容`);
     const targetId = resolveMarkdownPlatform(platform, cardId);
     if (!isApprovedRuleSourceReference(source, targetId)) throw new Error(`${cardId} 的官方依据不是该平台批准域名和路径下的 HTTPS 规则页面`);
     const sourceReference = extractRuleSourceUrl(source);

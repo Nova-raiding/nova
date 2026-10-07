@@ -4,6 +4,7 @@ test.setTimeout(60_000)
 
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
 const longJobId = `img_job_${'opaque-long-job-id-'.repeat(12)}`
+let browserDiagnostics = []
 
 const envelope = (data) => ({
   request_id: 'responsive-image-request',
@@ -63,7 +64,33 @@ const job = {
   next_action: { type: 'select', label: '选择主图', allowed: true },
 }
 
+test.afterEach(async ({}, testInfo) => {
+  const report = JSON.stringify(browserDiagnostics, null, 2)
+  await testInfo.attach('browser-diagnostics.json', { body: Buffer.from(report), contentType: 'application/json' })
+  console.log(`BROWSER_DIAGNOSTICS ${report}`)
+})
+
 async function installRoutes(page) {
+  // Keep unrelated background reads local; specific routes registered below take precedence.
+  await page.route('**/v1/**', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })),
+  }))
+  await page.route('**/v1/auth/session', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ account: {
+      id: 'merchant_responsive_fixture',
+      login: 'merchant-responsive@example.invalid',
+      accountType: 'merchant',
+      status: 'active',
+      roles: ['merchant_owner'],
+      workspaceIds: ['ws_demo'],
+    } })),
+  }))
+  await page.route('**/v1/auth/mcp-token', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ access_token: 'responsive-fixture-token', refresh_token: 'responsive-fixture-refresh', token_type: 'Bearer', expires_in: 3600, workspace_id: 'ws_demo', account_login: 'merchant-responsive@example.invalid' })),
+  }))
   await page.route('**/healthz', (route) => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'postgres', ready: true } })),
@@ -107,11 +134,21 @@ async function openResponsivePage(viewport, reducedMotion = false) {
   const context = await browser.newContext({ viewport, reducedMotion: reducedMotion ? 'reduce' : 'no-preference' })
   context.setDefaultTimeout(10_000)
   const page = await context.newPage()
+  browserDiagnostics = []
+  page.on('console', message => browserDiagnostics.push({ type: 'console', level: message.type(), text: message.text() }))
+  page.on('pageerror', error => browserDiagnostics.push({ type: 'pageerror', text: error.message }))
+  page.on('requestfailed', request => browserDiagnostics.push({ type: 'requestfailed', url: request.url(), error: request.failure()?.errorText ?? 'unknown' }))
   await installRoutes(page)
-  await page.goto(`${studioUrl}/merchant/tasks?image_job=${encodeURIComponent(longJobId)}`, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '图片生成任务' })).toBeVisible()
-  await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible()
-  return { browser, context, page }
+  try {
+    await page.goto(`${studioUrl}/merchant/tasks?image_job=${encodeURIComponent(longJobId)}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '图片生成任务' })).toBeVisible()
+    await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible()
+    return { browser, context, page }
+  } catch (error) {
+    await context.close()
+    await browser.close()
+    throw error
+  }
 }
 
 for (const width of [1280, 1440, 1920]) {

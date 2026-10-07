@@ -5577,6 +5577,16 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             <div className="catalog-detail-source"><span>{selectedStore.platform}</span><small>{selectedStore.name}</small></div>
             <h1>{selectedProduct.title}</h1>
             <p>{selectedProduct.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p>
+            {selectedApiProduct?.canonical_scope && (
+              <div className="catalog-canonical-evidence" aria-label="规范商品与店铺刊登关系">
+                <span title={canonicalStatusCopy[selectedApiProduct.canonical_scope.verification_status]?.detail ?? '规范商品关系状态待确认'}>
+                  {canonicalStatusCopy[selectedApiProduct.canonical_scope.verification_status]?.label ?? '标准链待核验'}
+                </span>
+                {selectedApiProduct.canonical_scope.canonical_product_id && <small>规范商品：{selectedApiProduct.canonical_scope.canonical_product_id}</small>}
+                {selectedApiProduct.canonical_scope.listing_id && <small>店铺刊登：{selectedApiProduct.canonical_scope.listing_id}</small>}
+                {selectedApiProduct.canonical_scope.listing_count !== undefined && <small>刊登数量：{selectedApiProduct.canonical_scope.listing_count}</small>}
+              </div>
+            )}
             <div className="catalog-detail-price"><span>{selectedSku ? '所选 SKU 价格' : '商品价格'}</span><strong>{selectedSku
               ? selectedSku.price === null ? '服务端未给出该规格价格' : <><small>¥</small>{selectedSku.price.toFixed(2)}</>
               : selectedProduct.price === null ? '服务端未给出价格' : <><small>¥</small>{selectedProduct.price.toFixed(2)}</>}</strong></div>

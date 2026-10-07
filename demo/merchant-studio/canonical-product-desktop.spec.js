@@ -61,9 +61,22 @@ const assets = {
   offset: 0,
 }
 
-async function installRoutes(page, { relationFailureOnce = false } = {}) {
-  let bindingAttempts = 0
+async function installRoutes(page, { canonicalStatus = 'verified' } = {}) {
 
+  // This synthetic account exists only inside the browser route fixture. It
+  // lets the desktop flow enter its authenticated state without credentials,
+  // cookies, or requests to a real authentication service.
+  await page.route('**/v1/auth/session', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ account: {
+      id: 'account_canonical_desktop_fixture',
+      login: 'canonical-desktop-fixture@example.invalid',
+      accountType: 'merchant',
+      status: 'active',
+      roles: ['merchant_owner'],
+      workspaceIds: [workspaceId],
+    } })),
+  }))
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(envelope({
@@ -87,27 +100,15 @@ async function installRoutes(page, { relationFailureOnce = false } = {}) {
   }))
   await page.route('**/v1/products*', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope(route.request().url().includes('?')
-      ? { items: [product], total: 1, limit: 10, offset: 0 }
-      : product)),
+    body: JSON.stringify(envelope({ items: [{ ...product, canonical_scope: { ...product.canonical_scope, verification_status: canonicalStatus } }], total: 1, limit: 10, offset: 0 })),
   }))
-  await page.route(`**/v1/products/${productId}/assets`, route => {
-    bindingAttempts += 1
-    if (relationFailureOnce && bindingAttempts === 1) {
-      return route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify(envelope(null, { code: 'DEPENDENCY_UNAVAILABLE', message: '关系服务暂不可用' })),
-      })
-    }
-    return route.fulfill({
+  await page.route(`**/v1/products/${productId}/assets`, route => route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify(envelope({
         items: [{ assetId: 'asset-canonical-001', status: 'active', ordinal: 1 }],
         source: 'product_api',
       })),
-    })
-  })
+  }))
   await page.route('**/v1/assets?*', route => {
     const offset = new URL(route.request().url()).searchParams.get('offset')
     const pageData = offset === '0' ? assets : { ...assets, items: [], offset: Number(offset ?? 0) }
@@ -128,10 +129,35 @@ async function installRoutes(page, { relationFailureOnce = false } = {}) {
     contentType: 'application/json',
     body: JSON.stringify(envelope({ items: [] })),
   }))
-  await page.route('**/mcp', route => route.fulfill({
+  await page.route('**/v1/auth/mcp-token', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ result: { state: 'ready', capabilities: {} } })),
+    body: JSON.stringify(envelope({
+      access_token: 'local-canonical-desktop-fixture-token',
+      refresh_token: 'local-canonical-desktop-fixture-refresh',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      workspace_id: workspaceId,
+      account_login: 'canonical-desktop-fixture@example.invalid',
+    })),
   }))
+  await page.route('**/mcp', route => {
+    const method = route.request().postDataJSON()?.method
+    const result = method === 'workspace.metrics'
+      ? {
+          source: 'process_local',
+          dataCompleteness: 'complete',
+          stores: [],
+          productSummary: { total: 0, lowStock: 0, missingImages: 0 },
+          riskSummary: { total: 0, returned: 0, truncated: false },
+          riskItems: [],
+          taskFunnel: {},
+        }
+      : { state: 'ready', capabilities: {} }
+    return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(envelope({ result })),
+    })
+  })
 }
 
 async function openPage(path, options) {
@@ -141,57 +167,43 @@ async function openPage(path, options) {
   const page = await context.newPage()
   await installRoutes(page, options)
   await page.goto(`${studioUrl}${path}`, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: /^淘宝/ }).click()
+  await page.getByRole('button', { name: '进入商品库' }).click()
+  await page.locator('.catalog-product-card').filter({ hasText: product.title }).click()
   return { browser, context, page }
 }
 
 test('drills into the canonical product relation with authoritative evidence', async () => {
   const { browser, context, page } = await openPage('/merchant/products?section=products&q=规范商品')
   try {
-    await expect(page.getByRole('heading', { name: '一处管理商品事实与来源' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: product.title })).toBeVisible()
     await expect(page.getByTitle('canonical 与 listing 关系已确认')).toBeVisible()
     await expect(page.getByText('规范商品：canonical-001', { exact: true })).toBeVisible()
     await expect(page.getByText('店铺刊登：listing-taobao-001', { exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: '查看关系' }).click()
-    const dialog = page.getByTestId('product-asset-relation-dialog')
-    await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('heading', { name: '商品与素材关系' })).toBeVisible()
-    await expect(dialog.getByText('规范商品主图', { exact: true })).toBeVisible()
-    await expect(dialog.getByText('可作为生成来源', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('规范商品与店铺刊登关系')).toContainText('刊登数量：1')
   } finally {
     await context.close(); await browser.close()
   }
 })
 
-test('recovers a canonical relation read failure without losing workspace scope', async () => {
-  const { browser, context, page } = await openPage('/merchant/products?section=products&q=规范商品', { relationFailureOnce: true })
+test('surfaces a canonical conflict without presenting it as verified', async () => {
+  const { browser, context, page } = await openPage('/merchant/products?section=products&q=规范商品', { canonicalStatus: 'conflict' })
   try {
-    await expect(page.getByTitle('canonical 与 listing 关系已确认')).toBeVisible()
-    await page.getByRole('button', { name: '查看关系' }).click()
-    const dialog = page.getByTestId('product-asset-relation-dialog')
-    await expect(dialog.getByRole('alert')).toContainText('关系读取失败')
-    const retry = dialog.getByRole('button', { name: '重新读取' })
-    await expect(retry).toBeVisible()
-    await retry.focus()
-    await page.keyboard.press('Enter')
-    await expect(dialog.getByRole('heading', { name: '商品与素材关系' })).toBeVisible()
-    await expect(page).toHaveURL(/\/merchant\/products\?q=%E8%A7%84%E8%8C%83%E5%95%86%E5%93%81&section=products/)
+    await expect(page.getByText('标准链冲突', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('规范商品与店铺刊登关系')).toContainText('canonical-001')
+    await expect(page.getByTitle('商品、品牌、平台或店铺关系不一致')).toBeVisible()
   } finally {
     await context.close(); await browser.close()
   }
 })
 
-test('returns from canonical relation drill-down to the same product workspace', async () => {
+test('returns from product details to the same selected store catalog', async () => {
   const { browser, context, page } = await openPage('/merchant/products?section=products&q=规范商品')
   try {
-    await page.getByRole('button', { name: '查看关系' }).click()
-    const dialog = page.getByTestId('product-asset-relation-dialog')
-    await expect(dialog.getByRole('heading', { name: '商品与素材关系' })).toBeVisible()
-    await dialog.getByRole('button', { name: '完成' }).click()
-    await expect(dialog).toBeHidden()
-    await expect(page).toHaveURL(/\/merchant\/products\?q=%E8%A7%84%E8%8C%83%E5%95%86%E5%93%81&section=products/)
-    await expect(page.locator('input[placeholder="搜索商品或平台"]')).toHaveValue('规范商品')
-    await expect(page.getByTitle('canonical 与 listing 关系已确认')).toBeVisible()
+    await page.getByRole('button', { name: '返回商品列表' }).click()
+    await expect(page.getByRole('heading', { name: product.storeName })).toBeVisible()
+    await expect(page.getByText(product.title, { exact: true })).toBeVisible()
   } finally {
     await context.close(); await browser.close()
   }
@@ -201,11 +213,11 @@ test('deep-links into the scoped product workspace without dropping its query or
   const path = `/merchant/products?section=products&q=${encodeURIComponent('规范商品')}`
   const { browser, context, page } = await openPage(path)
   try {
-    await expect(page.locator('input[placeholder="搜索商品或平台"]')).toHaveValue('规范商品')
+    await expect(page).toHaveURL(/q=%E8%A7%84%E8%8C%83%E5%95%86%E5%93%81/)
+    await expect(page.getByRole('heading', { name: product.title })).toBeVisible()
     await expect(page.getByText(product.storeName, { exact: true })).toBeVisible()
-    await expect(page.getByRole('cell', { name: '淘宝' })).toBeVisible()
     await expect(page.getByTitle('canonical 与 listing 关系已确认')).toBeVisible()
-    await expect(page.locator('.scope-summary')).toContainText('全部平台')
+    await expect(page.getByLabel('规范商品与店铺刊登关系')).toContainText('listing-taobao-001')
   } finally {
     await context.close(); await browser.close()
   }

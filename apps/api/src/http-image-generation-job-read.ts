@@ -104,7 +104,7 @@ export async function handleHttpImageGenerationJobRead(req: IncomingMessage, res
       execution_state: execution?.state ?? null,
       provider_request_id: execution?.providerRequestId ?? null,
       execution_attempt: execution?.attempt ?? null,
-      reconciliation_required: !candidatesReadable || execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown' || job.archiveState !== 'archived',
+      reconciliation_required: !candidatesReadable || execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown',
       error_code: job.errorCode ?? null,
       error_message: job.errorMessage ?? null,
       updated_at: job.updatedAt,

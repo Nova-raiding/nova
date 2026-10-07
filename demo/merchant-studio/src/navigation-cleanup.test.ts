@@ -10,6 +10,11 @@ const app = readFileSync(resolve(import.meta.dirname, 'App.tsx'), 'utf8')
 const css = readFileSync(resolve(import.meta.dirname, 'styles.css'), 'utf8')
 
 describe('merchant navigation cleanup contract', () => {
+  it('restores the task workspace and image-job discovery from a direct tasks URL', () => {
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '', hash: '' })).toEqual({ page: 'task', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '?image_job=img_123', hash: '' })).toEqual({ page: 'task', searchQuery: '', imageJobId: 'img_123' })
+  })
+
   it('keeps only knowledge as a new-session entry', () => {
     expect(app).toContain('aria-label="新会话入口"')
     expect(app).toContain("id: 'knowledge'")

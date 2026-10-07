@@ -70,7 +70,7 @@ describe('public platform rule governance preview handler', () => {
 
   it('fails closed when the public review repository or list method is unavailable', async () => {
     const missingRepository = setup().deps
-    missingRepository.ruleRepository = () => undefined
+    missingRepository.ruleRepository = (() => undefined) as never
     await expect(handlePublicRuleDraftsList(request, {}, missingRepository)).rejects.toMatchObject({ status: 503, code: 'RULE_REPOSITORY_NOT_CONFIGURED' })
 
     const missingList = setup().deps

@@ -61,9 +61,10 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
   if (segment === 'publish' || segment === 'rules') return { page: 'products', searchQuery: '' }
   if (segment === 'tasks') {
     const imageJobId = params.get('image_job')?.trim()
-    return imageJobId
-      ? { page: 'task', searchQuery: '', imageJobId }
-      : { page: 'products', searchQuery: '' }
+    // `/merchant/tasks` is the durable task workspace entry, including its
+    // image-job discovery/empty state. Returning products here made the
+    // workspace impossible to restore from a direct link or browser refresh.
+    return { page: 'task', searchQuery: '', ...(imageJobId ? { imageJobId } : {}) }
   }
   if (segment === 'tasks/new') {
     const productId = params.get('product_id')?.trim()
