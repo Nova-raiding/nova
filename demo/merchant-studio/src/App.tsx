@@ -6951,7 +6951,7 @@ export function MaterialLibraryWorkspace({
     const incoming = pendingFiles
     setUploadBusy(true)
     setUploadError('')
-    const { accepted, failures } = await uploadMaterialFiles({
+    const { accepted, acceptedFiles, failures } = await uploadMaterialFiles({
       files: incoming,
       upload: (file) => uploadAsset(baseUrl, file, uploadCategory),
       labels: { category: uploadCategory, series: uploadSeries },
@@ -6999,6 +6999,12 @@ export function MaterialLibraryWorkspace({
       void fetchAssets(baseUrl)
         .then((assets) => setRemoteAssets(assets))
         .catch((cause) => setAssetsError(describeApiError(cause)))
+      // A partial batch can stay open so the merchant can fix only rejected
+      // files. Remove files whose bytes were accepted; retrying the unchanged
+      // pending list would upload those files a second time.
+      const acceptedKeys = new Set(acceptedFiles.map(pendingFileKey))
+      setPendingFiles((current) => current.filter((file) => !acceptedKeys.has(pendingFileKey(file))))
+      setPendingSelectedKeys((current) => current.filter((key) => !acceptedKeys.has(key)))
     }
     setUploadBusy(false)
     if (failures.length || assignmentFailures.length) {

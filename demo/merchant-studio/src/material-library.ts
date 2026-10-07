@@ -239,6 +239,8 @@ export function materialDownloadHref(
 export type MaterialUploadOutcome = {
   /** One card per file the server accepted, built from the server's own row. */
   accepted: StoreMaterialItem[]
+  /** The local files whose bytes were accepted, so partial retries cannot duplicate them. */
+  acceptedFiles: File[]
   /** One line per file the server refused, prefixed with the file's own name. */
   failures: string[]
 }
@@ -263,6 +265,7 @@ export async function uploadMaterialFiles(input: {
   previewUrlFor?: (file: File) => string | undefined
 }): Promise<MaterialUploadOutcome> {
   const accepted: StoreMaterialItem[] = []
+  const acceptedFiles: File[] = []
   const failures: string[] = []
   for (const file of input.files) {
     try {
@@ -277,9 +280,10 @@ export async function uploadMaterialFiles(input: {
         series: input.labels.series,
         ...(preview ? { previewUrl: preview } : {}),
       })
+      acceptedFiles.push(file)
     } catch (cause) {
       failures.push(`${file.name}：${describeApiError(cause)}`)
     }
   }
-  return { accepted, failures }
+  return { accepted, acceptedFiles, failures }
 }

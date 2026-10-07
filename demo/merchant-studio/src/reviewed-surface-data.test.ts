@@ -292,6 +292,7 @@ describe('确认上传 writes to the server', () => {
     expect(outcome.failures).toHaveLength(1)
     expect(outcome.failures[0]).toContain('probe.png')
     expect(outcome.accepted.map((item) => item.name)).not.toContain('probe.png')
+    expect(outcome.acceptedFiles.map((item) => item.name)).toEqual(['ok.png'])
   })
 
   it('renders the chosen upload category while the API upload call persists it', async () => {
@@ -316,6 +317,9 @@ describe('确认上传 writes to the server', () => {
     expect(upload.length).toBeGreaterThan(500)
     expect(upload).toContain('uploadAsset(baseUrl, file, uploadCategory)')
     expect(upload).toContain('uploadMaterialFiles(')
+    expect(upload).toContain('acceptedFiles')
+    expect(upload).toContain('setPendingFiles((current) => current.filter((file) => !acceptedKeys.has(pendingFileKey(file))))')
+    expect(upload).toContain('setPendingSelectedKeys((current) => current.filter((key) => !acceptedKeys.has(key)))')
     // The re-read is what makes the list the server's answer.
     expect(upload).toContain('fetchAssets(baseUrl)')
     // No API means no server, and 确认上传 may not pretend otherwise.
