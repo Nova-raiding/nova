@@ -294,7 +294,12 @@ describe('PostgreSQL 16 isolated execution through the release metadata migratio
             id: containerId, name, runId, running: observed.running,
           })
           if (observed.running) runDocker(socket, configDir, ['stop', '--time', '10', containerId], dockerEnv)
-          const removalDeadline = Date.now() + 5_000
+          // `--rm` removes the container asynchronously after PostgreSQL has
+          // finished its shutdown. The old five-second window could report a
+          // cleanup failure while Docker was still completing a clean stop.
+          // Keep the assertion strict, but allow the isolated daemon enough
+          // time to finish the exact container removal.
+          const removalDeadline = Date.now() + 30_000
           let remaining = containerId
           while (Date.now() < removalDeadline && remaining !== '') {
             remaining = runDocker(socket, configDir, [
