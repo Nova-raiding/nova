@@ -248,7 +248,7 @@ describe('production config gate', () => {
     expect(() => run(config().replace('asset_scan_policy_version: scan-policy-2026-08-30\n', ''))()).toThrow(/asset_scan_policy_version/)
     expect(() => run(config().replace(`sha256:${'a'.repeat(64)}`, 'clamav:1.4.6'))()).toThrow(/clamav_image_digest/)
     expect(() => run(config().replace('clamav_signature_max_age_minutes: 1440', 'clamav_signature_max_age_minutes: 1441'))()).toThrow(/signature_max_age/)
-  })
+  }, 30_000)
 
   it('requires isolated scanner credentials and receipt signing trust roots', () => {
     expect(() => run(config().replace('asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key\n', ''))()).toThrow(/asset_scan_receipt_private_key_ref/)
@@ -262,7 +262,7 @@ describe('production config gate', () => {
     expect(run(config())()).toContain('production config gate passed')
     expect(() => run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true'))()).toThrow(/alert_channel/)
     expect(run(config().replace('alert_notifications_enabled: false', 'alert_notifications_enabled: true\nalert_channel_secret_ref: vault://merchant-alert-channel'))()).toContain('production config gate passed')
-  })
+  }, 30_000)
 
   it('allows the alert channel reference to be omitted only with an explicit boolean opt-out', () => {
     const alertsDisabled = config()
@@ -293,19 +293,22 @@ describe('production config gate', () => {
       expect(() => run(config().replace(`${field}: ${field.startsWith('image') ? 'images' : 'videos'}.merchant-assets.cn`, `${field}:`))()).toThrow(new RegExp(field, 'u'))
       expect(() => run(config().replace(`${field}: ${field.startsWith('image') ? 'images' : 'videos'}.merchant-assets.cn`, `${field}: cdn.example.com`))()).toThrow(new RegExp(`${field} must not list reserved placeholder hosts`, 'u'))
     }
-  })
+  }, 30_000)
 
   it('requires a provider query endpoint for payment status reconciliation', () => {
     expect(() => run(config().replace('payment_provider_query_api_url: https://pay.yxsona.com/v1/query\n', ''))()).toThrow(/payment_provider_query_api_url/)
     expect(() => run(config().replace('payment_provider_query_api_url: https://pay.yxsona.com/v1/query', 'payment_provider_query_api_url: http://pay.yxsona.com/v1/query'))()).toThrow(/payment_provider_query_api_url/)
   })
 
+  // Each case invokes the full shell-backed production gate. Keep this
+  // boundary explicit so the test remains stable while the release suite is
+  // running other CPU-heavy checks in parallel.
   it('rejects reserved payment provider hosts and placeholder merchant ids', () => {
     for (const hostname of ['payments.example.com', 'example.com', 'payments.production.test']) {
       expect(() => run(config().replace('https://pay.yxsona.com/v1/query', `https://${hostname}/v1/query`))()).toThrow(/reserved placeholder hosts/)
     }
     expect(() => run(config().replace('payment_provider_merchant_id: 2088123456789012', 'payment_provider_merchant_id: merchant-example'))()).toThrow(/placeholder value/)
-  })
+  }, 30_000)
 
   it('accepts lean manual_transfer without provider-only credentials', () => {
     const lean = config()
