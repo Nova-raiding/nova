@@ -32,8 +32,13 @@ test('downloads Ops XLSX, imports merchant draft through real scan, and keeps kn
     await studio.goto(new URL('/merchant/login', merchantBase).href)
     await studio.getByPlaceholder('例如 merchant@example.com').fill(process.env.OPS_E2E_MERCHANT_USERNAME)
     await studio.getByPlaceholder('请输入商家密码').fill(process.env.OPS_E2E_MERCHANT_PASSWORD)
-    const merchantLogin = studio.waitForResponse(response => response.url().endsWith('/api/v1/auth/login') && response.request().method() === 'POST')
-    await studio.getByRole('button', { name: '登录商家工作台' }).click()
+    const merchantLoginButton = studio.getByRole('button', { name: '登录商家工作台' })
+    await expect(merchantLoginButton).toBeEnabled({ timeout: 30_000 })
+    const merchantLogin = studio.waitForResponse(response => {
+      const requestUrl = new URL(response.url())
+      return requestUrl.pathname.endsWith('/v1/auth/login') && response.request().method() === 'POST'
+    })
+    await merchantLoginButton.click()
     expect((await merchantLogin).status()).toBe(200)
     await expect(studio.getByRole('button', { name: '登录商家工作台' })).toBeHidden({ timeout: 30_000 })
     await studio.goto(new URL('/merchant/products?section=products', merchantBase).href)
