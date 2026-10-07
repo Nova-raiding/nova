@@ -1,0 +1,160 @@
+import { chromium, expect, test } from '@playwright/test'
+import react from '@vitejs/plugin-react'
+import { createServer } from 'vite'
+import { fileURLToPath } from 'node:url'
+
+const studioRoot = fileURLToPath(new URL('.', import.meta.url))
+const workspaceId = 'ws_material_product_import_fixture'
+const assetId = 'asset_uploaded_material_fixture'
+const productId = 'product_spreadsheet_material_fixture'
+const extractedFacts = {
+  format: 'csv',
+  rows: [
+    { platform: '平台', title: '商品名称', account_id: '店铺账号', asset_ids: '素材ID' },
+    { platform: '淘宝', title: '表格绑定素材商品', account_id: 'taobao-material-fixture', asset_ids: assetId },
+  ],
+}
+
+const envelope = (data) => ({
+  request_id: 'material-product-import-fixture',
+  trace_id: 'material-product-import-fixture',
+  workspace_id: workspaceId,
+  data,
+  warnings: [],
+  next_actions: [],
+  error: null,
+})
+
+test('spreadsheet import uploads a product table and carries its material ID through batch import', async () => {
+  // Give this spec its own ephemeral loopback server. Never inherit local port
+  // forwarding or a configured API proxy; every API request is fixture-backed.
+  const vite = await createServer({
+    configFile: false,
+    envDir: false,
+    root: studioRoot,
+    plugins: [react()],
+    define: {
+      'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api'),
+      'import.meta.env.MODE': JSON.stringify('test'),
+    },
+    server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false },
+  })
+  await vite.listen()
+  const address = vite.httpServer?.address()
+  if (!address || typeof address === 'string') {
+    await vite.close()
+    throw new Error('Local Merchant Studio fixture did not bind an ephemeral TCP port')
+  }
+  const studioUrl = `http://127.0.0.1:${address.port}`
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  const page = await context.newPage()
+  const requests = []
+  const pageErrors = []
+  const consoleErrors = []
+  const unexpectedRequests = []
+  const uploadedAsset = {
+    id: assetId, workspaceId, name: 'merchant-products.csv', mimeType: 'text/csv', sizeBytes: 86,
+    sha256: 'a'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
+    parseStatus: 'succeeded', extractedFacts, revision: 1,
+    createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z',
+  }
+  page.on('pageerror', error => pageErrors.push(error.stack || error.message))
+  page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.origin !== studioUrl) {
+      unexpectedRequests.push(`blocked external request ${url.origin}${url.pathname}`)
+      return route.abort('blockedbyclient')
+    }
+    if (url.pathname.startsWith('/api/')) {
+      unexpectedRequests.push(`unmocked API ${url.pathname}`)
+      return route.fulfill({ status: 599, body: 'Unmocked API blocked by fixture' })
+    }
+    return route.fallback()
+  })
+  await page.route('**/v1/auth/session', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ account: {
+      id: 'material-product-import-user', login: 'material-product-import@example.invalid',
+      accountType: 'merchant', status: 'active', roles: ['merchant_owner'], workspaceIds: [workspaceId],
+    } })),
+  }))
+  await page.route('**/healthz', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true } })),
+  }))
+  await page.route('**/v1/platform-accounts*', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ items: [{
+      platform: 'taobao', state: 'connected', readEnabled: true, writeEnabled: true,
+      accountId: 'taobao-material-fixture', storeName: '素材绑定测试店', label: '素材绑定测试店',
+    }] })),
+  }))
+  await page.route('**/v1/products*', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })),
+  }))
+  await page.route('**/v1/assets/upload', route => {
+    requests.push({ path: '/api/v1/assets/upload', method: route.request().method(), contentType: route.request().headers()['content-type'], name: route.request().headers()['x-asset-name'] })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(uploadedAsset)) })
+  })
+  await page.route('**/v1/assets?*', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ items: [uploadedAsset], total: 1, limit: 50, offset: 0 })),
+  }))
+  await page.route(`**/v1/assets/${assetId}/facts`, route => {
+    requests.push({ path: `/api/v1/assets/${assetId}/facts`, method: route.request().method(), body: route.request().postDataJSON() })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(uploadedAsset)) })
+  })
+  await page.route('**/v1/auth/mcp-token', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify(envelope({ access_token: 'local-material-fixture', refresh_token: 'local-material-fixture', token_type: 'Bearer', expires_in: 3600, workspace_id: workspaceId })),
+  }))
+  await page.route('**/mcp', route => {
+    const rpc = route.request().postDataJSON()
+    let result
+    if (rpc?.method === 'workspace.metrics') result = { riskItems: [], stores: [], productSummary: { total: 0, lowStock: 0, missingImages: 0 }, riskSummary: { total: 0, returned: 0, truncated: false }, taskFunnel: {} }
+    else if (rpc?.method === 'catalog.import.batch') {
+      requests.push({ path: '/api/mcp', method: rpc.method, params: rpc.params })
+      result = { batchId: 'batch_material_import_fixture', count: 1, products: [{ id: productId }], factsConfirmationRequired: true }
+    } else if (rpc?.method === 'catalog.facts.confirm') {
+      requests.push({ path: '/api/mcp', method: rpc.method, params: rpc.params })
+      result = { id: productId, workspaceId, platform: 'taobao', title: '表格绑定素材商品', skuCount: 0, stock: 0, factsConfirmed: true, sourceAssetIds: [assetId], updatedAt: '2026-10-07T00:00:00.000Z' }
+    } else result = { state: 'ready', capabilities: {} }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result })) })
+  })
+
+  try {
+    await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: /^淘宝/ }).click()
+    await page.getByText('商品表格导入', { exact: true }).click()
+    const importer = page.getByTestId('merchant-product-spreadsheet-import')
+    await importer.locator('input[type="file"]').setInputFiles({
+      name: 'merchant-products.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('平台,商品名称,店铺账号,素材ID\n淘宝,表格绑定素材商品,taobao-material-fixture,asset_uploaded_material_fixture'),
+    })
+    await expect(importer.getByText('表格绑定素材商品', { exact: true })).toBeVisible()
+    await importer.getByRole('button', { name: '确认并创建草稿' }).click()
+    await expect(importer.getByText('已创建 1 个草稿商品；不可同步或发布。', { exact: true })).toBeVisible()
+
+    expect(requests.map(request => request.path)).toEqual([
+      '/api/v1/assets/upload', `/api/v1/assets/${assetId}/facts`, '/api/mcp', '/api/mcp',
+    ])
+    expect(requests[0]).toMatchObject({ method: 'POST', contentType: 'text/csv', name: 'merchant-products.csv' })
+    expect(requests[1].body).toMatchObject({ facts: extractedFacts })
+    expect(requests[2]).toMatchObject({ method: 'catalog.import.batch', params: {
+      source_asset_id: assetId, draft_only: 'true',
+      products_json: JSON.stringify([{ platform: 'taobao', title: '表格绑定素材商品', asset_ids: [assetId] }]),
+    } })
+    expect(requests[3]).toMatchObject({ method: 'catalog.facts.confirm', params: { product_id: productId } })
+    expect(unexpectedRequests).toEqual([])
+    expect(pageErrors).toEqual([])
+    expect(consoleErrors).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+    await vite.close()
+  }
+})
