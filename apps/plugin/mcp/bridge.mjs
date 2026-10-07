@@ -227,7 +227,7 @@ const READ_ONLY_METHODS = new Set([
   'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.store.list', 'platform.media.spec.list', 'platform.media.spec.get', 'delivery.bundle.verify',
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
-  'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
+  'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'multimodal.video.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'automation.policy.get', 'automation.policy.list',
 ])

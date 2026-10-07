@@ -2209,6 +2209,7 @@ describe('Codex stdio MCP bridge', () => {
       const names = tools.map(tool => tool.name)
       expect(names).toContain('multimodal.video.request')
       expect(names).toContain('multimodal.video.get')
+      expect(tools.find(tool => tool.name === 'multimodal.video.get')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       // `ReturnType<typeof spawn>` widens the stdio tuple, so the pipes are
       // nullable from out here even though the helper always passes 'pipe'.
       if (!child.stdin || !child.stdout) throw new Error('bridge test child lost its stdio pipes')
@@ -2225,6 +2226,37 @@ describe('Codex stdio MCP bridge', () => {
       expect(tools.filter(tool => (tool.inputSchema?.properties?.output as { enum?: string[] } | undefined)?.enum?.includes('rendering')).map(tool => tool.name)).toEqual(['multimodal.video.request'])
     } finally {
       child.kill()
+    }
+  })
+
+  it('allows polling an existing video job without opening an interactive write session', async () => {
+    const received: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived',
+        video_url: 'https://cdn.example.test/video-existing.mp4',
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-existing' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: false, structuredContent: { provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived' } })
+      expect(received).toHaveLength(1)
+      expect(received[0].method).toBe('multimodal.video.get')
+      expect(received[0].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
+    } finally {
+      child.kill()
+      await close(server)
     }
   })
 
