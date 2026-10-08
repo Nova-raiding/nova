@@ -54,6 +54,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'apps/api/src/catalog-positive-isolated.postgres.test.ts',
   'apps/api/src/product-stock-provenance.postgres.test.ts',
   'apps/api/src/image-dispatch-scope-http.postgres.test.ts',
+  'apps/api/src/asset-download-authorization.postgres.test.ts',
   'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts',
   'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts',
   'apps/worker/src/image-worker-signed-boundary.postgres.test.ts',
@@ -116,8 +117,11 @@ export const CI_POSTGRES_ACCEPTANCE_STEP = 'Run PostgreSQL migration acceptance 
  */
 export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllowance[] = [
   // PERSISTENCE_RELEASE_DATABASE_URL
+  { file: 'packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-notification-repository.release.postgres.test.ts', pending: 2, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/commercial-allocation-replay-conflict.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-receipt-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/commercial-quote-price-snapshot.regression.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts', pending: 15, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/image-budget-interleaving.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
@@ -188,14 +192,16 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/migration-integrity-release.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/migration-rls-integrity-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/object-orphan-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/outbox-worker-tenant-isolation.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/payment-callback-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/platform-authorization-audit.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
-  { file: 'packages/persistence/src/rule-governance-review.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/rule-governance-review.postgres.test.ts', pending: 2, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/resource-id-scope.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/commercial-zero-side-effect-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'tests/outbox-lease-takeover.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/outbox-retry.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   // PLATFORM_MEDIA_SPEC_DATABASE_URL
   { file: 'packages/persistence/src/campaign-lifecycle.postgres.test.ts', pending: 1, binding: 'PLATFORM_MEDIA_SPEC_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

@@ -7,7 +7,7 @@ describe('commercial assisted order beneficiary migration 266', () => {
     const migrations = await loadMigrations()
     const sql = await readFile(new URL('./migrations/266_commercial_order_beneficiaries.sql', import.meta.url), 'utf8')
     expect(migrations.find(row => row.version === 266)).toEqual({ version: 266, name: 'commercial_order_beneficiaries', sql })
-    expect(migrations.map(row => row.version)).toEqual(Array.from({ length: 269 }, (_, index) => index + 1))
+    expect(migrations.map(row => row.version)).toEqual(Array.from({ length: 270 }, (_, index) => index + 1))
     expect(sql).toContain('REFERENCES workspace_members(workspace_id,id)')
     expect(sql).toContain('ADD COLUMN beneficiary_member_id UUID')
     expect(sql).toContain('merchant_commercial_order_beneficiary')

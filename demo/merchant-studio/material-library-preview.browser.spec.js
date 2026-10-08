@@ -1,6 +1,9 @@
 import { chromium, expect, test } from '@playwright/test'
+import react from '@vitejs/plugin-react'
+import { createServer } from 'vite'
+import { fileURLToPath } from 'node:url'
 
-const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
+const studioRoot = fileURLToPath(new URL('.', import.meta.url))
 const workspaceId = 'ws_material_preview_fixture'
 const validAssetId = 'asset-real-decode-fixture'
 const invalidAssetId = 'asset-undecodable-fixture'
@@ -24,6 +27,26 @@ const envelope = (data) => ({
 })
 
 test('downloads, decodes, and renders server-backed material previews in the real browser UI', async () => {
+  // Own an ephemeral local app server. Never attach this browser fixture to a
+  // developer's fixed-port service or SSH tunnel.
+  const vite = await createServer({
+    configFile: false,
+    envDir: false,
+    root: studioRoot,
+    plugins: [react()],
+    define: {
+      'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api'),
+      'import.meta.env.MODE': JSON.stringify('test'),
+    },
+    server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false },
+  })
+  await vite.listen()
+  const address = vite.httpServer?.address()
+  if (!address || typeof address === 'string') {
+    await vite.close()
+    throw new Error('Local Merchant Studio fixture did not bind an ephemeral TCP port')
+  }
+  const studioUrl = `http://127.0.0.1:${address.port}`
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   await context.addCookies([{ name: 'preview-auth-fixture', value: 'same-origin-session', domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }])
@@ -96,7 +119,6 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     page.on('pageerror', (error) => console.log(`BROWSER_PAGE_ERROR ${error.message}`))
     page.on('requestfailed', (request) => console.log(`BROWSER_REQUEST_FAILED ${request.url()} ${request.failure()?.errorText}`))
     await page.goto(`${studioUrl}/merchant/products?section=knowledge`, { waitUntil: 'domcontentloaded' })
-    console.log(`AFTER_GOTO ${page.url()} ${await page.locator('body').innerText().catch(() => '')}`)
     const workspace = page.getByTestId('material-library-workspace')
     await expect(workspace).toBeVisible()
 
@@ -129,5 +151,6 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   } finally {
     await context.close()
     await browser.close()
+    await vite.close()
   }
 })

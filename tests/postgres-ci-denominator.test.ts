@@ -23,6 +23,7 @@ describe('CI PostgreSQL denominator', () => {
   it('executes every repository PostgreSQL test file in the dedicated CI service', () => {
     const expected = [
       ...postgresFiles('packages/persistence'),
+      ...postgresFiles('apps/api'),
       ...postgresFiles('apps/worker'),
       ...postgresFiles('tests'),
     ].sort()

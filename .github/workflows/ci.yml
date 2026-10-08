@@ -127,6 +127,7 @@ jobs:
           BRAND_CANONICAL_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           WORKSPACE_BOOTSTRAP_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           PERSISTENCE_RELEASE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          MERCHANT_ISOLATED_POSTGRES_RUN_ID: 00000000-0000-4000-8000-000000000000
           PLATFORM_MEDIA_SPEC_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           ASSET_PARSE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           STORAGE_QUOTA_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
@@ -330,6 +331,7 @@ jobs:
           packages/persistence/src/payment-callback-repository.postgres.test.ts
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
           packages/persistence/src/rule-governance-review.postgres.test.ts
+          packages/persistence/src/merchant-ops-cross-workspace-member-update.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts
           packages/persistence/src/support-repository-sla-filter.postgres.test.ts
@@ -338,6 +340,16 @@ jobs:
           tests/image-delivery-commercial.postgres.test.ts
           tests/mcp-oauth-commercial-payment.postgres.test.ts
           tests/outbox-retry.postgres.test.ts
+          tests/outbox-lease-takeover.postgres.test.ts
+          packages/persistence/src/outbox-worker-tenant-isolation.postgres.test.ts
+          packages/persistence/src/commercial-allocation-replay-conflict.postgres.test.ts
+          packages/persistence/src/commercial-quote-price-snapshot.regression.postgres.test.ts
+          packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts
+          apps/api/src/catalog-positive-isolated.postgres.test.ts
+          apps/api/src/content-generation-action-owner.postgres.test.ts
+          apps/api/src/image-dispatch-scope-http.postgres.test.ts
+          apps/api/src/product-stock-provenance.postgres.test.ts
+          apps/api/src/asset-download-authorization.postgres.test.ts
           tests/postgres-rls-attack-matrix.postgres.test.ts
       - name: Run mandatory authorization PostgreSQL acceptance
         env:

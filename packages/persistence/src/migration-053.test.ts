@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
+import { randomUUID } from 'node:crypto'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const postgresIt = process.env.LEGACY_BACKFILL_DATABASE_URL ? it : it.skip
 
@@ -29,7 +31,13 @@ describe('053 terminal generation outbox cleanup', () => {
   })
 
   postgresIt('cleans only exact terminal rows on real PostgreSQL and is idempotent', async () => {
-    const pool = new Pool({ connectionString: process.env.LEGACY_BACKFILL_DATABASE_URL })
+    const source = new URL(process.env.LEGACY_BACKFILL_DATABASE_URL!)
+    const databaseName = `release_fresh_${randomUUID().replaceAll('-', '')}`
+    const admin = new Pool({ connectionString: source.toString() })
+    await admin.query(`CREATE DATABASE "${databaseName}"`)
+    const target = new URL(source)
+    target.pathname = `/${databaseName}`
+    const pool = new Pool({ connectionString: target.toString() })
     try {
       const migrations = await loadMigrations()
       await new MigrationRunner(pool, migrations.filter(item => item.version <= 52)).run()
@@ -90,7 +98,10 @@ describe('053 terminal generation outbox cleanup', () => {
         lease_token, lease_until, last_error FROM outbox_events WHERE id = ANY($1::text[]) ORDER BY id`, [events.map(item => item[0])])).rows)
       expect(after).toBe(before)
     } finally {
-      await pool.end()
+      await withPostgresFixtureCleanup(async () => {
+        await pool.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, undefined, [() => admin.end()])
     }
   }, 60_000)
 })

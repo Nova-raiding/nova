@@ -177,9 +177,8 @@ describe('scope PostgreSQL fixture cleanup', () => {
       expect(record!.source, file).toContain('primaryFailure')
       expect(record!.source, file).not.toMatch(/admin\.query\(\s*`DROP DATABASE/gu)
     }
-    const drained = files.filter(source => /dropDrainedPostgresFixture|disposePostgresScopeFixture/u.test(source))
-    for (const source of drained) {
-      expect(source).toContain('primaryFailure')
+    const drained = records.filter(({ source }) => /\b(?:dropDrainedPostgresFixture|disposePostgresScopeFixture)\s*\(/u.test(source))
+    for (const { source } of drained) {
       for (const match of source.matchAll(/const (?:databaseName|name|freshName|upgradeName|restoreName) = `([a-z0-9_]+)\$\{/gu)) {
         expect(POSTGRES_SCOPE_FIXTURE_PREFIXES).toContain(match[1])
       }

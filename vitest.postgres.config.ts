@@ -19,6 +19,7 @@ export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
   || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts'
   || file === 'apps/api/src/product-stock-provenance.postgres.test.ts'
   || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts'
+  || file === 'apps/api/src/asset-download-authorization.postgres.test.ts'
   || file === 'packages/persistence/src/asset-lifecycle-release.postgres.test.ts'
   || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
   || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'

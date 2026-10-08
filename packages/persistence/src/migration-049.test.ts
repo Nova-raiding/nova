@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
+import { randomUUID } from 'node:crypto'
 import { loadMigrations, MigrationRunner } from './migration.js'
+import { dropDrainedPostgresFixture, withPostgresFixtureCleanup } from './postgres-scope-fixture-cleanup.js'
 
 const postgresIt = process.env.LEGACY_BACKFILL_DATABASE_URL ? it : it.skip
 
@@ -62,7 +64,13 @@ describe('049 legacy compatibility snapshot backfill', () => {
   })
 
   postgresIt('backfills missing rows and preserves unsafe scopes on real PostgreSQL 001 through 049', async () => {
-    const pool = new Pool({ connectionString: process.env.LEGACY_BACKFILL_DATABASE_URL })
+    const source = new URL(process.env.LEGACY_BACKFILL_DATABASE_URL!)
+    const databaseName = `release_fresh_${randomUUID().replaceAll('-', '')}`
+    const admin = new Pool({ connectionString: source.toString() })
+    await admin.query(`CREATE DATABASE "${databaseName}"`)
+    const target = new URL(source)
+    target.pathname = `/${databaseName}`
+    const pool = new Pool({ connectionString: target.toString() })
     try {
       const migrations = await loadMigrations()
       await new MigrationRunner(pool, migrations.filter(item => item.version <= 48)).run()
@@ -143,7 +151,10 @@ describe('049 legacy compatibility snapshot backfill', () => {
       expect(await new MigrationRunner(pool, migrations.filter(item => item.version === 50)).run()).toEqual([50])
       expect((await pool.query(`SELECT array_agg(version ORDER BY version) AS versions FROM schema_migrations`)).rows[0]?.versions).toEqual(Array.from({ length: 50 }, (_, index) => index + 1))
     } finally {
-      await pool.end()
+      await withPostgresFixtureCleanup(async () => {
+        await pool.end()
+        await dropDrainedPostgresFixture(admin, databaseName)
+      }, undefined, [() => admin.end()])
     }
   }, 60_000)
 })

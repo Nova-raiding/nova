@@ -6,7 +6,11 @@ import { assertWorkerReadinessDependencies } from './main.js'
 describe('worker schema bridge readiness', () => {
   it('accepts only complete, checksummed prefixes approved by each bridge mode', async () => {
     const migrations = await loadMigrations()
-    expect(migrations).toHaveLength(269)
+    const latestMigration = migrations.at(-1)!
+    expect(latestMigration).toMatchObject({ version: 270, name: 'catalog_batch_import_idempotency' })
+    expect(migrations.map(migration => migration.version)).toEqual(
+      Array.from({ length: latestMigration.version }, (_, index) => index + 1),
+    )
     const rows = migrations.map(migration => ({
       version: migration.version,
       name: migration.name,
@@ -33,7 +37,7 @@ describe('worker schema bridge readiness', () => {
     await expect(ready(rows.slice(0, 254), 'prefix_255_or_256')).rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({
       database: { query: async () => ({ rows: rows.slice(0, 254) }) }, expectedMigrations: migrations,
-    })).rejects.toThrow('expected complete migration chain through 269')
+    })).rejects.toThrow(`expected complete migration chain through ${latestMigration.version}`)
     await expect(ready(rows.slice(0, 256), 'prefix_256_or_257')).resolves.toEqual({ migrationVersion: 256, apiReady: false })
     await expect(ready(rows.slice(0, 257), 'prefix_256_or_257')).resolves.toEqual({ migrationVersion: 257, apiReady: false })
   })
