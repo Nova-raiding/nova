@@ -22,8 +22,8 @@ describe('isolated Ops password authentication runner', () => {
   it('runs the production password-session flow without an identity-signing gateway', () => {
     const source = readFileSync('scripts/run-ops-password-e2e.ts', 'utf8')
     expect(source).toContain("OPS_AUTH_MODE: 'password'")
-    expect(source).toContain("VITE_OPS_AUTH_MODE: 'password'")
-    expect(source).toContain("VITE_OPS_BUILD_MODE: 'password'")
+    expect(source).toContain("VITE_OPS_AUTH_MODE: unmatchedReadonlyMode ? 'local' : 'password'")
+    expect(source).toContain("VITE_OPS_BUILD_MODE: unmatchedReadonlyMode ? 'local' : 'password'")
     expect(source).toContain('createOpsPasswordProxy(')
     expect(source).not.toContain('OIDC_PROXY_SIGNING_SECRET')
     expect(source).not.toContain('createLocalOidcGateway')

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
@@ -17,6 +17,10 @@ import { isolatedCommercialSalesMode, prepareOwnedCommercialSalesLease, type Own
 import { collectProductImportScanEvidence } from './product-import-scan-evidence.js'
 import { disposeOpsE2eChild, monitorOpsE2eChild } from './ops-e2e-child-monitor.js'
 import { acquireCommercialE2eLock } from './commercial-e2e-exclusive-lock.js'
+import { CAPABILITIES } from '../packages/contracts/src/authz.js'
+import { PostgresCommercialReceiptRepository } from '../packages/persistence/src/commercial-receipt-repository.js'
+import { PostgresAuthorizationRepository } from '../packages/persistence/src/authorization-repository.js'
+import { PostgresIdentityLifecycleRepository } from '../packages/persistence/src/identity-lifecycle-repository.js'
 
 // Own all persistence and identities; never copy a business container or .env.
 export function opsChildEnvironment(source: NodeJS.ProcessEnv, additions: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -53,10 +57,12 @@ export function validateOpsE2eSpecIsolation(args: readonly string[], manualOpera
   const manualImportSpec = 'dogfood/chatgpt-all-functions/ops-manual-import-isolated.spec.js'
   const desktopMatrixSpec = 'dogfood/chatgpt-all-functions/ops-desktop-readonly-matrix.spec.js'
   const deliveryReadonlySpec = 'dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js'
+  const unmatchedReadonlySpec = 'dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js'
   if (selectedSpecs.includes(jitSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_JIT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(manualImportSpec) && (selectedSpecs.length !== 1 || !manualOperationsMode)) throw new Error('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(desktopMatrixSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DESKTOP_MATRIX_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(deliveryReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  if (selectedSpecs.includes(unmatchedReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_UNMATCHED_RECEIPT_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   const designatedAdminSpecs = [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec, 'dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js']
   return designatedAdminSpecs.includes(selectedSpecs[0] ?? '') ? 'hyp@sn.com' : undefined
 }
@@ -260,6 +266,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
   const commercialSalesMode = isolatedCommercialSalesMode(args, source)
+  const unmatchedReadonlyMode = args.includes('dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js')
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
   const browserTimeoutMs = validateOpsE2eBrowserTimeout(source)
   const scanPurpose = opsE2eScanPurpose(args, source)
@@ -435,19 +442,50 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // desktop spec receives it for the approver form; it is never written to
     // runtime/evidence artifacts or inherited from ambient environment.
     const approvalToken = randomBytes(32).toString('base64url')
+    const sessionHashSecret = randomBytes(32).toString('hex')
+    const unmatchedReadonlyToken = unmatchedReadonlyMode ? randomBytes(32).toString('base64url') : undefined
+    if (unmatchedReadonlyMode) {
+      const appPool = new Pool({ connectionString: fixture.databaseUrl, max: 1 })
+      const operationsPool = new Pool({ connectionString: fixture.opsDatabaseUrl, max: 1 })
+      try {
+        await new PostgresCommercialReceiptRepository(appPool, operationsPool).recordUnmatched({
+          source: 'bank_transfer', receivingAccountRef: `fixture-receiver-${fixture.runId}`,
+          externalTradeId: `fixture-unmatched-${fixture.runId}`, payerRef: `fixture-payer-${fixture.runId}`,
+          amountFen: 12345, currency: 'CNY', receivedAt: new Date(Date.now() - 60_000).toISOString(),
+          evidence: { fixtureOnly: true, runId: fixture.runId }, actorId: `fixture-seed:${fixture.runId}`, verifiedAt: new Date().toISOString(),
+        })
+        const actorId = `fixture-unmatched-reader:${fixture.runId}`
+        const issuedAt = new Date().toISOString()
+        const identity = await new PostgresIdentityLifecycleRepository(operationsPool).observeAuthenticatedSession({
+          issuer: 'urn:merchant:api-token', externalSubject: actorId,
+          sessionHash: createHmac('sha256', sessionHashSecret).update(unmatchedReadonlyToken!).digest('hex'),
+          kind: 'api_token', issuedAt, mfaVerified: false,
+        })
+        await new PostgresAuthorizationRepository(operationsPool).assignPlatformRole({
+          subjectIdentityId: identity.identity.id, role: 'ops_admin', assignedBy: `fixture-seed:${fixture.runId}`,
+          reason: 'isolated read-only unmatched receipt browser acceptance', expectedAuthorizationRevision: 0,
+        })
+      } finally { await Promise.all([appPool.end(), operationsPool.end()]) }
+    }
     if (commercialSalesMode) commercialHistoryEnvironment = {...await prepareOwnedCommercialHistoryFixture(fixture,evidenceDir),...await prepareOwnedCommercialPendingFixture(fixture,evidenceDir)}
     if (commercialSalesMode) commercialLease = await prepareOwnedCommercialSalesLease({root:process.cwd(),evidenceDir,runId:fixture.runId,databaseUrl:fixture.databaseUrl,opsDatabaseUrl:fixture.opsDatabaseUrl,controllerActor:`owned-test-controller:${fixture.runId}`,workspaceId:fixture.workspaceId,ownedWorkspaceIds:[fixture.workspaceId,commercialHistoryEnvironment.OPS_E2E_HISTORY_WORKSPACE_ID!,commercialHistoryEnvironment.OPS_E2E_PENDING_WORKSPACE_ID!]})
     const apiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
       PORT: String(apiPort), OPS_AUTH_MODE: 'password',
       API_BIND_HOST: '127.0.0.1',
-      SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
+      SESSION_ID_HASH_SECRET: sessionHashSecret,
       AUTHORIZATION_APPROVAL_TOKENS: JSON.stringify({ [approvalToken]: { actor_id: fixture.approverId, workspaces: [fixture.workspaceId] } }),
       DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
       RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
       CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
+      ...(unmatchedReadonlyToken ? {
+        API_AUTH_TOKENS: JSON.stringify({ [unmatchedReadonlyToken]: {
+          actor_id: `fixture-unmatched-reader:${fixture.runId}`, roles: ['ops_admin'], workbenches: ['platform'], workspaces: [],
+          denied_capabilities: CAPABILITIES.filter(capability => !['authorization.session.read', 'commercial.order.read'].includes(capability)),
+        } }),
+      } : {}),
       ...(manualOperationsMode ? { PLATFORM_OPERATIONS_MODE: 'manual' } : {}),
-      ALLOWED_ORIGINS: [baseUrl, merchantBaseUrl].filter(Boolean).join(','), PUBLIC_OPS_BASE_URL: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
+      ALLOWED_ORIGINS: [baseUrl, merchantBaseUrl].filter(Boolean).join(','), ...(unmatchedReadonlyMode ? {} : { PUBLIC_OPS_BASE_URL: baseUrl }), ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
       ...scanEnvironment?.apiEnvironment,
       ...commercialLease?.env,
       ...(commercialSalesMode ? { PAYMENT_MODE: 'manual_transfer', COMMERCIAL_PAYMENT_PROVIDER: 'manual_transfer', COMMERCIAL_MANUAL_TRANSFER_APPROVED: 'true', COMMERCIAL_TRANSFER_RECEIVER_NAME: `owned-test receiver ${fixture.runId}`, COMMERCIAL_TRANSFER_RECEIVING_ACCOUNT: `owned-test-bank:${fixture.runId}`, COMMERCIAL_TRANSFER_VERIFICATION_POLICY: `owned-test-controller:${fixture.runId}:bank-verification` } : {}),
@@ -456,7 +494,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     serviceMonitors.push(monitorOpsE2eChild(api))
     const uiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'production', VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
-      VITE_OPS_AUTH_MODE: 'password', VITE_OPS_BUILD_MODE: 'password', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+      VITE_OPS_AUTH_MODE: unmatchedReadonlyMode ? 'local' : 'password', VITE_OPS_BUILD_MODE: unmatchedReadonlyMode ? 'local' : 'password', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
     })
     const uiOutput = resolve(evidenceDir, 'ui-dist')
     const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
@@ -491,6 +529,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,
       OPS_E2E_APPROVAL_TOKEN: approvalToken,
       OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
+      ...(unmatchedReadonlyToken ? { OPS_E2E_UNMATCHED_READONLY_TOKEN: unmatchedReadonlyToken, OPS_E2E_UNMATCHED_TRADE_ID: `fixture-unmatched-${fixture.runId}` } : {}),
       OPS_E2E_MERCHANT_USERNAME: fixture.merchantLogin, OPS_E2E_MERCHANT_PASSWORD: fixture.merchantPassword,
       OPS_E2E_MANUAL_OPERATIONS: manualOperationsMode ? 'true' : 'false',
       ...commercialHistoryEnvironment,
@@ -502,7 +541,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({
       runId: fixture.runId, evidenceDir, baseUrl, apiPort, uiPort, gatewayPort,
       persistence: health.data.persistence, redis: health.data.redis,
-      authorization: { mode: 'enforce', durableAssignmentsRequired: true, authentication: 'isolated PostgreSQL account/password sessions' },
+      authorization: { mode: 'enforce', durableAssignmentsRequired: true, authentication: unmatchedReadonlyMode ? 'isolated bearer token with durable PostgreSQL identity/role and explicit capability denies' : 'isolated PostgreSQL account/password sessions', ...(unmatchedReadonlyMode ? { allowedCapabilities: ['authorization.session.read', 'commercial.order.read'] } : {}) },
       models: { configured: false, called: false }, sharedConfigurationRead: false,
       ...(scanner ? { scanner: { runId: scanner.runId, evidenceDir: scanner.evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs, readiness: scanner.readiness, real: true, pointsGranted: false, purpose: scanPurpose } } : {}),
     }, null, 2), { mode: 0o600, flag: 'wx' })

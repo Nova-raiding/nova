@@ -100,6 +100,7 @@ const OPS_MATRIX_SPECS = [spec('ops-desktop-readonly-matrix.spec.js')]
 const OPS_TEMPLATE_SPECS = [spec('ops-template-download-isolated.spec.js')]
 const OPS_RULE_UPLOAD_SPECS = [spec('ops-rule-upload-isolated.spec.js')]
 const OPS_PRODUCT_IMPORT_SPECS = [spec('ops-product-import-scan-isolated.spec.js')]
+const OPS_UNMATCHED_READONLY_SPECS = [spec('ops-unmatched-receipt-readonly-isolated.spec.js')]
 
 /**
  * `package.json` entrypoints that declare browser coverage but that `npm run
@@ -213,6 +214,13 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
+  it('runs unmatched-receipt read-only authorization only in its dedicated isolated fixture', () => {
+    const command = script('test:browser:ops:unmatched-readonly')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_UNMATCHED_READONLY_SPECS)
+    expect(command).not.toContain('--config')
+  })
+
   it('gives test:browser:ops:jit no spec, so it runs the runner fallback spec', () => {
     const command = script('test:browser:ops:jit')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
@@ -228,7 +236,7 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:material-assets && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:material-assets && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 
@@ -257,7 +265,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_MATRIX_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_MATRIX_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, spec('ops-jit-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

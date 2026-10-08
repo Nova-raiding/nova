@@ -26,6 +26,13 @@ describe("workspace directory seed", () => {
 });
 
 describe("top-level refresh coordination", () => {
+  it("does not request platform model status unless the session has that capability", async () => {
+    const source = await modelSource();
+    const statusRequest = source.slice(source.indexOf('allowedHydrationMethods.has("platform.model.status")'));
+    expect(statusRequest).toContain('scheduledRpc("platform.model.status")');
+    expect(statusRequest.slice(0, 180)).not.toContain("platformOperator ||");
+  });
+
   it("queues a repeat refresh through the rerun gate instead of dropping it", async () => {
     // The hook used to early-return whenever an identical filter key was in
     // flight (`loadInFlightKeysRef`), so the `await load()` that follows a save

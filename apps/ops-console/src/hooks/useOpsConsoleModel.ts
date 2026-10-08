@@ -998,7 +998,7 @@ export function useOpsConsoleModel() {
         platformOperator ? deferredOptional("ops.alerts.list", workspaceAlertParams) : Promise.resolve(undefined),
         !platformOperator ? authorizedOptional("ops.alerts.list", workspaceAlertParams) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
-        (platformOperator || allowedHydrationMethods.has("platform.model.status")) ? (async () => {
+        allowedHydrationMethods.has("platform.model.status") ? (async () => {
           try {
             const value = await scheduledRpc("platform.model.status");
             setModelStatus(parseModelStatus(value));
