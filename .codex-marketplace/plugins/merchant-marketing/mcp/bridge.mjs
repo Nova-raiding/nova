@@ -815,7 +815,7 @@ const METHODS = {
   },
   'catalog.image.generate': {
     description: '根据已确认商品事实生成商品主图或详情图候选；用户要求整套电商详情图时必须先完成商品识别、买家顾虑和六类图片方案，再按确认方案真实调用图片模型生成，不能把文字方案、占位卡片或原图当作详情页交付。确认方案后生成完整详情长图必须显式传 size=1024x4096 或 1024x3072，并在同一轮自动查询，只有返回真实 images/图片附件后才能称为已生成。用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。禁止编造销量、认证、测评、续航、兼容性或其他未确认商品事实。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, selling_points_json: { type: 'string', description: '商家已确认、可上图的卖点字符串数组 JSON。' }, traffic_keywords_json: { type: 'string', description: '商家已确认的搜索/流量关键词字符串数组 JSON。' }, promotion_labels_json: { type: 'string', description: '已确认且仍有效的促销标签字符串数组 JSON；禁止虚构价格或折扣。' }, marketing_labels_json: { type: 'string', description: '商家已确认的营销短标签字符串数组 JSON。' }, headline: { type: 'string', description: '主图精确主标题。' }, subheadline: { type: 'string', description: '主图精确副标题。' }, cta: { type: 'string', description: '主图精确行动文案。' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, selling_points_json: { type: 'string', description: '商家已确认、可上图的卖点字符串数组 JSON。' }, traffic_keywords_json: { type: 'string', description: '商家已确认的搜索/流量关键词字符串数组 JSON。' }, promotion_labels_json: { type: 'string', description: '已确认且仍有效的促销标签字符串数组 JSON；禁止虚构价格或折扣。' }, marketing_labels_json: { type: 'string', description: '商家已确认的营销短标签字符串数组 JSON。' }, headline: { type: 'string' }, subheadline: { type: 'string' }, cta: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, oneOf: [{ required: ['product_id'] }, { required: ['title', 'asset_ids_json'] }], additionalProperties: false },
   },
   'catalog.image.retry': {
     description: '安全重试尚未启动 Provider 且没有候选或对账证据的图片任务。',
@@ -2100,6 +2100,19 @@ function validateToolArguments(name, args) {
     const hasJobId = typeof args.job_id === 'string' && Boolean(args.job_id.trim())
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
     if (hasJobId === hasVisualRef) return fail('job_id 和 visual_ref 必须且只能提供其中一个')
+  }
+  if (name === 'catalog.image.generate') {
+    const hasProduct = typeof args.product_id === 'string' && Boolean(args.product_id.trim())
+    let hasAssetIds = false
+    if (typeof args.asset_ids_json === 'string' && args.asset_ids_json.trim()) {
+      try {
+        const assetIds = JSON.parse(args.asset_ids_json)
+        hasAssetIds = Array.isArray(assetIds) && assetIds.length > 0
+          && assetIds.every(assetId => typeof assetId === 'string' && Boolean(assetId.trim()))
+      } catch { /* malformed JSON is rejected at the MCP boundary */ }
+    }
+    const hasUnboundInputs = typeof args.title === 'string' && Boolean(args.title.trim()) && hasAssetIds
+    if (!hasProduct && !hasUnboundInputs) return fail('请提供 product_id，或同时提供 title 和 asset_ids_json')
   }
   if (name === 'support.customer.replies.list'
     && !['ticket_id', 'related_task_id', 'related_order_id'].some(key => typeof args[key] === 'string' && Boolean(args[key].trim()))) {

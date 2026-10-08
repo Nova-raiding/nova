@@ -1257,6 +1257,14 @@ const METHODS = {
   },
 }
 
+// Keep the direct-install ChatGPT artifact's advertised alternative aligned
+// with the marketplace bridge: either bind to a product, or provide a title
+// and non-empty uploaded asset IDs for an unbound candidate.
+METHODS['catalog.image.generate'].inputSchema.oneOf = [
+  { required: ['product_id'] },
+  { required: ['title', 'asset_ids_json'] },
+]
+
 function jsonRpc(id, result) {
   return { jsonrpc: '2.0', id, result }
 }
@@ -2100,6 +2108,19 @@ function validateToolArguments(name, args) {
     const hasJobId = typeof args.job_id === 'string' && Boolean(args.job_id.trim())
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
     if (hasJobId === hasVisualRef) return fail('job_id 和 visual_ref 必须且只能提供其中一个')
+  }
+  if (name === 'catalog.image.generate') {
+    const hasProduct = typeof args.product_id === 'string' && Boolean(args.product_id.trim())
+    let hasAssetIds = false
+    if (typeof args.asset_ids_json === 'string' && args.asset_ids_json.trim()) {
+      try {
+        const assetIds = JSON.parse(args.asset_ids_json)
+        hasAssetIds = Array.isArray(assetIds) && assetIds.length > 0
+          && assetIds.every(assetId => typeof assetId === 'string' && Boolean(assetId.trim()))
+      } catch { /* malformed JSON is rejected at the MCP boundary */ }
+    }
+    const hasUnboundInputs = typeof args.title === 'string' && Boolean(args.title.trim()) && hasAssetIds
+    if (!hasProduct && !hasUnboundInputs) return fail('请提供 product_id，或同时提供 title 和 asset_ids_json')
   }
   if (name === 'support.customer.replies.list'
     && !['ticket_id', 'related_task_id', 'related_order_id'].some(key => typeof args[key] === 'string' && Boolean(args[key].trim()))) {
