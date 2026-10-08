@@ -1,4 +1,4 @@
-import { AssistedPurchaseOperationsPanel, CashReceiptOperationsPanel, CommercialOperationsWorkspace, CommercialRefundOperationsPanel } from "../components/commercial/CommercialOperationsWorkspace.js";
+import { AssistedPurchaseOperationsPanel, CashReceiptOperationsPanel, CommercialOperationsWorkspace, CommercialRefundOperationsPanel, UnmatchedCashOperationsPanel } from "../components/commercial/CommercialOperationsWorkspace.js";
 import { OpsPage } from "../components/OpsPage";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { commercialViewCapability, useCommercialOperations } from "../hooks/useCommercialOperations.js";
@@ -76,6 +76,7 @@ export function FinancePage({ model }: FinancePageProps) {
             />
           )}
           {model.authorization.can("commercial.payment.reconcile") && model.authorization.can("commercial.order.read") ? <AssistedPurchaseOperationsPanel controller={commercial} /> : null}
+          {model.authorization.can("commercial.order.read") ? <UnmatchedCashOperationsPanel controller={commercial} /> : null}
           {model.authorization.can("commercial.receipt.record") || model.authorization.can("commercial.receipt.allocate") ? <CashReceiptOperationsPanel controller={commercial} /> : null}
           {model.authorization.can("commercial.catalog.read") ? <PlatformCatalogManagementPanel model={model} /> : null}
           <Card
