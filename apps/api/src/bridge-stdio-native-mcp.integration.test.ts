@@ -39,11 +39,13 @@ async function bridgeRequest(child: ChildProcessWithoutNullStreams, id: string, 
 }
 
 async function startApi() {
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => reject(error)
-    server.once('error', onError)
-    server.listen(0, '127.0.0.1', () => { server.removeListener('error', onError); resolve() })
-  })
+  if (!server.listening) {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error)
+      server.once('error', onError)
+      server.listen(0, '127.0.0.1', () => { server.removeListener('error', onError); resolve() })
+    })
+  }
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('API server did not bind to loopback')
   return `http://127.0.0.1:${address.port}`
@@ -62,6 +64,81 @@ afterAll(async () => {
 })
 
 describe('local stdio bridge to loopback native MCP integration', () => {
+  it('keeps contract methods without merchant transport hidden across API and installed stdio discovery', async () => {
+    const suffix = randomUUID().slice(0, 8)
+    const workspaceId = `ws_stdio_hidden_${suffix}`
+    const actorId = `stdio-hidden-${suffix}`
+    const token = `stdio-hidden-token-${suffix}`
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [token]: { workspaces: [workspaceId], actor_id: actorId, roles: ['operator'] } }))
+    await workspaceMembers.upsert({
+      workspaceId,
+      externalSubject: actorId,
+      displayName: 'stdio hidden MCP contract integration',
+      role: 'operator',
+      status: 'active',
+      invitedBy: 'stdio-hidden-contract-integration',
+    })
+    const base = await startApi()
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        DEPLOY_ENV: 'test',
+        MERCHANT_MCP_BASE_URL: base,
+        MERCHANT_WORKSPACE_ID: workspaceId,
+        MERCHANT_MCP_TOKEN: token,
+        MERCHANT_MCP_RETRY_ATTEMPTS: '1',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const unsupported = [
+      'upload.session.create',
+      'upload.session.part',
+      'upload.session.complete',
+      'billing.model-usage.reconciliation.run',
+      'billing.model-usage.resolve',
+    ]
+
+    try {
+      const apiHeaders = {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-ops-workbench': 'workspace',
+        'x-workspace-id': workspaceId,
+      }
+      const apiListResponse = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: apiHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'api-list-hidden', method: 'tools/list', params: {} }),
+      })
+      expect(apiListResponse.status).toBe(200)
+      const apiList = await apiListResponse.json() as RpcResponse
+      const apiNames = (apiList.result?.tools as Array<{ name: string }>).map(tool => tool.name)
+
+      const bridgeList = await bridgeRequest(child, 'stdio-list-hidden', 'tools/list')
+      const bridgeNames = (bridgeList.result?.tools as Array<{ name: string }>).map(tool => tool.name)
+      for (const name of unsupported) {
+        expect(apiNames, `API advertised ${name}`).not.toContain(name)
+        expect(bridgeNames, `stdio bridge advertised ${name}`).not.toContain(name)
+
+        const apiCall = await fetch(`${base}/mcp`, {
+          method: 'POST',
+          headers: apiHeaders,
+          body: JSON.stringify({ jsonrpc: '2.0', id: `api-${name}`, method: 'tools/call', params: { name, arguments: {} } }),
+        })
+        expect(apiCall.status).toBe(200)
+        expect(await apiCall.json(), `API accepted hidden ${name}`).toMatchObject({ id: `api-${name}`, error: { code: -32601 } })
+
+        const bridgeCall = await bridgeRequest(child, `stdio-${name}`, 'tools/call', { name, arguments: {} })
+        expect(bridgeCall, `stdio bridge accepted hidden ${name}`).toMatchObject({ id: `stdio-${name}`, error: { code: -32602 } })
+      }
+    } finally {
+      child.kill()
+      await new Promise<void>(resolve => child.once('exit', () => resolve()))
+    }
+  }, 30_000)
+
   it('projects tools/list, forwards a safe read, and preserves an API authorization error envelope', async () => {
     const suffix = randomUUID().slice(0, 8)
     const workspaceId = `ws_stdio_mcp_${Date.now()}_${suffix}`
