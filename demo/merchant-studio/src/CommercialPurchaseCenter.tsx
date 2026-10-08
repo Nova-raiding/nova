@@ -31,8 +31,15 @@ export function commercialPurchaseAction(portfolio: CommercialSubscriptionPortfo
   // server authority for compatible rights and the exact frozen difference.
   return { kind: 'upgrade', label: '计算升级差价', reason: '仅升级当前期，原到期日不变；未来已购及待付款续购保持原档位。' }
 }
+function hasConfirmableCommercialCycle(value: unknown): boolean {
+  if (value === 'monthly' || value === 'once') return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const cycle = value as { unit?: unknown; count?: unknown }
+  if (cycle.unit === 'once') return true
+  return (cycle.unit === 'month' || cycle.unit === 'day') && Number.isSafeInteger(cycle.count) && Number(cycle.count) > 0
+}
 export function canConfirmCommercialOrder(order: CommercialPurchaseOrder, now = Date.now()): boolean {
-  return order.state === 'pending' && Number.isSafeInteger(order.amount_fen) && order.amount_fen > 0 && Boolean(order.snapshot && Array.isArray(order.snapshot.benefits) && order.snapshot.cycle !== undefined && order.snapshot.quantity === 1 && order.expires_at && Date.parse(order.expires_at) > now)
+  return order.state === 'pending' && Number.isSafeInteger(order.amount_fen) && order.amount_fen > 0 && Boolean(order.snapshot && Array.isArray(order.snapshot.benefits) && hasConfirmableCommercialCycle(order.snapshot.cycle) && order.snapshot.quantity === 1 && order.expires_at && Date.parse(order.expires_at) > now)
 }
 export function commercialOrdersToConfirm(orders: CommercialPurchaseOrder[], now = Date.now()): CommercialPurchaseOrder[] {
   return orders.filter(order => canConfirmCommercialOrder(order, now))

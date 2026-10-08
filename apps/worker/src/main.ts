@@ -897,8 +897,13 @@ export async function postCommercialNotificationTick(input: { apiBaseUrl: string
 /** A failed notification batch must never acknowledge a successful worker poll.
  * Invoke after other maintenance so notification outages do not suppress grants. */
 export function requireCommercialNotificationPollSuccess(result: { commercialNotifications?: { failed?: number }; purchaseResultNotifications?: { failed?: number } }): void {
-  if ((result.commercialNotifications?.failed ?? 0) > 0 || (result.purchaseResultNotifications?.failed ?? 0) > 0) {
-    throw Object.assign(new Error('Commercial notification delivery failed; durable pending facts require retry'), { code: 'COMMERCIAL_NOTIFICATION_POLL_FAILED', publicationFailed: result.commercialNotifications?.failed ?? 0, purchaseResultFailed: result.purchaseResultNotifications?.failed ?? 0 })
+  const publicationFailed = result.commercialNotifications?.failed ?? 0
+  const purchaseResultFailed = result.purchaseResultNotifications?.failed ?? 0
+  if (![publicationFailed, purchaseResultFailed].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw Object.assign(new Error('Commercial notification poll returned an invalid notification failure count'), { code: 'COMMERCIAL_NOTIFICATION_POLL_RESULT_INVALID' })
+  }
+  if (publicationFailed > 0 || purchaseResultFailed > 0) {
+    throw Object.assign(new Error('Commercial notification delivery failed; durable pending facts require retry'), { code: 'COMMERCIAL_NOTIFICATION_POLL_FAILED', publicationFailed, purchaseResultFailed })
   }
 }
 

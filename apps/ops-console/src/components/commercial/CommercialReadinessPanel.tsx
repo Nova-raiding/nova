@@ -71,6 +71,24 @@ export function evaluateCommercialReadiness(report: CommercialReadinessReport) {
   return { skuChecks, policyChecks, registryCheck };
 }
 
+export function commercialReadinessCanEnterProductionGate(report: CommercialReadinessReport): boolean {
+  const { skuChecks, policyChecks, registryCheck } = evaluateCommercialReadiness(report);
+  const capabilityEntries = Object.values(report.capabilities);
+  return report.ready
+    && report.blockers.length === 0
+    && skuChecks.every(item => item.check.ready)
+    && policyChecks.every(item => item.check.ready)
+    && registryCheck.ready
+    && capabilityEntries.length > 0
+    && capabilityEntries.every(raw => {
+      const evidence = isRecord(raw) ? raw : null;
+      return evidence?.executable === true && evidence.blocking_reason == null && evidence.blockingReason == null;
+    })
+    && report.creativePoints.point_balance_repository === true
+    && report.creativePoints.reservation_and_settlement_repository === true
+    && report.creativePoints.auditable === true;
+}
+
 function StatusTag({ check }: { check: Check }) { return <Tag color={check.ready ? "success" : "error"}>{check.ready ? "已配置" : "阻断"}</Tag>; }
 
 function CheckList({ title, items }: { title: string; items: Array<{ label: string; check: Check }> }) {
@@ -97,11 +115,12 @@ export function CommercialReadinessPanel({ authorization, client = commercialOpe
   if (!report) return null;
 
   const { skuChecks, policyChecks, registryCheck } = evaluateCommercialReadiness(report);
+  const canEnterProductionGate = commercialReadinessCanEnterProductionGate(report);
   const capabilityEntries = Object.entries(report.capabilities);
 
   return <Card size="small" title="商业化开通准备" extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => void load()} loading={state.status === "loading"}>刷新</Button>}>
     {state.status === "error" ? <Alert type="warning" showIcon title="以下为上次成功报告" description={state.error} style={{ marginBottom: 16 }} /> : null}
-    <Alert type={report.ready ? "success" : "warning"} showIcon title={report.ready ? "READY · 可进入生产门禁" : "BLOCKED · 商业化开通仍被阻断"} description={report.message} />
+    <Alert type={canEnterProductionGate ? "success" : "warning"} showIcon title={canEnterProductionGate ? "READY · 可进入生产门禁" : "BLOCKED · 商业化开通仍被阻断"} description={report.message} />
     <Descriptions size="small" column={3} style={{ marginTop: 16 }} items={[{ key: "environment", label: "环境", children: <Tag>{report.environment || "未提供"}</Tag> }, { key: "blockers", label: "全局阻断项", children: report.blockers.length || "待确认" }, { key: "generated", label: "报告时间", children: report.generatedAt ? new Date(report.generatedAt).toLocaleString() : <Typography.Text type="danger">待确认 · 阻断</Typography.Text> }]} />
     <Row gutter={[12, 12]} style={{ marginTop: 16 }}><Col xs={24} xl={12}><CheckList title="可执行 SKU" items={skuChecks} /></Col><Col xs={24} xl={12}><CheckList title="方案规则" items={[...policyChecks, { label: "计费操作注册表", check: registryCheck }]} /></Col></Row>
     <Card size="small" type="inner" title="已返回的创意点能力费率" style={{ marginTop: 12 }}>
