@@ -98,6 +98,7 @@ const OPS_COMMERCIAL_SPECS = [
 
 const OPS_MATRIX_SPECS = [spec('ops-desktop-readonly-matrix.spec.js')]
 const OPS_TEMPLATE_SPECS = [spec('ops-template-download-isolated.spec.js')]
+const OPS_RULE_UPLOAD_SPECS = [spec('ops-rule-upload-isolated.spec.js')]
 const OPS_PRODUCT_IMPORT_SPECS = [spec('ops-product-import-scan-isolated.spec.js')]
 
 /**
@@ -197,6 +198,13 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
+  it('runs platform rule upload only through its dedicated isolated Ops fixture', () => {
+    const command = script('test:browser:ops:rule-upload')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_RULE_UPLOAD_SPECS)
+    expect(command).not.toContain('--config')
+  })
+
   it('runs product import only with its dedicated real-scanner fixture and exact spec', () => {
     const command = script('test:browser:ops:product-import')
     expect(command).toContain('OPS_E2E_DELIVERY_SCAN=true OPS_E2E_SCAN_PURPOSE=product_import OPS_E2E_SCANNER_STARTUP_TIMEOUT_MS=300000')
@@ -249,7 +257,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_MATRIX_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_MATRIX_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, spec('ops-jit-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)
