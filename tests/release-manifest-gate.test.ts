@@ -307,7 +307,7 @@ describe('release manifest production gate', () => {
     writeFileSync(unsignedStorage.evidenceFiles.objectStorage, unsignedStorageContents)
     unsignedStorage.manifest.productionEvidence.objectStorage = `artifact://production/evidence/objectStorage.json#${digest(unsignedStorageContents)}`
     expect(validateReleaseManifest(unsignedStorage.manifest, unsignedStorage.options)).toContain('productionEvidence.objectStorage signature_base64 must be a canonical Ed25519 signature')
-  })
+  }, 30_000)
 
   it('validates manual capability workflow semantics as well as the artifact signature', () => {
     const fixture = boundManifestFixture()

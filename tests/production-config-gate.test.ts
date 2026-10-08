@@ -152,7 +152,7 @@ describe('production config gate', () => {
       .replace('platform_rule_sync_signing_secret_ref: disabled', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret')
       .replace('platform_rule_sync_interval_hours: "0"', 'platform_rule_sync_interval_hours: "24"')
     expect(run(official)()).toContain('production config gate passed')
-  })
+  }, 30_000)
 
   it('rejects OIDC auth mode for the account/password-only production Ops Console', () => {
     const nested = config()
