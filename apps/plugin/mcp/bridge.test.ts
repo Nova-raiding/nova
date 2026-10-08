@@ -4439,6 +4439,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const childEnvironment = {
       ...TEST_PROCESS_ENV,
+      HOME: launchdDirectory,
       PATH: `${launchdDirectory}:${process.env.PATH ?? ''}`,
       FAKE_LAUNCHD_BASE_URL: `http://127.0.0.1:${address.port}`,
       MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
