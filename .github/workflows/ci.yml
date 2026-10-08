@@ -283,6 +283,8 @@ jobs:
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
           packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts
           packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-notification-read-rls.postgres.test.ts
+          packages/persistence/src/catalog-batch-import-rls.postgres.test.ts
           packages/persistence/src/commercial-receipt-repository.postgres.test.ts
           packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts
           packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts

@@ -19,6 +19,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/migration-127-release.postgres.test.ts',
   'packages/persistence/src/migration-146-release.postgres.test.ts',
   'packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts',
+  'packages/persistence/src/commercial-notification-read-rls.postgres.test.ts',
   'packages/persistence/src/migration-148-release.postgres.test.ts',
   'packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts',
   'packages/persistence/src/private-trial-invites.release.postgres.test.ts',
@@ -118,6 +119,7 @@ export const CI_POSTGRES_ACCEPTANCE_STEP = 'Run PostgreSQL migration acceptance 
 export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllowance[] = [
   // PERSISTENCE_RELEASE_DATABASE_URL
   { file: 'packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'packages/persistence/src/catalog-batch-import-rls.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-notification-repository.release.postgres.test.ts', pending: 2, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-allocation-replay-conflict.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/commercial-receipt-repository.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

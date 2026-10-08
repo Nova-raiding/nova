@@ -4,7 +4,7 @@ import {
   CUSTOMER_DELIVERY_CLAMAV_IMAGE, customerDeliveryScanRunPlan, customerDeliveryScanTimeout,
   collectCustomerDeliveryScanStartupDiagnostics, projectCustomerDeliveryScanState, sanitizeCustomerDeliveryScanLogs,
   disposeCustomerDeliveryScanContainer, disposeRetainedCustomerDeliveryScanContainer, startCustomerDeliveryScanFixture, stopCustomerDeliveryScanFixture,
-  unidentifiedCustomerDeliveryScanDisposal,
+  unidentifiedCustomerDeliveryScanDisposal, validateCustomerDeliveryScanDefinitions,
   validateCustomerDeliveryScanBindings, validateCustomerDeliveryScanReadiness, verifyCustomerDeliveryScanContainer,
   type ScanContainerInspection,
 } from '../scripts/customer-delivery-scan-fixture.js'
@@ -225,6 +225,10 @@ describe('customer delivery real-scan harness safety guards (not live scan accep
   })
   it('validates clean + real EICAR signature + current definitions together', () => {
     expect(validateCustomerDeliveryScanReadiness(protocolEvidence())).toMatchObject({ engineVersion: '1.4.3', definitionsVersion: '28001', definitionsAgeSeconds: 3600, cleanProbe: 'clean', eicarSignature: 'Eicar-Test-Signature' })
+  })
+  it('rejects a latest downloaded signature database older than the 24-hour admission window before file probes', () => {
+    expect(() => validateCustomerDeliveryScanDefinitions('ClamAV 1.4.6/28146/Wed Oct  7 06:24:18 2026', new Date('2026-10-08T06:45:00.000Z')))
+      .toThrow('CUSTOMER_DELIVERY_SCAN_DEFINITIONS_NOT_CURRENT')
   })
   it.each([
     'PONG', 'ClamAV 1.4.3/28001/Fri Sep 11 01:00:00 2026', 'ClamAV 1.4.3/28001/Tue Sep 15 01:00:00 2026',

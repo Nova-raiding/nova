@@ -111,6 +111,12 @@ export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
     requires: 'A running local or candidate API and desktop web surface with read-only E2E credentials',
     reason: 'Runs the read-only end-to-end matrix against an explicitly prepared runtime. It requires external services and credentials that the hermetic release gate must not invent, so it remains a separately named operator entrypoint rather than running inside `check`.',
   },
+  {
+    script: 'test:browser:ops:rule-upload',
+    category: 'release-operator',
+    requires: 'A running Ops Console candidate with operator credentials and an isolated customer workspace',
+    reason: 'Exercises the operator-only rule-upload flow against a prepared Ops Console runtime. It needs authenticated browser access and writable isolated workspace data, so it remains a named manual browser entrypoint rather than running in the hermetic default suite.',
+  },
 ]
 
 const TEXT_FILE = /\.(?:ts|tsx|mts|cts|js|mjs|cjs|jsx|json|ya?ml|md|sh|bash)$/u

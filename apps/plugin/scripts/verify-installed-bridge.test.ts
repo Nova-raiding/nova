@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 const pluginRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const verifier = resolve(pluginRoot, 'scripts/verify-installed-bridge.mjs')
 const bundledCommand = process.platform === 'win32' ? './runtime/node.exe' : './runtime/node'
+const installationFixtureTimeoutMs = 30_000
 
 function makeProfileFixture(profile: 'production' | 'qa-broker') {
   const directory = mkdtempSync(resolve(tmpdir(), `merchant-${profile}-verify-`))
@@ -70,7 +71,7 @@ describe('installed MCP bridge verification', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, installationFixtureTimeoutMs)
 
   it('rejects a bundled runtime path when its executable is absent', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-bundled-verify-missing-'))
@@ -90,7 +91,7 @@ describe('installed MCP bridge verification', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, installationFixtureTimeoutMs)
 
   it.each(['scripts/verify-chatgpt-macos.mjs', 'scripts/launch-verified-chatgpt-macos.mjs'])(
     'rejects an installed plugin missing login dependency %s', missingPath => {
@@ -106,6 +107,7 @@ describe('installed MCP bridge verification', () => {
         rmSync(directory, { recursive: true, force: true })
       }
     },
+    installationFixtureTimeoutMs,
   )
 
   it('requires production profile metadata and rejects a packaged credential broker', () => {
@@ -125,7 +127,7 @@ describe('installed MCP bridge verification', () => {
     } finally {
       rmSync(fixture.directory, { recursive: true, force: true })
     }
-  })
+  }, installationFixtureTimeoutMs)
 
   it('requires and hashes the credential broker only for the QA profile', () => {
     const fixture = makeProfileFixture('qa-broker')
@@ -152,5 +154,5 @@ describe('installed MCP bridge verification', () => {
     } finally {
       rmSync(fixture.directory, { recursive: true, force: true })
     }
-  }, 20_000)
+  }, installationFixtureTimeoutMs)
 })

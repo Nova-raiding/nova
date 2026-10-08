@@ -318,7 +318,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(53)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(54)
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')

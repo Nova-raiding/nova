@@ -182,22 +182,27 @@ export async function collectCustomerDeliveryScanStartupDiagnostics(verified: Sc
   return result
 }
 
-export function validateCustomerDeliveryScanReadiness(input: {
-  version: string; clean: ClamAvScanResult; eicar: ClamAvScanResult; observedAt?: Date
-}): ScanReadinessEvidence {
-  const observedAt = input.observedAt ?? new Date()
+export function validateCustomerDeliveryScanDefinitions(version: string, observedAt = new Date()) {
   let evidence: ReturnType<typeof assertClamAvExecutionAdmission>
-  try { evidence = assertClamAvExecutionAdmission(input.version, { now: observedAt, definitionsMaxAgeSeconds: DEFINITIONS_MAX_AGE_SECONDS }) }
+  try { evidence = assertClamAvExecutionAdmission(version, { now: observedAt, definitionsMaxAgeSeconds: DEFINITIONS_MAX_AGE_SECONDS }) }
   catch { return fail('DEFINITIONS_NOT_CURRENT') }
   // Date.UTC normalizes invalid dates; reject those rather than accepting a
   // malformed VERSION whose normalized timestamp happens to be recent.
-  const parts = /\/([A-Za-z]{3} )?([A-Za-z]{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/u.exec(input.version)
+  const parts = /\/([A-Za-z]{3} )?([A-Za-z]{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/u.exec(version)
   const date = new Date(evidence.definitionsPublishedAt!)
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   if (!parts || date.getUTCMonth() !== months.indexOf(parts[2]!) || date.getUTCDate() !== Number(parts[3])
     || date.getUTCHours() !== Number(parts[4]) || date.getUTCMinutes() !== Number(parts[5]) || date.getUTCSeconds() !== Number(parts[6])
     || date.getUTCFullYear() !== Number(parts[7]) || !Number.isSafeInteger(Number(evidence.definitionsVersion))
     || Number(evidence.definitionsVersion) < MINIMUM_DEFINITIONS_VERSION) fail('VERSION_INVALID')
+  return evidence
+}
+
+export function validateCustomerDeliveryScanReadiness(input: {
+  version: string; clean: ClamAvScanResult; eicar: ClamAvScanResult; observedAt?: Date
+}): ScanReadinessEvidence {
+  const observedAt = input.observedAt ?? new Date()
+  const evidence = validateCustomerDeliveryScanDefinitions(input.version, observedAt)
   if (input.clean.status !== 'clean' || input.clean.target !== 'stream' || input.clean.raw !== 'stream: OK') fail('CLEAN_PROBE_FAILED')
   if (input.eicar.status !== 'infected' || input.eicar.target !== 'stream' || input.eicar.signature !== 'Eicar-Test-Signature') fail('EICAR_PROBE_FAILED')
   return { observedAt: observedAt.toISOString(), rawVersion: input.version, engineVersion: evidence.engineVersion!,
@@ -330,6 +335,10 @@ export async function startCustomerDeliveryScanFixture(input: {
         const scanner = () => createClamAvScanner({ host: '127.0.0.1', port: container.hostPort, timeoutMs: Math.min(3_000, remaining()) })
         await scanner().ping()
         const version = await scanner().version()
+        // Check deterministic metadata failures before scanning either probe.
+        // A running daemon cannot self-heal stale definitions, and rescanning
+        // clean/EICAR every 250 ms only creates load without changing evidence.
+        validateCustomerDeliveryScanDefinitions(version)
         const clean = await scanner().scan(CLEAN_PROBE)
         const eicar = await scanner().scan(EICAR_SELF_TEST_BYTES)
         remaining()
@@ -339,6 +348,7 @@ export async function startCustomerDeliveryScanFixture(input: {
         input.signal?.throwIfAborted()
         const message = error instanceof Error ? error.message : ''
         lastProbeCode = /^CUSTOMER_DELIVERY_SCAN_[A-Z_]+$/u.test(message) ? message : 'CUSTOMER_DELIVERY_SCAN_CLAMAV_NOT_READY'
+        if (/^CUSTOMER_DELIVERY_SCAN_(?:DEFINITIONS_NOT_CURRENT|VERSION_INVALID|CLEAN_PROBE_FAILED|EICAR_PROBE_FAILED)$/u.test(lastProbeCode)) throw error
         if (Date.now() < deadline) await new Promise(done => setTimeout(done, Math.min(250, deadline - Date.now())))
       }
     }
