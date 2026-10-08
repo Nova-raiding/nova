@@ -228,7 +228,7 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:material-assets && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:material-assets && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 
