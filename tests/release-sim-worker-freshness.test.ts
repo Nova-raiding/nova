@@ -6,6 +6,8 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -140,4 +142,44 @@ describe("release-sim worker freshness gate", () => {
     writeFileSync(join(fixture.workerMeta, "worker.manifest.sha256"), `sha256:${"f".repeat(64)}\n`);
     expect(() => run(fixture)).toThrow(/Worker image source manifest is malformed or internally inconsistent/);
   }, 15_000);
+});
+
+describe("Compose worker progress freshness", () => {
+  // Exercise the actual inherited Compose command, without Docker or a queue.
+  // Only the PID check is replaced: the test process cannot signal PID 1 on
+  // every developer host, and process existence cannot prove loop progress.
+  function markerProbe(root: string) {
+    const compose = readFileSync("infra/local/docker-compose.yml", "utf8");
+    const line = compose.split("\n").find(value => value.includes('test: ["CMD-SHELL", "test -s /tmp/merchant-worker-'));
+    if (!line) throw new Error("inherited worker healthcheck missing");
+    const [, command] = JSON.parse(line.slice(line.indexOf("["))) as [string, string];
+    const marker = join(root, "ready");
+    const runtimeCommand = command
+      .replaceAll("/tmp/merchant-worker-$${WORKER_ROLE}-ready", '"$1"')
+      .replace('node -e "process.kill(1, 0)" >/dev/null 2>&1', "true");
+    return () => {
+      try { execFileSync("sh", ["-c", runtimeCommand, "worker-healthcheck", marker], { stdio: "pipe" }); return 0 }
+      catch { return 1 }
+    };
+  }
+
+  it("rejects a missing, empty, or stalled marker and accepts a heartbeat refreshed during long work", () => {
+    const root = mkdtempSync(join(tmpdir(), "worker-progress-probe-"));
+    temporaryRoots.push(root);
+    const marker = join(root, "ready");
+    const probe = markerProbe(root);
+    expect(probe()).toBe(1);
+    writeFileSync(marker, "");
+    expect(probe()).toBe(1);
+    writeFileSync(marker, '{"readyAt":"2000-01-01T00:00:00Z"}');
+    const stale = new Date(Date.now() - 10 * 60_000);
+    utimesSync(marker, stale, stale);
+    expect(probe()).toBe(1);
+    // The loop deliberately refreshes mtime rather than the JSON timestamp.
+    // A long healthy iteration keeps its marker within the two-minute window.
+    const heartbeat = new Date();
+    utimesSync(marker, heartbeat, heartbeat);
+    expect(statSync(marker).size).toBeGreaterThan(0);
+    expect(probe()).toBe(0);
+  });
 });

@@ -98,6 +98,19 @@ describe('native MCP transport', () => {
     }, 'native')
   })
 
+  it('dispatches omitted arguments as an empty object, matching the stdio MCP contract', async () => {
+    const req = request()
+    const res = response()
+    const deps = dependencies()
+    await routeNativeMcp(req, res, {
+      jsonrpc: '2.0', id: 'call-no-arguments', method: 'tools/call', params: { name: 'catalog.search' },
+    }, deps)
+
+    expect(deps.dispatch).toHaveBeenCalledWith(req, res, {
+      jsonrpc: '2.0', id: 'call-no-arguments', method: 'catalog.search', params: {},
+    }, 'native')
+  })
+
   it('rejects disabled tools without dispatching', async () => {
     const deps = dependencies()
     deps.isToolEnabled.mockReturnValue(false)

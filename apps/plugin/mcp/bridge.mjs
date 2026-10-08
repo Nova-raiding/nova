@@ -4051,7 +4051,9 @@ async function handle(request) {
   }
   if (request.method === 'tools/call') {
     const name = request.params?.name
-    const args = request.params?.arguments
+    // MCP CallToolRequest.arguments is optional; omission is an empty object.
+    // Preserve explicit null/scalar/array values so the shape guard rejects them.
+    const args = request.params?.arguments === undefined ? {} : request.params.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
     if (!await ensureManagedCredential()) {

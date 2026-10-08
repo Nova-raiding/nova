@@ -9,8 +9,15 @@ struct Request: Decodable {
     let data: String?
 }
 
-func fail(operation: String? = nil, status: OSStatus? = nil) -> Never {
-    if let operation, let status {
+enum TrustFailure: String {
+    case signingIdentityUnavailable = "helper_signing_identity_unavailable"
+    case signedAncestorInvalid = "helper_signed_ancestor_invalid"
+}
+
+func fail(operation: String? = nil, status: OSStatus? = nil, trust: TrustFailure? = nil) -> Never {
+    if let trust {
+        FileHandle.standardError.write(Data("keychain_trust=\(trust.rawValue)\n".utf8))
+    } else if let operation, let status {
         FileHandle.standardError.write(Data("keychain_osstatus=\(status) operation=\(operation)\n".utf8))
     } else {
         FileHandle.standardError.write(Data("keychain operation failed\n".utf8))
@@ -44,7 +51,7 @@ func validSignedAncestor() -> Bool {
     guard let selfCode = codeForPid(getpid()),
           let selfInfo = signingInformation(selfCode),
           let ownTeam = selfInfo[kSecCodeInfoTeamIdentifier as String] as? String,
-          !ownTeam.isEmpty else { return false }
+          !ownTeam.isEmpty else { fail(trust: .signingIdentityUnavailable) }
     var pid = getppid()
     for _ in 0..<10 {
         guard pid > 1, let code = codeForPid(pid), let info = signingInformation(code) else { return false }
@@ -86,8 +93,8 @@ guard input.count <= 1024 * 1024,
       let request = try? JSONDecoder().decode(Request.self, from: input),
       request.service == "com.storenova.merchant-mcp",
       ["read", "read_optional", "write"].contains(request.operation),
-      request.account.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
-      validSignedAncestor() else { fail() }
+      request.account.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { fail() }
+guard validSignedAncestor() else { fail(trust: .signedAncestorInvalid) }
 
 if request.operation == "write" {
     guard let data = request.data?.data(using: .utf8), data.count <= 1024 * 1024 else { fail() }

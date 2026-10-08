@@ -302,7 +302,9 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       else throw Object.assign(new Error('video generation request identity missing'), { code: 'MODEL_USAGE_RECEIPT_IDENTITY_MISSING', providerSucceeded: true })
       const defaults = { modality: 'video' as const, model: billingContext.model, context: billingContext }
       const usage = parseRelayUsage(payload, billingHeaders, defaults)
-      if (usage?.metadata?.usage_observed !== true) return billingContext.settlementVerified
+      // A prior durable settlement can cover a status read that omits usage,
+      // but cannot override new, explicitly contradictory metering evidence.
+      if (usage?.metadata?.usage_observed !== true) return billingContext.settlementVerified && usage?.metadata?.duration_evidence_invalid !== true
         ? { ...parsed, settlementStatus: 'settled' }
         : { status: 'queued', providerJobId: jobId, settlementStatus: 'pending_receipt' }
       const sink = this.options.usageSink

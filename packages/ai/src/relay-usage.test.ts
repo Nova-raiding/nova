@@ -120,6 +120,40 @@ describe('relay usage normalization', () => {
     })
   })
 
+  it.each([
+    ['conflicting aliases', { duration_seconds: 3, output_video_duration: 8 }],
+    ['malformed preferred alias', { duration_seconds: 'invalid', duration: 3 }],
+    ['malformed secondary alias', { duration_seconds: 3, output_video_duration: null }],
+    ['zero secondary alias', { duration_seconds: 3, duration: 0 }],
+    ['negative secondary alias', { duration_seconds: 3, duration: -1 }],
+  ])('blocks video settlement with %s instead of choosing a cheaper duration', async (_label, duration) => {
+    const sink = vi.fn(async () => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = { data: { task_id: 'video-ambiguous-duration', status: 'completed', usage: { ...duration, total_tokens: 10, cost_cny: 0.5 } } }
+    const headers = new Headers({ 'x-request-id': 'video-duration-receipt' })
+    const defaults = { modality: 'video' as const, model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } }
+    const usage = parseRelayUsage(payload, headers, defaults)
+    expect(usage).toMatchObject({
+      providerRequestId: 'video-duration-receipt',
+      totalTokens: 10,
+      costCny: 0.5,
+      metadata: { usage_observed: false, duration_evidence_invalid: true, provider_job_id: 'video-ambiguous-duration' },
+    })
+    expect(usage?.metadata).not.toHaveProperty('duration_seconds')
+    expect(usage?.metadata).not.toHaveProperty('duration_evidence')
+    await expect(emitRelayUsage(sink, payload, headers, defaults)).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage', providerRequestId: 'video-duration-receipt',
+    })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('accepts numerically equal provider duration aliases without using the requested duration', () => {
+    const usage = parseRelayUsage({ usage: { duration_seconds: '3.5', duration: 3.5, output_video_duration: '3.50' } },
+      new Headers({ 'x-request-id': 'video-consistent-duration' }),
+      { modality: 'video', model: 'video-v1', context: { preauthorizationDurationSeconds: 5 } })
+    expect(usage?.metadata).toMatchObject({ usage_observed: true, duration_seconds: 3.5, duration_evidence: 'provider_usage', preauthorization_duration_seconds: 5 })
+    expect(usage?.metadata).not.toHaveProperty('duration_evidence_invalid')
+  })
+
   it('rejects accepted-only video jobs as observed usage', async () => {
     await expect(emitRelayUsage(
       () => ({ recorded: true, costEvidence: true }),

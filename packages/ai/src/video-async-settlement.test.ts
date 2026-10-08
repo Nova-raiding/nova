@@ -34,6 +34,20 @@ describe('asynchronous video actual usage settlement', () => {
     expect(f.sink).not.toHaveBeenCalled()
     expect(await f.generator.getStatus('job-a', { ...context!, settlementVerified: true })).toMatchObject({ status: 'completed', settlementStatus: 'settled' })
   })
+  it.each([
+    { duration_seconds: 3, output_video_duration: 8 },
+    { duration_seconds: 'invalid', duration: 3 },
+  ])('keeps contradictory duration evidence pending despite a previously verified settlement: %j', async duration => {
+    const f = fixture()
+    f.setStatus({ id: 'job-a', status: 'completed', video_url: 'https://cdn.example/a.mp4', usage: { ...duration, cost_cny: 0.5 } })
+    for (const settlementVerified of [false, true]) {
+      await expect(f.generator.getStatus('job-a', { ...usageContext, providerJobId: 'job-a', providerRequestId: 'generation-a', model: 'video-model', settlementVerified })).resolves.toEqual({
+        status: 'queued', providerJobId: 'job-a', settlementStatus: 'pending_receipt',
+      })
+    }
+    expect(f.sink).not.toHaveBeenCalled()
+    expect(f.calls).toEqual(['GET', 'GET'])
+  })
   it('retains provider-success semantics if accepted-job persistence fails', async () => {
     const f = fixture()
     await expect(f.generator.generate({ prompt: 'test', output: 'rendering', context: {}, usageContext, onAccepted: async () => { throw new Error('durability unavailable') } })).rejects.toMatchObject({ providerSucceeded: true, reconciliationRequired: true, providerJobId: 'job-a' })

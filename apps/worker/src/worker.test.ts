@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -1591,6 +1592,61 @@ describe('knowledge embedding worker API contract', () => {
  * liveness on its own cadence instead of relying on cycle completion.
  */
 describe('worker ready file heartbeat', () => {
+  it('publishes complete markers to a concurrent process without an empty truncate window', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-marker-atomic-'))
+    const marker = join(directory, 'ready')
+    await writeWorkerReadyMarker(marker, JSON.stringify({ sequence: 0 }))
+    const readerCode = `
+      const fs = require('node:fs');
+      let checked = 0, invalid = 0;
+      const sequences = new Set();
+      console.log('READY');
+      const deadline = Date.now() + 1500;
+      while (Date.now() < deadline) {
+        checked++;
+        try { sequences.add(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).sequence); }
+        catch { invalid++; }
+      }
+      console.log(JSON.stringify({ checked, invalid, sequences: sequences.size }));
+    `
+    const child = spawn(process.execPath, ['-e', readerCode, marker], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let output = ''
+    let signalReady: () => void = () => undefined
+    const ready = new Promise<void>(resolve => { signalReady = resolve })
+    child.stdout.on('data', data => { output += String(data); if (output.includes('READY\n')) signalReady() })
+    const exited = new Promise<number | null>((resolve, reject) => { child.once('close', resolve); child.once('error', reject) })
+    const timeout = setTimeout(() => child.kill('SIGTERM'), 10_000)
+    try {
+      await Promise.race([ready, exited.then(() => { throw new Error('marker observer exited before readiness') })])
+      for (let sequence = 1; sequence <= 150; sequence++) await writeWorkerReadyMarker(marker, JSON.stringify({ sequence }))
+      expect(await exited).toBe(0)
+      const observed = JSON.parse(output.trim().split('\n').at(-1)!) as { checked: number; invalid: number; sequences: number }
+      expect(observed.checked).toBeGreaterThan(0)
+      expect(observed.sequences).toBeGreaterThan(1)
+      expect(observed.invalid).toBe(0)
+      expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ sequence: 150 })
+      expect(await readdir(directory)).toEqual(['ready'])
+    } finally {
+      clearTimeout(timeout)
+      if (child.exitCode === null) { child.kill('SIGTERM'); await exited }
+      await rm(directory, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  it('cleans only its temporary marker after a rename failure and retains the original error', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'worker-marker-rename-failure-'))
+    const marker = join(directory, 'ready')
+    // A directory cannot be replaced with the marker file; nothing inside it
+    // belongs to the writer, so the failed rename must leave it untouched.
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(marker)
+    await writeFile(join(marker, 'preserve'), 'owned fixture sentinel')
+    try {
+      await expect(writeWorkerReadyMarker(marker, '{"ready":true}')).rejects.toMatchObject({ syscall: 'rename' })
+      expect(await readdir(directory)).toEqual(['ready'])
+      expect(await readFile(join(marker, 'preserve'), 'utf8')).toBe('owned fixture sentinel')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   const waitFor = async (predicate: () => Promise<boolean>, timeoutMs = 2_000) => {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {

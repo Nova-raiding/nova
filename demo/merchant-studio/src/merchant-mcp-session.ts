@@ -28,14 +28,29 @@ export class MerchantMcpSession {
     issue: () => Promise<MerchantMcpCredentialResponse>,
     invoke: (accessToken: string) => Promise<T>,
   ): Promise<T> {
+    const generation = this.generation
+    const assertCurrent = () => {
+      if (generation !== this.generation) {
+        throw Object.assign(new Error('商家 MCP 会话已变更，请重新发起请求'), { code: 'MCP_SESSION_CHANGED' })
+      }
+    }
+    const invokeCurrent = async (credential: MerchantMcpCredential) => {
+      assertCurrent()
+      const result = await invoke(credential.accessToken)
+      assertCurrent()
+      return result
+    }
     const credential = await this.getCredential(issue)
     try {
-      return await invoke(credential.accessToken)
+      return await invokeCurrent(credential)
     } catch (error) {
+      // Logout/login invalidates the entire old request, including a late
+      // 401. It must never consume or clear a replacement account's bearer.
+      assertCurrent()
       if ((error as { status?: unknown } | undefined)?.status !== 401) throw error
       if (this.credential?.accessToken === credential.accessToken) this.credential = undefined
       const renewed = await this.getCredential(issue)
-      return invoke(renewed.accessToken)
+      return invokeCurrent(renewed)
     }
   }
 

@@ -208,6 +208,25 @@ export interface ApiError extends Error {
 }
 
 let authExpired = false
+let merchantAuthGeneration = 0
+let pendingMerchantCookieMutation: Promise<void> = Promise.resolve()
+
+function assertMerchantAuthGeneration(generation: number) {
+  if (generation !== merchantAuthGeneration) {
+    throw Object.assign(new Error('商家 MCP 会话已变更，请重新发起请求'), { code: 'MCP_SESSION_CHANGED' })
+  }
+}
+
+function mutateMerchantCookie<T>(generation: number, mutation: () => Promise<T>): Promise<T> {
+  const pending = pendingMerchantCookieMutation.then(() => {
+    assertMerchantAuthGeneration(generation)
+    return mutation()
+  })
+  // Serialize actual cookie-changing HTTP responses, including their headers.
+  // A failed mutation still releases the barrier; its caller keeps the error.
+  pendingMerchantCookieMutation = pending.then(() => undefined, () => undefined)
+  return pending
+}
 const merchantMcpSession = new MerchantMcpSession()
 const workspaceMcpSessions = new Map<string, MerchantMcpSession>()
 let pendingMcpIssuance: Promise<void> = Promise.resolve()
@@ -1034,18 +1053,21 @@ export function describeApiError(error: unknown) {
 }
 
 export async function loginMerchantAccount(baseUrl: string, input: { login: string; password: string }): Promise<MerchantAuthAccount> {
+  const generation = ++merchantAuthGeneration
   authExpired = false
   merchantMcpSession.clear()
   clearWorkspaceMcpSessions()
-  const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
+  const result = await mutateMerchantCookie(generation, () => requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ login: input.login.trim(), password: input.password, account_type: 'merchant' }),
-  })
+  }))
+  assertMerchantAuthGeneration(generation)
   if (!result.account || result.account.accountType !== 'merchant') {
     const error = new Error('平台账号不能登录商家后台') as ApiError
     error.code = 'AUTH_MERCHANT_ACCOUNT_REQUIRED'
     throw error
   }
+  authExpired = false
   return result.account
 }
 
@@ -1068,18 +1090,21 @@ export async function fetchMerchantSession(baseUrl: string): Promise<MerchantAut
 }
 
 export async function logoutMerchantAccount(baseUrl: string): Promise<void> {
-  await Promise.all([...workspaceMcpSessions.values()].map(session => session.revoke(refreshToken => requestApi<{ revoked: boolean }>(baseUrl, '/v1/auth/mcp-token/revoke', {
-    method: 'POST', body: JSON.stringify({ refresh_token: refreshToken }),
-  }))))
+  const generation = ++merchantAuthGeneration
+  const sessions = [merchantMcpSession, ...workspaceMcpSessions.values()]
+  // Detach the old workspace map before asynchronous revocation. Each revoke
+  // captures its old refresh token and clears synchronously before awaiting.
   workspaceMcpSessions.clear()
-  await merchantMcpSession.revoke(refreshToken => requestApi<{ revoked: boolean }>(baseUrl, '/v1/auth/mcp-token/revoke', {
+  await Promise.all(sessions.map(session => session.revoke(refreshToken => requestApi<{ revoked: boolean }>(baseUrl, '/v1/auth/mcp-token/revoke', {
     method: 'POST',
     body: JSON.stringify({ refresh_token: refreshToken }),
-  }))
-  await requestApi<{ logged_out: boolean }>(baseUrl, '/v1/auth/logout', {
+  }))))
+  assertMerchantAuthGeneration(generation)
+  await mutateMerchantCookie(generation, () => requestApi<{ logged_out: boolean }>(baseUrl, '/v1/auth/logout', {
     method: 'POST',
     body: '{}',
-  })
+  }))
+  assertMerchantAuthGeneration(generation)
 }
 
 export async function changeMerchantPassword(

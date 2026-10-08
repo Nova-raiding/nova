@@ -13,11 +13,17 @@ const files = [
   "src/hooks/alertPollingBoundary.test.tsx",
   "src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx",
   "src/pages/CustomerDeliveryPage.test.tsx",
+  "src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts",
   "src/pages/customer-delivery-workspace-race.test.tsx",
 ];
 
 for (const file of files) {
-  const result = spawnSync(process.execPath, [vitest, "run", "--pool=threads", "--no-file-parallelism", file], {
+  // This real Chromium/Vite harness compiles the page on its first navigation.
+  // Keep its tenant/permission assertions in the browser lane and give each
+  // navigation a bounded browser budget instead of the five-second unit limit.
+  const browserBudget = file === "src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts"
+    ? ["--testTimeout=30000"] : [];
+  const result = spawnSync(process.execPath, [vitest, "run", "--pool=threads", "--no-file-parallelism", ...browserBudget, file], {
     stdio: "inherit",
     env: process.env,
   });

@@ -60,7 +60,9 @@ x-worker-common: &worker-common
   logging: *default-logging
   stop_grace_period: 45s
   healthcheck:
-    test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
+    # The loop refreshes mtime every 30s during long work; a stale marker must
+    # fail even when PID 1 survives. Match the Kubernetes two-minute window.
+    test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && find /tmp/merchant-worker-$${WORKER_ROLE}-ready -mmin -2 -print -quit | grep -q . && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
     interval: 5s
     timeout: 3s
     retries: 12

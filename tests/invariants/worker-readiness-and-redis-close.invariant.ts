@@ -107,12 +107,12 @@ const mutations: InvariantMutation[] = [
     chokepoint: 'apps/worker/src/main.ts',
     chokepointSymbol: 'readyMarkerRefreshAllowed',
     file: 'apps/worker/src/main.ts',
-    find: `if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle',`,
-    replace: `if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle',`,
+    find: `if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeWorkerReadyMarker(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle',`,
+    replace: `if (!scannerHeartbeat) await writeWorkerReadyMarker(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle',`,
     evidence: 'apps/worker/src/worker-readiness-and-redis-close.invariant.test.ts',
     overRejection: {
-      find: 'if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeFile(readyFile,',
-      replace: 'if (false) await writeFile(readyFile,',
+      find: 'if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeWorkerReadyMarker(readyFile,',
+      replace: 'if (false) await writeWorkerReadyMarker(readyFile,',
       why: 'never publishing the marker is the mirror of always publishing it: a healthy worker would be restarted forever, so the evidence has to fail when the marker stops being written at all',
     },
     evidenceFailsWith: MARKER_DOES_NOT_TRACK_PROGRESS,
@@ -120,8 +120,8 @@ const mutations: InvariantMutation[] = [
       callers: ['apps/worker/src/main.ts'],
       noSecondImplementation: [
         {
-          pattern: 'writeFile\\(readyFile',
-          sample: "await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle'",
+          pattern: '(?:writeFile|writeWorkerReadyMarker)\\(readyFile',
+          sample: "await writeWorkerReadyMarker(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle'",
           // `worker.test.ts` writes the marker as a *fixture* - it sets the file
           // up to drive the heartbeat's ENOENT and `utimes` behaviour - and does
           // not decide liveness, so it is named here rather than left to fail as

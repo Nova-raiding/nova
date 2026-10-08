@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
-import { unlink, utimes, writeFile } from 'node:fs/promises'
+import { open, rename, unlink, utimes } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { Pool, type PoolConfig } from 'pg'
 import type { RedisClientType } from 'redis'
@@ -406,6 +406,26 @@ const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTy
 export const NON_SCAN_EVENT_TYPES: readonly string[] = [...new Set(
   (['sync', 'generation', 'publish', 'reconcile'] as const).flatMap(role => workerRouting[role].eventTypes),
 )]
+
+/** Publish a complete progress marker without exposing writeFile's truncate
+ * window to concurrent health probes. This remains a transient readiness hint,
+ * so no durable fsync or business-data write is involved. */
+export async function writeWorkerReadyMarker(readyFile: string, contents: string): Promise<void> {
+  const temporaryPath = `${readyFile}.${process.pid}.${randomUUID()}.tmp`
+  // If exclusive creation fails, the path is not ours and must not be removed.
+  const temporaryFile = await open(temporaryPath, 'wx', 0o600)
+  try {
+    await temporaryFile.writeFile(contents)
+    await temporaryFile.close()
+    await rename(temporaryPath, readyFile)
+  } catch (error) {
+    // The unique temporary path belongs only to this write. Cleanup must never
+    // replace the original write/rename failure or touch the published marker.
+    await temporaryFile.close().catch(() => undefined)
+    await unlink(temporaryPath).catch(() => undefined)
+    throw error
+  }
+}
 
 /**
  * Keeps the ready file's modification time inside the probe window while the
@@ -3178,7 +3198,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
           // stay revoked; it *is* a fallible probe of the next iteration, so a
           // single failure must not suppress one - see
           // `READY_MARKER_TOLERATED_FAILURES`.
-          if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle', quotaAdmission: quotaConnection.mode, migrationVersion: dependencyState.migrationVersion, apiReady: dependencyState.apiReady }))
+          if (!scannerHeartbeat && readyMarkerRefreshAllowed(consecutiveIterationFailures)) await writeWorkerReadyMarker(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'idle', quotaAdmission: quotaConnection.mode, migrationVersion: dependencyState.migrationVersion, apiReady: dependencyState.apiReady }))
         }
         const workspaces = config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
         const result = config.role === 'automation'
@@ -3299,7 +3319,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
         // is the one piece of evidence that says the loop is draining.
         requireCommercialNotificationPollSuccess(result as unknown as Parameters<typeof requireCommercialNotificationPollSuccess>[0])
         consecutiveIterationFailures = 0
-        if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
+        if (!scannerHeartbeat) await writeWorkerReadyMarker(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
         // Only aggregate counters reach the endpoint: `workspaces` and the
         // per-tenant reconciliation summaries stay in the log line.
         workerMetrics.recordPollSuccess({ startedAtMs: startedAt, finishedAtMs: Date.now(), result })

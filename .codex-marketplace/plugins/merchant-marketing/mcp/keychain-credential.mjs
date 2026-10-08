@@ -20,6 +20,8 @@ export function keychainHelperFailureReason(result, operation) {
   const stderr = typeof result?.stderr === 'string' ? result.stderr : ''
   const statusMatch = stderr.match(/^keychain_osstatus=(-?\d+) operation=(read|read_optional|write)\n?$/u)
   if (statusMatch && statusMatch[2] === safeOperation) return `keychain_osstatus=${statusMatch[1]} operation=${safeOperation}`
+  const trustMatch = stderr.match(/^keychain_trust=(helper_signing_identity_unavailable|helper_signed_ancestor_invalid)\n?$/u)
+  if (trustMatch) return trustMatch[1]
   if (result?.error) return `helper_start_failed operation=${safeOperation}`
   return `helper_exit=${Number.isInteger(result?.status) ? result.status : 'unknown'}`
 }

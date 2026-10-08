@@ -252,14 +252,22 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // responses `output_video_duration`) for the provider-observed duration.
   // Treat these as equivalent provider evidence; they are not the request
   // estimate and must remain distinct from preauthorizationDurationSeconds.
-  const parsedProviderDurationSeconds = firstNumber(
+  const rawProviderDurations = [
     usage?.duration_seconds,
     usage?.durationSeconds,
     usage?.duration,
     usage?.output_video_duration,
     usage?.outputVideoDuration,
-  )
-  const providerDurationSeconds = parsedProviderDurationSeconds !== undefined && parsedProviderDurationSeconds > 0 ? parsedProviderDurationSeconds : undefined
+  ].filter(value => value !== undefined)
+  const parsedProviderDurations = rawProviderDurations.map(numberFrom)
+  const parsedProviderDurationSeconds = firstNumber(...rawProviderDurations)
+  // These aliases describe the same billed duration. A malformed explicit
+  // field or conflicting value cannot be skipped in favor of a cheaper
+  // alias (or token count), even when the provider also reports actual cost.
+  // Compare parsed numbers so "3.50" and 3.5 remain equivalent evidence.
+  const providerDurationEvidenceInvalid = defaults.modality === 'video'
+    && parsedProviderDurations.some(value => value === undefined || value <= 0 || value !== parsedProviderDurationSeconds)
+  const providerDurationSeconds = !providerDurationEvidenceInvalid && parsedProviderDurationSeconds !== undefined && parsedProviderDurationSeconds > 0 ? parsedProviderDurationSeconds : undefined
   // Artifact arrays may identify a body request ID, but never prove billed
   // image units by themselves.
   const videoEvidenceNode = data ?? result ?? nestedData ?? root
@@ -282,9 +290,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // job reconcilable even when its usage cannot be settled locally.
   const videoJobId = defaults.modality === 'video' && videoRequestAccepted ? explicitVideoJobIdValue ?? statusBoundVideoIdValue : undefined
   const imageModality = defaults.modality === 'image' || defaults.modality === 'image_edit'
-  const usageObserved = imageModality
+  const usageObserved = !providerDurationEvidenceInvalid && (imageModality
     ? rawOutputImageCount !== undefined && reportedOutputImageCountValid && reportedOutputImageCount !== undefined && reportedOutputImageCount > 0
-    : inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined
+    : inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined)
   const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
@@ -314,6 +322,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
       ...(imageModality && observedArtifactCountValid ? { observed_artifact_count: observedArtifactCount } : {}),
       ...(imageModality && imageArtifactCountMismatch ? { artifact_count_mismatch: true } : {}),
       ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),
+      ...(providerDurationEvidenceInvalid ? { duration_evidence_invalid: true } : {}),
       ...(providerDurationSeconds !== undefined ? { duration_seconds: providerDurationSeconds, duration_evidence: 'provider_usage' } : {}),
       ...(preauthorizationDurationSeconds ? { preauthorization_duration_seconds: preauthorizationDurationSeconds, preauthorization_estimate: true } : {}),
       ...(typeof root.id === 'string' && root.id.trim() ? { provider_response_id: root.id.trim() } : {}),

@@ -23,6 +23,15 @@ describe('macOS keychain credential', () => {
     expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=write\n' }, 'read')).toBe('helper_exit=1')
     expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: '' }, 'read')).toBe('helper_timeout operation=read')
   })
+  it('reports only allowlisted native trust failures without reflecting stderr', () => {
+    for (const reason of ['helper_signing_identity_unavailable', 'helper_signed_ancestor_invalid']) {
+      expect(keychainHelperFailureReason({ status: 1, stderr: `keychain_trust=${reason}\n` }, 'read')).toBe(reason)
+      expect(keychainHelperFailureReason({ status: 1, stderr: `keychain_trust=${reason}\naccess_token=never-print\n` }, 'read')).toBe('helper_exit=1')
+    }
+    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_trust=access_token=never-print\n' }, 'read')).toBe('helper_exit=1')
+    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_trust=helper_signing_identity_unavailable\nextra\n' }, 'read')).toBe('helper_exit=1')
+    expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: 'keychain_trust=helper_signed_ancestor_invalid\n' }, 'read')).toBe('helper_timeout operation=read')
+  })
   it('fails closed when the native helper caller has no accepted signed ancestor', () => {
     const bundle = { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
       access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }

@@ -93,15 +93,17 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (options.expectedProfile && value.profile !== options.expectedProfile) errors.push(`profile must match ${options.expectedProfile}`)
-  if (!value.profile || !(value.profile in minimums)) errors.push('profile must be no_load, pilot_50, wave_100, wave_250 or target_500')
+  // JSON profile names must select our own threshold table, never Object.prototype.
+  const loadProfile = typeof value.profile === 'string' && Object.hasOwn(minimums, value.profile) ? value.profile as Exclude<Profile, 'no_load'> : undefined
+  if (!loadProfile) errors.push('profile must be no_load, pilot_50, wave_100, wave_250 or target_500')
   for (const field of ['started_at', 'ended_at'] as const) if (!isIsoInstant(value[field])) errors.push(`${field} must be an ISO instant`)
   if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at) && Date.parse(value.ended_at) < Date.parse(value.started_at)) errors.push('ended_at must not be before started_at')
   const metrics = value.metrics
   if (!metrics || typeof metrics !== 'object') return [...errors, 'metrics is required']
   for (const metric of requiredMetrics) if (typeof metrics[metric] !== 'number' || !Number.isFinite(metrics[metric])) errors.push(`metrics.${metric} must be a finite number`)
   for (const [metric, amount] of Object.entries(metrics)) if (typeof amount === 'number' && Number.isFinite(amount) && amount < 0) errors.push(`metrics.${metric} must not be negative`)
-  if (value.profile && minimums[value.profile]) for (const [metric, minimum] of Object.entries(minimums[value.profile])) if (typeof metrics[metric] === 'number' && metrics[metric] < minimum) errors.push(`metrics.${metric} is below ${value.profile} threshold ${minimum}`)
-  if (value.profile && typeof metrics.p95_ms === 'number' && metrics.p95_ms > p95Budgets[value.profile]) errors.push(`metrics.p95_ms exceeds ${value.profile} budget ${p95Budgets[value.profile]}`)
+  if (loadProfile) for (const [metric, minimum] of Object.entries(minimums[loadProfile])) if (typeof metrics[metric] === 'number' && metrics[metric] < minimum) errors.push(`metrics.${metric} is below ${value.profile} threshold ${minimum}`)
+  if (loadProfile && typeof metrics.p95_ms === 'number' && metrics.p95_ms > p95Budgets[loadProfile]) errors.push(`metrics.p95_ms exceeds ${value.profile} budget ${p95Budgets[loadProfile]}`)
   if (typeof metrics.p95_ms === 'number' && typeof metrics.p99_ms === 'number' && metrics.p99_ms < metrics.p95_ms) errors.push('metrics.p99_ms must be greater than or equal to metrics.p95_ms')
   if (metrics.error_count !== 0) errors.push('metrics.error_count must be 0')
   if (metrics.duplicate_writes !== 0) errors.push('metrics.duplicate_writes must be 0')
@@ -133,6 +135,10 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
       if (expiresAt <= now) errors.push('capacity evidence is expired')
     }
 
+    // Match the no-load/production evidence clock-skew allowance; a future
+    // run cannot become real capacity evidence just by declaring zero mocks.
+    const now = (options.now ?? new Date()).getTime()
+    if (isIsoInstant(value.ended_at) && Date.parse(value.ended_at) > now + 300_000) errors.push('cloud capacity measurements must not be future dated')
     const duration = value.duration
     if (!duration || typeof duration !== 'object') errors.push('duration is required')
     else {
@@ -142,6 +148,14 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
       if (typeof duration.sustained_minutes === 'number' && duration.sustained_minutes !== metrics.sustained_duration_minutes) errors.push('duration.sustained_minutes must match metrics.sustained_duration_minutes')
       if (typeof duration.burst_seconds === 'number' && duration.burst_seconds !== metrics.burst_duration_seconds) errors.push('duration.burst_seconds must match metrics.burst_duration_seconds')
       if (typeof duration.stability_hours === 'number' && duration.stability_hours !== metrics.stability_hours) errors.push('duration.stability_hours must match metrics.stability_hours')
+      if (isIsoInstant(value.started_at) && isIsoInstant(value.ended_at)) {
+        const intervalMs = Date.parse(value.ended_at) - Date.parse(value.started_at)
+        // Phases may overlap; each measured duration must fit independently.
+        for (const [field, unitMs] of [['sustained_minutes', 60_000], ['burst_seconds', 1000], ['stability_hours', 3_600_000]] as const) {
+          const amount = duration[field]
+          if (typeof amount === 'number' && Number.isFinite(amount) && amount * unitMs > intervalMs) errors.push(`duration.${field} exceeds the measurement interval`)
+        }
+      }
     }
 
     const tenant = value.tenant

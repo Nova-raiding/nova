@@ -71,6 +71,25 @@ describe('capacity evidence gate', () => {
     ]))
   })
   it('accepts a complete real-cloud pilot report', () => expect(validateCapacityEvidence(base, { requireCloudGate: true })).toEqual([]))
+  it.each(['toString', 'constructor', '__proto__', 'hasOwnProperty'])('rejects inherited capacity profile %s instead of bypassing thresholds', profile => {
+    const errors = validateCapacityEvidence({ ...base, profile }, { requireCloudGate: true })
+    expect(errors).toContain('profile must be no_load, pilot_50, wave_100, wave_250 or target_500')
+  })
+  it('rejects future cloud measurements while allowing the bounded clock skew', () => {
+    const future = { ...base, started_at: '2026-08-25T00:00:00Z', ended_at: '2026-08-25T06:00:00Z', sign_off: { ...base.sign_off, verified_at: '2026-08-25T06:00:00Z' } }
+    const now = new Date('2026-08-24T00:00:00Z')
+    expect(validateCapacityEvidence(future, { requireCloudGate: true, now })).toContain('cloud capacity measurements must not be future dated')
+    expect(validateCapacityEvidence(base, { requireCloudGate: true, now: new Date('2026-08-23T05:55:00Z') })).toEqual([])
+  })
+  it('rejects cloud duration claims longer than the recorded measurement window', () => {
+    const value = { ...base, ended_at: '2026-08-23T00:15:00Z', sign_off: { ...base.sign_off, verified_at: '2026-08-23T00:15:00Z' } }
+    expect(validateCapacityEvidence(value, { requireCloudGate: true })).toEqual(expect.arrayContaining([
+      'duration.sustained_minutes exceeds the measurement interval',
+      'duration.stability_hours exceeds the measurement interval',
+    ]))
+    const burst = { ...base, duration: { ...base.duration, burst_seconds: 21_601 }, metrics: { ...base.metrics, burst_duration_seconds: 21_601 } }
+    expect(validateCapacityEvidence(burst, { requireCloudGate: true })).toContain('duration.burst_seconds exceeds the measurement interval')
+  })
   it('rejects a report that does not meet the target profile', () => expect(validateCapacityEvidence({ ...base, profile: 'target_500' }, { requireCloudGate: true }).some(error => error.includes('workspaces'))).toBe(true))
   it('accepts the intermediate wave profiles when their thresholds are met', () => {
     expect(validateCapacityEvidence({ ...base, profile: 'wave_100', tenant: { ...base.tenant, workspace_count: 100 }, metrics: { ...base.metrics, workspaces: 100, client_connections: 300, sustained_rps: 60, burst_rps: 120, async_jobs_per_minute: 100 } }, { requireCloudGate: true })).toEqual([])
