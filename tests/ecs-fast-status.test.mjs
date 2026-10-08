@@ -63,6 +63,18 @@ test('untouched database and Redis tag references are not application update blo
   assert.deepEqual(assess(value), [])
 })
 
+test('an exact content-addressed local image ID is pinned, but mutable refs are not', () => {
+  const value = snapshot()
+  const gateway = value.services.find(service => service.service === 'pilot-gateway')
+  gateway.image = `sha256:${'c'.repeat(64)}`
+  gateway.image_id = gateway.image
+  assert.deepEqual(assess(value), [])
+  gateway.image = 'pilot-gateway:latest'
+  assert.deepEqual(assess(value), ['image_not_pinned:pilot-gateway'])
+  gateway.image = `sha256:${'d'.repeat(64)}`
+  assert.deepEqual(assess(value), ['image_not_pinned:pilot-gateway'])
+})
+
 test('isolated candidate sidecars are excluded from the formal demo inventory', () => {
   assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-api-1'), true)
   assert.equal(isManagedDemoContainerName('merchant-demo-85575f9c-worker-scan-1'), true)
@@ -77,6 +89,8 @@ test('fast status keeps liveness and readiness probes separate', () => {
   // the liveness endpoint is 200; the report must not collapse them into one
   // boolean health result.
   assert.match(source, /https:\/\/yxsona\.com\/api\/readyz/u)
+  assert.match(source, /DOCKER_CALL_TIMEOUT_SECONDS=45/u)
+  assert.match(source, /timeout=DOCKER_CALL_TIMEOUT_SECONDS/u)
   assert.match(source, /https:\/\/ops\.yxsona\.com\/healthz/u)
   assert.match(source, /body\.data\?\.ready \?\? body\.data\?\.status === 'ok'/u)
   assert.match(source, /probe\.status !== 200 \|\| !probe\.ready/u)

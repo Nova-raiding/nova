@@ -11,7 +11,9 @@ export function assess(snapshot) {
   if (!snapshot.services.length) blockers.push('live_project_missing')
   for (const service of snapshot.services) {
     if (service.state !== 'running' || service.health !== 'healthy') blockers.push(`service_not_healthy:${service.service}`)
-    if (!/^.+@sha256:[a-f0-9]{64}$/u.test(service.image)) blockers.push(`image_not_pinned:${service.service}`)
+    const repositoryDigest = /^.+@sha256:[a-f0-9]{64}$/u.test(service.image ?? '')
+    const exactLocalImageId = /^sha256:[a-f0-9]{64}$/u.test(service.image ?? '') && service.image === service.image_id
+    if (!repositoryDigest && !exactLocalImageId) blockers.push(`image_not_pinned:${service.service}`)
     if (!/^[a-f0-9]{40}$/u.test(service.git_sha ?? '')) blockers.push(`source_revision_missing:${service.service}`)
   }
   for (const name of ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']) {
@@ -57,8 +59,9 @@ export function inventoryStatus(blockers) {
 const remote = String.raw`
 import json,subprocess,shutil
 
+DOCKER_CALL_TIMEOUT_SECONDS=45
 def docker(*args):
-    return subprocess.check_output(['docker','--host','unix:///var/run/docker.sock',*args],universal_newlines=True,timeout=20)
+    return subprocess.check_output(['docker','--host','unix:///var/run/docker.sock',*args],universal_newlines=True,timeout=DOCKER_CALL_TIMEOUT_SECONDS)
 ids=docker('ps','-q','--filter','label=com.docker.compose.project=merchant-demo-85575f9c').split()
 services=[]
 for cid in ids:
