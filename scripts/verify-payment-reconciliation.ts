@@ -113,6 +113,7 @@ async function main() {
   let disposal: IsolatedFixtureDisposal | undefined
   const checks: Record<string, unknown>[] = []
   const errors: string[] = []
+  let failure: { name: string; code?: string; location?: string } | undefined
   const plans = new Map<string, ProviderPlan>()
   const calls: { kind: string; workspaceId: string; orderId: string; refundRequestId?: string }[] = []
   const gates: Gate[] = []
@@ -277,6 +278,7 @@ async function main() {
     assert.deepEqual(rechargeNonceAfterFailure, [{ payload_hash: rechargeProof.payloadHash }], 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NONCE_NOT_RECORDED')
     const rechargeSecond = await postCallback('billing', 'alipay', rechargeProof)
     const rechargeAfterSuccess = await callbackRechargeSnapshot(callbackRechargeWorkspace)
+    checks.push({ stage, retryStatus: rechargeSecond.status, retryErrorCode: rechargeSecond.envelope.error?.code ?? null, retryOrderState: rechargeAfterSuccess.orders[0]?.state ?? null })
     assert.equal(rechargeSecond.status, 200, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_RETRY_HTTP_FAILED')
     assert.equal(rechargeAfterSuccess.orders[0]?.state, 'paid', 'VERIFY_PAYMENT_CALLBACK_RECHARGE_NOT_PAID')
     assert.equal(rechargeAfterSuccess.balanceFen, 1_100, 'VERIFY_PAYMENT_CALLBACK_RECHARGE_BALANCE_INVALID')
@@ -651,6 +653,17 @@ async function main() {
     checks.push({ stage, audits })
     abort.signal.throwIfAborted()
   } catch (error) {
+    const candidate = error as { name?: unknown; code?: unknown; stack?: unknown }
+    const stackLine = typeof candidate.stack === 'string'
+      ? candidate.stack.split('\n').find(line => line.includes('scripts/verify-payment-reconciliation.ts'))
+      : undefined
+    failure = {
+      name: typeof candidate.name === 'string' && /^[A-Za-z]+Error$/u.test(candidate.name) ? candidate.name : 'Error',
+      ...(typeof candidate.code === 'string' && /^[A-Z0-9_]+$/u.test(candidate.code) ? { code: candidate.code } : {}),
+      ...(stackLine?.match(/verify-payment-reconciliation\.ts:\d+:\d+/u)?.[0]
+        ? { location: stackLine.match(/verify-payment-reconciliation\.ts:\d+:\d+/u)![0] }
+        : {}),
+    }
     errors.push(error instanceof Error && /^VERIFY_PAYMENT_[A-Z_]+$/u.test(error.message) ? error.message : `VERIFY_PAYMENT_FAILED_AT_${stage.toUpperCase()}`)
   } finally {
     for (const gate of gates) gate.completion.release()
@@ -677,7 +690,7 @@ async function main() {
     status: errors.length ? 'failed' : 'passed', errors: [...new Set(errors)], stage,
     surface: 'real API HTTP, signed worker proof, PostgreSQL application-role writes and Redis leases',
     fixtureOnly: true, provider: 'new localhost synthetic status stub; no real payment or refund dispatch',
-    seededRefundHolds: true, realPaymentCalls: 0, realModelCalls: 0, inheritedBusinessEnvironment: false,
+    seededRefundHolds: true, realPaymentCalls: 0, realModelCalls: 0, inheritedBusinessEnvironment: false, ...(failure ? { failure } : {}),
     sharedContainersTouched: false, fingerprintsBefore: before, fingerprintsAfter: after, providerQueries: calls, checks, disposal,
     apiChild: child ? { pid: child.pid ?? null, exitCode: child.exitCode, signalCode: child.signalCode, exited: child.exitCode !== null || child.signalCode !== null } : null,
   }

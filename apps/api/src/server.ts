@@ -1386,6 +1386,15 @@ memoryPersistence.catalogBatchImportIdempotency = memoryCatalogBatchImportIdempo
 memoryPersistence.customerDeliveries = memoryCustomerDeliveries
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
+let paymentCallbackNonceRepositoryForTests: PaymentCallbackNonceRepository | undefined
+
+/** Simulates a nonce recorded by a callback whose order transaction then failed. */
+export function setPaymentCallbackNonceRepositoryForTests(repository?: PaymentCallbackNonceRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('PAYMENT_CALLBACK_NONCE_OVERRIDE_TEST_ONLY')
+  const previous = paymentCallbackNonceRepositoryForTests
+  paymentCallbackNonceRepositoryForTests = repository
+  return () => { paymentCallbackNonceRepositoryForTests = previous }
+}
 
 /** Narrow test seam for exercising the HTTP/MCP failed-image reconciliation
  * boundary with deterministic in-memory repositories. */
@@ -14929,7 +14938,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     // callback cannot burn the nonce that the valid CNY callback must use.
     if (currency !== 'CNY') throw new DomainError('PAYMENT_CALLBACK_CURRENCY_UNSUPPORTED', '支付回调币种必须为 CNY', 400)
     const callbackProof = verifyPaymentCallback(req, { channel: paymentCallbackMatch[2] as RechargeChannel, workspaceId, payload: { order_id: orderId, provider_trade_id: providerTradeId, amount_fen: amountFen, currency, state } })
-    const callbackNonceRepository = persistence.paymentCallbackNonces ?? memoryPaymentCallbackNonces
+    const callbackNonceRepository = paymentCallbackNonceRepositoryForTests ?? persistence.paymentCallbackNonces ?? memoryPaymentCallbackNonces
     const freshCallbackProof = callbackProof ? await callbackNonceRepository.consume({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, ...callbackProof }) : true
     if (callbackProof && !freshCallbackProof && !(await callbackNonceRepository.replayPayloadMatches?.({ workspaceId, channel: paymentCallbackMatch[2] as RechargeChannel, nonce: callbackProof.nonce, payloadHash: callbackProof.payloadHash }) ?? false)) {
       throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被用于不同的签名载荷', 409)
@@ -14941,7 +14950,6 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       if (status.order.paymentProvider !== paymentCallbackMatch[2]) throw new DomainError('PAYMENT_CALLBACK_CHANNEL_MISMATCH', '支付回调渠道与商业订单渠道不一致', 400)
       if (status.order.amountFen !== amountFen || status.order.currency !== 'CNY') throw new DomainError('COMMERCIAL_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与商业订单不可变快照不一致', 400)
       if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-      if (!freshCallbackProof && status.order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且商业订单尚未进入已支付状态', 409)
       const paidAt = callbackProof?.signedAt ?? new Date().toISOString()
       const stablePayloadHash = createHash('sha256').update([paymentCallbackMatch[2], workspaceId, orderId, providerTradeId, amountFen, 'CNY', 'paid'].join('|')).digest('hex')
       try {
@@ -14970,7 +14978,6 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const callbackExpectedFen = Math.round(scaleCnyToFen(order.paymentAmountCny))
       if (callbackExpectedFen !== amountFen) throw new DomainError('SUBSCRIPTION_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订阅订单支付金额快照不一致', 400)
       if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-      if (!freshCallbackProof && order.status !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且订单尚未进入已支付状态', 409)
       if (order.status === 'paid') {
         if (order.providerTradeId !== providerTradeId) throw new DomainError('SUBSCRIPTION_CALLBACK_REPLAY_CONFLICT', '已支付订阅订单不能使用不同的支付交易号重复入账', 409)
         await synchronizeCommercialQuotaFromSubscription(order)
@@ -14991,7 +14998,6 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     if (rechargeOrder.amountFen !== amountFen) throw new DomainError('BILLING_CALLBACK_AMOUNT_MISMATCH', '支付回调金额与订单金额不一致', 400)
     if (isProduction() && rechargeOrder.paymentMode !== 'provider') throw new DomainError('PAYMENT_ORDER_MODE_MISMATCH', '生产环境不能为 fixture 充值订单入账', 409)
     if (state !== 'paid' && state !== 'SUCCESS') return send(res, 200, workspaceId, { accepted: true, order_id: orderId, state }, null, req)
-    if (!freshCallbackProof && rechargeOrder.state !== 'paid') throw new DomainError('PAYMENT_CALLBACK_NONCE_REPLAY', '支付回调 nonce 已被使用，且订单尚未进入已支付状态', 409)
     if (rechargeOrder.state === 'paid' && rechargeOrder.providerTradeId && rechargeOrder.providerTradeId !== providerTradeId) throw new DomainError('PAYMENT_CALLBACK_REPLAY_CONFLICT', '已到账订单不能使用不同的支付交易号重复入账', 409)
     const paid = await markRechargePaid({ workspaceId, orderId, providerTradeId, amountFen, eventSource: 'provider_callback' })
     if (!paid) throw new DomainError('BILLING_ORDER_NOT_FOUND', '支付回调对应的充值订单不存在', 404)
