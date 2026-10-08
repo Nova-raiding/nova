@@ -28,6 +28,7 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'private_trial_payment_',
   'commercial_notify_',
   'commercial_notify_result_',
+  'commercial_tenancy_',
   'probe_app_rls_scope_',
   'probe_authz_audit_',
   'probe_authz_event_scope_',
