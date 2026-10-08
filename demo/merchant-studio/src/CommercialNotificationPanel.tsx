@@ -8,6 +8,10 @@ export function mergeNotificationPage(currentBase: string | undefined, requestBa
   return [...(current ?? []), ...next.filter(item => !current?.some(existing => existing.id === item.id))]
 }
 
+export function notificationReadIntentScope(baseUrl: string, notificationId: string): string {
+  return JSON.stringify([baseUrl, notificationId])
+}
+
 /** Commercial announcements retain publication history; the purchase page rereads current sales. */
 export function CommercialNotificationPanel({ baseUrl, onOpenCatalog }: { baseUrl?: string; onOpenCatalog: (item: CommercialNotification) => void }) {
   const [items, setItems] = useState<CommercialNotification[] | null>(null)
@@ -44,12 +48,13 @@ export function CommercialNotificationPanel({ baseUrl, onOpenCatalog }: { baseUr
   const markRead = async (item: CommercialNotification) => {
     if (!baseUrl || reading || item.read_at) return
     const activeBase = baseUrl
-    let key = intents.current.get(item.id)
+    const intentScope = notificationReadIntentScope(activeBase, item.id)
+    let key = intents.current.get(intentScope)
     if (!key) {
       const storageKey = `store-nova-notification-read:${baseUrl}:${item.id}`
       try { key = sessionStorage.getItem(storageKey) ?? undefined } catch { /* memory retains the intent */ }
       key ??= `notification-read:${crypto.randomUUID()}`
-      intents.current.set(item.id, key)
+      intents.current.set(intentScope, key)
       try { sessionStorage.setItem(storageKey, key) } catch { /* memory retains the intent */ }
     }
     setReading(item.id); setReadErrors(previous => ({ ...previous, [item.id]: '' }))
