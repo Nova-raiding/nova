@@ -13,6 +13,10 @@ describe('catalog spreadsheet source asset authorization', () => {
       throw new DomainError('ASSET_ACCESS_DENIED', 'asset access denied', 403)
     })
     const assetForWorkspace = vi.fn()
+    const scanImportedProductRules = vi.fn(async () => undefined)
+    const persistSnapshotsAndEvent = vi.fn(async () => undefined)
+    const recordOperationAudit = vi.fn(async () => undefined)
+    const rollbackBatchProducts = vi.fn()
     const dependencies = {
       service: { products, importProduct, getActionablePlatformAccount: vi.fn() },
       supportedPlatforms: ['jd'],
@@ -25,10 +29,10 @@ describe('catalog spreadsheet source asset authorization', () => {
       },
       enforceAssetAccess,
       assetForWorkspace,
-      scanImportedProductRules: vi.fn(async () => undefined),
-      persistSnapshotsAndEvent: vi.fn(async () => undefined),
-      recordOperationAudit: vi.fn(async () => undefined),
-      rollbackBatchProducts: vi.fn(),
+      scanImportedProductRules,
+      persistSnapshotsAndEvent,
+      recordOperationAudit,
+      rollbackBatchProducts,
       actor: () => 'fixture-merchant',
     } as unknown as CatalogBatchImportDependencies
 
@@ -36,8 +40,13 @@ describe('catalog spreadsheet source asset authorization', () => {
       .rejects.toMatchObject({ code: 'ASSET_ACCESS_DENIED' })
 
     expect(enforceAssetAccess).toHaveBeenCalledWith('ws_import_boundary', 'asset_other_workspace', 'editor')
+    // Authorization must fail before loading the asset, which is the only path to spreadsheet parsing.
     expect(assetForWorkspace).not.toHaveBeenCalled()
     expect(importProduct).not.toHaveBeenCalled()
+    expect(scanImportedProductRules).not.toHaveBeenCalled()
+    expect(persistSnapshotsAndEvent).not.toHaveBeenCalled()
+    expect(recordOperationAudit).not.toHaveBeenCalled()
+    expect(rollbackBatchProducts).not.toHaveBeenCalled()
     expect(products.size).toBe(0)
   })
 })

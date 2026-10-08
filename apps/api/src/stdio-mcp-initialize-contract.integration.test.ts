@@ -7,7 +7,7 @@ import { server, workspaceMembers } from './server.js'
 type RpcResponse = {
   jsonrpc?: string
   id?: string | number | null
-  result?: { protocolVersion?: string; tools?: Array<{ name: string }> }
+  result?: { protocolVersion?: string; capabilities?: { tools?: Record<string, unknown> }; tools?: Array<{ name: string }> }
   error?: { code: number; message: string }
 }
 
@@ -102,6 +102,9 @@ describe('API and local stdio MCP initialization contract', () => {
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    const childExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
+      child.once('exit', (code, signal) => resolve({ code, signal }))
+    })
 
     try {
       const headers = {
@@ -121,7 +124,11 @@ describe('API and local stdio MCP initialization contract', () => {
       expect(apiInitialize.status).toBe(200)
       const apiResponse = await apiInitialize.json() as RpcResponse
       expect(apiResponse).toMatchObject({
-        jsonrpc: '2.0', id: 0, result: { protocolVersion: PROTOCOL_VERSION, serverInfo: { name: 'merchant-marketing' } },
+        jsonrpc: '2.0', id: 0, result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: {} },
+          serverInfo: { name: 'merchant-marketing' },
+        },
       })
 
       const stdioInitialize = await bridgeRequest(child, {
@@ -129,7 +136,11 @@ describe('API and local stdio MCP initialization contract', () => {
         params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'contract-test', version: '1' } },
       })
       expect(stdioInitialize).toMatchObject({
-        jsonrpc: '2.0', id: 0, result: { protocolVersion: PROTOCOL_VERSION, serverInfo: { name: 'merchant-marketing' } },
+        jsonrpc: '2.0', id: 0, result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: {} },
+          serverInfo: { name: 'merchant-marketing' },
+        },
       })
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`)
@@ -137,9 +148,8 @@ describe('API and local stdio MCP initialization contract', () => {
       expect(listed.error).toBeUndefined()
       expect(listed.result?.tools?.length).toBeGreaterThan(0)
     } finally {
-      const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
-      child.kill()
-      await exited
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+      await childExit
     }
   }, 30_000)
 })

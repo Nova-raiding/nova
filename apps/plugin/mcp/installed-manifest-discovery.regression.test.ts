@@ -65,7 +65,6 @@ describe('installed local stdio manifest tool discovery', () => {
       stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'manifest-regression', version: '1' } } })}\n`)
       stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)
       stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`)
-      stdin.end()
 
       const lines = await responses
       bridge.kill('SIGTERM')

@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
-// Isolated desktop UI evidence only: the harness drops the page's effective
-// read/write authorization. It does not claim to exercise real login, token
-// expiry, API authentication, or database/RLS enforcement.
+// Isolated desktop UI evidence only: this harness toggles an in-memory
+// authorization capability and mocks every MCP response. It verifies the UI
+// hides stale tenant data and disables actions; it is not evidence of real
+// OAuth/login, token expiry, API authentication, or database/RLS enforcement.
 describe("customer delivery session-loss UI boundary", () => {
   let browser: Browser | undefined;
   let vite: ViteDevServer | undefined;

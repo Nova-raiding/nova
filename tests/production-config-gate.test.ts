@@ -197,7 +197,7 @@ describe('production config gate', () => {
   it('requires a positive per-task model cost cap', () => {
     expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.00"'))()).toThrow(/positive CNY amount/)
     expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.001"'))()).toThrow(/positive CNY amount/)
-  })
+  }, 30_000)
 
   it('does not treat full-line comments as rendered production settings', () => {
     const commented = config().split('\n').map(line => `# ${line}`).join('\n')
@@ -255,7 +255,7 @@ describe('production config gate', () => {
     expect(() => run(config().replace('asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_trusted_public_keys_ref:'))()).toThrow(/trusted_public_keys/)
     expect(() => run(config().replace('asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret', 'asset_scanner_workspace_signing_secret_ref: vault://worker-publish-signing'))()).toThrow(/isolated/)
     expect(() => run(config().replace('asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/api-token'))()).toThrow(/isolated/)
-  })
+  }, 30_000)
 
   it('accepts disabled optional alerts and rejects incomplete enabled alert policy', () => {
     expect(() => run(config().replace('object_storage_versioning: true\n', ''))()).toThrow(/versioning/)

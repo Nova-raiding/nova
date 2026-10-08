@@ -50,8 +50,13 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
   const page = await context.newPage()
   const previewRequests = []
   const apiPaths = []
+  const mcpMethods = []
   const pageErrors = []
+  const unexpected404Responses = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('response', (response) => {
+    if (response.status() === 404) unexpected404Responses.push(response.url())
+  })
 
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -63,6 +68,16 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
         persistence: { mode: 'fixture', ready: true },
         setup: { objectStorage: { configured: true } },
       })) })
+    }
+    if (path === '/api/mcp') {
+      const rpc = request.postDataJSON()
+      mcpMethods.push(rpc.method)
+      const result = rpc.method === 'workspace.metrics'
+        ? { riskItems: [], stores: [], productSummary: { total: 0, lowStock: 0, missingImages: 0 }, riskSummary: { total: 0, returned: 0, truncated: false }, taskFunnel: {} }
+        : rpc.method === 'subscription.get'
+          ? { commercial_entitlement: { status: 'unknown' }, legacy_commercial_entitlement: null }
+          : { items: [], total: 0, limit: 50, offset: 0 }
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result })) })
     }
     if (path === '/api/v1/auth/session') {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ account: {
@@ -122,6 +137,7 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
 
     const card = workspace.locator('article').filter({ hasText: '无权限样图.png' })
     await expect(card, `Merchant API requests: ${JSON.stringify(apiPaths)}`).toBeVisible()
+    expect(mcpMethods.length).toBeGreaterThan(0)
     await expect(card.locator('.material-card-open img')).toHaveCount(0)
     await expect(card.locator('.material-card-open svg')).toBeVisible()
     await expect.poll(() => previewRequests.length).toBe(1)
@@ -129,12 +145,14 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
       cookie: 'preview-auth-fixture=same-origin-session',
       accept: 'application/octet-stream',
     })
+    expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
 
     await card.getByRole('button', { name: '查看无权限样图.png详情' }).click()
     const detailPreview = page.locator('.material-detail-preview')
     await expect(detailPreview).toBeVisible()
     await expect(detailPreview.locator('img')).toHaveCount(0)
     await expect(detailPreview.locator('svg')).toBeVisible()
+    expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
     expect(pageErrors).toEqual([])
   } finally {
     await context.close()
