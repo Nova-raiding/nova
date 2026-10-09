@@ -32,6 +32,11 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('脚本技能提供的纯文本创作本身不是商品视频成片')
     expect(skill).toContain('不能把方案、文案、原图、占位组件或任务排队状态说成生成成品')
     expect(skill).toContain('仅有任务 ID、排队状态、文本方案或分镜时')
+    expect(skill).toContain('只有 MCP 返回真实图片附件时才原样展示')
+    expect(skill).toContain('本地 fixture 仅在明确的演示上下文展示')
+    expect(skill).toContain('仅当 MCP 返回真实图片附件时，才将图片原样展示给商家')
+    expect(skill).toContain('仅有排队状态、任务 ID、文本方案或无图片附件时')
+    expect(skill).not.toContain('无论结果来自真实 provider、排队任务还是本地 fixture，都必须把图片直接展示')
     expect(skill).toContain('保留真实查询路径，不重复创建任务')
   })
 
