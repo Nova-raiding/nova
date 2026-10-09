@@ -11090,7 +11090,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const isOpsDomainMethod = OPS_DOMAIN_METHODS.has(method)
   const isCampaignLifecycleMethod = CAMPAIGN_LIFECYCLE_METHODS.has(method)
   if (requestPrincipals.get(req)?.credentialSource === 'mcp_oauth' && method.startsWith('ops.')
-    && !['ops.session', 'ops.members.list', 'ops.member.upsert', 'ops.member.suspend'].includes(method)) {
+    && !['ops.session', 'ops.members.list', 'ops.member.upsert', 'ops.member.suspend', 'ops.audit.list'].includes(method)) {
     throw new DomainError(ERROR_CODES.FORBIDDEN, '商家 OAuth 会话不能访问平台运营工作台', 403)
   }
   if (!isMcpMethod(method) && !isFirstValueMethod && !isOpsDomainMethod && !isCampaignLifecycleMethod) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
