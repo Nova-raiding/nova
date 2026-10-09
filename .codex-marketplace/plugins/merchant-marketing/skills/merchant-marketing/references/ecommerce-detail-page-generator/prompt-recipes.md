@@ -1,6 +1,8 @@
 # Image Prompt Recipes
 
-Use the system `imagegen` skill and built-in `image_gen` by default. Generate a separate text-free base for each module.
+These are prompt-planning and review templates only; they do not generate images. Use them only to prepare the prompt fields for an explicitly authorized Store Nova MCP image request. A production image is generated exclusively through `catalog.image.generate` and the configured Store Nova server-side model relay, after the applicable workspace, product-fact, asset, rights, scan, creative-point, and audit gates pass. Do not select or call a provider from this reference.
+
+Plan a separate text-free base for each approved module. If the MCP tool or relay is unavailable, or a required gate is missing, stop and report the blocker instead of generating through another route.
 
 ## Shared Product Lock
 
@@ -109,8 +111,6 @@ Composition/framing: generous negative space for a short closing line
 Constraints: no promotion badge, price, discount, CTA button, or guarantee unless separately supplied and permitted
 ```
 
-## Platform Restrictions
+## Platform Policy Check
 
-- **TikTok Shop:** do not use these generation recipes for upload-ready listing images. Use real user photos and deterministic crops.
-- **Etsy:** do not create upload-ready synthetic product renderings. Use original actual-item photos; generated imagery may only be labeled concept/reference.
-- **eBay:** prefer actual item photos, especially for used, vintage, collectible, or condition-sensitive products.
+Before treating any image as upload-ready, verify the current official rules for the selected marketplace, region, category, and listing type. Do not apply a blanket synthetic-image permission or prohibition based on this reference. If the current rule cannot be verified, keep the output as an internal concept and mark marketplace eligibility as unconfirmed. For condition-sensitive or one-of-a-kind goods, use authorized photos of the actual item and preserve its real condition.

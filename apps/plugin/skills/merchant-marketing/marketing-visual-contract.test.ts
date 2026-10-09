@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const skillPath = new URL('./SKILL.md', import.meta.url)
@@ -50,7 +51,24 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('从零创作用 `mode=create`')
     expect(skill).toContain('基于已上传素材优化用 `mode=optimize`')
     expect(skill).toContain('未绑定模式（不传 `product_id`）无论 `mode=create` 还是 `mode=optimize`，都必须传用户确认的 `title` 和 `asset.upload` 返回的真实 `asset_ids_json`')
+    expect(skill).toContain('仅在服务端明确启用演示未扫描策略时，独立候选才可使用 `unscanned` 素材，并须明确标注为“演示环境候选、尚未扫描”')
     expect(videoSkill).toContain('仅当 merchant-marketing 主技能已将当前请求路由为可审阅脚本/分镜文本')
     expect(storyboardSkill).toContain('For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text')
+  })
+
+  it('keeps ecommerce image prompt recipes on the Store Nova relay and synchronized with the install mirror', async () => {
+    const recipePath = resolve(process.cwd(), 'apps/plugin/skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md')
+    const mirrorRecipePath = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md')
+    const [recipe, mirrorRecipe] = await Promise.all([
+      readFile(recipePath, 'utf8'),
+      readFile(mirrorRecipePath, 'utf8'),
+    ])
+
+    expect(recipe).toBe(mirrorRecipe)
+    expect(recipe).toContain('prompt-planning and review templates only')
+    expect(recipe).toContain('`catalog.image.generate`')
+    expect(recipe).toContain('Store Nova server-side model relay')
+    expect(recipe).toContain('Do not select or call a provider from this reference')
+    expect(recipe).not.toMatch(/imagegen|image_gen|GPTIMAGE_API_KEY|GPTIMAGE_BASE_URL|third.party provider|外部网关|第三方 API/iu)
   })
 })

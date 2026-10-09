@@ -10,7 +10,7 @@ description: 电商视频脚本创作方法参考；仅在主商家营销技能�
 本技能只提供可审阅的视频脚本与创意策略文本，帮助明确商品表达、品牌调性和待验证假设；不生成或渲染视频，不执行投放、后期制作、平台规则核验或转化数据分析。实际效果以商品事实、当前平台规则和真实实验数据为准。本技能不代表具备成片、投放或分析能力。核心能力包括：
 
 - 多品类商品视频脚本创作（宠物、家居、美妆、数码、服装、食品、健康等）
-- 完整的6阶段视频创作流程（任务启动→需求定义→商品理解→脚本创作→镜头设计→后期优化）
+- 基于商品事实、时间线和镜头连续性的脚本与分镜规划
 - 智能化的视频叙事结构（痛点切入→产品展示→痛点解决）
 - 专业的镜头语言与运镜设计
 - 文化适配与本地化优化
@@ -255,19 +255,17 @@ description: 电商视频脚本创作方法参考；仅在主商家营销技能�
    - 可写字幕、背景音乐、音效建议，不执行编辑、渲染或后期制作
    - 可提出A/B测试假设，不创建实验、不投放、不读取或分析转化数据
 
-### 可选分支
+### 参考资料
 
-- **当商品类型为宠物用品**：参考 [references/video_templates.md](references/video_templates.md) 中的"宠物用品类"模板
-- **当商品类型为智能家居**：参考 [references/video_templates.md](references/video_templates.md) 中的"智能家居类"模板
-- **当商品类型为美妆护肤**：参考 [references/video_templates.md](references/video_templates.md) 中的"美妆护肤类"模板
-- **需要详细的创作指导**：阅读 [references/video_guide.md](references/video_guide.md) 了解完整的6阶段创作流程
+- **需要分镜规划方法**：阅读 [references/video_guide.md](references/video_guide.md)，按商品事实、受众证据、时间线和镜头连续性编写可审阅脚本。
+- **需要脚本结构**：阅读 [references/video_templates.md](references/video_templates.md)，使用通用填空模板；所有商品类型都必须从已确认资料出发。
 - **需要镜头设计指导**：阅读 [references/shot_guide.md](references/shot_guide.md) 了解镜头语言与运镜技巧
 - **需要文化适配指导**：阅读 [references/culture_adaptation.md](references/culture_adaptation.md) 了解文化适配与本地化建议
 
 ## 资源索引
 
-- 视频模板库：见 [references/video_templates.md](references/video_templates.md)（包含8种商品类型的完整视频脚本模板）
-- 创作指南：见 [references/video_guide.md](references/video_guide.md)（电商视频营销创作完整指南）
+- 视频脚本模板：见 [references/video_templates.md](references/video_templates.md)（通用填空结构与逐镜时间线，不含未经核实的商品结论）
+- 脚本与分镜指南：见 [references/video_guide.md](references/video_guide.md)（事实来源、镜头连续性和审核方法）
 - 镜头设计：见 [references/shot_guide.md](references/shot_guide.md)（镜头语言与运镜方式指南）
 - 文化适配：见 [references/culture_adaptation.md](references/culture_adaptation.md)（文化适配与本地化指南）
 
