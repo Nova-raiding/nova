@@ -1,9 +1,58 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleMultimodalMcpMethod } from './mcp-multimodal-handlers.js'
+import { createHash } from 'node:crypto'
+import { handleMultimodalMcpMethod, publicVideoRenderingResult } from './mcp-multimodal-handlers.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import type { MultimodalMcpRuntime } from './server.js'
 
 describe('video.get settlement delivery boundary', () => {
+  it.each([
+    ['clean', { scan_status: 'clean', download_path: '/v1/assets/asset-generic/download' }, undefined],
+    ['pending', { scan_status: 'pending' }, '视频扫描尚未确认通过'],
+  ] as const)('multimodal.generate exposes normalized %s archive readiness', async (scanStatus, expected, warning) => {
+    const product = { id: 'product-a', workspaceId: 'workspace-a' }
+    const dependencies = {
+      workspaceId: 'workspace-a', req: {}, result: (value: unknown) => value,
+      required: (params: Record<string, unknown>, key: string) => String(params[key]),
+      DomainError, ERROR_CODES: { INVALID_REQUEST: 'INVALID_REQUEST' },
+      service: { products: new Map([[product.id, product]]) },
+      enforceProductBrandAccess: vi.fn(async () => {}), canonicalProductReadControl: vi.fn(async () => ({ mode: 'legacy' })),
+      observeLegacyWalletShadow: vi.fn(async () => {}), generationRulePreflight: vi.fn(async () => ({ blocking: false })),
+      requireRuleSafeGenerationText: vi.fn(), requireVideoModelCostPreflight: vi.fn(async () => {}),
+      evaluateStoryboardBeforeRendering: vi.fn(() => ({})), enforceMcpCommercialAccess: vi.fn(async () => ({})),
+      createOneSentenceGenerationRequest: (value: object) => ({ ok: true, value: { ...(value as object), modality: 'video', output: 'rendering' } }),
+      createHash,
+      reserveCreativePointsForModel: vi.fn(async () => null),
+      videoGenerator: { generate: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4' })) },
+      generateOwnedVideo: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4' })),
+      archiveCompletedVideo: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-generic', archiveState: 'archived' })),
+      withOwnedVideoAction: async (_workspaceId: string, _actionId: string, _request: unknown, execute: (beforeDispatch?: () => Promise<void>) => Promise<unknown>) => execute(async () => {}),
+      assetForWorkspace: vi.fn(() => ({ scanStatus })),
+      requestActor: () => 'actor-a', releaseReservedModelPoints: vi.fn(async () => {}), refundPluginWalletDebit: vi.fn(async () => {}),
+      providerSucceededButSettlementPending: () => false, executionContract: () => ({ providerExecuted: true }),
+      persistEvent: vi.fn(async () => {}), randomUUID: () => 'event-a',
+    } as unknown as MultimodalMcpRuntime
+
+    const response = await handleMultimodalMcpMethod('multimodal.generate', {
+      modality: 'video', output: 'rendering', prompt: '商品展示', context_json: JSON.stringify({ brand: { id: 'brand-a', version: '1' }, product: { id: product.id, version: '1' }, rules: [{ id: 'rule-a', version: '1' }] }),
+    }, dependencies) as Record<string, unknown>
+    expect(response).toMatchObject({ asset_id: 'asset-generic', archive_state: 'archived', ...expected })
+    if (warning) expect(response.availability_warning).toContain(warning)
+    else expect(response).not.toHaveProperty('availability_warning')
+    expect(response).not.toHaveProperty('rendering.videoUrl')
+    expect(dependencies.videoGenerator!.generate).not.toHaveBeenCalled()
+    expect(dependencies.generateOwnedVideo).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes archive and scan readiness on generic multimodal rendering without leaking the relay URL', () => {
+    const clean = publicVideoRenderingResult('workspace-a', { status: 'completed', providerJobId: 'job-a', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-a', archiveState: 'archived' }, () => ({ scanStatus: 'clean' }))
+    expect(clean).toMatchObject({ asset_id: 'asset-a', archive_state: 'archived', scan_status: 'clean', download_path: '/v1/assets/asset-a/download', rendering: { status: 'completed', assetId: 'asset-a' } })
+    expect(clean).not.toHaveProperty('rendering.videoUrl')
+
+    const quarantined = publicVideoRenderingResult('workspace-a', { status: 'completed', providerJobId: 'job-b', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-b', archiveState: 'archived' }, () => ({ scanStatus: 'pending' }))
+    expect(quarantined).toMatchObject({ availability_warning: expect.stringContaining('扫描尚未确认通过') })
+    expect(quarantined).not.toHaveProperty('download_path')
+  })
+
   function runtime() {
     const context = { workspaceId: 'workspace-a', actionId: 'video:a', runKey: 'run:a', providerJobId: 'job-a', model: 'video-model', providerRequestId: 'generation-a' }
     const getStatus = vi.fn(async () => ({ status: 'queued', providerJobId: 'job-a', settlementStatus: 'pending_receipt', videoUrl: undefined as string | undefined }))

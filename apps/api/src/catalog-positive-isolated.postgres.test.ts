@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
 import { PostgresBusinessRepository } from '../../../packages/persistence/src/business-repository.js'
-import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, setBusinessRepositoryForTests } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service, setBusinessRepositoryForTests } from './server.js'
 
 const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const runId = process.env.MERCHANT_ISOLATED_POSTGRES_RUN_ID
@@ -63,19 +63,69 @@ describe('isolated catalog API to PostgreSQL readback', () => {
 
       const batch = await call('catalog.import.batch', { draft_only: 'true', products_json: JSON.stringify([
         { platform: 'taobao', local_product_key: 'isolated-batch-a', title: '隔离验收批量商品 A', stock: 1 },
+        {
+          platform: 'taobao', local_product_key: 'isolated-batch-special', remote_id: 'remote-special-001',
+          title: '组合_%! 隔离商品', store_name: '字面_%! 店铺', attributes: { brand: '测试_%! 品牌' },
+          skus: [{ id: 'sku-special-001', name: '特殊字符规格', price: 20, stock: 3 }],
+        },
       ]) })
       expect(batch.error).toBeNull()
-      expect(batch.data!.result).toMatchObject({ atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, count: 1 })
+      expect(batch.data!.result).toMatchObject({ atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, count: 2 })
       const batchId = String(batch.data!.result.products[0].id)
       expect((await repository.get(workspaceId!, 'product', batchId)).payload).toMatchObject({ title: '隔离验收批量商品 A' })
+      const specialId = String(batch.data!.result.products[1].id)
+      expect((await repository.get(workspaceId!, 'product', specialId)).payload).toMatchObject({
+        title: '组合_%! 隔离商品', storeName: '字面_%! 店铺', remoteId: 'remote-special-001',
+        attributes: { brand: '测试_%! 品牌' }, skus: [expect.objectContaining({ id: 'sku-special-001' })],
+      })
       const page = await repository.listProductsPage(workspaceId!, { limit: 20, offset: 0 })
       expect(page.items).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: productId, title: '隔离验收防晒外套' }),
         expect.objectContaining({ id: batchId, title: '隔离验收批量商品 A' }),
+        expect.objectContaining({ id: specialId, title: '组合_%! 隔离商品' }),
       ]))
       const searched = await call('catalog.search', { scope: 'workspace', query: '隔离验收防晒外套' })
       expect(searched.error).toBeNull()
       expect(searched.data!.result.products).toEqual(expect.arrayContaining([expect.objectContaining({ product_id: productId })]))
+
+      // Compare the durable MCP query against the in-memory service fallback
+      // over the exact same isolated fixture. `%`, `_`, and `!` are literal
+      // search characters here; PostgreSQL LIKE must not widen the result.
+      const specialFilters = {
+        scope: 'workspace', query: '组合_%!', platform: 'taobao', store_name: '_%!',
+        brand_name: '_%!', sku_id: 'sku-special-001', remote_product_id: 'remote-special-001',
+      }
+      const fallbackSpecial = service.listProducts(workspaceId!, {
+        query: String(specialFilters.query), platform: 'taobao', storeName: String(specialFilters.store_name),
+        brandName: String(specialFilters.brand_name), skuId: String(specialFilters.sku_id), remoteProductId: String(specialFilters.remote_product_id),
+      })
+      const durableSpecial = await call('catalog.search', { ...specialFilters, limit: '1', offset: '0' })
+      expect(durableSpecial.error).toBeNull()
+      expect(durableSpecial.data!.result.total).toBe(fallbackSpecial.length)
+      expect(durableSpecial.data!.result.products.map((product: { product_id: string }) => product.product_id)).toEqual(fallbackSpecial.map(product => product.id))
+      expect(durableSpecial.data!.result.products.map((product: { product_id: string }) => product.product_id)).toEqual([specialId])
+
+      // Count and page contents must use the same filter set. Exercise a later
+      // page and a timestamp window around the persisted value without relying
+      // on wall-clock sleeps or unrelated workspace data.
+      const fallbackQuery = service.listProducts(workspaceId!, { query: '隔离验收' })
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
+      const durableSecondPage = await call('catalog.search', { scope: 'workspace', query: '隔离验收', limit: '1', offset: '1' })
+      expect(durableSecondPage.error).toBeNull()
+      expect(durableSecondPage.data!.result.total).toBe(fallbackQuery.length)
+      expect(durableSecondPage.data!.result.products.map((product: { product_id: string }) => product.product_id)).toEqual(fallbackQuery.slice(1, 2).map(product => product.id))
+      const specialProduct = page.items.find(product => product.id === specialId) as { updatedAt: string }
+      const dateFrom = new Date(Date.parse(specialProduct.updatedAt) - 1_000).toISOString()
+      const dateTo = new Date(Date.parse(specialProduct.updatedAt) + 1_000).toISOString()
+      const dateFallback = service.listProducts(workspaceId!, { query: '组合_%!', dateFrom, dateTo })
+      const dateBoundary = await call('catalog.search', {
+        scope: 'workspace', query: '组合_%!', date_from: dateFrom,
+        date_to: dateTo, limit: '10', offset: '0',
+      })
+      expect(dateBoundary.error).toBeNull()
+      expect(dateBoundary.data!.result.total).toBe(dateFallback.length)
+      expect(dateBoundary.data!.result.products.map((product: { product_id: string }) => product.product_id)).toEqual(dateFallback.map(product => product.id))
+      expect(dateBoundary.data!.result.products.map((product: { product_id: string }) => product.product_id)).toEqual([specialId])
     } finally {
       setBusinessRepositoryForTests(undefined)
       await pool.end()

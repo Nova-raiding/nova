@@ -19,6 +19,13 @@ function publicVideoArtifactFields(workspaceId: string, rendering: { assetId?: s
   }
 }
 
+export function publicVideoRenderingResult(workspaceId: string, rendering: Awaited<ReturnType<NonNullable<MultimodalMcpRuntime['videoGenerator']>['generate']>>, assetForWorkspace: (workspaceId: string, assetId: string) => { scanStatus?: string }) {
+  return {
+    ...publicVideoArtifactFields(workspaceId, rendering, assetForWorkspace),
+    rendering: userFacingVideoRendering(rendering),
+  }
+}
+
 export async function handleMultimodalMcpMethod(method: string, params: Record<string, unknown>, dependencies: MultimodalMcpRuntime): Promise<unknown> {
   const {
     req, workspaceId, result, observeLegacyWalletShadow, required, DomainError, ERROR_CODES,
@@ -253,7 +260,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         // archive/event boundary; the generic multimodal route must follow the
         // same contract as multimodal.video.request/get and never hand callers
         // an unarchived provider URL.
-        return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
+        return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? publicVideoRenderingResult(workspaceId, rendering, assetForWorkspace) : {}) })
       }
       return request.value.modality === 'video' && request.value.output === 'rendering'
         ? withOwnedVideoAction(workspaceId, walletDebitKey, request.value, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
