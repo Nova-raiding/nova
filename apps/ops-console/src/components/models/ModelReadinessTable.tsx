@@ -61,9 +61,9 @@ export function ModelReadinessTable({ status }: ModelReadinessTableProps) {
           title={`成本与计费组：${costReadiness.ready ? "已就绪" : "阻断"}`}
           description={
             costReadiness.ready
-              ? "成本上限、实际成本证据和当前计费组均已通过门禁。"
+              ? "平台成本上限与各模态成本证据配置门禁已通过。实际调用用量和成本仍须在财务对账中核验；本状态不能替代真实账单回执。"
               : costReadiness.blockers.join("；") ||
-                "实际成本证据、价格快照或当前计费组尚未通过验证。"
+                "平台成本上限或成本证据配置门禁尚未通过；请在财务对账中核验实际账单回执。"
           }
         />
       )}

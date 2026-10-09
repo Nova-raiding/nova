@@ -58,7 +58,7 @@ function assertPublicAddress(address: string, declaredFamily?: number): PinnedAd
 
 function parseSource(sourceUrl: string): { url: URL; hostname: string; literal?: PinnedAddress } {
   if (typeof sourceUrl !== 'string' || !sourceUrl.trim() || sourceUrl.length > 2000
-    || /[\u0000-\u0020\u007f-\u009f\\#]/u.test(sourceUrl) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/iu.test(sourceUrl)) throw invalidUrl()
+    || /[\u0000-\u0020\u007f-\u009f\p{Cf}\\#]/u.test(sourceUrl) || /%(?:0[0-9a-f]|1[0-9a-f]|7f|5c)/iu.test(sourceUrl)) throw invalidUrl()
   let url: URL
   try { url = new URL(sourceUrl) } catch { throw invalidUrl() }
   const authority = sourceUrl.slice(sourceUrl.indexOf('//') + 2).split(/[/?#]/u, 1)[0] ?? ''

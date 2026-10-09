@@ -14,6 +14,10 @@ interface FinanceSearchSectionProps {
 }
 type Filters = { text?: string; workspaceIds?: string; kinds?: FinanceRecordKind[]; statuses?: string[] };
 
+export function parseFinanceWorkspaceIdFilter(value?: string): string[] | undefined {
+  return value?.split(/[\s,，]+/).map(workspaceId => workspaceId.trim()).filter(Boolean);
+}
+
 const kindLabel: Record<FinanceRecordKind, string> = {
   recharge_order: "充值订单", wallet_transaction: "钱包流水", subscription_order: "订阅订单", usage_entry: "任务额度", model_usage: "模型用量",
 };
@@ -30,6 +34,7 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
   const detailTriggerRef = useRef<HTMLElement>(null);
   const summary = controller.page?.summary;
   const initialLoadFailed = Boolean(controller.error && !controller.page && controller.records.length === 0);
+  const hasStaleSnapshot = controller.resultsStale && Boolean(controller.page);
   const summaryNumber = (value: number | undefined) => summary ? (value ?? 0) : "—";
   const summaryMoney = (value: number | undefined) => summary ? (value ?? 0) : "—";
   const summaryColSpan = compactSummary ? 6 : 4;
@@ -49,7 +54,7 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
 
   const submit = async (values: Filters) => controller.search({
     text: values.text?.trim() || undefined,
-    workspaceIds: values.workspaceIds?.split(/[\s,，]+/).map(value => value.trim()).filter(Boolean),
+    workspaceIds: parseFinanceWorkspaceIdFilter(values.workspaceIds),
     kinds: values.kinds,
     statuses: values.statuses?.map(value => value.trim()).filter(Boolean),
   });
@@ -61,13 +66,13 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
       title="跨企业主体财务检索"
       extra={<Space wrap>
         <Button icon={<ReloadOutlined />} loading={controller.loading} onClick={() => void controller.search()} aria-label="刷新财务检索结果">刷新</Button>
-        <Button icon={<DownloadOutlined />} loading={controller.exporting} disabled={!controller.records.length} onClick={() => void controller.downloadCsv()}>导出当前筛选</Button>
+        <Button icon={<DownloadOutlined />} loading={controller.exporting} disabled={!controller.records.length || controller.loading || controller.resultsStale} onClick={() => void controller.downloadCsv()}>导出当前筛选</Button>
       </Space>}
     >
       <Form form={form} layout="vertical" onFinish={values => void submit(values)} aria-label="财务检索筛选">
         <Row gutter={[16, 0]} align="bottom">
           <Col xs={24} md={9}><Form.Item name="text" label="关键词"><Input allowClear maxLength={200} placeholder="记录号、订单号、模型或状态" /></Form.Item></Col>
-          <Col xs={24} md={9}><Form.Item name="workspaceIds" label="企业主体"><Input allowClear placeholder="企业名称或 Workspace ID" /></Form.Item></Col>
+          <Col xs={24} md={9}><Form.Item name="workspaceIds" label="Workspace ID"><Input allowClear placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔" /></Form.Item></Col>
           <Col xs={24} md={6}><Form.Item label=" "><Space.Compact block><Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={controller.loading} block>检索</Button><Button type="default" aria-expanded={showAdvancedFilters} aria-controls="finance-advanced-filters" onClick={() => setShowAdvancedFilters(visible => !visible)}>{showAdvancedFilters ? "收起筛选" : "高级筛选"}</Button></Space.Compact></Form.Item></Col>
         </Row>
         {showAdvancedFilters ? <Row id="finance-advanced-filters" gutter={[16, 0]} align="bottom">
@@ -75,6 +80,14 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
           <Col xs={24} md={16}><Form.Item name="statuses" label="状态"><Select mode="tags" tokenSeparators={[",", "，"]} maxTagCount="responsive" placeholder="输入状态后回车，可多选" /></Form.Item></Col>
         </Row> : null}
       </Form>
+
+      {hasStaleSnapshot ? <Alert
+        style={{ marginBottom: 16 }}
+        type={controller.error ? "error" : "warning"}
+        showIcon
+        title={controller.error ? "本次检索失败，以下仍是上次成功快照" : "本次检索尚未完成，以下暂为上次成功快照"}
+        description={`旧检索条件：${describeFinanceQuery(controller.query)}；快照时间：${controller.page?.snapshotAt ?? "未知"}。当前结果不代表本次表单筛选，检索成功前禁止导出。`}
+      /> : null}
 
       {controller.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} aria-label={initialLoadFailed ? "财务检索错误摘要" : undefined}>
         <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={() => void controller.search()}>重试</Button>} role="alert" aria-live="assertive" aria-atomic="true" />
@@ -124,4 +137,16 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
       <FinanceDetailDrawer selected={controller.selected} detail={controller.detail} loading={controller.detailLoading} error={controller.detailError} onRetry={() => void controller.retryDetail()} onClose={() => { controller.closeDetail(); window.requestAnimationFrame(() => detailTriggerRef.current?.focus({ preventScroll: true })); }} />
     </Card>
   );
+}
+
+function describeFinanceQuery(query: FinanceSearchController["query"]): string {
+  const parts = [
+    query.text ? `关键词 ${query.text}` : undefined,
+    query.workspaceIds?.length ? `Workspace ${query.workspaceIds.join(", ")}` : undefined,
+    query.kinds?.length ? `类型 ${query.kinds.join(", ")}` : undefined,
+    query.statuses?.length ? `状态 ${query.statuses.join(", ")}` : undefined,
+    query.fromAt ? `开始时间 ${query.fromAt}` : undefined,
+    query.toAt ? `结束时间 ${query.toAt}` : undefined,
+  ].filter(Boolean);
+  return parts.length ? parts.join("；") : "默认筛选条件";
 }

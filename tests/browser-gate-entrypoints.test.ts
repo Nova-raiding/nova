@@ -97,6 +97,11 @@ const OPS_COMMERCIAL_SPECS = [
   spec('ops-commercial-sales-isolated.spec.js'),
   spec('ops-commercial-support-isolated.spec.js'),
 ].sort()
+const OPS_BENEFIT_BUNDLE_SPECS = [spec('ops-commercial-benefit-bundles-isolated.spec.js')]
+const OPS_REFUND_SPECS = [spec('ops-refund-isolated.spec.js')]
+const LOCAL_MOCKED_STATE_SPECS = [spec('canonical-product-desktop.spec.js')]
+const MERCHANT_IMAGE_GENERATION_SPECS = [spec('image-generation-desktop.spec.js')]
+const MERCHANT_WORKSPACE_SWITCH_SPECS = ['demo/merchant-studio/merchant-workspace-switch.browser.spec.js']
 
 const OPS_MATRIX_SPECS = [spec('ops-desktop-readonly-matrix.spec.js')]
 const OPS_ACCOUNT_LABEL_SPECS = [spec('ops-account-label-isolated.spec.js')]
@@ -130,11 +135,8 @@ const DECLARED_BROWSER_ENTRYPOINTS_UNINVOKED_BY_CHECK = [
  * ledger's over-claim stays visible and a change to either side is deliberate.
  */
 const CONFIG_ONLY_BROWSER_SPECS = [
-  spec('canonical-product-desktop.spec.js'),
-  spec('image-generation-desktop.spec.js'),
   spec('merchant-production-readonly.spec.js'),
   spec('merchant-workspace-roles.spec.js'),
-  spec('ops-commercial-benefit-bundles-isolated.spec.js'),
   spec('ops-delivery-account-access.spec.js'),
   spec('ops-delivery-auth-boundary.spec.js'),
   spec('ops-delivery-contract-link.spec.js'),
@@ -143,11 +145,9 @@ const CONFIG_ONLY_BROWSER_SPECS = [
   spec('ops-delivery-readonly-isolated.spec.js'),
   spec('ops-manual-import-isolated.spec.js'),
   spec('ops-mcp-request-matrix.spec.js'),
-  spec('ops-members-global-isolated.spec.js'),
   spec('ops-merchant-matrix-bootstrap.spec.js'),
   spec('knowledge-lexical-upload-isolated.spec.js'),
   spec('ops-merchant-provision-live.spec.js'),
-  spec('ops-refund-isolated.spec.js'),
 ].sort()
 
 const PLAYWRIGHT_CONFIG = `${DOGFOOD_DIR}/playwright.config.mjs`
@@ -176,6 +176,47 @@ describe('browser gate entrypoints', () => {
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
     expect(specPathsIn(command)).toEqual(OPS_COMMERCIAL_SPECS)
     expect(command).not.toContain('--config')
+  })
+
+  it('runs benefit bundle lifecycle only through its dedicated isolated fixture', () => {
+    const command = script('test:browser:ops:benefit-bundles')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_BENEFIT_BUNDLE_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs refund authorization and absent-record probes only through isolated disposable Ops data', () => {
+    const command = script('test:browser:ops:refund')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_REFUND_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs image task presentation through real disposable merchant auth and forbids generation writes', () => {
+    const command = script('test:browser:merchant:image-generation-isolated')
+    expect(command).toContain('OPS_E2E_MERCHANT_UI=true')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(MERCHANT_IMAGE_GENERATION_SPECS)
+    const runner = readFileSync(resolve(root, 'scripts/run-ops-password-e2e.ts'), 'utf8')
+    expect(runner).toContain("argument === 'dogfood/chatgpt-all-functions/image-generation-desktop.spec.js' && source.OPS_E2E_MERCHANT_UI === 'true'")
+  })
+
+  it('runs global merchant workspace switching through a dedicated dual-workspace isolated fixture', () => {
+    const command = script('test:browser:merchant:workspace-switch')
+    expect(command).toContain('OPS_E2E_MERCHANT_WORKSPACE_SWITCH=true')
+    expect(command).toContain('OPS_E2E_MERCHANT_UI=true')
+    expect(command).toContain('scripts/verify-merchant-workspace-isolated.ts')
+    const runner = readFileSync(resolve(root, 'scripts/verify-merchant-workspace-isolated.ts'), 'utf8')
+    expect(specPathsIn(runner)).toEqual(MERCHANT_WORKSPACE_SWITCH_SPECS)
+    expect(runner).toContain('fixture.adminDatabaseUrl')
+    expect(runner).toContain('fixture.opsDatabaseUrl')
+    expect(runner).toContain('productionBrowser: false')
+    const browserSpec = readFileSync(resolve(root, MERCHANT_WORKSPACE_SWITCH_SPECS[0]!), 'utf8')
+    expect(browserSpec).toContain("['A', 'B', 'A']")
+    expect(browserSpec).toContain("request.headers()['x-workspace-id']")
+    expect(browserSpec).toContain('old-workspace-search-marker')
   })
 
   it('runs the role-gated desktop route matrix in its dedicated isolated fixture', () => {
@@ -278,8 +319,16 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:merchant:members && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:material-assets && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:matrix && npm run test:browser:ops:desktop-state && npm run test:browser:ops:account-label && npm run test:browser:ops:account-ownership && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:public-rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:merchant:members && npm run test:browser:merchant:workspace-switch && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:merchant:image-generation-isolated && npm run test:browser:material-assets && npm run test:browser:merchant:publish-history && npm run test:browser:local-mocked-states && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:benefit-bundles && npm run test:browser:ops:refund && npm run test:browser:ops:matrix && npm run test:browser:ops:desktop-state && npm run test:browser:ops:account-label && npm run test:browser:ops:account-ownership && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:public-rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import')
     expect(all).not.toContain('test:browser:ops:jit')
+  })
+
+  it('runs publish history in its isolated local browser fixture', () => {
+    expect(script('test:browser:merchant:publish-history')).toBe('node scripts/run-publish-history-browser-local.mjs')
+    const runner = readFileSync(resolve(root, 'scripts/run-publish-history-browser-local.mjs'), 'utf8')
+    expect(runner).toContain("'demo/merchant-studio/publish-history.browser.spec.js'")
+    expect(runner).toContain("'127.0.0.1'")
+    expect(runner).not.toContain('https://yxsona.com')
   })
 
   it('leaves the declared browser entrypoints unchained from check, and says so', () => {
@@ -307,7 +356,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, spec('ops-jit-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

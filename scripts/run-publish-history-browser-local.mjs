@@ -24,6 +24,7 @@ try {
   const browser = spawn(process.execPath, [
     resolve(root, 'node_modules/@playwright/test/cli.js'), 'test',
     'demo/merchant-studio/publish-history.browser.spec.js', '--workers=1', '--reporter=line', '--timeout=60000',
+    ...(process.env.PUBLISH_HISTORY_TEST_GREP ? ['--grep', process.env.PUBLISH_HISTORY_TEST_GREP] : []),
   ], { cwd: root, env: { ...process.env, MERCHANT_STUDIO_URL: studioUrl, PUBLISH_HISTORY_EVIDENCE_DIR: evidenceDir }, stdio: 'inherit' })
   const code = await new Promise((resolveExit, reject) => {
     browser.on('error', reject)

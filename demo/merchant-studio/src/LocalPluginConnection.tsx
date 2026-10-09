@@ -62,6 +62,10 @@ export function parsePluginPairFragment(hash: string, workspaceIds: string[]): P
   } catch { return null }
 }
 
+export function pairingMatchesWorkspace(pairing: PairingReturn | null, workspaceId: string | null): boolean {
+  return Boolean(pairing && workspaceId && pairing.workspace_id === workspaceId)
+}
+
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
 type OneClickState = 'checking' | 'available' | 'release_gate' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
 export type LocalPluginPlatform = 'macos' | 'windows' | 'other'
@@ -103,20 +107,21 @@ interface ConnectRequestStatus {
   local_binding_complete?: boolean
 }
 
-export function LocalPluginConnection({ apiBaseUrl, account }: {
+export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, onWorkspaceChange }: {
   apiBaseUrl: string
   account: MerchantAuthAccount
+  activeWorkspaceId: string | null
+  onWorkspaceChange: (workspaceId: string) => void
 }) {
   const [openScope, setOpenScope] = useState<string | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionUiState>('idle')
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | undefined>(account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined)
   const [pairing, setPairing] = useState<PairingReturn | null>(null)
   const [oneClickState, setOneClickState] = useState<OneClickState>('checking')
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionAttempt = useRef(0)
-  const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])
+  const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds, activeWorkspaceId])
   const eligible = account.accountType === 'merchant' && account.status === 'active'
-  const candidateWorkspaceId = selectedWorkspaceId && account.workspaceIds.includes(selectedWorkspaceId) ? selectedWorkspaceId : null
+  const candidateWorkspaceId = activeWorkspaceId && account.workspaceIds.includes(activeWorkspaceId) ? activeWorkspaceId : null
   const workspaceId = candidateWorkspaceId && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(candidateWorkspaceId) ? candidateWorkspaceId : null
   const connectTargetAvailable = localPluginConnectUrl(apiBaseUrl, account.workspaceIds, undefined, workspaceId ?? undefined) !== null
   const origin = localLoginOrigin(apiBaseUrl)
@@ -139,7 +144,6 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
 
   useEffect(() => {
     connectionAttempt.current += 1
-    setSelectedWorkspaceId(account.workspaceIds.length === 1 ? account.workspaceIds[0] : undefined)
     setConnectionState('idle')
     return () => {
       if (launchTimer.current) clearTimeout(launchTimer.current)
@@ -164,15 +168,23 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
     const fragment = window.location.hash
     if (!fragment.startsWith('#plugin_pair=')) return
     const parsed = parsePluginPairFragment(fragment, account.workspaceIds)
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
-    if (parsed) { setPairing(parsed); setOpenScope(scope) }
-    else setConnectionState('failed')
-  }, [scope, account.workspaceIds])
+    if (parsed) {
+      setPairing(parsed)
+      setOpenScope(scope)
+      // A callback never silently changes the active tenant. Keep the pairing
+      // fragment until the merchant selects its authorized workspace globally.
+      if (parsed.workspace_id === workspaceId) window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
+    }
+    else {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}`)
+      setConnectionState('failed')
+    }
+  }, [scope, account.workspaceIds, workspaceId])
 
   const installationKey = workspaceId && origin ? `storenova.plugin.installation:${origin}:${account.id}:${workspaceId}` : null
 
   const completePairing = async () => {
-    if (!pairing || !installationKey) return
+    if (!pairing || !pairingMatchesWorkspace(pairing, workspaceId) || !installationKey) return
     try {
       const result = await requestApi<{ installation_id: string; paired: boolean }>(apiBaseUrl,
         '/v1/auth/local-plugin/install-instances/pair', {
@@ -251,7 +263,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
         style={{ minWidth: 210 }}
         value={workspaceId ?? undefined}
         options={account.workspaceIds.filter(id => /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(id)).map(id => ({ label: id, value: id }))}
-        onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); setSelectedWorkspaceId(id); setConnectionState('idle') }}
+        onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); onWorkspaceChange(id); setConnectionState('idle') }}
       />}
       <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{presentation.label}</Tag>
@@ -272,7 +284,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
                 ? '本次连接未完成。请检查本地安装器提示后重新连接。'
                 : '请保持商家工作台打开。授权页会在另一个标签页完成验证，本页面会显示绑定进度。'} />
         {pairing
-          ? <Alert type="info" title="确认连接这台电脑" showIcon description={`将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。`} />
+          ? <Alert type={pairingMatchesWorkspace(pairing, workspaceId) ? 'info' : 'warning'} title={pairingMatchesWorkspace(pairing, workspaceId) ? '确认连接这台电脑' : '请先切换到授权工作区'} showIcon description={pairingMatchesWorkspace(pairing, workspaceId) ? `将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。` : `该连接回调属于工作区 ${pairing.workspace_id}。关闭此窗口，在页面顶部切换到该工作区后再打开连接确认。`} />
           : oneClickAvailable
             ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
             : <Alert type="warning" title="一键授权暂未开放" showIcon description={oneClickUnavailableReason} />}
@@ -280,7 +292,7 @@ export function LocalPluginConnection({ apiBaseUrl, account }: {
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
         ]} />
-        {pairing && <Button type="primary" onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
+        {pairing && <Button type="primary" disabled={!pairingMatchesWorkspace(pairing, workspaceId) || !installationKey} onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
         {!oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
           <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
           <Typography.Text code copyable>{loginCommand}</Typography.Text>

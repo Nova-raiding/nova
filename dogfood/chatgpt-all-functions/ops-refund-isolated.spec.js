@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
+import { openPlatformConsole } from './ops-auth.js'
 
 test.use({ channel: 'chrome', trace: 'off', video: 'off' })
 test.setTimeout(120_000)
@@ -31,13 +31,12 @@ test('platform role reaches the real refund read and cannot approve an absent re
   await expect(panel.getByRole('button', { name: '登记退款并回滚点数' })).toBeDisabled()
 })
 
-test('workspace role cannot see platform refund controls or issue a refund-list request', async ({ page }) => {
+test('an unauthenticated direct route does not render platform refund controls', async ({ page }) => {
   const calls = refundListRequests(page)
-  await openWorkspaceConsole(page, '/ops/finance?workbench=workspace')
-  await expect(page.getByRole('heading', { name: '账务与商业配置' })).toBeVisible()
+  await page.goto(new URL('/ops/finance?workbench=workspace', process.env.OPS_BASE_URL).toString(), { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('button', { name: '登录平台运营后台', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: '商业订单退款' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '双人审批' })).toHaveCount(0)
-  await page.waitForTimeout(1_000)
   expect(calls).toEqual([])
 })
 
@@ -51,7 +50,7 @@ test('platform role without an explicit target workspace does not read refunds',
   expect(calls).toEqual([])
 })
 
-test('platform refund writes pass authorization then reject missing isolated records without mutation', async ({ page }) => {
+test('platform refund writes remain fail-closed without deployment-owned commercial release evidence', async ({ page }) => {
   await openPlatformConsole(page, `/ops/finance?workbench=platform&workspace=${encodeURIComponent(workspaceId)}`)
   const results = await page.evaluate(async targetWorkspaceId => {
     const requestId = `refund-missing-${crypto.randomUUID()}`
@@ -73,8 +72,8 @@ test('platform refund writes pass authorization then reject missing isolated rec
     return observed
   }, workspaceId)
   expect(results).toEqual([
-    { action: 'request', status: 409, code: 'COMMERCIAL_REFUND_ORDER_NOT_FOUND' },
-    { action: 'approve', status: 409, code: 'COMMERCIAL_REFUND_STATE_INVALID' },
-    { action: 'complete', status: 409, code: 'COMMERCIAL_REFUND_STATE_INVALID' },
+    { action: 'request', status: 503, code: 'COMMERCIAL_RUNTIME_WRITE_BLOCKED' },
+    { action: 'approve', status: 503, code: 'COMMERCIAL_RUNTIME_WRITE_BLOCKED' },
+    { action: 'complete', status: 503, code: 'COMMERCIAL_RUNTIME_WRITE_BLOCKED' },
   ])
 })

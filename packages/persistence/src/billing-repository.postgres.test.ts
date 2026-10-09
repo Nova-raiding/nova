@@ -84,6 +84,33 @@ describe('billing PostgreSQL bigint release acceptance', () => {
       expect((await database.query('SELECT count(*)::int AS orders FROM billing_orders')).rows).toEqual([{ orders: 1 }])
       expect((await database.query('SELECT count(*)::int AS transactions FROM billing_transactions')).rows).toEqual([{ transactions: 3 }])
 
+      // Exercise the real keyset query over more than the public 100-row cap
+      // using the restricted app role. Populate a separate workspace directly
+      // as the fixture owner so the dataset is deterministic and fast, plus a
+      // handful of neighbouring-workspace rows to prove the scope predicate.
+      await database.query("INSERT INTO workspaces (id,status) VALUES ('ws_billing_page','active'),('ws_billing_page_other','active')")
+      await database.query(`
+        INSERT INTO billing_orders (id,workspace_id,channel,amount_fen,state,payment_mode,idempotency_key,created_by_actor_id,created_at)
+        SELECT 'page_order_' || n, 'ws_billing_page', 'alipay', 100, 'pending', 'provider', 'page_key_' || n, 'merchant_page', TIMESTAMPTZ '2025-01-01 00:00:00+00' + n * INTERVAL '1 second'
+        FROM generate_series(1,101) AS n
+      `)
+      await database.query(`
+        INSERT INTO billing_orders (id,workspace_id,channel,amount_fen,state,payment_mode,idempotency_key,created_by_actor_id,created_at)
+        SELECT 'other_page_order_' || n, 'ws_billing_page_other', 'alipay', 100, 'pending', 'provider', 'other_page_key_' || n, 'merchant_page', TIMESTAMPTZ '2025-01-01 00:00:00+00' + n * INTERVAL '1 second'
+        FROM generate_series(1,5) AS n
+      `)
+      const firstPage = await repository.listOrdersPage('ws_billing_page', ['pending'], 100, 'merchant_page')
+      expect(firstPage.orders).toHaveLength(100)
+      expect(firstPage.orders.every(item => item.workspaceId === 'ws_billing_page')).toBe(true)
+      expect(firstPage.nextCursor).toBeDefined()
+      const secondPage = await repository.listOrdersPage('ws_billing_page', ['pending'], 100, 'merchant_page', firstPage.nextCursor)
+      expect(secondPage.orders).toHaveLength(1)
+      expect(secondPage.orders.every(item => item.workspaceId === 'ws_billing_page')).toBe(true)
+      expect(secondPage.nextCursor).toBeUndefined()
+      const pagedIds = [...firstPage.orders, ...secondPage.orders].map(item => item.id)
+      expect(new Set(pagedIds).size).toBe(101)
+      expect(new Set(pagedIds)).toEqual(new Set(Array.from({ length: 101 }, (_, index) => `page_order_${index + 1}`)))
+
       // A failed action must net to zero: the reversal has to cover the
       // settlement delta settleDebit appended, not just the reservation.
       const refund = await repository.refundDebit({ workspaceId, debitIdempotencyKey: debitInput.idempotencyKey, actorId: debitInput.actorId, reason: 'provider 调用后落库失败' })

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict, waitForUsableDeliveryAsset, withChecklistRevision } from "./CustomerDeliveryPage.js";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { customerDeliveryWorkspaceOptions, isCustomerDeliveryRevisionConflict, openCustomerDeliveryContractLink, waitForUsableDeliveryAsset, withChecklistRevision } from "./CustomerDeliveryPage.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -20,6 +20,24 @@ describe("customer delivery contract readiness", () => {
 
   it("still rejects a blocked contract", async () => {
     await expect(waitForUsableDeliveryAsset({ ...asset, scanStatus: "blocked" }, input)).rejects.toThrow("尚不可用");
+  });
+});
+
+describe("customer delivery contract link opening", () => {
+  it("opens valid HTTPS links and blocks userinfo, fragments, and non-default ports", () => {
+    const openWindow = vi.fn();
+    expect(openCustomerDeliveryContractLink("https://files.example.test:443/contract.pdf?signature=a%2Bb", openWindow)).toBe(true);
+    expect(openWindow).toHaveBeenCalledExactlyOnceWith("https://files.example.test:443/contract.pdf?signature=a%2Bb", "_blank", "noopener,noreferrer");
+
+    openWindow.mockClear();
+    for (const value of [
+      "https://user:pass@files.example.test/contract.pdf",
+      "https://files.example.test/contract.pdf#page=2",
+      "https://files.example.test:8443/contract.pdf",
+    ]) {
+      expect(() => openCustomerDeliveryContractLink(value, openWindow)).toThrow();
+    }
+    expect(openWindow).not.toHaveBeenCalled();
   });
 });
 

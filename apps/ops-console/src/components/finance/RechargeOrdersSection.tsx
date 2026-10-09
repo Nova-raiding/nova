@@ -38,10 +38,12 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
   const {
     rechargeOrders,
     rechargeOrdersLoading,
+    rechargeOrdersLoadingMore,
     rechargeOrdersError,
     rechargeOrderStateFilter,
     canPaymentReconciliation,
     loadRechargeOrders,
+    loadMoreRechargeOrders,
     queryRechargeOrder,
     queryingRechargeOrderId,
   } = model;
@@ -55,6 +57,9 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
   // failure precisely so this distinction is expressible; the section has to stop
   // erasing it.
   const notRead = rechargeOrders === undefined;
+  const returned = rechargeOrders?.returned ?? orders.length;
+  const total = rechargeOrderTotal(summary, orders, rechargeOrders?.total);
+  const hasUnpagedRows = !notRead && total > returned && !rechargeOrders?.next_cursor;
 
   const stateOptions = [
     { label: notRead ? "全部" : `全部 ${rechargeOrderTotal(summary, orders, rechargeOrders?.total)}`, value: "all" },
@@ -116,6 +121,16 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
               重试
             </Button>
           }
+        />
+      )}
+
+      {hasUnpagedRows && (
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="warning"
+          showIcon
+          title="充值订单分页信息不完整"
+          description={`服务端共 ${total} 条，当前仅返回 ${returned} 条，但服务端没有提供下一页游标。当前表格只能查看已返回记录，请刷新后重试。`}
         />
       )}
 
@@ -193,7 +208,7 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
                         <Button
                           size="small"
                           icon={<SyncOutlined />}
-                          disabled={!canPaymentReconciliation}
+                          disabled={!canPaymentReconciliation || queryingRechargeOrderId !== undefined}
                           loading={queryingRechargeOrderId === record.id}
                           aria-label={`查询充值订单 ${record.id}`}
                           onClick={() => void queryRechargeOrder(record.id)}
@@ -221,6 +236,17 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
             },
           ]}
         />
+        {rechargeOrders?.next_cursor ? (
+          <Button
+            block
+            loading={rechargeOrdersLoadingMore}
+            disabled={rechargeOrdersLoading || rechargeOrdersLoadingMore}
+            aria-label="加载更多充值订单"
+            onClick={() => void loadMoreRechargeOrders()}
+          >
+            加载更多充值订单（约余 {Math.max(0, total - returned)} 条）
+          </Button>
+        ) : null}
       </Space>
     </Card>
   );

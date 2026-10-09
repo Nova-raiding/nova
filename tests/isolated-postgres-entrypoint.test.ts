@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createIsolatedPostgresConfig } from '../vitest.postgres.config.js'
+import { ALL_POSTGRES_TEST_FILES, createIsolatedPostgresConfig } from '../vitest.postgres.config.js'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ISOLATED_POSTGRES_TEST_FILES, selectIsolatedPostgresTests, validateIsolatedPostgresReport, runIsolatedPostgresTests, type IsolatedPostgresRuntime } from '../scripts/run-isolated-postgres-tests.js'
 
 const runId = '11111111-1111-4111-8111-111111111111'
@@ -11,6 +13,23 @@ const report = (files: readonly string[]) => ({
 })
 
 describe('isolated PostgreSQL entrypoint', () => {
+  it('routes the authorization PostgreSQL command through the owned fixture launcher', () => {
+    const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    const command = packageJson.scripts['test:authorization-postgres']!
+    expect(command).toContain('scripts/run-isolated-postgres-tests.ts')
+    expect(command).not.toContain('vitest run')
+    for (const file of [
+      'packages/persistence/src/authorization-repository.release.postgres.test.ts',
+      'packages/persistence/src/authorization-rls-boundary.postgres.test.ts',
+      'packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts',
+      'packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts',
+      'packages/persistence/src/migration-105-release.postgres.test.ts',
+    ]) {
+      expect(ALL_POSTGRES_TEST_FILES).toContain(file)
+      expect(command).toContain(file)
+    }
+  })
+
   it('selects exactly the audited PostgreSQL files by default', async () => {
     expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(56)
     expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(56)

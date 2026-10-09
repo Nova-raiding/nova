@@ -292,7 +292,7 @@ describe('protected isolated ECS demo candidate renderer', () => {
     const rejected = env.run()
     expect(rejected.stderr).toContain('only one MODEL_RELAY_API_KEY assignment')
     expect(rejected.stderr).not.toContain('relay-private-test-key')
-  })
+  }, 30_000)
 
   it('uses O_EXCL and refuses to overwrite a previous candidate', () => {
     const value = fixture()

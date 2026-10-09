@@ -887,6 +887,7 @@ export type RechargeOrderList = {
   summary?: RechargeOrderSummary;
   returned?: number;
   total?: number;
+  next_cursor?: string | null;
 };
 export type AutomationPolicy = {
   id?: string;

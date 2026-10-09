@@ -6,6 +6,19 @@ function userFacingVideoRendering<T extends { videoUrl?: string }>(rendering: T)
   return safe
 }
 
+function publicVideoArtifactFields(workspaceId: string, rendering: { assetId?: string; archiveState?: string }, assetForWorkspace: (workspaceId: string, assetId: string) => { scanStatus?: string }) {
+  if (!rendering.assetId) return {}
+  const scanStatus = assetForWorkspace(workspaceId, rendering.assetId).scanStatus ?? 'unknown'
+  const deliveryReady = rendering.archiveState === 'archived' && scanStatus === 'clean'
+  return {
+    asset_id: rendering.assetId,
+    archive_state: rendering.archiveState,
+    scan_status: scanStatus,
+    ...(deliveryReady ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : {}),
+    ...(deliveryReady ? {} : { availability_warning: rendering.archiveState !== 'archived' ? '视频尚未完成归档，暂不能作为正式交付。' : scanStatus === 'unscanned' ? '该视频处于演示或未扫描状态，不能作为已通过扫描的正式交付。' : '视频扫描尚未确认通过，暂不能作为正式交付。' }),
+  }
+}
+
 export async function handleMultimodalMcpMethod(method: string, params: Record<string, unknown>, dependencies: MultimodalMcpRuntime): Promise<unknown> {
   const {
     req, workspaceId, result, observeLegacyWalletShadow, required, DomainError, ERROR_CODES,
@@ -362,7 +375,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           if (!providerExecuted) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: requestActor(req), reason: '视频结果记录失败' })
           throw error
         }
-        return result({ ...request.value, candidate_only: candidateOnly, ...candidateStatus, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { rendering: userFacingVideoRendering(rendering) } : {}) })
+        return result({ ...request.value, candidate_only: candidateOnly, ...candidateStatus, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { ...publicVideoArtifactFields(workspaceId, rendering, assetForWorkspace), rendering: userFacingVideoRendering(rendering) } : {}) })
       }
       return request.value.output === 'rendering'
         ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ ...candidateStatus, execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
@@ -380,7 +393,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           const rendering = await archiveCompletedVideo(workspaceId, observed, billingContext)
           const eventSequence = nextEventSequence ? await nextEventSequence(workspaceId, `video_${providerJobId}`) : 1
           await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', eventSequence, { provider_job_id: providerJobId, rendering, ...candidateStatus })
-          return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...(rendering.assetId ? { asset_id: rendering.assetId, archive_state: rendering.archiveState, ...(rendering.archiveState === 'archived' ? { download_path: `/v1/assets/${encodeURIComponent(rendering.assetId)}/download` } : { availabilityWarning: '视频已安全归档到隔离区，平台自动安全扫描通过后才可下载或发布；无需商家或运营人员操作' }) } : {}), ...userFacingVideoRendering(rendering), ...candidateStatus })
+          return result({ provider_job_id: providerJobId, execution: executionContract('video', true), ...publicVideoArtifactFields(workspaceId, rendering, assetForWorkspace), ...userFacingVideoRendering(rendering), ...candidateStatus })
         } catch (error) {
           // Provider completion and local archive completion are separate
           // facts. Persist the latter even when the archive/download fails so

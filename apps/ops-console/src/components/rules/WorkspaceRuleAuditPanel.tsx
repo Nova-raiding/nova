@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Descriptions, Empty, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Rule } from "../../types/ops.js";
@@ -65,29 +65,55 @@ export function WorkspaceRuleAuditPanel({ rules, canRead, workspaceId }: {
   const [events, setEvents] = useState<RuleAuditEvent[]>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const requestSequence = useRef(0);
+  const currentWorkspaceId = useRef(workspaceId);
   const packOptions = useMemo(() => buildRulePackOptions(rules), [rules]);
+
+  useLayoutEffect(() => {
+    if (currentWorkspaceId.current === workspaceId) return;
+    currentWorkspaceId.current = workspaceId;
+    requestSequence.current += 1;
+    setPackId("");
+    setEvents(undefined);
+    setError("");
+    setLoading(false);
+  }, [workspaceId]);
 
   if (!canRead) return null;
 
   const run = async () => {
     if (loading) return;
+    const request = ++requestSequence.current;
+    const requestedPackId = packId;
+    const requestedWorkspaceId = workspaceId;
     setLoading(true);
     setError("");
     setEvents(undefined);
     try {
-      const result = await rpc<unknown>("ops.rules.workspace.audit", packId ? { pack_id: packId } : {});
-      setEvents(parseRuleAuditEvents(result));
+      const result = await rpc<unknown>("ops.rules.workspace.audit", requestedPackId ? { pack_id: requestedPackId } : {});
+      if (request === requestSequence.current && requestedWorkspaceId === currentWorkspaceId.current)
+        setEvents(parseRuleAuditEvents(result));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "规则审计读取失败");
+      if (request === requestSequence.current && requestedWorkspaceId === currentWorkspaceId.current)
+        setError(cause instanceof Error ? cause.message : "规则审计读取失败");
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current && requestedWorkspaceId === currentWorkspaceId.current)
+        setLoading(false);
     }
   };
 
   return <Card size="small" title="工作区规则审计" extra={<Typography.Text type="secondary">只读事件 · 最新记录优先</Typography.Text>}>
     <Space wrap style={{ width: "100%", marginBottom: 12 }}>
       <Typography.Text type="secondary">{workspaceId ? `审计范围：${workspaceId}` : "审计范围：当前工作区"}</Typography.Text>
-      <Select aria-label="按规则包筛选审计记录" value={packId} options={packOptions} onChange={value => { setPackId(value); setEvents(undefined); }} style={{ minWidth: 300 }} />
+      <Select aria-label="按规则包筛选审计记录" value={packId} options={packOptions} onChange={value => {
+        // A response started for the previous selection must not populate the
+        // results area after the operator changes the filter.
+        requestSequence.current += 1;
+        setPackId(value);
+        setEvents(undefined);
+        setError("");
+        setLoading(false);
+      }} style={{ minWidth: 300 }} />
       <Button type="primary" loading={loading} onClick={() => void run()}>读取审计记录</Button>
     </Space>
     {error && <Alert type="error" showIcon title="规则审计读取失败" description={error} style={{ marginBottom: 12 }} />}

@@ -24,7 +24,7 @@ const report = index => ({
   evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-29T09:00:00.000Z',
 })
 
-async function openMock({ empty = false, failFirst = false } = {}) {
+async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const page = await context.newPage()
@@ -58,7 +58,9 @@ async function openMock({ empty = false, failFirst = false } = {}) {
         const offset = Number(body.params.offset ?? 0)
         observations.manualOffsets.push(offset)
         observations.manualAttempts++
-        data = { result: empty ? { items: [], total: 0, limit: 20, offset } : {
+        if (shrinkOnRefresh && observations.manualAttempts > 6) {
+          data = { result: { items: offset === 20 ? [report(21), report(22), report(23), report(24), report(25)] : [], total: 25, limit: 20, offset } }
+        } else data = { result: empty ? { items: [], total: 0, limit: 20, offset } : {
           items: offset === 100 ? [report(101)] : Array.from({ length: 20 }, (_, i) => report(offset + i + 1)),
           total: 101, limit: 20, offset,
         } }
@@ -127,5 +129,20 @@ test('发布记录读取错误显示原始错误并可重试恢复', async () =>
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     expect(observations.jobAttempts).toBe(2)
     expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('刷新后总数缩小时自动回到最后有效页', async () => {
+  const { browser, context, page, observations } = await openMock({ shrinkOnRefresh: true })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await panel.getByRole('tab', { name: '人工发布报告' }).click()
+    for (let i = 0; i < 5; i++) await panel.getByRole('button', { name: '下一页' }).click()
+    await expect(panel).toContainText('第 6 / 6 页，共 101 条')
+    await panel.getByRole('button', { name: '刷新记录' }).click()
+    await expect(panel).toContainText('第 2 / 2 页，共 25 条')
+    await expect(panel).toContainText('任务 task-25')
+    await expect(panel.getByRole('button', { name: '下一页' })).toBeDisabled()
+    expect(observations.manualOffsets.slice(-2)).toEqual([100, 20])
   } finally { await context.close(); await browser.close() }
 })

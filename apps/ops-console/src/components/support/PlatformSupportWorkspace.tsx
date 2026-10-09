@@ -13,6 +13,7 @@ export function PlatformSupportWorkspace({model,client=platformSupportClient}:{m
   const canReply=model.authorization.can("support.ticket.update");
   const canDirectory=model.authorization.can("workspace.directory.read");
   const [search,setSearch]=useState("");
+  const [directoryQuery,setDirectoryQuery]=useState<string>();
   const [workspace,setWorkspace]=useState("");
   const [rows,setRows]=useState<SupportTicketContract[]>([]);
   const [cursor,setCursor]=useState<SupportTicketPageCursor>();
@@ -31,6 +32,12 @@ export function PlatformSupportWorkspace({model,client=platformSupportClient}:{m
   useEffect(()=>{mounted.current=true;return ()=>{mounted.current=false;generation.current++;};},[]);
   useEffect(()=>{generation.current++;setRows([]);setCursor(undefined);setDetail(undefined);setLoaded(false);setPending(undefined);setIntent(undefined);setUnknown(false);setError("");setSuccess("");setBody("");setBusy(false);try{const saved=sessionStorage.getItem(storageKey(workspace));if(saved){const item=JSON.parse(saved) as PlatformReplyIntent;if(item.workspaceId===workspace && item.actorId===model.opsSession?.actor_id && typeof item.idempotencyKey==="string" && typeof item.ticketId==="string" && /^[a-f0-9]{64}$/.test(item.bodyHash)){setIntent(item);setUnknown(true);}}}catch{/* old intent cannot authorize replay */}},[workspace,model.opsSession?.actor_id]);
   const current=(request:number)=>mounted.current && generation.current===request;
+  const loadDirectory=async(query:string,page=1)=>{
+    const normalizedQuery=query.trim();
+    if(page===1) setDirectoryQuery(undefined);
+    const loaded=await model.loadWorkspaceDirectory({query:normalizedQuery,merchantOnly:true,page,pageSize:20});
+    if(loaded && page===1) setDirectoryQuery(normalizedQuery);
+  };
   const load=async(next?:SupportTicketPageCursor)=>{if(!workspace||!canRead)return;const request=++generation.current;setBusy(true);setError("");setDetail(undefined);setLoaded(false);try{const page=await client.list(workspace,next);if(!current(request))return;setRows(page.items);setCursor(page.nextCursor);setLoaded(true);}catch(value){if(current(request))setError(describeOpsError(value));}finally{if(current(request))setBusy(false);}};
   const select=async(ticketId:string)=>{const request=++generation.current;setBusy(true);setError("");setDetail(undefined);setBody("");try{const result=await client.get(workspace,ticketId);if(!current(request))return;if(!result)throw new Error("原工单未找到或无权查看，请核对企业后重读。");setDetail(result);}catch(value){if(current(request))setError(describeOpsError(value));}finally{if(current(request))setBusy(false);}};
   const preview=async()=>{if(!detail || !model.opsSession?.actor_id || !body.trim() || busy || unknown)return;const request=generation.current;setBusy(true);setError("");try{const command:CommentOnSupportTicketCommand={workspaceId:workspace,ticketId:detail.ticket.id,body:body.trim(),visibility,expectedRevision:detail.ticket.revision,idempotencyKey:`support_reply_${crypto.randomUUID()}`};const hash=await supportBodyHash(command.body);if(!current(request))return;setPending(command);setIntent({workspaceId:workspace,ticketId:command.ticketId,actorId:model.opsSession.actor_id,idempotencyKey:command.idempotencyKey,visibility,expectedRevision:command.expectedRevision,bodyHash:hash});}catch(value){if(current(request))setError(describeOpsError(value));}finally{if(current(request))setBusy(false);}};
@@ -44,7 +51,7 @@ export function PlatformSupportWorkspace({model,client=platformSupportClient}:{m
     {!canRead?<Alert type="warning" showIcon title="缺少真实平台工单读取权限"/>:null}
     <Card title="1. 明确选择授权企业">
       {model.workspaceDirectoryError?<Alert role="alert" type="error" title="企业目录读取失败" description={model.workspaceDirectoryError}/>:null}
-      <Space wrap><Input aria-label="搜索支持企业" placeholder="企业名称或 Workspace" value={search} disabled={frozen} onChange={event=>setSearch(event.target.value)}/><Button disabled={!canDirectory||frozen} loading={model.workspaceDirectoryLoading} onClick={()=>void model.loadWorkspaceDirectory({query:search,merchantOnly:true,page:1,pageSize:20})}>读取授权企业目录</Button><Button disabled={!canDirectory||frozen||!model.workspaceDirectory.hasMore} onClick={()=>void model.loadWorkspaceDirectory({query:search,merchantOnly:true,page:Math.floor(model.workspaceDirectory.offset/model.workspaceDirectory.limit)+2,pageSize:20})}>下一页企业</Button><Select aria-label="选择支持目标企业" style={{minWidth:320}} placeholder="从真实授权目录选择企业" value={workspace||undefined} disabled={busy||Boolean(pending)||model.workspaceDirectoryLoading} options={model.workspaceDirectory.items.map(row=>({value:row.workspaceId,label:`${row.enterpriseName??row.workspaceId} · ${row.workspaceId} · ${row.status}`}))} onChange={setWorkspace}/></Space>
+      <Space wrap><Input aria-label="搜索支持企业" placeholder="企业名称或 Workspace" value={search} disabled={frozen} onChange={event=>setSearch(event.target.value)}/><Button disabled={!canDirectory||frozen} loading={model.workspaceDirectoryLoading} onClick={()=>void loadDirectory(search)}>读取授权企业目录</Button><Button disabled={!canDirectory||frozen||model.workspaceDirectoryLoading||directoryQuery===undefined||search.trim()!==directoryQuery||!model.workspaceDirectory.hasMore} onClick={()=>void loadDirectory(directoryQuery!,Math.floor(model.workspaceDirectory.offset/model.workspaceDirectory.limit)+2)}>下一页企业</Button><Select aria-label="选择支持目标企业" style={{minWidth:320}} placeholder="从真实授权目录选择企业" value={workspace||undefined} disabled={busy||Boolean(pending)||model.workspaceDirectoryLoading||directoryQuery===undefined||search.trim()!==directoryQuery} options={model.workspaceDirectory.items.map(row=>({value:row.workspaceId,label:`${row.enterpriseName??row.workspaceId} · ${row.workspaceId} · ${row.status}`}))} onChange={setWorkspace}/></Space>
       {!canDirectory?<Alert type="warning" title="缺少授权企业目录读取能力，不能手填或猜测企业"/>:null}
     </Card>
     <Card title="2. 真实工单列表" aria-busy={busy}>

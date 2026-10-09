@@ -3,6 +3,7 @@ import type { RechargeOrder } from "../../types/ops.js";
 import {
   rechargeOrderCount,
   rechargeOrderListParams,
+  mergeRechargeOrderPages,
   rechargeOrderTotal,
   safePaymentUrl,
   paymentReconciliationOutcome,
@@ -41,13 +42,31 @@ describe("recharge order presentation", () => {
   it("uses the API states parameter for status filtering", () => {
     expect(rechargeOrderListParams()).toEqual({ limit: "100" });
     expect(rechargeOrderListParams("paid")).toEqual({ limit: "100", states: "paid" });
+    expect(rechargeOrderListParams("paid", "cursor-1")).toEqual({ limit: "100", states: "paid", cursor: "cursor-1" });
   });
 
-  it("only exposes http payment links", () => {
+  it("deduplicates overlapping cursor pages by order ID and keeps the latest row", () => {
+    const first = [{ id: "recharge-a", state: "pending" }, { id: "recharge-b", state: "paid" }];
+    const next = [{ id: "recharge-b", state: "closed" }, { id: "recharge-c", state: "paid" }];
+    expect(mergeRechargeOrderPages(first, next)).toEqual([
+      { id: "recharge-a", state: "pending" },
+      { id: "recharge-b", state: "closed" },
+      { id: "recharge-c", state: "paid" },
+    ]);
+  });
+
+  it("exposes only HTTPS and provider deep links without credentials or fixture targets", () => {
     expect(safePaymentUrl("https://pay.example.com/order/1")).toBe(
       "https://pay.example.com/order/1",
     );
     expect(safePaymentUrl("javascript:alert(1)")).toBeUndefined();
+    expect(safePaymentUrl("http://pay.example.com/order/1")).toBeUndefined();
+    expect(safePaymentUrl("https://user:secret@pay.example.com/order/1")).toBeUndefined();
+    expect(safePaymentUrl("https://fixture.invalid/alipay/order/1")).toBeUndefined();
+    expect(safePaymentUrl("fixture://alipay/order/1")).toBeUndefined();
+    expect(safePaymentUrl("weixin://wxpay/bizpayurl?pr=abc")).toBe("weixin://wxpay/bizpayurl?pr=abc");
+    expect(safePaymentUrl("alipays://platformapi/startapp?appId=20000067")).toBe("alipays://platformapi/startapp?appId=20000067");
+    expect(safePaymentUrl("weixin:wxpay/bizpayurl?pr=abc")).toBeUndefined();
     expect(safePaymentUrl("not-a-url")).toBeUndefined();
     expect(safePaymentUrl(null)).toBeUndefined();
   });

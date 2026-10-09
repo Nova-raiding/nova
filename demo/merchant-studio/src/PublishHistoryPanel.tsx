@@ -45,10 +45,17 @@ function displayRejectionField(path: string): string {
   return `${label}（原始字段 ${path}）`
 }
 
-export function PublishJobRecord({ job, taskHref }: { job: PublishJob; taskHref: string }) {
-  return <article className="task-list-row">
+export function PublishJobRecord({ job, taskHref, focusJobId }: { job: PublishJob; taskHref: string; focusJobId?: string }) {
+  const isFocused = Boolean(focusJobId && job.id === focusJobId)
+  const reconciliationPending = job.state === 'reconciling' || job.state === 'manual_attention'
+  const publishedButUnresolved = ['reconciling', 'manual_attention', 'unknown'].includes(job.state) && job.remoteState === 'published'
+  const displayedState = publishedButUnresolved
+    ? '平台回执显示已发布 · 任务对账未结案'
+    : publishStateLabel[reconciliationPending ? job.state : job.remoteState ?? job.state] ?? '状态待核对'
+  return <article className={`task-list-row${isFocused ? ' publish-job-focused' : ''}`} id={isFocused ? `publish-job-${job.id}` : undefined} aria-current={isFocused ? 'true' : undefined}>
     <div>
-      <b>{publishStateLabel[job.remoteState ?? job.state] ?? '状态待核对'} · {platformLabel[job.platform] ?? '未知平台'} · {job.accountId ?? '店铺未绑定'}</b>
+      {isFocused && <b>刚创建的发布任务：{job.id}</b>}
+      <b>{displayedState} · {platformLabel[job.platform] ?? '未知平台'} · {job.accountId ?? '店铺未绑定'}</b>
       <span>任务 {job.taskId} · 内容版本 {job.contentVersionId} · {displayDate(job.createdAt)}</span>
       {job.rejection && <div className="error-notice" role="status">
         <b>平台原始拒绝码：{job.rejection.rawCode}</b>
@@ -56,7 +63,7 @@ export function PublishJobRecord({ job, taskHref }: { job: PublishJob; taskHref:
         {job.rejection.fields.length > 0 && <ul>{job.rejection.fields.map((field, i) => <li key={`${field.path}-${i}`}>{displayRejectionField(field.path)}；原始代码 {field.rawCode ?? '未提供'}；{field.message}</li>)}</ul>}
         <p>根据拒绝原因在任务中创建修正版，重新审核后再确认提交。</p>
       </div>}
-      {['unknown', 'reconciling'].includes(job.remoteState ?? job.state) && <div className="info-notice">先核对平台回执和任务历史，当前不要重复提交。</div>}
+      {(reconciliationPending || ['unknown', 'reconciling'].includes(job.state) || ['unknown', 'reconciling'].includes(job.remoteState ?? '')) && <div className="info-notice">{publishedButUnresolved ? '平台回执显示已发布，但任务对账尚未结案。先核对平台回执和任务历史，当前不要重复提交。' : '先核对平台回执和任务历史，当前不要重复提交。'}</div>}
     </div>
     <a className="text-button" href={taskHref}>查看任务与纠错</a>
   </article>
@@ -78,6 +85,7 @@ export function ManualPublishRecordRow({ record, taskHref }: { record: ManualPub
 type HistoryKind = 'jobs' | 'manual'
 
 export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
+  const focusJobId = new URLSearchParams(window.location.search).get('publish_job_id')?.trim()
   const [kind, setKind] = useState<HistoryKind>('jobs')
   const [jobPage, setJobPage] = useState(0)
   const [manualPage, setManualPage] = useState(0)
@@ -98,8 +106,14 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
       : fetchManualPublishRecordPage(baseUrl, { limit: MERCHANT_PUBLISH_PAGE_SIZE, offset: manualPage * MERCHANT_PUBLISH_PAGE_SIZE })
     read.then(page => {
       if (currentId !== requestId.current) return
-      if (kind === 'jobs') setJobs(page as ApiPage<PublishJob>)
-      else setManual(page as ApiPage<ManualPublishRecord>)
+      const lastPage = Math.max(0, Math.ceil(page.total / MERCHANT_PUBLISH_PAGE_SIZE) - 1)
+      if (kind === 'jobs') {
+        setJobs(page as ApiPage<PublishJob>)
+        setJobPage(current => Math.min(current, lastPage))
+      } else {
+        setManual(page as ApiPage<ManualPublishRecord>)
+        setManualPage(current => Math.min(current, lastPage))
+      }
     }).catch(cause => {
       if (currentId !== requestId.current) return
       setError(describeApiError(cause))
@@ -130,7 +144,7 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
       {baseUrl && loading && <div className="info-notice" role="status">正在读取发布记录…</div>}
       {baseUrl && !loading && error && <div className="error-notice" role="alert">读取发布记录失败：{error} <button type="button" onClick={() => setReload(value => value + 1)}>重试</button></div>}
       {baseUrl && !loading && !error && page?.total === 0 && <div className="empty-state">当前没有{kind === 'jobs' ? '发布任务' : '人工发布报告'}。</div>}
-      {baseUrl && !loading && !error && kind === 'jobs' && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} />)}
+      {baseUrl && !loading && !error && kind === 'jobs' && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} focusJobId={focusJobId} />)}
       {baseUrl && !loading && !error && kind === 'manual' && manual?.items.map(record => <ManualPublishRecordRow key={record.id} record={record} taskHref={openTask(record.taskId)} />)}
       {baseUrl && !loading && !error && page && page.total > 0 && <div className="task-list-pagination">
         <span>第 {index + 1} / {count} 页，共 {page.total} 条</span>

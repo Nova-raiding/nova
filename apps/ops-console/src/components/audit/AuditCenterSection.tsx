@@ -26,10 +26,11 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
   const initialLoadFailed = Boolean(controller.error && !controller.loading && controller.records.length === 0)
   const staleRecords = Boolean(controller.error && controller.records.length > 0)
   const canViewDetails = !platformScope
-  const exportDisabled = !canExport || platformScope || !controller.records.length || staleRecords || controller.exporting
+  const exportDisabled = !canExport || platformScope || !controller.records.length || staleRecords || controller.loading || controller.exporting
   const exportUnavailableReason = !canExport
     ? platformScope ? '平台聚合视图暂不支持跨租户导出，请切换到具体工作区。' : '当前会话没有 audit.export 能力，无法导出审计记录。'
     : staleRecords ? '当前筛选刷新失败，旧审计结果不可导出；请先成功刷新。'
+    : controller.loading ? '审计筛选正在读取，请等待结果加载完成后再导出。'
     : !controller.records.length ? '当前筛选条件没有可导出的审计记录。' : undefined
   useEffect(() => {
     if (controller.error) errorRef.current?.focus()
@@ -59,7 +60,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
       </div>
       <Space wrap size={8}>
         <Button icon={<ReloadOutlined aria-hidden />} loading={controller.loading} onClick={() => void controller.reload()} style={{ minHeight: 44 }}>刷新</Button>
-        <Button icon={<DownloadOutlined aria-hidden />} loading={controller.exporting}
+        <Button icon={<DownloadOutlined aria-hidden />} loading={controller.exporting || controller.loading}
           aria-disabled={exportDisabled || undefined} aria-busy={controller.exporting}
           aria-describedby="audit-export-help" tabIndex={0}
           title={exportUnavailableReason}

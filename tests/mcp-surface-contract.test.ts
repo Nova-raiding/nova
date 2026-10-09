@@ -312,7 +312,7 @@ describe('MCP surface coverage', () => {
       expect(methodsFromAllowlist(contracts).filter(candidate => candidate === method), `${method} duplicated in allowlist`).toHaveLength(1)
       expect([...bridge.matchAll(new RegExp(`^  '${method.replaceAll('.', '\\.')}'\\s*:`, 'gmu'))], `${method} duplicated in source bridge`).toHaveLength(1)
       expect([...installedBridge.matchAll(new RegExp(`^  '${method.replaceAll('.', '\\.')}'\\s*:`, 'gmu'))], `${method} duplicated in marketplace bridge`).toHaveLength(1)
-      expect(openapi).toContain(`${method}: '#/components/schemas/`)
+      expect(openapi).toContain(`'${method}': '#/components/schemas/`)
     }
   })
 
@@ -329,7 +329,7 @@ describe('MCP surface coverage', () => {
       expect([...bridge.matchAll(new RegExp(`^  '${method.replaceAll('.', '\\.')}'\\s*:`, 'gmu'))], `${method} duplicated in source bridge`).toHaveLength(1)
       expect([...installedBridge.matchAll(new RegExp(`^  '${method.replaceAll('.', '\\.')}'\\s*:`, 'gmu'))], `${method} duplicated in installed bridge`).toHaveLength(1)
       const schema = method === 'campaign.batch.retry_failed' ? 'McpCampaignBatchRetryFailedParams' : 'McpCampaignBatchControlParams'
-      expect(openapi).toContain(`${method}: '#/components/schemas/${schema}'`)
+      expect(openapi).toContain(`'${method}': '#/components/schemas/${schema}'`)
     }
   })
 
@@ -373,7 +373,7 @@ describe('MCP surface coverage', () => {
     expect(contracts).toContain("method: 'platform.mapping.preflight'")
     expect(api).toContain("method === 'platform.mapping.preflight'")
     expect(bridge).toContain("'platform.mapping.preflight':")
-    expect(openapi).toContain("platform.mapping.preflight: '#/components/schemas/McpPlatformMappingPreflightParams'")
+    expect(openapi).toContain("'platform.mapping.preflight': '#/components/schemas/McpPlatformMappingPreflightParams'")
     expect(api).toContain('PLATFORM_MAPPING_PREFLIGHT_REQUIRED')
     expect(studioApi).toContain("'platform.mapping.preflight'")
     expect(studioApi).toContain('evaluatePlatformMappingPreflight')

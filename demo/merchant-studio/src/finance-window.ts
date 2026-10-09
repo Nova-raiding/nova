@@ -1,5 +1,10 @@
 export type FinancePoint = { label: string; value: number; dateLabel?: string }
 
+export function financeUsageRangeError(range: { mode: 'day' | 'month'; start: string; end: string }): string {
+  if (range.start && range.end && range.start > range.end) return '开始日期不能晚于结束日期。'
+  return ''
+}
+
 export function filterFinanceEntriesByWindow<T extends { createdAt: string }>(entries: T[], mode: 'day' | 'month', start: string, end: string): T[] {
   const normalize = (value: string) => mode === 'day' ? value.replaceAll('-', '') : value.replace('-', '')
   const from = normalize(start)
@@ -49,5 +54,22 @@ export function fillDailyFinancePoints(points: FinancePoint[], start: string, en
   return Array.from({ length: count }, (_, index) => {
     const dateLabel = new Date(from + index * 86_400_000).toISOString().slice(0, 10)
     return byDate.get(dateLabel) ?? { dateLabel, label: dateLabel.slice(5).replace('-', '/'), value: 0 }
+  })
+}
+
+/** Fill known zero-use months only for a bounded, complete ledger window. */
+export function fillMonthlyFinancePoints(points: FinancePoint[], start: string, end: string): FinancePoint[] {
+  if (!points.length || !/^\d{4}-\d{2}$/.test(start) || !/^\d{4}-\d{2}$/.test(end) || end < start) return points
+  const [startYear, startMonth] = start.split('-').map(Number)
+  const [endYear, endMonth] = end.split('-').map(Number)
+  const count = (endYear! - startYear!) * 12 + endMonth! - startMonth! + 1
+  if (count < 1 || count > 120) return points
+  const byMonth = new Map(points.flatMap(point => point.dateLabel ? [[point.dateLabel.replaceAll('/', '-'), point] as const] : []))
+  return Array.from({ length: count }, (_, index) => {
+    const absoluteMonth = startYear! * 12 + startMonth! - 1 + index
+    const year = Math.floor(absoluteMonth / 12)
+    const month = absoluteMonth % 12 + 1
+    const dateLabel = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+    return byMonth.get(dateLabel) ?? { dateLabel, label: dateLabel.replace('-', '/'), value: 0 }
   })
 }

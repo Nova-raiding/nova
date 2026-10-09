@@ -68,13 +68,51 @@ function declaredMethodSchemaRefs(): Map<string, string> {
   if (start < 0) throw new Error('OpenAPI McpRequest.params.x-method-schema-refs is missing')
   const refs = new Map<string, string>()
   for (const line of openApiLines.slice(start + 1)) {
-    const match = /^ {12}([\w.-]+): '#\/components\/schemas\/([A-Za-z0-9_]+)'$/u.exec(line)
+    const match = /^ {12}(?:'([^']+)'|([\w.-]+)): '#\/components\/schemas\/([A-Za-z0-9_]+)'$/u.exec(line)
     if (!match) break
-    if (refs.has(match[1]!)) throw new Error(`duplicate OpenAPI schema ref for ${match[1]}`)
-    refs.set(match[1]!, match[2]!)
+    const method = match[1] ?? match[2]!
+    if (refs.has(method)) throw new Error(`duplicate OpenAPI schema ref for ${method}`)
+    refs.set(method, match[3]!)
   }
   if (!refs.size) throw new Error('OpenAPI x-method-schema-refs is empty')
   return refs
+}
+
+/** Method discriminator mapping from the standard MCP request union. */
+function declaredMethodRequestRefs(): Map<string, string> {
+  const body = schemaBody('McpRequest')
+  const marker = body.findIndex(line => /^ {8}mapping:\s*$/u.test(line))
+  if (marker < 0) throw new Error('OpenAPI McpRequest discriminator mapping is missing')
+  const refs = new Map<string, string>()
+  for (const line of body.slice(marker + 1)) {
+    const match = /^ {10}'([^']+)': '#\/components\/schemas\/([A-Za-z0-9_]+)'$/u.exec(line)
+    if (!match) break
+    if (refs.has(match[1]!)) throw new Error(`duplicate OpenAPI MCP request discriminator mapping for ${match[1]}`)
+    refs.set(match[1]!, match[2]!)
+  }
+  return refs
+}
+
+/** Native tools/call discriminates arguments by the tool name. */
+function declaredNativeToolArgumentRefs(): Map<string, string> {
+  const body = schemaBody('McpNativeToolCallParams')
+  const marker = body.findIndex(line => /^ {8}mapping:\s*$/u.test(line))
+  if (marker < 0) throw new Error('OpenAPI native tools/call discriminator mapping is missing')
+  const refs = new Map<string, string>()
+  for (const line of body.slice(marker + 1)) {
+    const match = /^ {10}'([^']+)': '#\/components\/schemas\/([A-Za-z0-9_]+)'$/u.exec(line)
+    if (!match) break
+    if (refs.has(match[1]!)) throw new Error(`duplicate native tool argument mapping for ${match[1]}`)
+    refs.set(match[1]!, match[2]!)
+  }
+  return refs
+}
+
+function directOneOfRefs(schemaName: string): string[] {
+  return schemaBody(schemaName).flatMap(line => {
+    const match = /^ {8}- \{ \$ref: '#\/components\/schemas\/([A-Za-z0-9_]+)' \}$/u.exec(line)
+    return match ? [match[1]!] : []
+  })
 }
 
 /** A 6-space schema key's value, with its deeper continuation lines folded in. */
@@ -106,7 +144,7 @@ function bodyProperties(body: readonly string[]): Map<string, string> {
   let current: string | undefined
   for (const line of body.slice(start + 1)) {
     if (/^ {6}[A-Za-z]/u.test(line)) break // the next schema key ends the block
-    const match = /^ {8}([a-z_][a-z0-9_]*):(.*)$/u.exec(line)
+    const match = /^ {8}([A-Za-z_][A-Za-z0-9_]*):(.*)$/u.exec(line)
     if (match) {
       current = match[1]!
       properties.set(current, match[2]!.trim())
@@ -168,6 +206,25 @@ function compareMethod(method: string, schemaName: string): string[] {
   if (documented.join(',') !== enforced.join(',')) {
     failures.push(`${method}: OpenAPI requires [${documented.join(', ')}] but the wire contract requires [${enforced.join(', ')}]`)
   }
+  const rendered = body.join('\n')
+  const documentedRequiredSets = [...rendered.matchAll(/required: \[([^\]]+)\]/gu)]
+    .map(match => match[1]!.split(',').map(field => field.trim()))
+  for (const field of schema.requiredAnyOf ?? []) {
+    if (!documentedRequiredSets.some(fields => fields.includes(field))) failures.push(`${method}: OpenAPI omits requiredAnyOf alternative params.${field}`)
+  }
+  if ((schema.requiredAnyOf?.length ?? 0) > 0 && !/^ {6}(?:anyOf|oneOf):\s*$/mu.test(rendered)) {
+    failures.push(`${method}: OpenAPI omits the requiredAnyOf constraint`)
+  }
+  for (const group of schema.mutuallyExclusive ?? []) {
+    const key = `required: [${group.join(', ')}]`
+    if (!rendered.includes(key) && !schema.oneOf?.length) failures.push(`${method}: OpenAPI omits mutually-exclusive params [${group.join(', ')}]`)
+  }
+  if ((schema.mutuallyExclusive?.length ?? 0) > 0 && !/^ {6}not:\s*$/mu.test(rendered) && !schema.oneOf?.length) {
+    failures.push(`${method}: OpenAPI omits the mutually-exclusive constraint`)
+  }
+  if (schema.oneOf?.length && !/^ {6}oneOf:\s*$/mu.test(rendered)) {
+    failures.push(`${method}: OpenAPI omits a method-specific params oneOf constraint`)
+  }
   const properties = bodyProperties(body)
   for (const [name, text] of properties) {
     const field = schema.properties[name] as FieldSchema | undefined
@@ -188,6 +245,8 @@ function compareMethod(method: string, schemaName: string): string[] {
 
 describe('OpenAPI/MCP parameter parity', () => {
   const refs = declaredMethodSchemaRefs()
+  const requestRefs = declaredMethodRequestRefs()
+  const nativeArgumentRefs = declaredNativeToolArgumentRefs()
 
   it('derives a non-trivial ref inventory instead of passing vacuously', () => {
     expect(refs.size).toBeGreaterThan(20)
@@ -200,6 +259,41 @@ describe('OpenAPI/MCP parameter parity', () => {
 
   it('advertises exactly the schema the wire validator enforces for every ref', () => {
     expect([...refs].flatMap(([method, schemaName]) => compareMethod(method, schemaName))).toEqual([])
+  })
+
+  it('uses method discriminators to reject unknown MCP and native tool arguments', () => {
+    expect([...requestRefs.keys()].sort()).toEqual([...MCP_METHODS].sort())
+    expect([...refs.keys()]).toEqual([...MCP_METHODS])
+    expect([...nativeArgumentRefs.keys()].sort()).toEqual([...MCP_METHODS].sort())
+    expect(directOneOfRefs('McpRequest').sort()).toEqual([...requestRefs.values()].sort())
+    expect(directOneOfRefs('McpNativeToolCallParams').sort()).toEqual([...nativeArgumentRefs.values()].sort())
+    expect(directOneOfRefs('McpNativeRequest').sort()).toEqual(['McpNativeInitializeRequest', 'McpNativeInitializedNotification', 'McpNativeToolsListRequest', 'McpNativeToolCallRequest'].sort())
+
+    for (const method of MCP_METHODS) {
+      const requestName = requestRefs.get(method)!
+      const request = schemaBody(requestName).join('\n')
+      expect(request, `${method} request branch must pin its method`).toContain(`enum: ['${method}']`)
+      expect(request, `${method} request branch must use the method's params contract`).toContain(`$ref: '#/components/schemas/${refs.get(method)}'`)
+      expect(request, `${method} envelope must preserve JSON-RPC's ignored extension fields`).toMatch(/^\s{6}additionalProperties: true$/mu)
+
+      const params = schemaBody(refs.get(method)!).join('\n')
+      expect(params, `${method} params must reject unknown fields`).toMatch(/^\s{6}additionalProperties: false$/mu)
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'openapi-parity', method, params: { __unknown_contract_probe__: 'x' } }).errors)
+        .toContain(`${method} 不接受参数 params.__unknown_contract_probe__`)
+
+      const nativeName = nativeArgumentRefs.get(method)!
+      const native = schemaBody(nativeName).join('\n')
+      expect(native, `${method} native branch must pin its tool name`).toContain(`enum: ['${method}']`)
+      expect(native, `${method} native arguments must reuse its params contract`).toContain(`$ref: '#/components/schemas/${refs.get(method)}'`)
+    }
+    expect(schemaBody('McpNativeToolCallParams').join('\n')).toContain('oneOf:')
+    // The native transport ignores extra keys on tools/call.params; the
+    // strict field boundary applies to the nested tool arguments object.
+    expect(schemaBody('McpNativeToolCallParams').join('\n')).toMatch(/^\s{6}additionalProperties: true$/mu)
+    expect(schemaBody('McpRequest').join('\n')).toMatch(/^\s{6}additionalProperties: true$/mu)
+    const nativeRequest = schemaBody('McpNativeRequest').join('\n')
+    expect(nativeRequest).toContain("notifications/initialized: '#/components/schemas/McpNativeInitializedNotification'")
+    expect(schemaBody('McpNativeInitializedNotification').join('\n')).toMatch(/^\s{6}required: \[jsonrpc, method\]$/mu)
   })
 
   it('pins the backfill run/pause split that this gate was written for', () => {

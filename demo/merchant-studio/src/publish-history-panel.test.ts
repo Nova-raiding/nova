@@ -68,4 +68,17 @@ describe('商家发布记录', () => {
     expect(prepared).toContain('时间待核对')
     expect(prepared).not.toContain('Invalid Date')
   })
+
+  it('任务队列深链能突出显示刚创建的发布任务 ID', () => {
+    const job = {
+      id: 'job-focus-42', workspaceId: 'ws_demo', taskId: 'task-42', contentVersionId: 'content-42',
+      platform: 'taobao', accountId: 'store-42', idempotencyKey: 'key-focus-42', state: 'queued',
+      confirmationHash: 'hash-1', remoteSnapshotHash: 'hash-2', createdAt: '2026-10-09T00:00:00.000Z',
+    } satisfies PublishJob
+    const html = renderToStaticMarkup(createElement(PublishJobRecord, { job, taskHref: '/merchant/tasks/task-42', focusJobId: job.id }))
+    expect(html).toContain('id="publish-job-job-focus-42"')
+    expect(html).toContain('publish-job-focused')
+    expect(html).toContain('刚创建的发布任务：job-focus-42')
+    expect(html).toContain('aria-current="true"')
+  })
 })

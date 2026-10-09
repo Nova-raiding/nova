@@ -318,8 +318,9 @@ describe('确认上传 writes to the server', () => {
     expect(upload).toContain('uploadAsset(baseUrl, file, uploadCategory)')
     expect(upload).toContain('uploadMaterialFiles(')
     expect(upload).toContain('acceptedFiles')
-    expect(upload).toContain('setPendingFiles((current) => current.filter((file) => !acceptedKeys.has(pendingFileKey(file))))')
-    expect(upload).toContain('setPendingSelectedKeys((current) => current.filter((key) => !acceptedKeys.has(key)))')
+    expect(upload).toContain('acceptedPendingMaterialIds(pendingFiles, acceptedFiles)')
+    expect(upload).toContain('setPendingFiles((current) => current.filter((item) => !acceptedIds.has(item.id)))')
+    expect(upload).toContain('setPendingSelectedKeys((current) => current.filter((id) => !acceptedIds.has(id)))')
     // The re-read is what makes the list the server's answer.
     expect(upload).toContain('fetchAssets(baseUrl)')
     // No API means no server, and 确认上传 may not pretend otherwise.

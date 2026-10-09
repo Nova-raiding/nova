@@ -73,11 +73,39 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
   cursorRef.current = nextCursor
 
   const setFilters = useCallback((next: AuditCenterFilters) => {
+    // Invalidate in-flight work synchronously. The debounced effect below runs
+    // after this callback; without this, an old response can win that gap.
+    listRequest.current += 1
+    listAbort.current?.abort()
+    listAbort.current = undefined
+    exportRequest.current += 1
+    exportAbort.current?.abort()
+    exportAbort.current = undefined
+    detailRequest.current += 1
+    detailAbort.current?.abort()
+    detailAbort.current = undefined
     filtersRef.current = next
     cursorRef.current = undefined
     setNextCursor(undefined)
+    // The visible rows belong to the old filter set. Clear them immediately,
+    // before the debounced request starts, so they can never be exported as if
+    // they represented the newly selected filters.
+    setRecords([])
+    setTotalRecords(0)
+    setTruncated(false)
     setFiltersState(next)
-  }, [])
+    // With autoLoad disabled there is no debounced request to clear this state.
+    // Keep manual-mode filters idle; auto-loading callers show the pending load.
+    setLoading(autoLoad)
+    setLoadingMore(false)
+    setError(undefined)
+    setExporting(false)
+    setExportError(undefined)
+    setSelected(undefined)
+    setDetail(undefined)
+    setDetailLoading(false)
+    setDetailError(undefined)
+  }, [autoLoad])
 
   const run = useCallback(async (append = false) => {
     const cursor = append ? cursorRef.current : undefined

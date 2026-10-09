@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { accessDeniedRecoveryDomain, canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, popstateWorkbenchWarning, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
+import { accessDeniedRecoveryDomain, canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, popstateWorkbenchWarning, shouldConfirmWorkbenchTransition, visibleDomainsForWorkbench, workbenchSwitchWarning } from "./OpsConsoleController.js";
 import { opsDomains, requiredWorkbenchForDomain } from "../navigation/opsNavigation.js";
 import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks/RuleCenterSection.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
@@ -23,6 +23,18 @@ describe("ops workbench transition", () => {
   it("uses the platform workbench for a customer-delivery deep link despite stale workspace state", () => {
     expect(initialOpsWorkbench({ pathname: "/ops/customer-delivery", search: "", hash: "" }, "workspace")).toBe("platform");
     expect(initialOpsWorkbench({ pathname: "/ops/tasks", search: "", hash: "" }, "platform")).toBe("platform");
+  });
+
+  it("hides capability-visible workspace pages from the platform-only sidebar", () => {
+    const authorization = createAuthorizationProjection({
+      actor_id: "actor_1", workspace_id: "platform", roles: [], workspace_granted: true,
+      capabilities: ["platform.summary.read", "workspace.member.read", "customer.content.read"],
+    }, true);
+    expect(visibleDomainsForWorkbench(authorization, "platform")).toContain("overview");
+    expect(visibleDomainsForWorkbench(authorization, "platform")).not.toContain("members");
+    expect(visibleDomainsForWorkbench(authorization, "platform")).not.toContain("tasks");
+    expect(visibleDomainsForWorkbench(authorization, "platform")).not.toContain("knowledge");
+    expect(visibleDomainsForWorkbench(authorization, "workspace")).toContain("members");
   });
 
   it("ignores a merchant workbench query this console cannot activate", () => {

@@ -177,10 +177,27 @@ export function accessDeniedRecoveryDomain(
   authorization: Parameters<typeof visibleOpsDomains>[0],
   activeWorkbench: OpsWorkbench,
 ): OpsDomain | undefined {
-  const visible = visibleOpsDomains(authorization).filter(
+  const visible = visibleDomainsForWorkbench(authorization, activeWorkbench);
+  if (visible.includes("users")) return "users";
+  if (visible.includes("overview")) return "overview";
+  return visible[0];
+}
+
+export function visibleDomainsForWorkbench(
+  authorization: Parameters<typeof visibleOpsDomains>[0],
+  activeWorkbench: OpsWorkbench,
+): OpsDomain[] {
+  return visibleOpsDomains(authorization).filter(
     (domain) => domainNavigationBlockedReason(domain, activeWorkbench) === undefined,
   );
-  if (visible.includes("users")) return "users";
+}
+
+/** Pick a reachable destination when a direct link targets another workbench. */
+export function blockedDomainRecoveryDomain(
+  authorization: Parameters<typeof visibleOpsDomains>[0],
+  activeWorkbench: OpsWorkbench,
+): OpsDomain | undefined {
+  const visible = visibleDomainsForWorkbench(authorization, activeWorkbench);
   if (visible.includes("overview")) return "overview";
   return visible[0];
 }
@@ -246,8 +263,11 @@ function Dashboard({
   const sessionReady = sessionGate === "ready";
   // The operations landing page is the stable read-only entry point for every
   // authenticated workbench. Its datasets still fail closed independently.
-  const visibleDomains = visibleOpsDomains(model.authorization);
+  const visibleDomains = visibleDomainsForWorkbench(model.authorization, activeWorkbench);
   const blockedDomain = domainNavigationBlockedReason(activeDomain, activeWorkbench);
+  const blockedRecoveryDomain = blockedDomain
+    ? blockedDomainRecoveryDomain(model.authorization, activeWorkbench)
+    : undefined;
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
   const accessDeniedReturnDomain = accessDeniedRecoveryDomain(model.authorization, activeWorkbench);
   const ActivePage = opsPageRegistry[activeDomain];
@@ -396,7 +416,11 @@ function Dashboard({
               role="status"
               title="此页面需要商家工作区权限"
               description={blockedDomain}
-              action={<Button onClick={() => navigateToRoute("overview")}>返回平台总览</Button>}
+              action={blockedRecoveryDomain ? (
+                <Button onClick={() => navigateToDomain(blockedRecoveryDomain)}>
+                  返回{mainItems.find((item) => item.domain === blockedRecoveryDomain)?.label ?? "可访问页面"}
+                </Button>
+              ) : undefined}
             />
           ) : authorized ? (
             <OpsPageBoundary resetKey={activeDomain}>

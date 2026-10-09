@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import argon2 from 'argon2'
 import { describe, expect, it } from 'vitest'
-import { MemoryPasswordAuthRepository } from './password-auth-repository.js'
+import { MemoryPasswordAuthRepository, type MemoryMcpOAuthState } from './password-auth-repository.js'
 
 describe('password authentication', () => {
   it('bootstraps the first platform administrator once and repairs an existing matching account', async () => {
@@ -179,6 +179,38 @@ describe('password authentication', () => {
     await expect(auth.authenticateMcpAccessToken({ ...context, accessToken: family.accessToken })).resolves.toBeUndefined()
     await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: family.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
     await expect(auth.revokeMcpOAuthToken({ ...context, token: 'unknown-token', tokenTypeHint: 'access_token' })).resolves.toBeUndefined()
+  })
+
+  it('matches production MCP token state gates when the memory adapter receives the durable identity/member/workspace projection', async () => {
+    let state: MemoryMcpOAuthState = {
+      identityStatus: 'active',
+      riskDecision: 'allow',
+      identityAuthEpoch: 1,
+      memberStatus: 'active' as const,
+      workspaceStatus: 'active' as const,
+    }
+    const auth = new MemoryPasswordAuthRepository(() => state)
+    const account = await auth.createMerchantAccount({ login: 'oauth-state-parity@example.com', password: 'InitialPass123', enterpriseName: '企业', contactName: '管理员', workspaceIds: ['ws_oauth_state_parity'], actorId: 'platform_ops', reason: 'OAuth state parity test' })
+    const context = { clientId: 'local-desktop', issuer: 'https://merchant.example', audience: 'https://merchant.example/mcp', resource: 'https://merchant.example/mcp', scope: ['merchant'] }
+    const verifier = 'oauth-state-parity-verifier-000000000000000000000000000'
+    const code = await auth.issueMcpAuthorizationCode({ ...context, account, redirectUri: 'http://127.0.0.1:12345/callback', codeChallenge: createHash('sha256').update(verifier).digest('base64url') })
+    const pair = await auth.exchangeMcpAuthorizationCode({ ...context, redirectUri: 'http://127.0.0.1:12345/callback', code: code.code, codeVerifier: verifier })
+    const authenticate = () => auth.authenticateMcpAccessToken({ ...context, accessToken: pair.accessToken })
+
+    await expect(authenticate()).resolves.toMatchObject({ identityId: account.identityId, workspaceId: 'ws_oauth_state_parity' })
+    state = { ...state, identityStatus: 'suspended' }
+    await expect(authenticate()).resolves.toBeUndefined()
+    state = { ...state, identityStatus: 'active', riskDecision: 'review' }
+    await expect(authenticate()).resolves.toBeUndefined()
+    state = { ...state, riskDecision: 'allow', identityAuthEpoch: 2 }
+    await expect(authenticate()).resolves.toBeUndefined()
+    state = { ...state, identityAuthEpoch: 1, memberStatus: 'suspended' }
+    await expect(authenticate()).resolves.toBeUndefined()
+    state = { ...state, memberStatus: 'active', workspaceStatus: 'disabled' }
+    await expect(authenticate()).resolves.toBeUndefined()
+
+    // Refresh is held to the same durable-state boundary as access-token use.
+    await expect(auth.refreshMcpOAuthToken({ ...context, refreshToken: pair.refreshToken })).rejects.toMatchObject({ code: 'MCP_OAUTH_INVALID_GRANT' })
   })
 
   it('binds multi-workspace PKCE grants and tokens to the selected workspace and invalidates removed bindings', async () => {

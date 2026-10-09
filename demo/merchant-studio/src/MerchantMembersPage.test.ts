@@ -54,4 +54,10 @@ describe('merchant members scope and governance', () => {
     gate.invalidate()
     expect(gate.isCurrent(refreshed)).toBe(false)
   })
+
+  it('clears the previous workspace success notice when switching workspaces', () => {
+    const switchHandler = membersPageSource.match(/onChange=\{\(event\) => \{ const next = event\.target\.value;([\s\S]*?)setSelectedWorkspaceId\(next\) \}\}/)?.[1] ?? ''
+    expect(switchHandler).toContain("setNotice('')")
+    expect(switchHandler).toContain('setPage(null)')
+  })
 })

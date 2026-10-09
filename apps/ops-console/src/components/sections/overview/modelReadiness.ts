@@ -19,6 +19,11 @@ export type ModelReadinessRow = {
 export function modelStateLabel(state: string | undefined): string {
   return ({
     ready: "已就绪",
+    release_metadata_blocked: "发布元数据未就绪",
+    model_relay_blocked: "模型中转未就绪",
+    cost_gate_blocked: "成本门禁未通过",
+    partial_model_readiness: "部分模型能力未就绪",
+    not_configured: "模型尚未配置",
     blocked: "已阻断",
     unavailable: "不可用",
     unknown: "状态待确认",

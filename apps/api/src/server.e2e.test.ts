@@ -1418,7 +1418,7 @@ describe('API HTTP vertical slice', () => {
     expect((await json(response)).error?.code).toBe('PAYMENT_CALLBACK_INVALID')
   })
 
-  it('reports exact recharge totals beyond the 100-row display limit', async () => {
+  it('paginates every recharge order beyond the 100-row display limit without duplicates', async () => {
     const base = await start()
     const workspaceId = `ws_billing_volume_${Date.now()}`
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_volume' }
@@ -1431,7 +1431,23 @@ describe('API HTTP vertical slice', () => {
     const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 200, method: 'billing.recharge.list', params: { workspace_id: workspaceId, states: 'pending', limit: '10' } }) }).then(json)
     expect(listed.error).toBeNull()
     expect(listed.data?.result).toMatchObject({ summary: { pending: 101, paid: 0, closed: 0, failed: 0 }, returned: 10, total: 101 })
-    expect((listed.data as { result: { orders: unknown[] } }).result.orders).toHaveLength(10)
+    const result = (listed.data as { result: { orders: Array<{ id: string }>; next_cursor: string | null } }).result
+    expect(result.orders).toHaveLength(10)
+    expect(result.next_cursor).toBeTruthy()
+    const allOrders = [...result.orders]
+    let cursor = result.next_cursor
+    while (cursor) {
+      const page = await fetch(`${base}/mcp`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 300 + allOrders.length, method: 'billing.recharge.list', params: { workspace_id: workspaceId, states: 'pending', limit: '10', cursor } }),
+      }).then(json)
+      expect(page.error).toBeNull()
+      const next = (page.data as { result: { orders: Array<{ id: string }>; next_cursor: string | null } }).result
+      allOrders.push(...next.orders)
+      cursor = next.next_cursor
+    }
+    expect(allOrders).toHaveLength(101)
+    expect(new Set(allOrders.map(order => order.id)).size).toBe(101)
   })
 
   it('serializes concurrent provider checkout creation for one idempotency key', async () => {

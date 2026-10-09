@@ -36,6 +36,7 @@ export interface ActiveRechargeRefund {
   order: BillingOrder
   reservation: BillingTransaction
 }
+export interface BillingOrderPageCursor { createdAt: string; id: string }
 
 export class WalletDebitIdempotencyConflictError extends Error {
   readonly code = 'WALLET_DEBIT_IDEMPOTENCY_CONFLICT'
@@ -131,6 +132,23 @@ export class PostgresBillingRepository {
       const safeStates = states.length ? states : ['pending' as const]
       const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state = ANY($2::text[]) AND ($4::text IS NULL OR created_by_actor_id=$4) ORDER BY created_at DESC,id DESC LIMIT $3', [workspaceId, safeStates, Math.min(100, Math.max(1, limit)), actorId ?? null])
       return result.rows.map(order)
+    })
+  }
+
+  async listOrdersPage(workspaceId: string, states: BillingOrderState[] = ['pending'], limit = 100, actorId?: string, cursor?: BillingOrderPageCursor) {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const safeStates = states.length ? states : ['pending' as const]
+      const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
+      const result = await client.query<OrderRow>(
+        'SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state = ANY($2::text[]) AND ($4::text IS NULL OR created_by_actor_id=$4) AND ($5::timestamptz IS NULL OR (created_at,id) < ($5::timestamptz,$6::text)) ORDER BY created_at DESC,id DESC LIMIT $3',
+        [workspaceId, safeStates, safeLimit + 1, actorId ?? null, cursor?.createdAt ?? null, cursor?.id ?? null],
+      )
+      const page = result.rows.slice(0, safeLimit).map(order)
+      const last = page.at(-1)
+      return {
+        orders: page,
+        ...(result.rows.length > safeLimit && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}),
+      }
     })
   }
 

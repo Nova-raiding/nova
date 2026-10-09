@@ -421,6 +421,24 @@ describe('PostgresBillingRepository recharge order reporting', () => {
     await expect(repository.countOrdersByState('ws_wallet')).resolves.toEqual({ pending: 101, paid: 7, closed: 0, failed: 0 })
   })
 
+  it('uses a stable createdAt/id keyset cursor and fetches one lookahead row', async () => {
+    const client = new RecordingClient()
+    const pageRows = [
+      { id: 'recharge_c', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'paid', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_by_actor_id: 'actor_a', created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' },
+      { id: 'recharge_b', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'paid', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_by_actor_id: 'actor_a', created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' },
+      { id: 'recharge_a', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'paid', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_by_actor_id: 'actor_a', created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' },
+    ]
+    client.enqueue(); client.enqueue(); client.enqueue(...pageRows); client.enqueue()
+    const page = await new PostgresBillingRepository(new RecordingPool(client)).listOrdersPage(
+      'ws_wallet', ['paid'], 2, 'actor_a', { createdAt: '2026-08-28T02:00:00.000Z', id: 'recharge_z' },
+    )
+
+    expect(page).toMatchObject({ orders: [{ id: 'recharge_c' }, { id: 'recharge_b' }], nextCursor: { createdAt: '2026-08-28T01:00:00.000Z', id: 'recharge_b' } })
+    const listCall = client.calls.find(call => call.text.includes('FROM billing_orders') && call.text.includes('LIMIT $3'))
+    expect(listCall?.text).toContain('(created_at,id) < ($5::timestamptz,$6::text)')
+    expect(listCall?.values).toEqual(['ws_wallet', ['paid'], 3, 'actor_a', '2026-08-28T02:00:00.000Z', 'recharge_z'])
+  })
+
   it('uses a least-recently-checked provider-only queue for automated reconciliation', async () => {
     const client = new RecordingClient()
     const pending = { id: 'recharge_oldest', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }

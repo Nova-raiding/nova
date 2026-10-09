@@ -94,6 +94,11 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('不会复用其他平台商品')
   })
 
+  it('guards detail state against the shared task contract and clamps stale queue pages', () => {
+    expect(app).toContain('isKnownMerchantTaskState(task.state)')
+    expect(app).toContain('clampTaskPage(page, result.total, MERCHANT_TASK_PAGE_SIZE)')
+  })
+
   it('disables unsafe product and asset actions until their evidence gates pass', () => {
     expect(app).toContain('Boolean(identityError) ||\n                            canonicalUnverified')
     expect(app).toContain('素材必须先由安全扫描服务标记为 clean')

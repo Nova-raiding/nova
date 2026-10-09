@@ -37,6 +37,7 @@ describe('installed e-commerce image/video workflow contract', () => {
     const merchantSkill = read('skills/merchant-marketing/SKILL.md')
     const imageReference = read('skills/merchant-marketing/references/product-image-workflow.md')
     const videoSkill = read('skills/ecommerce-video-marketing/SKILL.md')
+    const marketplaceVideoSkill = read('../../.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-video-marketing/SKILL.md')
     const storyboardSkill = read('skills/storyboard-prompt-assistant/SKILL.md')
 
     expect(manifest.skills).toBe('./skills/')
@@ -54,6 +55,9 @@ describe('installed e-commerce image/video workflow contract', () => {
     expect(merchantSkill).toContain('创意点扣费、成本证据')
     expect(merchantSkill).toContain('对象归档、病毒扫描和商品保真复核')
     expect(videoSkill).toContain('本技能不能替代成片')
+    expect(videoSkill).toContain('无证据时删除或明确标注“待核验”')
+    expect(videoSkill).toContain('所有镜头时长之和严格等于用户指定总时长')
+    expect(marketplaceVideoSkill).toBe(videoSkill)
     expect(storyboardSkill).toContain('This skill produces text, never a rendered video.')
 
     const child = spawn(process.execPath, [fileURLToPath(new URL('mcp/bridge.mjs', pluginRoot))], {

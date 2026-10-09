@@ -1991,6 +1991,7 @@ describe('MerchantService', () => {
     expect(service.listTasks('ws_other')).toHaveLength(0)
   })
 
+
   it('keeps an imported product code separate from SKU IDs and finds it by text query', () => {
     const service = new MerchantService()
     const product = service.importProduct({ workspaceId: 'ws_product_code', platform: 'jd', localProductKey: 'STYLE-42', title: '测试运动鞋', stock: 3 })

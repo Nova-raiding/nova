@@ -82,6 +82,8 @@ export interface SupportTicketPageCursor {
 export interface SupportTicketPageContract {
   items: SupportTicketContract[]
   nextCursor?: SupportTicketPageCursor
+  /** True when a bounded SLA-state scan stopped before reaching all matches. */
+  scanTruncated?: boolean
 }
 
 export interface CreateSupportTicketCommand {

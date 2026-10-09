@@ -57,12 +57,13 @@ import type {
   Rpc,
   OpsRequestError,
 } from "../types/ops.js";
+
 import type { FinanceSearchSummary } from "../../../../packages/contracts/src/ops/finance-search.js";
 import { platformMonthlyFinanceRequest } from "../components/sections/overview/financeWindow.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { confirmPolicyPropsFor } from "../utils/destructiveConfirm.js";
-import { paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
+import { mergeRechargeOrderPages, paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator, OpsLoadRerunGate } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
 import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
@@ -70,6 +71,10 @@ import { createAuthorizationProjection, type AuthorizationProjection } from "../
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 import { manualPublishClient, type RecordManualPublishEvidenceInput } from "../api/manualPublishClient.js";
 import { loadUserDirectory, userDirectoryResultKey } from "../api/userDirectoryCompatibility.js";
+import { SingleFlightGate } from "./singleFlightGate.js";
+import { canReadOpsUserDetail } from "./userDetailAccess.js";
+
+const opsBuildMode = (import.meta as ImportMeta & { env: { VITE_OPS_BUILD_MODE?: string } }).env.VITE_OPS_BUILD_MODE;
 
 export type JitRevocationReceipt = {
   grantId: string;
@@ -320,7 +325,14 @@ export function normalizePublishBatchConfirmations(value: string): string {
   if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 50)
     throw new Error("失败项确认必须包含 1 至 50 个项目");
   const required = ["task_id", "content_version_id", "confirmation_hash", "remote_snapshot_hash", "idempotency_key"] as const;
-  if (parsed.some((item) => !item || typeof item !== "object" || required.some((key) => typeof (item as Record<string, unknown>)[key] !== "string" || !(item as Record<string, string>)[key].trim())))
+  if (parsed.some((item) => {
+    if (!item || typeof item !== "object") return true;
+    const record = item as Record<string, unknown>;
+    return required.some((key) => {
+      const field = record[key];
+      return typeof field !== "string" || !field.trim();
+    });
+  }))
     throw new Error(`每个失败项都必须包含 ${required.join("、")}`);
   return JSON.stringify(parsed);
 }
@@ -537,8 +549,10 @@ export function useOpsConsoleModel() {
   const [modelUsageReconciliationReport, setModelUsageReconciliationReport] = useState<ModelUsageReconciliationReport>();
   const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
   const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
+  const [rechargeOrdersLoadingMore, setRechargeOrdersLoadingMore] = useState(false);
   const [rechargeOrdersError, setRechargeOrdersError] = useState("");
   const [rechargeOrderStateFilter, setRechargeOrderStateFilter] = useState<RechargeOrderState>();
+  const rechargeOrderStateFilterRef = useRef<RechargeOrderState | undefined>(rechargeOrderStateFilter);
   const [queryingRechargeOrderId, setQueryingRechargeOrderId] = useState<string>();
   const rechargeOrdersRequestRef = useRef(0);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -674,6 +688,9 @@ export function useOpsConsoleModel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refundSubmitting, setRefundSubmitting] = useState(false);
+  const refundSubmissionGateRef = useRef(new SingleFlightGate());
+  const rechargeQueryGateRef = useRef(new SingleFlightGate());
+  const rechargePageGateRef = useRef(new SingleFlightGate());
   const [error, setError] = useState("");
   const [dataSetErrors, setDataSetErrors] = useState<Record<string, string>>({});
   const [dataSetErrorEvidenceByMethod, setDataSetErrorEvidence] = useState<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>({});
@@ -916,7 +933,7 @@ export function useOpsConsoleModel() {
         error?: { code?: string };
       } | undefined;
       const commercialOperationAvailable = commercialAccessAvailable
-        && import.meta.env.VITE_OPS_BUILD_MODE !== "local"
+        && opsBuildMode !== "local"
         && commercialAccessDecision?.allowed === true
         && !commercialAccessDecision.error_code
         && !commercialAccessDecision.error?.code;
@@ -964,7 +981,7 @@ export function useOpsConsoleModel() {
         // falls back to an empty workspace and renders every mutation form
         // disabled.
         sessionAttempted ? Promise.resolve(resolvedSession) : optional("ops.session"),
-        platformOperator || import.meta.env.VITE_OPS_BUILD_MODE === "local"
+        platformOperator || opsBuildMode === "local"
           ? Promise.resolve(undefined)
           : authorizedOptional("workspace.commercial.get"),
         platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", workspaceAuditListParams(scopedWorkspaceId)),
@@ -1879,8 +1896,8 @@ export function useOpsConsoleModel() {
   };
   const loadUserDetail = async (externalSubject: string, identityId?: string) => {
     if (!hasOpsConnection()) return false;
-    if (!canUserGovernance) {
-      message.error("当前会话缺少平台用户治理权限");
+    if (!canReadOpsUserDetail(authorization)) {
+      message.error("当前会话缺少平台用户目录读取权限");
       return false;
     }
     const controller = userRequestsRef.current.beginDetail();
@@ -1905,41 +1922,47 @@ export function useOpsConsoleModel() {
     }
   };
   const refund = async (values: { orderId: string; reason: string }) => {
+    if (authorization.scope.kind !== "platform") {
+      message.error("当前工作区身份不能创建充值订单退款；请联系平台财务运营");
+      return;
+    }
     if (!canFinance) {
       message.error("当前会话为只读，缺少退款权限");
       return;
     }
-    const confirmed = await new Promise<boolean>((resolve) => {
-      modal.confirm({
-        title: `确认对订单 ${values.orderId} 创建退款？`,
-        content: `原因：${values.reason}。退款会产生真实账务流水，提交后不能通过此页面撤销。`,
-        okText: "确认退款",
-        cancelText: "取消",
-        // 破坏性确认：焦点落在“取消”，避免误按回车直接产生账务流水。
-        ...confirmPolicyPropsFor("billing.refund"),
-        onOk: () => resolve(true),
-        onCancel: () => {
-          // 这是唯一的确认层；取消必须给出明确结论，否则操作者无法判断退款是否已发生。
-          message.info("已取消退款，未产生任何账务流水");
-          resolve(false);
-        },
+    return refundSubmissionGateRef.current.run(async () => {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: `确认对订单 ${values.orderId} 创建退款？`,
+          content: `原因：${values.reason}。退款会产生真实账务流水，提交后不能通过此页面撤销。`,
+          okText: "确认退款",
+          cancelText: "取消",
+          // 破坏性确认：焦点落在“取消”，避免误按回车直接产生账务流水。
+          ...confirmPolicyPropsFor("billing.refund"),
+          onOk: () => resolve(true),
+          onCancel: () => {
+            // 这是唯一的确认层；取消必须给出明确结论，否则操作者无法判断退款是否已发生。
+            message.info("已取消退款，未产生任何账务流水");
+            resolve(false);
+          },
+        });
       });
+      if (!confirmed) return;
+      setRefundSubmitting(true);
+      try {
+        await rpc("billing.refund", {
+          order_id: values.orderId,
+          reason: values.reason,
+        });
+        message.success("退款流水已创建");
+        refundForm.resetFields();
+        await load();
+      } catch (cause) {
+        message.error(cause instanceof Error ? cause.message : "退款失败");
+      } finally {
+        setRefundSubmitting(false);
+      }
     });
-    if (!confirmed) return;
-    setRefundSubmitting(true);
-    try {
-      await rpc("billing.refund", {
-        order_id: values.orderId,
-        reason: values.reason,
-      });
-      message.success("退款流水已创建");
-      refundForm.resetFields();
-      await load();
-    } catch (cause) {
-      message.error(cause instanceof Error ? cause.message : "退款失败");
-    } finally {
-      setRefundSubmitting(false);
-    }
   };
   const runReconciliation = async () => {
     if (!canPaymentReconciliation) {
@@ -1974,8 +1997,11 @@ export function useOpsConsoleModel() {
     if (!hasOpsConnection()) return false;
     const requestId = ++rechargeOrdersRequestRef.current;
     const scopeRequest = rechargeOrdersLoadCoordinatorRef.current.begin();
+    if (state !== rechargeOrderStateFilterRef.current) setRechargeOrders(undefined);
+    rechargeOrderStateFilterRef.current = state;
     setRechargeOrderStateFilter(state);
     setRechargeOrdersLoading(true);
+    setRechargeOrdersLoadingMore(false);
     setRechargeOrdersError("");
     try {
       const result = await rpc("billing.recharge.list", rechargeOrderListParams(state));
@@ -2002,28 +2028,61 @@ export function useOpsConsoleModel() {
         setRechargeOrdersLoading(false);
     }
   };
+  const loadMoreRechargeOrders = async () => {
+    if (!hasOpsConnection()) return false;
+    return (await rechargePageGateRef.current.run(async () => {
+      const previous = rechargeOrders;
+      const cursor = previous?.next_cursor;
+      if (!previous || !cursor) return false;
+      const state = rechargeOrderStateFilterRef.current;
+      const requestId = ++rechargeOrdersRequestRef.current;
+      const scopeRequest = rechargeOrdersLoadCoordinatorRef.current.begin();
+      setRechargeOrdersLoadingMore(true);
+      setRechargeOrdersError("");
+      try {
+        const result = await rpc("billing.recharge.list", rechargeOrderListParams(state, cursor)) as unknown as RechargeOrderList;
+        if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest)) {
+          setRechargeOrders(current => {
+            if (current?.next_cursor !== cursor) return current;
+            const orders = mergeRechargeOrderPages(current.orders, result.orders);
+            return { ...result, orders, returned: orders.length };
+          });
+        }
+        return true;
+      } catch (cause) {
+        if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest))
+          setRechargeOrdersError(describeOpsError(cause));
+        return false;
+      } finally {
+        if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest))
+          setRechargeOrdersLoadingMore(false);
+      }
+    })) ?? false;
+  };
   const queryRechargeOrder = async (orderId: string) => {
     if (!canPaymentReconciliation) {
       message.error("当前会话缺少支付查单权限");
       return false;
     }
-    setQueryingRechargeOrderId(orderId);
-    try {
-      const response = (await rpc("billing.recharge.get", { order_id: orderId })) as unknown as {
-        state?: string;
-        payment_mode?: string;
-        providerStatus?: { state?: string };
-      };
-      const outcome = paymentQueryOutcome(response);
-      message[outcome.level](outcome.message);
-      await loadRechargeOrders(rechargeOrderStateFilter);
-      return true;
-    } catch (cause) {
-      message.error(describeOpsError(cause));
-      return false;
-    } finally {
-      setQueryingRechargeOrderId(undefined);
-    }
+    return (await rechargeQueryGateRef.current.run(async () => {
+      setQueryingRechargeOrderId(orderId);
+      try {
+        const response = (await rpc("billing.recharge.get", { order_id: orderId })) as unknown as {
+          state?: string;
+          payment_mode?: string;
+          providerStatus?: { state?: string };
+        };
+        const outcome = paymentQueryOutcome(response);
+        message[outcome.level](outcome.message);
+        await loadRechargeOrders(rechargeOrderStateFilterRef.current);
+        return true;
+      } catch (cause) {
+        message.error(describeOpsError(cause));
+        return false;
+      } finally {
+        setQueryingRechargeOrderId(undefined);
+      }
+    })) ?? false;
   };
   const runModelUsageReconciliation = async () => {
     try {
@@ -3094,6 +3153,7 @@ export function useOpsConsoleModel() {
     setReconciliation,
     rechargeOrders,
     rechargeOrdersLoading,
+    rechargeOrdersLoadingMore,
     rechargeOrdersError,
     rechargeOrderStateFilter,
     queryingRechargeOrderId,
@@ -3217,6 +3277,7 @@ export function useOpsConsoleModel() {
     loadRules,
     syncRulesNow,
     loadRechargeOrders,
+    loadMoreRechargeOrders,
     queryRechargeOrder,
     enabledCount,
     can,

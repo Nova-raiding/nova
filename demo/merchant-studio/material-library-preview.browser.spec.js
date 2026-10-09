@@ -7,6 +7,9 @@ const studioRoot = fileURLToPath(new URL('.', import.meta.url))
 const workspaceId = 'ws_material_preview_fixture'
 const validAssetId = 'asset-real-decode-fixture'
 const invalidAssetId = 'asset-undecodable-fixture'
+const trashedAssetId = 'asset-recycle-preview-fixture'
+const restoreFailureAssetId = 'asset-recycle-restore-failure'
+const purgeAssetId = 'asset-recycle-purge-fixture'
 test.setTimeout(90_000)
 
 // Chromium—not a mocked Image implementation—must decode these bytes after
@@ -53,6 +56,21 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   const page = await context.newPage()
   const downloads = []
   const revokedObjectUrls = []
+  const restoreRequests = []
+  const purgeRequests = []
+  const cancelPurgeRequests = []
+  const trashRecord = (id, name, state = {}) => ({
+    asset: { id, workspaceId, name, mimeType: 'image/png', sizeBytes: validPng.byteLength,
+      sha256: 'c'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
+      createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z' },
+    deleted_at: '2026-10-08T00:00:00.000Z', expires_at: '2026-11-07T00:00:00.000Z',
+    deleted_by: 'fixture-user', revision: 1, ...state,
+  })
+  const trashRows = [
+    trashRecord(trashedAssetId, '已删除样图.png'),
+    trashRecord(restoreFailureAssetId, '恢复失败样图.png'),
+    trashRecord(purgeAssetId, '清理请求样图.png'),
+  ]
   await page.addInitScript(() => {
     const revoke = URL.revokeObjectURL.bind(URL)
     window.__revokedMaterialPreviewUrls = []
@@ -90,6 +108,44 @@ test('downloads, decodes, and renders server-backed material previews in the rea
         ], total: 2, limit: 50, offset: 0,
       })) })
     }
+    if (path === '/api/v1/assets/trash') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
+        items: trashRows,
+        total: trashRows.length, limit: 50, offset: 0,
+      })) })
+    }
+    const trashAction = /^\/api\/v1\/assets\/([^/]+)\/(restore|purge|purge\/cancel)$/u.exec(path)
+    if (trashAction && request.method() === 'POST') {
+      const assetId = decodeURIComponent(trashAction[1])
+      const action = trashAction[2]
+      if (action === 'restore') {
+        restoreRequests.push(assetId)
+        if (assetId === restoreFailureAssetId) {
+          return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({
+            data: null, error: { code: 'REVISION_CONFLICT', message: '素材版本已变化，请重新读取后重试。' },
+          }) })
+        }
+        const index = trashRows.findIndex((row) => row.asset.id === assetId)
+        if (index >= 0) trashRows.splice(index, 1)
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ id: assetId })) })
+      }
+      if (action === 'purge') {
+        const body = request.postDataJSON()
+        purgeRequests.push({ assetId, body })
+        if (assetId === restoreFailureAssetId) {
+          return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({
+            data: null, error: { code: 'REVISION_CONFLICT', message: '素材版本已变化，请重新读取后重试。' },
+          }) })
+        }
+        const row = trashRows.find((item) => item.asset.id === assetId)
+        if (row) { row.purge_requested_at = '2026-10-09T00:00:00.000Z'; row.revision += 1 }
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ asset_id: assetId, status: 'purge_queued' })) })
+      }
+      cancelPurgeRequests.push(assetId)
+      const row = trashRows.find((item) => item.asset.id === assetId)
+      if (row) { delete row.purge_requested_at; row.revision += 1 }
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ asset_id: assetId, status: 'purge_cancelled' })) })
+    }
     const download = /^\/api\/v1\/assets\/([^/]+)\/download$/u.exec(path)
     if (download) {
       const assetId = decodeURIComponent(download[1])
@@ -118,6 +174,9 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     page.on('console', (message) => console.log(`BROWSER_CONSOLE ${message.type()} ${message.text()}`))
     page.on('pageerror', (error) => console.log(`BROWSER_PAGE_ERROR ${error.message}`))
     page.on('requestfailed', (request) => console.log(`BROWSER_REQUEST_FAILED ${request.url()} ${request.failure()?.errorText}`))
+    page.on('response', (response) => {
+      if (response.status() >= 400) console.log(`BROWSER_HTTP_ERROR ${response.status()} ${response.request().method()} ${response.url()}`)
+    })
     await page.goto(`${studioUrl}/merchant/products?section=knowledge`, { waitUntil: 'domcontentloaded' })
     const workspace = page.getByTestId('material-library-workspace')
     await expect(workspace).toBeVisible()
@@ -164,12 +223,80 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     await page.keyboard.press('Escape')
     await expect(uploadDialog).toHaveCount(0)
     await expect(page.getByRole('button', { name: '上传素材' })).toBeFocused()
+    revokedObjectUrls.push(...await page.evaluate(() => window.__revokedMaterialPreviewUrls))
+    expect(revokedObjectUrls.length).toBeGreaterThan(0)
+
+    await page.goto(`${studioUrl}/merchant/products?section=trash`, { waitUntil: 'domcontentloaded' })
+    const recycleBin = page.getByTestId('material-recycle-bin')
+    await expect(recycleBin).toBeVisible()
+    const recyclePreviewTrigger = recycleBin.getByRole('button', { name: '放大已删除样图.png' })
+    await recyclePreviewTrigger.click()
+    const recyclePreviewDialog = page.getByRole('dialog', { name: '素材预览：已删除样图.png' })
+    await expect(recyclePreviewDialog).toBeVisible()
+    await expect(recyclePreviewDialog).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(recyclePreviewDialog).toHaveCount(0)
+    await expect(recyclePreviewTrigger).toBeFocused()
+
+    await recycleBin.getByRole('button', { name: '选择已删除样图.png' }).click()
+    await recycleBin.getByRole('button', { name: '选择恢复失败样图.png' }).click()
+    await recycleBin.getByRole('button', { name: '恢复', exact: true }).click()
+    await expect(recycleBin.locator('article').filter({ hasText: '已删除样图.png' })).toHaveCount(0)
+    await expect(recycleBin.locator('article').filter({ hasText: '恢复失败样图.png' })).toBeVisible()
+    await expect(recycleBin.getByRole('alert')).toContainText('版本已变化')
+    expect(restoreRequests.sort()).toEqual([restoreFailureAssetId, trashedAssetId].sort())
+
+    await recycleBin.getByRole('button', { name: '选择清理请求样图.png' }).click()
+    const purgeTrigger = recycleBin.getByRole('button', { name: '彻底删除' })
+    await purgeTrigger.click()
+    const purgeDialog = page.getByRole('alertdialog', { name: '提前彻底删除素材' })
+    const submitPurge = purgeDialog.getByRole('button', { name: '提交清理请求' })
+    const reasonField = purgeDialog.getByLabel('删除原因')
+    const confirmationField = purgeDialog.getByLabel('输入“彻底删除”确认')
+    const cancelPurge = purgeDialog.getByRole('button', { name: '取消' })
+    await expect(reasonField).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(cancelPurge).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(reasonField).toBeFocused()
+    await reasonField.fill('商家请求提前清理，隔离浏览器验收')
+    await page.keyboard.press('Tab')
+    await expect(confirmationField).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(cancelPurge).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(purgeDialog).toHaveCount(0)
+    await expect(purgeTrigger).toBeFocused()
+    await purgeTrigger.click()
+    await expect(reasonField).toBeFocused()
+    await expect(submitPurge).toBeDisabled()
+    await reasonField.fill('商家请求提前清理，隔离浏览器验收')
+    await expect(submitPurge).toBeDisabled()
+    await confirmationField.fill('确认')
+    await expect(submitPurge).toBeDisabled()
+    await confirmationField.fill('彻底删除')
+    await expect(submitPurge).toBeEnabled()
+    await submitPurge.click()
+    await expect(purgeDialog).toBeVisible()
+    await expect(recycleBin.getByRole('alert')).toContainText('版本已变化')
+    await expect(recycleBin.locator('article').filter({ hasText: '对象存储清理处理中' })).toBeVisible()
+    await expect(recycleBin.getByRole('button', { name: '选择恢复失败样图.png' })).toHaveAttribute('aria-pressed', 'true')
+    expect(purgeRequests).toHaveLength(2)
+    expect(purgeRequests.find(({ assetId }) => assetId === purgeAssetId)).toMatchObject({ body: {
+      confirm_asset_name: '清理请求样图.png', reason: '商家请求提前清理，隔离浏览器验收', expected_revision: 1,
+    } })
+
+    await cancelPurge.click()
+    await expect(purgeDialog).toHaveCount(0)
+    await expect(purgeTrigger).toBeFocused()
+    const purgeArticle = recycleBin.locator('article').filter({ hasText: '清理请求样图.png' })
+    await purgeArticle.getByRole('button', { name: '撤销请求' }).click()
+    await expect(purgeArticle.getByText('对象存储清理处理中')).toHaveCount(0)
+    expect(cancelPurgeRequests).toEqual([purgeAssetId])
 
     expect(downloads.map(({ assetId }) => assetId).sort()).toEqual([invalidAssetId, validAssetId].sort())
     expect(downloads.every(({ accept }) => accept === 'application/octet-stream')).toBe(true)
     expect(downloads.every(({ cookie }) => cookie.includes('preview-auth-fixture=same-origin-session'))).toBe(true)
-    revokedObjectUrls.push(...await page.evaluate(() => window.__revokedMaterialPreviewUrls))
-    expect(revokedObjectUrls.length).toBeGreaterThan(0)
   } finally {
     await context.close()
     await browser.close()

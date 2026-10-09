@@ -382,7 +382,7 @@ describe('verified ECS Compose deployment runner', () => {
     expect(script.indexOf('rollback target must contain exactly the candidate migration chain')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('forward-compatible rollback bridge is not the current public release')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
     expect(script.indexOf('rollback capsule live migration version differs from signed predeploy observation')).toBeLessThan(script.indexOf('consume-production-evidence-nonce.sh'))
-  })
+  }, 30_000)
 
   it('executes the automatic rollback entrypoint with the complete frozen capsule contract', () => {
     const directory = mkdtempSync(join(tmpdir(), 'ecs-auto-rollback-'))

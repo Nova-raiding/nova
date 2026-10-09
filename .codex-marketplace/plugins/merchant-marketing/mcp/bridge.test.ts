@@ -12,6 +12,7 @@ import JSZip from 'jszip'
 import { chromium } from 'playwright'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
+import { TASK_STATES } from '../../../packages/contracts/src/domain.js'
 // The two byte-identical copies of this file sit at different depths relative to
 // the repository root (`apps/plugin/mcp` vs
 // `.codex-marketplace/plugins/merchant-marketing/mcp`), so no fixed relative
@@ -213,6 +214,30 @@ async function qaPackageBrokerBridge(baseUrl: string) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('keeps task.history state filters aligned with the shared task lifecycle contract and marketplace mirror', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: 'https://merchant.example.com', MERCHANT_WORKSPACE_ID: 'ws_task_state_contract' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
+      const listed = await nextLine(child.stdout)
+      const taskHistory = listed.result.tools.find((tool: { name: string }) => tool.name === 'task.history')
+      expect(taskHistory.inputSchema.properties.state.enum).toEqual([...TASK_STATES])
+      expect(taskHistory.inputSchema.properties.limit).toMatchObject({ pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 })
+      expect(taskHistory.inputSchema.properties.offset).toMatchObject({ pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 })
+      const invalidArguments: Array<[string, string]> = [['limit', '0'], ['limit', '101'], ['offset', '-1'], ['offset', '01'], ['offset', '10000000000']]
+      for (const [field, value] of invalidArguments) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'task.history', arguments: { [field]: value } } })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      }
+      expect(await readFile(BRIDGE_PATH, 'utf8')).toBe(await readFile(join(repositoryRoot, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), 'utf8'))
+    } finally {
+      child.kill()
+    }
+  }, 20_000)
+
   it('keeps the shell entrypoint executable for direct ChatGPT stdio launches', async () => {
     expect((await stat(BRIDGE_SHELL_PATH)).mode & 0o111).toBe(0o111)
   })
@@ -2257,24 +2282,53 @@ describe('Codex stdio MCP bridge', () => {
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
       received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       res.setHeader('content-type', 'application/json')
+      if (received.at(-1).method === 'workspace.interactive.confirm') {
+        res.end(JSON.stringify({ data: { result: { confirmed: true } }, error: null }))
+        return
+      }
+      if (received.at(-1).method === 'multimodal.video.request') {
+        res.end(JSON.stringify({ data: { result: {
+          status: 'completed', archive_state: 'archived', scan_status: 'clean',
+          asset_id: 'asset-video-sync', download_path: '/v1/assets/asset-video-sync/download',
+          rendering: { status: 'completed', archiveState: 'archived', providerJobId: 'video-job-sync' },
+        } }, error: null }))
+        return
+      }
+      const clean = received.at(-1).params?.provider_job_id === 'video-job-existing'
       res.end(JSON.stringify({ data: { result: {
         provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived',
+        scan_status: clean ? 'clean' : 'unscanned', asset_id: clean ? 'asset-video-clean' : 'asset-video-demo',
+        download_path: clean ? '/v1/assets/asset-video-clean/download' : undefined,
         video_url: 'https://cdn.example.test/video-existing.mp4',
       } }, error: null }))
     })
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'false' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-existing' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).not.toBe(true)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
+      const syncResponse = await nextLine(child.stdout)
+      expect(syncResponse.result.content[0].text).toBe('视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。')
+      expect(syncResponse.result.content[0].text).not.toContain('可下载查看')
+      expect(syncResponse.result.structuredContent).toMatchObject({ asset_id: 'asset-video-sync', archive_state: 'archived', scan_status: 'clean' })
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-existing' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: false, structuredContent: { provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived' } })
-      expect(received).toHaveLength(1)
-      expect(received[0].method).toBe('multimodal.video.get')
-      expect(received[0].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
+      expect(response.result.content[0].text).toBe('视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。')
+      expect(received[0].method).toBe('multimodal.video.request')
+      expect(received[0].params).toMatchObject({ prompt: '商品展示视频', output: 'rendering', context_json: '{}', workspace_id: 'ws_test' })
+      expect(received[1].method).toBe('multimodal.video.get')
+      expect(received[1].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-demo' } } })}\n`)
+      const demoResponse = await nextLine(child.stdout)
+      expect(demoResponse.result.content[0].text).toBe('视频已生成，文件或安全检查尚未全部确认。')
     } finally {
       child.kill()
       await close(server)

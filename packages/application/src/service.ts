@@ -21,6 +21,9 @@ import { orchestrateDetailPageModules } from './detail-page-orchestrator.js'
 
 export type Platform = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 const supportedPlatforms: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
+const platformSearchLabels: Record<Platform, string> = {
+  jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音',
+}
 const competitorReferenceMaxAgeMs = 90 * 24 * 60 * 60 * 1000
 
 // 淘宝/天猫共享同一套阿里商品视觉与投放生态，历史竞品报告可能以其中任一
@@ -1967,14 +1970,16 @@ export class MerchantService {
   listProducts(workspaceId: string, filters: { query?: string; platform?: Platform; accountId?: string; storeName?: string; brandName?: string; skuId?: string; remoteProductId?: string; listingStatus?: Product['listingStatus']; productState?: 'active' | 'disabled'; syncStatus?: SyncJobState; dateFrom?: string; dateTo?: string } = {}) {
     const query = filters.query?.trim().toLocaleLowerCase()
     const storeName = filters.storeName?.trim().toLocaleLowerCase()
+    const brandName = filters.brandName?.trim().toLocaleLowerCase()
+    const workspaceBrandName = this.getBrandProfile(workspaceId)?.name.toLocaleLowerCase()
     return [...this.products.values()].filter(product => {
       const latestSync = [...this.syncJobs.values()].filter(job => job.workspaceId === workspaceId && job.platform === product.platform && job.accountId === product.accountId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
       return product.workspaceId === workspaceId
-      && (!query || [product.id, product.remoteId, product.localProductKey, product.title, product.category, ...(product.images ?? [])].some(value => value?.toLocaleLowerCase().includes(query)))
+      && (!query || [product.id, product.remoteId, product.localProductKey, product.title, product.category, product.platform, platformSearchLabels[product.platform], ...(product.images ?? [])].some(value => value?.toLocaleLowerCase().includes(query)) || product.attributes?.brand?.toLocaleLowerCase().includes(query) || workspaceBrandName?.includes(query))
       && (!filters.platform || product.platform === filters.platform)
       && (!filters.accountId || product.accountId === filters.accountId)
       && (!storeName || product.storeName.toLocaleLowerCase().includes(storeName))
-      && (!filters.brandName || product.attributes?.brand?.toLocaleLowerCase().includes(filters.brandName.trim().toLocaleLowerCase()) || this.getBrandProfile(workspaceId)?.name.toLocaleLowerCase().includes(filters.brandName.trim().toLocaleLowerCase()))
+      && (!brandName || product.attributes?.brand?.toLocaleLowerCase().includes(brandName) || this.getBrandProfile(workspaceId)?.name.toLocaleLowerCase().includes(brandName))
       && (!filters.skuId || product.skus?.some(sku => sku.id === filters.skuId))
       && (!filters.remoteProductId || product.remoteId === filters.remoteProductId)
       && (!filters.listingStatus || product.listingStatus === filters.listingStatus)
@@ -2013,13 +2018,15 @@ export class MerchantService {
   }
   listTasks(workspaceId: string, filters: { query?: string; platform?: Platform; state?: TaskState; productId?: string; accountId?: string; brandName?: string; storeName?: string; remoteProductId?: string; publishStatus?: PublishState; dateFrom?: string; dateTo?: string } = {}) {
     const query = filters.query?.trim().toLocaleLowerCase()
+    const brandName = filters.brandName?.trim().toLocaleLowerCase()
+    const storeName = filters.storeName?.trim().toLocaleLowerCase()
     return [...this.tasks.values()].filter(task => {
       if (task.workspaceId !== workspaceId || (filters.platform && task.platform !== filters.platform) || (filters.state && task.state !== filters.state) || (filters.productId && task.productId !== filters.productId)) return false
       const product = this.products.get(task.productId)
       const publishJob = [...this.publishJobs.values()].filter(job => job.workspaceId === workspaceId && job.taskId === task.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
       if (filters.accountId && task.accountId !== filters.accountId) return false
-      if (filters.brandName && !product?.attributes?.brand?.toLocaleLowerCase().includes(filters.brandName.trim().toLocaleLowerCase()) && !this.getBrandProfile(workspaceId)?.name.toLocaleLowerCase().includes(filters.brandName.trim().toLocaleLowerCase())) return false
-      if (filters.storeName && !product?.storeName.toLocaleLowerCase().includes(filters.storeName.trim().toLocaleLowerCase())) return false
+      if (brandName && !product?.attributes?.brand?.toLocaleLowerCase().includes(brandName) && !this.getBrandProfile(workspaceId)?.name.toLocaleLowerCase().includes(brandName)) return false
+      if (storeName && !product?.storeName.toLocaleLowerCase().includes(storeName)) return false
       if (filters.remoteProductId && product?.remoteId !== filters.remoteProductId) return false
       if (filters.publishStatus && publishJob?.state !== filters.publishStatus && publishJob?.remoteState !== filters.publishStatus) return false
       if (filters.dateFrom && task.createdAt < filters.dateFrom) return false

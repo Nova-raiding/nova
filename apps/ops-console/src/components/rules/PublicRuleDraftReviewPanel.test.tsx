@@ -20,6 +20,7 @@ describe("public platform rule draft review", () => {
     expect(() => parsePublicRuleDraftList({ items: [{ ...pending, checksum_valid: "yes" }] })).toThrow("字段不完整");
     expect(() => parsePublicRuleDraftList({ items: [{ ...pending, platform: "unknown-platform" }] })).toThrow("字段不完整");
     expect(() => parsePublicRuleDraftList({ items: [{ ...pending, revision: 0 }] })).toThrow("字段不完整");
+    expect(() => parsePublicRuleDraftList({ items: [{ ...pending, created_at: "not-a-date" }] })).toThrow("字段不完整");
     expect(() => parsePublicRuleDraftList({ items: [], next_cursor: {} })).toThrow("游标格式无效");
   });
 

@@ -39,6 +39,7 @@ describe('repository release metadata gate', () => {
     const snapshot = collectReleaseMetadata()
     expect(validateReleaseMetadata({ ...snapshot, rootPackageVersion: '0.0.0' })).toContain('package.json version must match VERSION')
     expect(validateReleaseMetadata({ ...snapshot, pluginVersions: { ...snapshot.pluginVersions, marketplaceManifest: '0.0.0+codex.20260829000000' } })).toContain('source and marketplace plugin versions must match release-metadata pluginVersion')
+    expect(validateReleaseMetadata({ ...snapshot, pluginLockVersion: '0.1.0+codex.20261009104500' })).toContain('package-lock plugin workspace version must match source plugin package version')
     expect(validateReleaseMetadata({ ...snapshot, actualMcpMethodCount: snapshot.actualMcpMethodCount + 1 })).toContain('release-metadata mcpMethodCount must match the MCP contract registry')
     expect(validateReleaseMetadata({ ...snapshot, actualMerchantBridgeToolCount: snapshot.actualMerchantBridgeToolCount + 1 })).toContain('release-metadata merchantBridgeToolCount must match the merchant bridge surface')
     expect(validateReleaseMetadata({ ...snapshot, actualOpsDomainCount: snapshot.actualOpsDomainCount + 1 })).toContain('release-metadata opsDomainCount must match the Ops navigation surface')

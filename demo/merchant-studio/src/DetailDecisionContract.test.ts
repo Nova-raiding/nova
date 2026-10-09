@@ -152,4 +152,21 @@ describe('DetailDecisionContract', () => {
       },
     })).toBeNull()
   })
+
+  it.each([
+    ['buyer question', { buyerQuestion: '   ' }],
+    ['page task', { pageTask: '' }],
+    ['claim limitation', { claim: { limitations: ['   '] } }],
+  ])('rejects an empty %s before a module can be marked evidence-verified', (_label, override) => {
+    const valid = contract('verified')
+    const decisionContract = { ...valid, ...override }
+    expect(moduleDecisionContract({
+      ...module('verified'),
+      decisionContract,
+    })).toBeNull()
+    expect(moduleDecisionPresentation({
+      ...module('verified'),
+      decisionContract,
+    })).toMatchObject({ disposition: 'legacy_review_required', bodyVisible: false })
+  })
 })

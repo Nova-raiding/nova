@@ -1,4 +1,4 @@
-import { Button, Card, Form, Input, Tag } from "antd";
+import { Alert, Button, Card, Form, Input, Tag } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 
 interface RefundSectionProps {
@@ -7,6 +7,22 @@ interface RefundSectionProps {
 
 export function RefundSection({ model }: RefundSectionProps) {
   const { refundForm, refund, canFinance, refundSubmitting } = model;
+  // The current MCP billing.refund contract is platform-operations scoped.
+  // Workspace capability projections can contain billing.refund.execute, but
+  // the API deliberately rejects workspace finance identities. Do not present
+  // an enabled form that can only end in a 403.
+  if (model.authorization.scope.kind !== "platform") {
+    return (
+      <Card title="退款操作" extra={<Tag color="default">工作区身份不可执行</Tag>}>
+        <Alert
+          type="info"
+          showIcon
+          title="当前工作区暂不开放充值订单退款"
+          description="服务端 billing.refund 接口目前仅接受平台运营财务身份；本工作区页面不会提交退款请求。请联系平台财务运营处理。"
+        />
+      </Card>
+    );
+  }
   // 确认只在 `refund()` 内部弹一次，程序化调用者同样受保护。此处不能再弹第二层：
   // 表单 onOk 返回 promise 时 antd 会让第一层带着 loading 停在第二层下方，取消第二层
   // 只会让两层静默消失，操作者无法判断退款是否已发生。

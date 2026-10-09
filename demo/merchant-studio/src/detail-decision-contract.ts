@@ -48,12 +48,14 @@ export function moduleDecisionContract(module: unknown): DetailPageDecisionContr
   const evidence = candidate.evidence
   if (
     typeof candidate.buyerQuestion !== 'string' ||
+    !candidate.buyerQuestion.trim() ||
     typeof candidate.pageTask !== 'string' ||
+    !candidate.pageTask.trim() ||
     !claim ||
     typeof claim !== 'object' ||
     !Array.isArray((claim as Record<string, unknown>).limitations) ||
     !(claim as { limitations: unknown[] }).limitations.every(
-      (item) => typeof item === 'string',
+      (item) => typeof item === 'string' && Boolean(item.trim()),
     ) ||
     !evidence ||
     typeof evidence !== 'object' ||

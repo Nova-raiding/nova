@@ -1,3 +1,5 @@
+import { TASK_STATES } from '../../../packages/contracts/src/domain.js'
+
 export interface TaskDirectionEvidence {
   id: string
   name: string
@@ -28,12 +30,53 @@ export function resolveTaskDirections({ baseUrl, remote, error }: { baseUrl?: st
 
 export type WorkflowStepStatus = 'complete' | 'current' | 'pending'
 
+/** Keep the task detail state guard aligned with the shared API contract.
+ * `content_generated` is accepted for legacy task records predating the
+ * current contract; it is still rendered as a review-stage task.
+ */
+export function isKnownMerchantTaskState(state: string): boolean {
+  return (TASK_STATES as readonly string[]).includes(state) || state === 'content_generated'
+}
+
+export function clampTaskPage(page: number, total: number, pageSize: number): number {
+  if (!Number.isFinite(page) || !Number.isFinite(total) || !Number.isFinite(pageSize) || pageSize <= 0) return 0
+  return Math.min(Math.max(0, Math.floor(page)), Math.max(0, Math.ceil(Math.max(0, total) / pageSize) - 1))
+}
+
+export function merchantTaskStateLabel(state: string): string {
+  const labels: Record<string, string> = {
+    '': '待分析需求',
+    draft: '待补充信息',
+    resolving_context: '正在核对任务上下文',
+    blocked_missing_facts: '待补充商品信息',
+    blocked_conflict: '商品信息待核对',
+    ready_for_direction: '待选创意方向',
+    direction_selected: '待确认制作方案',
+    plan_confirmed: '待生成内容',
+    generating: '内容生成中',
+    content_generated: '待审核',
+    review_required: '待审核',
+    changes_requested: '待修改',
+    approved: '已批准',
+    publish_prepared: '待确认发布',
+    publishing: '发布处理中',
+    delivered: '已交付',
+    failed_recoverable: '可重试',
+    failed_terminal: '处理失败',
+    canceled: '已取消',
+  }
+  return labels[state] ?? '状态待确认'
+}
+
 const workflowLabels = ['事实确认', '方向选择', '内容审核', '确认发布'] as const
 
 export function resolveTaskWorkflow(state?: string, offlineDemo = false): Array<{ label: typeof workflowLabels[number]; status: WorkflowStepStatus }> {
   if (offlineDemo) return workflowLabels.map((label, index) => ({ label, status: index < 2 ? 'complete' : index === 2 ? 'current' : 'pending' }))
   const stageByState: Record<string, number> = {
     draft: 0,
+    resolving_context: 0,
+    blocked_missing_facts: 0,
+    blocked_conflict: 0,
     ready_for_direction: 1,
     direction_selected: 2,
     plan_confirmed: 2,

@@ -1,14 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
-import type { MerchantService, Product, Task } from '../../../packages/application/src/service.js'
+import { MerchantService, type MerchantService as MerchantServiceType, type Product, type Task } from '../../../packages/application/src/service.js'
 import { handleHttpCatalogReadRoute } from './http-catalog-read-routes.js'
 
 function dependencies() {
   return {
     service: {
       listProducts: vi.fn((): Product[] => []),
-      listTasks: vi.fn((_workspaceId: string, _filters: NonNullable<Parameters<MerchantService['listTasks']>[1]> = {}): Task[] => []),
+      listTasks: vi.fn((_workspaceId: string, _filters: NonNullable<Parameters<MerchantServiceType['listTasks']>[1]> = {}): Task[] => []),
     },
     business: { listProductsPage: vi.fn(async (_workspaceId: string, _options: Record<string, unknown>) => ({ items: [], total: 0, limit: 20, offset: 0 })), listTasksPage: vi.fn() },
     resolveWorkspace: vi.fn(() => 'workspace-a'),
@@ -80,6 +80,42 @@ describe('HTTP catalog search query contract', () => {
     const sentData = vi.mocked(deps.send).mock.calls[0]?.[3] as { items: Product[] }
     expect(sentData.items.map(product => product.factsConfirmed)).toEqual([expected])
   })
+
+  it('keeps category and image URL product search available in the service fallback', async () => {
+    const service = new MerchantService({ seedFixture: false })
+    const categoryMatch = service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'One', storeName: 'store' })
+    Object.assign(categoryMatch, { category: '户外帐篷' })
+    const imageMatch = service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'Two', storeName: 'store' })
+    Object.assign(imageMatch, { images: ['https://cdn.example/needle.jpg'] })
+    service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'Three', storeName: 'store' })
+    const deps = { ...dependencies(), service: service as MerchantServiceType, business: undefined }
+    for (const query of ['帐篷', 'needle.jpg']) {
+      await handleHttpCatalogReadRoute({ method: 'GET' } as IncomingMessage, {} as ServerResponse, '/v1/products', new URL(`http://localhost/v1/products?query=${encodeURIComponent(query)}`), deps)
+      const sentData = vi.mocked(deps.send).mock.calls.at(-1)?.[3] as { items: Product[] }
+      expect(sentData.items).toHaveLength(1)
+      expect(sentData.items[0]?.id).toBe(query === '帐篷' ? categoryMatch.id : imageMatch.id)
+    }
+  })
+
+  it('searches merchant-visible platform names case-insensitively and reports the matching total', async () => {
+    const service = new MerchantService({ seedFixture: false })
+    service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'Tea' })
+    service.importProduct({ workspaceId: 'workspace-a', platform: 'jd', title: 'Shoes' })
+    const deps = { ...dependencies(), service: service as MerchantServiceType, business: undefined }
+
+    for (const query of ['TAOBAO', '淘宝']) {
+      await handleHttpCatalogReadRoute(
+        { method: 'GET' } as IncomingMessage,
+        {} as ServerResponse,
+        '/v1/products',
+        new URL(`http://localhost/v1/products?query=${encodeURIComponent(query)}&limit=1`),
+        deps,
+      )
+      const result = vi.mocked(deps.send).mock.calls.at(-1)?.[3] as { items: Product[]; total: number; limit: number; offset: number }
+      expect(result).toMatchObject({ total: 1, limit: 1, offset: 0 })
+      expect(result.items.map(product => product.platform)).toEqual(['taobao'])
+    }
+  })
 })
 
 describe('HTTP task list query contract', () => {
@@ -141,5 +177,19 @@ describe('HTTP task list query contract', () => {
     expect(deps.service.listTasks).toHaveBeenCalledWith('workspace-a', { platform: 'taobao', state: 'review_required' })
     const sentData = vi.mocked(deps.send).mock.calls[0]?.[3] as { items: Task[] }
     expect(sentData.items.map(task => task.state)).toEqual(['review_required'])
+  })
+
+  it('keeps platform account id task search available in the service fallback', async () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'product', storeName: 'store' })
+    const matching = service.createTask({ workspaceId: 'workspace-a', productId: product.id, platform: 'taobao' })
+    Object.assign(matching, { accountId: 'shop-needle' })
+    const otherProduct = service.importProduct({ workspaceId: 'workspace-a', platform: 'taobao', title: 'other', storeName: 'store' })
+    const other = service.createTask({ workspaceId: 'workspace-a', productId: otherProduct.id, platform: 'taobao' })
+    Object.assign(other, { accountId: 'shop-other' })
+    const deps = { ...dependencies(), service: service as MerchantServiceType, business: undefined }
+    await handleHttpCatalogReadRoute({ method: 'GET' } as IncomingMessage, {} as ServerResponse, '/v1/tasks', new URL('http://localhost/v1/tasks?query=shop-needle'), deps)
+    const sentData = vi.mocked(deps.send).mock.calls[0]?.[3] as { items: Task[] }
+    expect(sentData.items.map(task => task.id)).toEqual([matching.id])
   })
 })

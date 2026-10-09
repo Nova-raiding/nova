@@ -50,7 +50,7 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
       <Alert
         type={!status ? "info" : groupEvidenceReady ? "success" : "warning"}
         showIcon
-        title={!status ? "暂无模型状态数据" : fixtureDataPresent ? "演示数据不可作为模型上线证据" : groupEvidenceReady ? "全部模态已有实际计费组成本证据" : "部分模态缺少实际计费组成本证据"}
+        title={!status ? "暂无模型状态数据" : fixtureDataPresent ? "演示数据不可作为模型上线证据" : groupEvidenceReady ? "全部模态成本证据配置门禁已通过" : "部分模态成本证据配置门禁未通过"}
         description="控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。"
       />
       <Table<ModelChannelRow>
@@ -74,10 +74,10 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
             render: (value: boolean) => <Tag color={value ? "blue" : "default"}>{value ? "已配置" : "未配置"}</Tag>,
           },
           {
-            title: "实际成本证据",
+            title: "成本证据配置门禁",
             dataIndex: "costEvidence",
             width: 150,
-            render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? "已验证" : "缺失"}</Tag>,
+            render: (value: boolean) => <Tag color={value ? "blue" : "red"}>{value ? "配置门禁通过" : "未通过"}</Tag>,
           },
           {
             title: "最终状态",

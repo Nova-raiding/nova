@@ -10,11 +10,37 @@ const desktopViewports = [
   { width: 1440, height: 1000 },
   { width: 1920, height: 1080 },
 ]
+let imageProviderWrites
+
+test.beforeEach(async ({ page }) => {
+  imageProviderWrites = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (request.method() === 'POST' && url.pathname.endsWith('/api/mcp')) {
+      try {
+        if (request.postDataJSON()?.method === 'catalog.image.generate') imageProviderWrites.push('catalog.image.generate')
+      } catch { /* The API rejects malformed bodies; this test never submits one. */ }
+    }
+  })
+  await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
+  const loginForm = page.getByRole('form', { name: '商家账号登录' })
+  await expect(loginForm).toBeVisible()
+  await loginForm.getByPlaceholder('例如 merchant@example.com').fill(process.env.OPS_E2E_MERCHANT_USERNAME ?? '')
+  await loginForm.getByPlaceholder('请输入商家密码').fill(process.env.OPS_E2E_MERCHANT_PASSWORD ?? '')
+  const loginResponse = page.waitForResponse(response => response.url().endsWith('/v1/auth/login') && response.request().method() === 'POST')
+  await loginForm.getByRole('button', { name: '登录商家工作台', exact: true }).click()
+  expect((await loginResponse).status()).toBe(200)
+  await expect(page.locator('.app-shell')).toBeVisible()
+})
+
+test.afterEach(() => {
+  expect(imageProviderWrites, 'this visual-state suite must never request image generation').toEqual([])
+})
 
 const envelope = (data, error = null) => ({
   request_id: 'desktop-image-generation-acceptance',
   trace_id: 'desktop-image-generation-acceptance',
-  workspace_id: 'ws_demo',
+  workspace_id: process.env.OPS_E2E_WORKSPACE_ID ?? 'ws_demo',
   data,
   warnings: [],
   next_actions: [],
@@ -162,8 +188,10 @@ for (const viewport of desktopViewports) {
       })
 
       await openImageJob(page, job.job_id)
-      await expect(page.getByText('部分归档，等待补偿', { exact: true })).toBeVisible()
-      await expect(page.getByText('结果尚未确认；请先对账', { exact: false })).toBeVisible()
+      await expect(page.locator('.image-job-evidence dd').filter({ hasText: '结果待对账，禁止重复生成' }).first()).toBeVisible()
+      const archiveEvidence = page.locator('.image-job-evidence > div').filter({ hasText: '归档状态' })
+      await expect(archiveEvidence.locator('dd')).toHaveText('部分归档')
+      await expect(page.getByText('模型结果尚未确认；请先对账，系统不会再次生成或扣费。', { exact: true })).toBeVisible()
       await expect(page.getByText('不可选择：人工审核待审核', { exact: true }).first()).toBeVisible()
       await expect(page.getByRole('checkbox')).toHaveCount(0)
 

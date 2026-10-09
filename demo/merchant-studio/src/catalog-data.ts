@@ -108,7 +108,9 @@ const accountStores = (accounts: PlatformAccount[] | null, products: Product[] |
       const presentation = merchantConnectionPresentation(account)
       const readable = account.state === 'connected' && account.readEnabled === true
       const catalogAccessible = readable || account.state === 'manually_registered'
-      const storeProducts = products === null ? null : products.filter((product) => product.accountId === account.accountId)
+      const storeProducts = products === null ? null : products.filter((product) =>
+        product.platform === account.platform && product.accountId === account.accountId,
+      )
       return {
         id: String(account.accountId).trim(),
         mark: catalogPlatformMark(account.platform),
@@ -181,6 +183,25 @@ export type CatalogProduct = {
   series: string
 }
 
+export type CatalogStoreScope = { platform: string; accountId: string }
+
+/** Product identity is workspace + platform + account, never account alone. */
+export function catalogProductMatchesStoreScope(
+  product: Pick<Product, 'platform' | 'accountId'>,
+  scope: CatalogStoreScope,
+): boolean {
+  return product.platform === scope.platform && product.accountId === scope.accountId
+}
+
+/** A generation request is only valid when the selected product belongs to the selected store. */
+export function catalogImageGenerationTarget(
+  product: Pick<Product, 'id' | 'platform' | 'accountId'> | null | undefined,
+  scope: CatalogStoreScope | null | undefined,
+): { productId: string; platform: string; accountId: string } | null {
+  if (!product || !scope || !product.id || !catalogProductMatchesStoreScope(product, scope)) return null
+  return { productId: product.id, platform: scope.platform, accountId: scope.accountId }
+}
+
 export const unclassifiedSeries = '未分类'
 
 /** Preserve real zeroes while treating absent or blank server fields as unknown. */
@@ -218,7 +239,7 @@ export function catalogProductAddedAt(product: Pick<Product, 'createdAt' | 'upda
  */
 export function catalogProductsForStore(
   products: Product[] | null,
-  accountId: string,
+  scope: CatalogStoreScope,
   reassignments: Record<string, string> = {},
 ): CatalogProduct[] | null {
   if (products === null) return null
@@ -226,7 +247,7 @@ export function catalogProductsForStore(
   // starts in 未分类 and only the local series tool moves it.
   const series = reassignments[unclassifiedSeries] ?? unclassifiedSeries
   return products
-    .filter((product) => product.accountId === accountId)
+    .filter((product) => catalogProductMatchesStoreScope(product, scope))
     .map((product, index) => ({
       id: product.id,
       title: product.title,

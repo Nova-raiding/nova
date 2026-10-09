@@ -75,7 +75,9 @@ export function commercialRefundEvidence(kind: CommercialRefundKind, evidenceRef
 export function refundPolicyApproval(value: string): Record<string, unknown> {
   let parsed: unknown;
   try { parsed = JSON.parse(value); } catch { throw new Error("政策审批证据必须是 JSON 对象"); }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as Record<string, unknown>).legal_review_ref !== "string" || !(parsed as Record<string, string>).legal_review_ref.trim()) throw new Error("政策审批证据必须包含非空 legal_review_ref");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("政策审批证据必须包含非空 legal_review_ref");
+  const legalReviewRef = (parsed as Record<string, unknown>).legal_review_ref;
+  if (typeof legalReviewRef !== "string" || !legalReviewRef.trim()) throw new Error("政策审批证据必须包含非空 legal_review_ref");
   return parsed as Record<string, unknown>;
 }
 

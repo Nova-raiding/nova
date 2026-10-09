@@ -15,9 +15,15 @@ function bytes(value?: number | null) {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
+const knownStorageFreshness = ["fresh", "stale", "expired"];
+
 export function StorageReconciliationSummary({ summary, onOpen }: StorageReconciliationSummaryProps) {
-  const unavailable = !summary || summary.status === "unavailable" || !summary.lastRunAt || summary.freshness === "unknown";
+  const statusKnown = summary !== undefined
+    && ["clean", "attention_required", "failed", "unavailable"].includes(String(summary.status));
+  const unavailable = !summary || !statusKnown || summary.status === "unavailable" || !summary.lastRunAt || !knownStorageFreshness.includes(String(summary.freshness));
   const failed = summary?.runStatus === "failed" || summary?.status === "failed";
+  const expired = summary?.freshness === "expired";
+  const stale = summary?.freshness === "stale";
   const attention = summary?.status === "attention_required";
   const counts = summary?.counts;
 
@@ -30,8 +36,8 @@ export function StorageReconciliationSummary({ summary, onOpen }: StorageReconci
         <Col xs={12} md={6}><Statistic title="已使用" value={bytes(summary?.quota?.usedBytes)} /></Col>
         <Col xs={12} md={6}><Statistic title="预计占用" value={bytes(summary?.quota?.projectedBytes)} /></Col>
         <Col xs={24} md={6}>
-          <Tag color={unavailable ? "default" : failed ? "red" : attention ? "orange" : "green"}>
-            {unavailable ? "状态不可验证" : failed ? "对账失败" : attention ? "需要处理" : "对账正常"}
+          <Tag color={unavailable ? "default" : failed ? "red" : expired || stale || attention ? "orange" : "green"}>
+            {unavailable ? "状态不可验证" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常"}
           </Tag>
         </Col>
         <Col xs={24} md={6}>

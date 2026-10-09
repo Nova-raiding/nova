@@ -81,6 +81,13 @@ type BusinessSnapshotRow = {
   updated_at: string | Date
 }
 
+/** Escape LIKE metacharacters while keeping user search literal. `!` is the
+ * explicit PostgreSQL LIKE escape character, so backslashes in the input are
+ * ordinary characters and do not depend on `standard_conforming_strings`. */
+function escapeLikeQuery(query: string): string {
+  return query.replace(/[!%_]/gu, character => `!${character}`)
+}
+
 function timestamp(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : String(value)
 }
@@ -321,11 +328,19 @@ export class PostgresBusinessRepository {
       const clauses = ['workspace_id = $1']
       const values: unknown[] = [scope]
       const add = (sql: string, value: unknown) => { values.push(value); clauses.push(sql.replace('?', `$${values.length}`)) }
+      const addRepeated = (sql: string, value: unknown, count: number) => {
+        const first = values.length + 1
+        values.push(...Array(count).fill(value))
+        let index = first
+        clauses.push(sql.replaceAll('?', () => `$${index++}`))
+      }
+      const storeName = input.storeName?.trim()
+      const brandName = input.brandName?.trim()
       if (input.platform) add('platform = ?', input.platform)
       if (table === 'products' && input.accountId) add('platform_account_id = ?', input.accountId)
-      if (table === 'products' && input.storeName) add("lower(store_name) LIKE '%' || lower(?) || '%'", input.storeName)
+      if (table === 'products' && storeName) add("lower(store_name) LIKE '%' || lower(?) || '%' ESCAPE '!'", escapeLikeQuery(storeName))
       if (table === 'products' && typeof input.factsConfirmed === 'boolean') add('facts_confirmed = ?', input.factsConfirmed)
-      if (table === 'products' && input.brandName) add("lower(coalesce(data#>>'{attributes,brand}', '')) LIKE '%' || lower(?) || '%'", input.brandName)
+      if (table === 'products' && brandName) addRepeated("(lower(coalesce(data#>>'{attributes,brand}', '')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR EXISTS (SELECT 1 FROM business_entity_snapshots brand_profile WHERE brand_profile.workspace_id = products.workspace_id AND brand_profile.entity_type = 'brand_profile' AND brand_profile.entity_id = 'brand_' || products.workspace_id AND lower(coalesce(brand_profile.payload->>'name', '')) LIKE '%' || lower(?) || '%' ESCAPE '!'))", escapeLikeQuery(brandName), 2)
       if (table === 'products' && input.skuId) add("coalesce(data->'skus', '[]'::jsonb) @> ?::jsonb", JSON.stringify([{ id: input.skuId }]))
       if (table === 'products' && input.remoteProductId) add('remote_product_id = ?', input.remoteProductId)
       if (table === 'products' && input.listingStatus) add("data->>'listingStatus' = ?", input.listingStatus)
@@ -362,8 +377,8 @@ export class PostgresBusinessRepository {
       if (table === 'tasks' && input.state) add('state = ?', input.state)
       if (table === 'tasks' && input.productId) add('product_id = ?', input.productId)
       if (table === 'tasks' && input.accountId) add('platform_account_id = ?', input.accountId)
-      if (table === 'tasks' && input.brandName) add(`EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(coalesce(products.data#>>'{attributes,brand}', '')) LIKE '%' || lower(?) || '%')`, input.brandName)
-      if (table === 'tasks' && input.storeName) add(`EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(products.store_name) LIKE '%' || lower(?) || '%')`, input.storeName)
+      if (table === 'tasks' && brandName) addRepeated(`EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND (lower(coalesce(products.data#>>'{attributes,brand}', '')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR EXISTS (SELECT 1 FROM business_entity_snapshots brand_profile WHERE brand_profile.workspace_id = products.workspace_id AND brand_profile.entity_type = 'brand_profile' AND brand_profile.entity_id = 'brand_' || products.workspace_id AND lower(coalesce(brand_profile.payload->>'name', '')) LIKE '%' || lower(?) || '%' ESCAPE '!'))`, escapeLikeQuery(brandName), 2)
+      if (table === 'tasks' && storeName) add(`EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(products.store_name) LIKE '%' || lower(?) || '%' ESCAPE '!')`, escapeLikeQuery(storeName))
       if (table === 'tasks' && input.remoteProductId) add('EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND products.remote_product_id = ?)', input.remoteProductId)
       if (table === 'tasks' && input.publishStatus) {
         values.push(input.publishStatus, input.publishStatus)
@@ -380,11 +395,14 @@ export class PostgresBusinessRepository {
         values.push(input.accessibleBrandIds)
         clauses.push(`coalesce(brand_id, data->>'brandId') = ANY($${values.length}::text[])`)
       }
-      if (input.query) {
+      // Match MerchantService: a whitespace-only query is an absent filter.
+      // Normalize once so both the count and page query use identical values.
+      const query = input.query?.trim()
+      if (query) {
         const searchable = table === 'products'
-          ? "(lower(id) LIKE '%' || lower(?) || '%' OR lower(title) LIKE '%' || lower(?) || '%' OR lower(coalesce(remote_product_id,'')) LIKE '%' || lower(?) || '%' OR lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower(?) || '%')"
-          : "(lower(id) LIKE '%' || lower(?) || '%' OR lower(product_id) LIKE '%' || lower(?) || '%' OR EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(products.title) LIKE '%' || lower(?) || '%'))"
-        const searchValues = table === 'products' ? [input.query, input.query, input.query, input.query] : [input.query, input.query, input.query]
+          ? "(lower(id) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(title) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(coalesce(remote_product_id,'')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(coalesce(category,'')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(images::text) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(platform) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(CASE platform WHEN 'jd' THEN '京东' WHEN 'taobao' THEN '淘宝' WHEN 'tmall' THEN '天猫' WHEN 'pinduoduo' THEN '拼多多' WHEN 'xiaohongshu' THEN '小红书' WHEN 'douyin' THEN '抖音' ELSE platform END) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(coalesce(data#>>'{attributes,brand}', '')) LIKE '%' || lower(?) || '%' ESCAPE '!' OR EXISTS (SELECT 1 FROM business_entity_snapshots brand_profile WHERE brand_profile.workspace_id = products.workspace_id AND brand_profile.entity_type = 'brand_profile' AND brand_profile.entity_id = 'brand_' || products.workspace_id AND lower(coalesce(brand_profile.payload->>'name', '')) LIKE '%' || lower(?) || '%' ESCAPE '!'))"
+          : "(lower(id) LIKE '%' || lower(?) || '%' ESCAPE '!' OR lower(product_id) LIKE '%' || lower(?) || '%' ESCAPE '!' OR EXISTS (SELECT 1 FROM products WHERE products.workspace_id = tasks.workspace_id AND products.id = tasks.product_id AND lower(products.title) LIKE '%' || lower(?) || '%' ESCAPE '!') OR lower(coalesce(platform_account_id,'')) LIKE '%' || lower(?) || '%' ESCAPE '!')"
+        const searchValues = Array(table === 'products' ? 10 : 4).fill(escapeLikeQuery(query))
         const base = values.length + 1
         values.push(...searchValues)
         let index = base

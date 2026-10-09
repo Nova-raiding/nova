@@ -67,7 +67,7 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
 
   try {
     await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: /^京东/u }).click()
+    await expect(page.getByRole('button', { name: /^京东/u })).toHaveAttribute('aria-pressed', 'true')
     const store = page.locator('.catalog-store-card').filter({ hasText: '目录搜索验收店' })
     await expect(store).toBeVisible()
     await store.getByRole('button', { name: /进入商品库/u }).click()

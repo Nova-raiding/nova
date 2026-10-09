@@ -11,8 +11,9 @@ describe('video.get settlement delivery boundary', () => {
     const persistEvent = vi.fn()
     const scope = vi.fn(async () => context)
     const nextEventSequence = vi.fn(async () => 1)
-    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: () => new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503), service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
-    return { dependencies, context, getStatus, archive, persistEvent, scope }
+    const assetForWorkspace = vi.fn((_workspaceId: string, _assetId: string) => ({ scanStatus: 'clean' }))
+    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, assetForWorkspace, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: () => new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503), service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
+    return { dependencies, context, getStatus, archive, persistEvent, scope, assetForWorkspace }
   }
   it('uses server context and returns pending without downloading or returning any asset', async () => {
     const f = runtime()
@@ -76,5 +77,33 @@ describe('video.get settlement delivery boundary', () => {
     await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({ code: 'VIDEO_ARTIFACT_DOWNLOAD_FAILED' })
     await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).resolves.toMatchObject({ asset_id: 'asset-a' })
     expect(f.persistEvent).toHaveBeenNthCalledWith(2, 'workspace-a', 'video_job-a', 'multimodal.video_status_observed', 2, expect.objectContaining({ rendering: expect.objectContaining({ archiveState: 'archived' }) }))
+  })
+
+  it('only reports a scan-eligible delivery as formally complete and marks unscanned demo artifacts', async () => {
+    const clean = runtime()
+    clean.getStatus.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-a', videoUrl: undefined })
+    expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, clean.dependencies)).toMatchObject({
+      asset_id: 'workspace-a-asset', archive_state: 'archived', scan_status: 'clean', download_path: '/v1/assets/workspace-a-asset/download', status: 'completed',
+    })
+    const demo = runtime()
+    demo.getStatus.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-a', videoUrl: undefined })
+    demo.assetForWorkspace.mockReturnValue({ scanStatus: 'unscanned' })
+    const unscanned = await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, demo.dependencies)
+    expect(unscanned).toMatchObject({
+      asset_id: 'workspace-a-asset', archive_state: 'archived', scan_status: 'unscanned', availability_warning: expect.stringContaining('演示或未扫描'),
+    })
+    expect(unscanned).not.toHaveProperty('download_path')
+    demo.assetForWorkspace.mockReturnValue({ scanStatus: 'unknown' })
+    const unknown = await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, demo.dependencies)
+    expect(unknown).not.toHaveProperty('download_path')
+  })
+
+  it('explains that a clean but unarchived video is still unavailable', async () => {
+    const f = runtime()
+    f.getStatus.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-a', videoUrl: undefined })
+    f.archive.mockResolvedValue({ assetId: 'workspace-a-asset', archiveState: 'pending', status: 'completed' } as never)
+    const result = await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)
+    expect(result).toMatchObject({ scan_status: 'clean', availability_warning: expect.stringContaining('尚未完成归档') })
+    expect(result).not.toHaveProperty('download_path')
   })
 })

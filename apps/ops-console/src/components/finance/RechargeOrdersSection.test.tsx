@@ -18,7 +18,12 @@ const model = {
         paid_at: null,
         created_at: "2026-08-28T07:30:00.000Z",
       },
+      { id: "recharge_1002", workspace_id: "workspace_demo", channel: "alipay", amount_cny: "50.00", state: "paid", payment_url: null, provider_trade_id: "trade_1002", expires_at: null, paid_at: "2026-08-27T07:30:00.000Z", created_at: "2026-08-27T07:00:00.000Z" },
+      { id: "recharge_1003", workspace_id: "workspace_demo", channel: "wechat", amount_cny: "25.00", state: "paid", payment_url: null, provider_trade_id: "trade_1003", expires_at: null, paid_at: "2026-08-26T07:30:00.000Z", created_at: "2026-08-26T07:00:00.000Z" },
+      { id: "recharge_1004", workspace_id: "workspace_demo", channel: "alipay", amount_cny: "10.00", state: "failed", payment_url: null, provider_trade_id: null, expires_at: null, paid_at: null, created_at: "2026-08-25T07:00:00.000Z" },
     ],
+    returned: 4,
+    total: 4,
     summary: {
       total: 4,
       by_state: { pending: 1, paid: 2, closed: 0, failed: 1 },
@@ -60,6 +65,16 @@ describe("RechargeOrdersSection", () => {
     expect(html).toContain('aria-label="重试加载充值订单"');
   });
 
+  it("disables every payment lookup while any order lookup is in flight", () => {
+    const html = renderToStaticMarkup(
+      <RechargeOrdersSection
+        model={{ ...model, queryingRechargeOrderId: "recharge_1001" } as OpsConsoleModel}
+      />,
+    );
+    const lookupButton = html.match(/<button[^>]*aria-label="查询充值订单 recharge_1001"[^>]*>/)?.[0] ?? "";
+    expect(lookupButton).toContain("disabled");
+  });
+
   it("renders a failed or unrun read as unread instead of as measured zeros", () => {
     // `rechargeOrders === undefined` is the model's "not read" state — what
     // `loadRechargeOrders` resets to on failure. Coalescing it to `[]` produced
@@ -77,6 +92,29 @@ describe("RechargeOrdersSection", () => {
     expect(html).toContain("—");
     expect(html).toContain("尚未读取充值订单");
     expect(html).not.toContain("当前筛选条件下没有充值订单");
+  });
+
+  it("warns when the server total exceeds the returned order rows", () => {
+    const html = renderToStaticMarkup(
+      <RechargeOrdersSection
+        model={{ ...model, rechargeOrders: { ...model.rechargeOrders, returned: 100, total: 125 } } as OpsConsoleModel}
+      />,
+    );
+
+    expect(html).toContain("充值订单分页信息不完整");
+    expect(html).toContain("服务端共 125 条，当前仅返回 100 条");
+    expect(html).toContain("服务端没有提供下一页游标");
+  });
+
+  it("offers server pagination when the response includes a cursor", () => {
+    const html = renderToStaticMarkup(
+      <RechargeOrdersSection
+        model={{ ...model, rechargeOrders: { ...model.rechargeOrders, returned: 100, total: 125, next_cursor: "cursor-next" } } as OpsConsoleModel}
+      />,
+    );
+
+    expect(html).toContain('aria-label="加载更多充值订单"');
+    expect(html).not.toContain("充值订单分页信息不完整");
   });
 
   it("still reports a successful read that legitimately returned nothing as zero", () => {

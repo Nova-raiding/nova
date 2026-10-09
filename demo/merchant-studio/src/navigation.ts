@@ -21,7 +21,13 @@ export interface MerchantRoute {
   searchQuery: string
   entry?: MerchantEntryPoint
   imageJobId?: string
+  publishJobId?: string
   catalogContext?: MerchantCatalogContext
+}
+
+/** Resolve programmatic sidebar destinations to their durable page. */
+export function merchantNavigationPage(page: MerchantPage): MerchantPage {
+  return page === 'publish' ? 'products' : page
 }
 
 export interface MerchantRiskDestinationInput {
@@ -144,15 +150,18 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
       : undefined
     return { page: 'products', searchQuery: params.get('q') ?? '', entry, ...(catalogContext ? { catalogContext } : {}) }
   }
-  // Broad legacy destinations resolve to the materials workspace. Concrete
-  // task deep-links remain supported below so old bookmarks still recover work.
-  if (segment === 'publish' || segment === 'rules') return { page: 'products', searchQuery: '' }
+  // The legacy rules URL resolves to the dedicated rules page. Publish
+  // remains a broad legacy destination. Concrete task deep-links remain
+  // supported below so old bookmarks still recover work.
+  if (segment === 'rules') return { page: 'rules', searchQuery: '' }
+  if (segment === 'publish') return { page: 'products', searchQuery: '' }
   if (segment === 'tasks') {
     const imageJobId = params.get('image_job')?.trim()
     // `/merchant/tasks` is the durable task workspace entry, including its
     // image-job discovery/empty state. Returning products here made the
     // workspace impossible to restore from a direct link or browser refresh.
-    return { page: 'task', searchQuery: '', ...(imageJobId ? { imageJobId } : {}) }
+    const publishJobId = params.get('publish_job_id')?.trim()
+    return { page: 'task', searchQuery: '', ...(imageJobId ? { imageJobId } : {}), ...(publishJobId ? { publishJobId } : {}) }
   }
   if (segment === 'tasks/new') {
     const productId = params.get('product_id')?.trim()
@@ -176,7 +185,7 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
 
 export function urlForMerchantRoute(
   location: Pick<Location, 'pathname' | 'search'>,
-  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; catalogContext?: MerchantCatalogContext },
+  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; publishJobId?: string; catalogContext?: MerchantCatalogContext },
 ): string {
   const basePath = merchantRoutePattern.test(location.pathname)
     ? location.pathname.replace(merchantRoutePattern, '')
@@ -185,7 +194,7 @@ export function urlForMerchantRoute(
   // image_job is a transient deep-link consumed by the task workspace.  It
   // must not leak into later navigation (for example when opening the task
   // list or publish center), otherwise the old job panel reappears unexpectedly.
-  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent', 'image_job']) params.delete(key)
+  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent', 'image_job', 'publish_job_id']) params.delete(key)
 
   let path = `${basePath}/merchant/${route.page === 'task' ? 'tasks' : route.page}`
   if (route.page === 'products' && route.searchQuery?.trim()) params.set('q', route.searchQuery.trim())
@@ -208,6 +217,7 @@ export function urlForMerchantRoute(
     if (route.target.accountId) params.set('account_id', route.target.accountId)
   }
   if (route.page === 'task' && route.imageJobId?.trim()) params.set('image_job', route.imageJobId.trim())
+  if (route.page === 'task' && !route.target && route.publishJobId?.trim()) params.set('publish_job_id', route.publishJobId.trim())
   const query = params.toString()
   return `${path}${query ? `?${query}` : ''}`
 }

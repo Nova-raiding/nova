@@ -164,7 +164,15 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
     execFile('docker', ['--host', `unix://${socket}`, '--config', dockerConfig, ...args], { env: isolatedFixtureSpawnEnvironment(secrets), timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
       // Native errors include command arguments and stderr: expose only the
       // action, never generated credentials or daemon configuration details.
-      if (error) reject(new Error(`ISOLATED_FIXTURE_DOCKER_${args[0]?.toUpperCase() ?? 'COMMAND'}_FAILED`))
+      if (error) {
+        // Keep credentials, arguments, stderr, and daemon details out of
+        // evidence while distinguishing a timeout from CLI/daemon failures.
+        const execError = error as NodeJS.ErrnoException & { killed?: boolean }
+        const failureKind = execError.code === 'ETIMEDOUT' || execError.killed
+          ? 'TIMEOUT'
+          : typeof execError.code === 'string' ? 'EXEC' : 'EXIT'
+        reject(new Error(`ISOLATED_FIXTURE_DOCKER_${args[0]?.toUpperCase() ?? 'COMMAND'}_FAILED_${failureKind}`))
+      }
       else resolveResult(stdout.trim())
     })
   })
@@ -181,7 +189,9 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
   let ops: Pool | undefined
   let setupStage = 'container_start'
   try {
-    const redisDigests: unknown = JSON.parse(await docker(['image', 'inspect', '--format', '{{json .RepoDigests}}', 'redis:7-alpine']))
+    // Local container daemons can take longer than the ordinary per-command
+    // budget to answer the first image metadata query after startup.
+    const redisDigests: unknown = JSON.parse(await docker(['image', 'inspect', '--format', '{{json .RepoDigests}}', 'redis:7-alpine'], {}, 120_000))
     const redisDigest = Array.isArray(redisDigests) ? redisDigests.find((value: unknown) => typeof value === 'string' && /^redis@sha256:[a-f0-9]{64}$/u.test(value)) : undefined
     if (typeof redisDigest !== 'string') throw new Error('ISOLATED_FIXTURE_LOCAL_REDIS_DIGEST_MISSING')
     const postgresPassword = randomBytes(32).toString('hex')

@@ -164,6 +164,23 @@ describe("public rule draft detail UI boundary", () => {
       await page.close();
     }
   }, 30_000);
+
+  it("rejects an invalid audit timestamp instead of rendering Invalid Date", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    try {
+      await openPanel(page, { rule, audit: [{ ...audit[0], occurred_at: "not-a-date" }] });
+      await page.getByRole("alert").filter({ hasText: "公共规则审核操作失败" }).waitFor();
+      await expectText(page, "公共规则审核记录格式无效");
+      if (await page.getByText("Invalid Date", { exact: true }).count() !== 0) {
+        throw new Error("An invalid audit timestamp was rendered as Invalid Date");
+      }
+      if (pageErrors.length) throw new Error(`Unexpected browser exception: ${pageErrors.join("; ")}`);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });
 
 async function expectText(page: Page, text: string) {

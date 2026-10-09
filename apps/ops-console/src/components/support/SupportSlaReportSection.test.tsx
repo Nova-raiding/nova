@@ -17,6 +17,37 @@ describe("SupportSlaReportSection", () => {
     expect(html).toContain("历史报告为不可变证据");
   });
 
+  it("marks the prior-period snapshot stale during a cross-period refresh and disables correction", () => {
+    const html = renderToStaticMarkup(<SupportSlaReportSection model={{
+      ...base(), reportLoading: true, reportStale: true,
+      report: { reportId: "august", workspaceId: "ws_1", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z", policyVersions: [1], calendarVersions: ["business_weekday_utc"], denominator: 1, met: 1, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: "b".repeat(64), ticketResults: [] },
+    }} />);
+    expect(html).toContain("月报正在刷新或工作区切换，当前显示的是历史快照");
+    expect(html).toMatch(/<button(?=[^>]*disabled="")[^>]*><span>创建 correction<\/span><\/button>/);
+  });
+
+  it("keeps the old snapshot visible but marks failed refreshes stale and correction unavailable", () => {
+    const html = renderToStaticMarkup(<SupportSlaReportSection model={{
+      ...base(), reportLoading: false, reportStale: true, reportError: "服务端生成失败",
+      report: { reportId: "old", workspaceId: "ws_1", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z", policyVersions: [1], calendarVersions: ["business_weekday_utc"], denominator: 1, met: 1, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: "c".repeat(64), ticketResults: [] },
+    }} />);
+    expect(html).toContain("月报刷新失败，当前显示的是历史快照");
+    expect(html).toContain("服务端生成失败");
+    expect(html).toMatch(/<button(?=[^>]*disabled="")[^>]*><span>创建 correction<\/span><\/button>/);
+  });
+
+  it("fails closed for a report snapshot from the previous workspace during a scope switch", () => {
+    const html = renderToStaticMarkup(<SupportSlaReportSection model={{
+      ...base(), workspaceId: "ws_new",
+      report: { reportId: "ws_old_report", workspaceId: "ws_old", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z", policyVersions: [1], calendarVersions: ["business_weekday_utc"], denominator: 1, met: 1, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: "d".repeat(64), ticketResults: [] },
+    }} />);
+    expect(html).toContain("工作区已切换；旧工作区月报已隐藏");
+    expect(html).not.toContain("SLA 达成率");
+    expect(html).not.toContain("统计分母");
+    expect(html).not.toContain("报告 checksum：" + "d".repeat(64));
+    expect(html).not.toContain("8/1/2026");
+  });
+
   it("keeps actionable errors user-facing and preserves a retryable message", () => {
     expect(supportSlaActionErrorMessage(new Error("权限不足"))).toBe("权限不足");
     expect(supportSlaActionErrorMessage({})).toBe("提交失败，请检查网络或权限后重试。");
@@ -74,6 +105,7 @@ describe("SLA correction approval transport", () => {
     // becomes the x-authorization-approval-token header; a param field would
     // recreate the forgeable caller-supplied approver claim.
     expect(modelSource).toContain("}, { authorizationApprovalToken: approvalToken?.trim() })");
+    expect(modelSource).toContain("report.workspaceId !== workspaceId");
     expect(modelSource).toContain("approvalToken?: string) => Promise<void>");
   });
 });

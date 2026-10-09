@@ -26,6 +26,11 @@ export interface SupportMutationResult {
   replayed: boolean;
 }
 
+export interface SupportDetailRefreshError {
+  ticketId: string;
+  message: string;
+}
+
 export interface SupportDomainClient {
   list(input: {
     workspaceId: string;
@@ -74,7 +79,9 @@ export interface SupportDomainModel {
   detailLoading: boolean;
   mutating: boolean;
   error: string;
+  detailRefreshError?: SupportDetailRefreshError;
   hasMore: boolean;
+  scanTruncated?: boolean;
   setFilters(filters: SupportFilters): void;
   reload(): Promise<void>;
   loadMore(): Promise<void>;
@@ -86,6 +93,8 @@ export interface SupportDomainModel {
   comment(body: string, visibility: "internal" | "customer"): Promise<void>;
   report?: SupportSlaMonthlyReport;
   reportLoading: boolean;
+  reportStale?: boolean;
+  reportError?: string;
   loadReport(input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<void>;
   correction?: SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string };
   correctionDecision?: SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress;
@@ -111,15 +120,20 @@ export const isCurrentSupportRequest = (
 export function useSupportDomain(client: SupportDomainClient, workspaceId: string, platformScope = false): SupportDomainModel {
   const [tickets, setTickets] = useState<SupportTicketContract[]>([]);
   const [selected, setSelected] = useState<SupportTicketDetail>();
-  const [filters, setFilters] = useState<SupportFilters>({ query: "" });
+  const [filters, setFiltersState] = useState<SupportFilters>({ query: "" });
   const [cursor, setCursor] = useState<SupportTicketPageCursor>();
+  const [scanTruncated, setScanTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  const [detailRefreshError, setDetailRefreshError] = useState<SupportDetailRefreshError>();
   const [report, setReport] = useState<SupportSlaMonthlyReport>();
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportStale, setReportStale] = useState(false);
+  const reportStaleRef = useRef(false);
+  const [reportError, setReportError] = useState("");
   const [correction, setCorrection] = useState<SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string }>();
   const [correctionDecision, setCorrectionDecision] = useState<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>();
   const [correctionLoading, setCorrectionLoading] = useState(false);
@@ -128,10 +142,13 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const mutationRequest = useRef(0);
   const reportRequest = useRef(0);
   const correctionRequest = useRef(0);
+  const correctionSubmissionRef = useRef<{ fingerprint: string; idempotencyKey: string } | undefined>(undefined);
+  const filterRefreshPending = useRef(false);
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
 
   const fetchPage = useCallback(async (nextCursor?: SupportTicketPageCursor, append = false) => {
+    if (!append) filterRefreshPending.current = false;
     const request = ++listRequest.current;
     const requestWorkspaceId = workspaceId;
     append ? setLoadingMore(true) : setLoading(true);
@@ -154,6 +171,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
         ? [...current, ...page.items.filter(item => !current.some(existing => existing.id === item.id))]
         : page.items);
       setCursor(page.nextCursor);
+      setScanTruncated(Boolean(page.scanTruncated));
     } catch (cause) {
       if (isCurrentSupportRequest(request, listRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
     } finally {
@@ -162,14 +180,32 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   }, [client, filters.assigneeId, filters.customerId, filters.priority, filters.query, filters.slaState, filters.status, platformScope, workspaceId]);
 
   const reload = useCallback(() => fetchPage(undefined, false), [fetchPage]);
+  const setFilters = useCallback((nextFilters: SupportFilters) => {
+    // Invalidate the old cursor and any in-flight page as soon as a filter
+    // changes. The debounced first page has not started yet, so retaining the
+    // previous cursor here would let a click append old-cursor results under
+    // the new query.
+    filterRefreshPending.current = true;
+    listRequest.current += 1;
+    setTickets([]);
+    setCursor(undefined);
+    setScanTruncated(false);
+    setLoading(true);
+    setLoadingMore(false);
+    setFiltersState(nextFilters);
+  }, []);
   const loadMore = useCallback(async () => {
-    if (!cursor || loadingMore) return;
+    if (!cursor || loadingMore || filterRefreshPending.current) return;
     await fetchPage(cursor, true);
   }, [cursor, fetchPage, loadingMore]);
 
   const selectTicket = useCallback(async (ticketId: string) => {
     const request = ++detailRequest.current;
     const requestWorkspaceId = workspaceId;
+    // Do not leave an earlier ticket visible if this selection fails. Once
+    // loading ends, a stale detail would otherwise look like the clicked row.
+    setSelected(undefined);
+    setDetailRefreshError(undefined);
     setDetailLoading(true);
     setError("");
     try {
@@ -188,36 +224,77 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const updateSelected = useCallback(async (operation: () => Promise<SupportMutationResult>) => {
     const request = ++mutationRequest.current;
     const requestWorkspaceId = workspaceId;
+    const detailSelectionRequest = detailRequest.current;
     setMutating(true);
     setError("");
+    setDetailRefreshError(undefined);
+    let result: SupportMutationResult;
     try {
-      const result = await operation();
-      if (!isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) return;
-      setTickets(current => current.map(ticket => ticket.id === result.ticket.id ? result.ticket : ticket));
-      const detail = await client.get(workspaceId, result.ticket.id);
-      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current) && detail) setSelected(detail);
+      result = await operation();
     } catch (cause) {
-      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
+      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) {
+        setError(errorMessage(cause));
+        setMutating(false);
+      }
       throw cause;
-    } finally {
-      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) setMutating(false);
     }
-  }, [client, workspaceId]);
+    if (!isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) return;
+    setTickets(current => current.map(ticket => ticket.id === result.ticket.id ? result.ticket : ticket));
+    if (detailRequest.current !== detailSelectionRequest) {
+      // The operator closed the detail or selected another ticket while the
+      // write was pending. Keep the queue projection current, but do not let
+      // this write's follow-up read reopen or overwrite their current choice.
+      setMutating(false);
+      return;
+    }
+    // The mutation response already carries the committed projection and its
+    // immutable event. Keep those visible even if the follow-up detail read is
+    // temporarily unavailable, so a transport read failure cannot be mistaken
+    // for a failed write and retried as a new operation.
+    setSelected(current => current?.ticket.id === result.ticket.id ? {
+      ticket: result.ticket,
+      events: [...current.events.filter(event => event.id !== result.event.id), result.event].sort((left, right) => left.sequence - right.sequence),
+    } : current);
+    // The write is complete and its response is now displayed. Do not keep the
+    // modal's confirm button loading while a best-effort detail refresh runs;
+    // the operator must be able to close or navigate away from the detail.
+    setMutating(false);
+    void client.get(workspaceId, result.ticket.id).then(detail => {
+      if (!isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)
+        || detailRequest.current !== detailSelectionRequest) return;
+      if (detail) setSelected(current => current?.ticket.id === result.ticket.id ? detail : current);
+      else if (selected?.ticket.id === result.ticket.id) setDetailRefreshError({ ticketId: result.ticket.id, message: "工单已保存，但详情刷新未返回数据；当前显示写入结果。可以重试读取详情。" });
+    }).catch(cause => {
+      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)
+        && detailRequest.current === detailSelectionRequest && selected?.ticket.id === result.ticket.id) {
+        setDetailRefreshError({ ticketId: result.ticket.id, message: `工单已保存，但详情刷新失败：${errorMessage(cause)}` });
+      }
+    });
+  }, [client, selected, workspaceId]);
 
   const create = useCallback(async (command: Omit<CreateSupportTicketCommand, "workspaceId">) => {
     const request = ++mutationRequest.current;
     const requestWorkspaceId = workspaceId;
     setMutating(true);
     setError("");
+    let result: SupportMutationResult;
     try {
-      const result = await client.create({ ...command, workspaceId });
+      result = await client.create({ ...command, workspaceId });
+    } catch (cause) {
+      // Creation errors belong to the open create dialog. Feeding them into the
+      // shared list/detail error channel mislabels a failed mutation as a queue
+      // read outage and places the only feedback behind the modal.
+      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) setMutating(false);
+      throw cause;
+    }
+    try {
       if (!isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) return;
+      // The create mutation is committed at this point. Refresh/detail failures
+      // have their own shared error state and must not make the modal tell the
+      // operator that creation failed (which could prompt a duplicate retry).
       await reload();
       if (!isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) return;
       await selectTicket(result.ticket.id);
-    } catch (cause) {
-      if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
-      throw cause;
     } finally {
       if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) setMutating(false);
     }
@@ -250,13 +327,28 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const loadReport = useCallback(async (input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }) => {
     const request = ++reportRequest.current;
     const requestWorkspaceId = workspaceId;
+    reportStaleRef.current = true;
     setReportLoading(true);
-    setError("");
+    setReportStale(true);
+    setReportError("");
+    // Corrections are bound to an immutable report ID. A refreshed/cross-period
+    // snapshot must not inherit correction state from the snapshot it replaces.
+    correctionRequest.current += 1;
+    setCorrection(undefined);
+    setCorrectionDecision(undefined);
+    setCorrectionLoading(false);
     try {
       const loaded = await client.report({ workspaceId, ...input });
-      if (isCurrentSupportRequest(request, reportRequest.current, requestWorkspaceId, workspaceRef.current)) setReport(loaded);
+      if (isCurrentSupportRequest(request, reportRequest.current, requestWorkspaceId, workspaceRef.current)) {
+        setReport(loaded);
+        reportStaleRef.current = false;
+        setReportStale(false);
+      }
     } catch (cause) {
-      if (isCurrentSupportRequest(request, reportRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
+      if (isCurrentSupportRequest(request, reportRequest.current, requestWorkspaceId, workspaceRef.current)) {
+        const message = errorMessage(cause);
+        setReportError(message);
+      }
     } finally {
       if (isCurrentSupportRequest(request, reportRequest.current, requestWorkspaceId, workspaceRef.current)) setReportLoading(false);
     }
@@ -264,20 +356,29 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
 
   const createCorrection = useCallback(async (reason: string) => {
     if (!report) throw new Error("请先生成月报，再创建 correction。");
+    if (report.workspaceId !== workspaceId || reportLoading || reportStale || reportStaleRef.current) throw new Error("报告正在刷新、属于其他工作区或刷新失败；请先成功生成当前报告，再创建 correction。");
     const request = ++correctionRequest.current;
     const requestWorkspaceId = workspaceId;
+    const fingerprint = JSON.stringify([workspaceId, report.reportId, report.periodStart, report.periodEnd, report.cutoffAt, reason]);
+    if (correctionSubmissionRef.current?.fingerprint !== fingerprint) {
+      correctionSubmissionRef.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
+    }
+    const idempotencyKey = correctionSubmissionRef.current.idempotencyKey;
     setCorrectionLoading(true);
     setError("");
     try {
-      const loaded = await client.createCorrection({ workspaceId, originalReportId: report.reportId, periodStart: report.periodStart, periodEnd: report.periodEnd, cutoffAt: report.cutoffAt, reason, idempotencyKey: crypto.randomUUID() });
-      if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrection(loaded);
+      const loaded = await client.createCorrection({ workspaceId, originalReportId: report.reportId, periodStart: report.periodStart, periodEnd: report.periodEnd, cutoffAt: report.cutoffAt, reason, idempotencyKey });
+      if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) {
+        setCorrection(loaded);
+        if (correctionSubmissionRef.current?.idempotencyKey === idempotencyKey) correctionSubmissionRef.current = undefined;
+      }
     } catch (cause) {
       if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
       throw cause;
     } finally {
       if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrectionLoading(false);
     }
-  }, [client, report, workspaceId]);
+  }, [client, report, reportLoading, reportStale, workspaceId]);
 
   const decideCorrection = useCallback(async (decision: "approved" | "rejected", reason: string, approvalToken?: string) => {
     if (!correction || correction.status === "no_change") throw new Error("当前没有待审批 correction。");
@@ -309,7 +410,9 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     correctionRequest.current += 1;
     setTickets([]);
     setSelected(undefined);
+    setDetailRefreshError(undefined);
     setCursor(undefined);
+    setScanTruncated(false);
     setError("");
     setLoading(false);
     setLoadingMore(false);
@@ -317,6 +420,8 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     setMutating(false);
     setReport(undefined);
     setReportLoading(false);
+    setReportStale(false);
+    setReportError("");
     setCorrection(undefined);
     setCorrectionDecision(undefined);
     setCorrectionLoading(false);
@@ -328,9 +433,9 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   }, [reload]);
 
   return {
-    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, report, reportLoading,
-    hasMore: Boolean(cursor), setFilters, reload, loadMore, selectTicket,
-    clearSelection: () => { detailRequest.current += 1; setSelected(undefined); },
+    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, detailRefreshError, report, reportLoading, reportStale, reportError,
+    hasMore: Boolean(cursor), scanTruncated, setFilters, reload, loadMore, selectTicket,
+    clearSelection: () => { detailRequest.current += 1; setSelected(undefined); setDetailRefreshError(undefined); },
     create, assign, transition, comment,
     loadReport, correction, correctionDecision, correctionLoading, createCorrection, decideCorrection,
   };

@@ -15,6 +15,12 @@ describe('merchant navigation cleanup contract', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '?image_job=img_123', hash: '' })).toEqual({ page: 'task', searchQuery: '', imageJobId: 'img_123' })
   })
 
+  it('preserves a newly created publish job identity on the task queue deep link', () => {
+    const href = urlForMerchantRoute({ pathname: '/merchant/products', search: '?q=old&publish_job_id=stale' }, { page: 'task', publishJobId: 'job-42' })
+    expect(href).toBe('/merchant/tasks?publish_job_id=job-42')
+    expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '?publish_job_id=job-42', hash: '' })).toEqual({ page: 'task', searchQuery: '', publishJobId: 'job-42' })
+  })
+
   it('keeps only knowledge as a new-session entry', () => {
     expect(app).toContain('aria-label="新会话入口"')
     expect(app).toContain("id: 'knowledge'")

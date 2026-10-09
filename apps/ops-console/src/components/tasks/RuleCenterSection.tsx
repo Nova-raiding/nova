@@ -218,7 +218,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     if (!activationTarget) return;
     const values = await activationForm.validateFields();
     const activated = await updateRuleStatus(activationTarget, "active", {
-      reason: values.reason,
+      reason: values.reason.trim(),
       approvalRef: values.approvalRef,
       approvedBy: values.approvedBy,
       approvedAt: values.approvedAt,
@@ -231,6 +231,16 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     if (!activated) return;
     setActivationTarget(undefined);
     activationForm.resetFields();
+  };
+
+  const submitActivation = () => {
+    // Ant Design keeps field-level validation errors on the form, but
+    // validateFields rejects its promise. Consume that expected rejection here
+    // so an empty/invalid submit does not become an unhandled browser error.
+    void activateRule().catch((cause: unknown) => {
+      if (cause && typeof cause === "object" && "errorFields" in cause) return;
+      message.error(cause instanceof Error ? cause.message : "规则激活表单提交失败，请重试");
+    });
   };
 
   const importMarkdownDocuments = async (documents: Array<{ name: string; text: string }>) => {
@@ -386,7 +396,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
         okText="确认激活"
         cancelText="取消"
         confirmLoading={ruleMutationKey === `${activationTarget?.id}:active`}
-        onOk={() => void activateRule()}
+        onOk={submitActivation}
         onCancel={() => {
           if (ruleMutationKey) return;
           setActivationTarget(undefined);
@@ -423,7 +433,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
           <Form.Item name="approvedAt" label="审批时间" extra="仅为记录：审批证明来自令牌，本字段不参与服务端审批判定" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { pattern: /^\d{4}-\d{2}-\d{2}T/u, message: "请输入 ISO 8601 时间" }]}>
             <Input placeholder="2026-08-29T08:00:00.000Z" />
           </Form.Item>
-          <Form.Item name="reason" label="激活原因" rules={[{ required: true, message: "请输入激活原因" }]}>
+          <Form.Item name="reason" label="激活原因" rules={[{ required: true, whitespace: true, message: "请输入激活原因" }]}>
             <Input.TextArea rows={3} placeholder="说明审批依据和生效范围" />
           </Form.Item>
         </Form>

@@ -13579,12 +13579,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const { scope, actorId } = billingReadScope(req, params)
       return result(await listRechargeOrders({
         workspaceId, params, scope, actorId,
-        ...(persistence.billing ? { durable: async (states: RechargeState[], limit: number, scopedActorId?: string) => {
-          const [orders, summary] = await Promise.all([
-            persistence.billing!.listOrders(workspaceId, states, limit, scopedActorId),
+        ...(persistence.billing ? { durable: async (states: RechargeState[], limit: number, scopedActorId?: string, cursor?: { createdAt: string; id: string }) => {
+          const [page, summary] = await Promise.all([
+            persistence.billing!.listOrdersPage(workspaceId, states, limit, scopedActorId, cursor),
             persistence.billing!.countOrdersByState(workspaceId, scopedActorId),
           ])
-          return { orders, summary }
+          return { ...page, summary }
         } } : {}),
         memoryOrders: [...rechargeOrders.values()],
         project: publicRechargeOrder,

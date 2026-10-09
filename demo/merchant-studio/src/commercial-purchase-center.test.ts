@@ -57,6 +57,16 @@ describe('a price display never authorizes payment', () => {
     expect(() => normalizeCommercialPurchaseOrder({ ...wire, sku_version_id: '' })).toThrow()
     expect(normalizeCommercialPurchaseOrder(wire)).toMatchObject({ id: 'o1', state: 'pending', amount_fen: 210000 })
   })
+  it('accepts only HTTPS/provider checkout URIs and rejects HTTP, fixture, ambiguous schemes, and credentials', () => {
+    expect(() => normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'http://pay.example.com/order/o1' })).toThrow('支付链接未确认安全')
+    expect(() => normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'https://user:secret@pay.example.com/order/o1' })).toThrow('支付链接未确认安全')
+    expect(() => normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'fixture://alipay/order/o1' })).toThrow('支付链接未确认安全')
+    expect(() => normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'https://fixture.invalid/alipay/order/o1' })).toThrow('支付链接未确认安全')
+    expect(() => normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'weixin:wxpay/bizpayurl?pr=abc' })).toThrow('支付链接未确认安全')
+    expect(normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'https://pay.example.com/order/o1' }).payment_url).toBe('https://pay.example.com/order/o1')
+    expect(normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'weixin://wxpay/bizpayurl?pr=abc' }).payment_url).toBe('weixin://wxpay/bizpayurl?pr=abc')
+    expect(normalizeCommercialPurchaseOrder({ ...wire, payment_url: 'alipays://platformapi/startapp?appId=20000067' }).payment_url).toBe('alipays://platformapi/startapp?appId=20000067')
+  })
   it('blocks confirmation with missing rights/cycle or expired acceptance window', () => {
     const order = normalizeCommercialPurchaseOrder(wire)
     expect(canConfirmCommercialOrder(order)).toBe(false)

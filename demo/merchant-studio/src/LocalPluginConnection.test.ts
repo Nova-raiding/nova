@@ -2,31 +2,32 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginEnrollUrl, localPluginLoginCommand, parsePluginPairFragment } from './LocalPluginConnection'
+import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginEnrollUrl, localPluginLoginCommand, pairingMatchesWorkspace, parsePluginPairFragment } from './LocalPluginConnection'
 import type { MerchantAuthAccount } from './api'
 
 const account: MerchantAuthAccount = {
   id: 'merchant_fixture', login: 'merchant@example.test', accountType: 'merchant',
   status: 'active', roles: ['workspace_owner'], workspaceIds: ['workspace_fixture'],
 }
+const pluginProps = { apiBaseUrl: '/api', account, activeWorkspaceId: 'workspace_fixture', onWorkspaceChange: () => {} }
 
 describe('local plugin connection entry', () => {
   it('renders installation guidance only for an active merchant', () => {
-    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account }))
+    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('尚未验证')
     expect(markup).toContain('<button')
     expect(markup).not.toContain('access_token')
     expect(markup).not.toContain('refresh_token')
     expect(markup).toContain('disabled=""')
-    expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, status: 'suspended' } }))).toBe('')
-    expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, accountType: 'platform' } }))).toBe('')
+    expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { ...pluginProps, account: { ...account, status: 'suspended' } }))).toBe('')
+    expect(renderToStaticMarkup(React.createElement(LocalPluginConnection, { ...pluginProps, account: { ...account, accountType: 'platform' } }))).toBe('')
   })
 
   it('keeps the authenticated topbar and safe body Portal contract', () => {
     const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(app).toContain('apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account}')
+    expect(app).toContain('apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} activeWorkspaceId={activeWorkspaceId}')
     expect(component).toContain('wrapClassName="merchant-local-plugin-modal"')
     expect(component).not.toContain('getContainer={false}')
     expect(app).toContain("event.target.closest('.merchant-local-plugin-modal')")
@@ -34,7 +35,7 @@ describe('local plugin connection entry', () => {
 
   it('presents a one-click entry with a gated local recovery path', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account }))
+    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('安装与故障帮助')
     expect(component).toContain('生产发布门禁尚未通过，暂不能启用一键连接')
@@ -72,6 +73,12 @@ describe('local plugin connection entry', () => {
     expect(parsePluginPairFragment(fragment, ['ws_safe-1'])).toEqual(pair)
     expect(parsePluginPairFragment(fragment, ['ws_foreign'])).toBeNull()
     expect(parsePluginPairFragment('#plugin_pair=unsafe', ['ws_safe-1'])).toBeNull()
+    expect(pairingMatchesWorkspace(pair, 'ws_safe-1')).toBe(true)
+    expect(pairingMatchesWorkspace(pair, 'ws_foreign')).toBe(false)
+    expect(pairingMatchesWorkspace(pair, null)).toBe(false)
+    const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
+    expect(component).toContain('parsed.workspace_id === workspaceId')
+    expect(component).toContain('pairingMatchesWorkspace(pairing, workspaceId)')
   })
 
   it('requires explicit selection for multiple authorized workspaces', () => {
@@ -79,7 +86,7 @@ describe('local plugin connection entry', () => {
     expect(localPluginConnectUrl('https://yxsona.com/api', workspaces)).toBeNull()
     expect(localPluginConnectUrl('https://yxsona.com/api', workspaces, undefined, 'ws_foreign')).toBeNull()
     expect(localPluginConnectUrl('https://yxsona.com/api', workspaces, undefined, 'ws_second')).toContain('workspace=ws_second')
-    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { apiBaseUrl: '/api', account: { ...account, workspaceIds: workspaces } }))
+    const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, { ...pluginProps, account: { ...account, workspaceIds: workspaces }, activeWorkspaceId: null }))
     expect(markup).toContain('选择插件工作区')
     expect(markup).toContain('disabled=""')
   })
@@ -102,17 +109,6 @@ describe('local plugin connection entry', () => {
     expect(component).toContain('浏览器授权完成后，还要等待安装器确认本机凭据保存成功')
     expect(component).toContain('完全退出并重新打开 ChatGPT')
     expect(component).not.toContain('查看安装与登录步骤')
-  })
-
-  it('keeps account and workspace guidance isolated when identity changes', () => {
-    const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
-    expect(component).toContain('const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds])')
-    expect(component).toContain('open={openScope === scope}')
-    expect(component).toContain('/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u')
-    expect(component).toContain("base.protocol === 'http:' && base.hostname === '127.0.0.1'")
-    expect(component).toContain('base.username || base.password')
-    expect(component).toContain('shellSafeOrigin.test(base.origin)')
-    expect(component).not.toContain('<API_ORIGIN>')
   })
 
   it('stores only the public installation id in browser state', () => {

@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
-import { FinanceSearchSection } from "./FinanceSearchSection.js";
+import { FinanceSearchSection, parseFinanceWorkspaceIdFilter } from "./FinanceSearchSection.js";
 import { financeDetailAttributeLabel, financeDetailAttributeValue, financeRecordCostEvidence } from "./FinanceDetailDrawer.js";
 
 function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSearchController {
   return {
-    query: { limit: 50 }, records: [], loading: false, loadingMore: false, detailLoading: false, exporting: false,
+    query: { limit: 50 }, records: [], resultsStale: false, loading: false, loadingMore: false, detailLoading: false, exporting: false,
     search: vi.fn(async () => undefined), loadMore: vi.fn(async () => undefined), openDetail: vi.fn(async () => undefined), retryDetail: vi.fn(async () => undefined), closeDetail: vi.fn(), downloadCsv: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -17,6 +17,16 @@ function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSe
 const render = (value: FinanceSearchController) => renderToStaticMarkup(createElement(FinanceSearchSection, { controller: value }));
 
 describe("FinanceSearchSection", () => {
+  it("labels the workspace filter as IDs and parses only ID tokens", () => {
+    const html = render(controller());
+    expect(html).toContain('placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔"');
+    expect(html).not.toContain("企业名称或 Workspace ID");
+    expect(parseFinanceWorkspaceIdFilter(" ws_one, ws_two\nws_three，ws_four ")).toEqual([
+      "ws_one", "ws_two", "ws_three", "ws_four",
+    ]);
+    expect(parseFinanceWorkspaceIdFilter(undefined)).toBeUndefined();
+  });
+
   it("explains the paid cash subscription without hiding audit values", () => {
     expect(financeDetailAttributeLabel("sku_code")).toBe("套餐代码");
     expect(financeDetailAttributeLabel("sku_version_id")).toBe("套餐版本");

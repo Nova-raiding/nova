@@ -969,7 +969,7 @@ const METHODS = {
   },
   'task.history': {
     description: '搜索当前工作区的历史营销任务。只读。',
-    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string', enum: ['draft', 'resolving_context', 'blocked_missing_facts', 'blocked_conflict', 'ready_for_direction', 'direction_selected', 'plan_confirmed', 'generating', 'review_required', 'changes_requested', 'approved', 'publish_prepared', 'publishing', 'delivered', 'canceled', 'failed_recoverable', 'failed_terminal'] }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 }, offset: { type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 } }, additionalProperties: false },
   },
   'task.resume': {
     description: '恢复任务并展示持久化的待回答/暂缓问题卡；只读，不会自动回答或生成。',
@@ -1829,11 +1829,20 @@ function userFacingToolText(method, result) {
     return `已读取 ${tickets.length} 个关联工单，状态：${statuses.join('、')}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部当前关联工单。'}`
   }
   if (method === 'multimodal.video.request' || method === 'multimodal.video.get') {
-    const video = result.rendering && typeof result.rendering === 'object' ? result.rendering : result
+    // video.request puts artifact scan/archive fields at the top level while
+    // its job status is nested under `rendering`; evaluate both layers.
+    const video = result.rendering && typeof result.rendering === 'object'
+      ? { ...result, ...result.rendering }
+      : result
     if (video.status === 'queued') return '视频正在生成，无需重新提交。'
-    if (video.status === 'completed') return (video.archiveState ?? video.archive_state) === 'archived'
-      ? '视频已生成并通过自动安全检查，可下载查看。'
-      : '视频已生成，正在自动检查文件。'
+    if (video.status === 'completed') {
+      const scanStatus = video.scanStatus ?? video.scan_status
+      const assetId = video.assetId ?? video.asset_id
+      const downloadPath = video.downloadPath ?? video.download_path
+      return (video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'clean' && typeof assetId === 'string' && typeof downloadPath === 'string'
+        ? '视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。'
+        : '视频已生成，文件或安全检查尚未全部确认。'
+    }
   }
   const merchantStatus = result.merchant_status && typeof result.merchant_status === 'object' ? result.merchant_status : undefined
   if (merchantStatus) {
@@ -1957,7 +1966,7 @@ function merchantBillingProjection(method, result) {
 
 function userFacingErrorText(code, details) {
   if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
-  if (code === 'UNAUTHENTICATED' || code === 'MCP_AUTH_REQUIRED') return 'Store Nova 工作区登录已失效。请在本地插件安装目录重新登录当前工作区，然后完整重启 ChatGPT；已有商品和素材不会丢失。'
+  if (code === 'UNAUTHENTICATED') return 'Store Nova 工作区登录已失效。请在本地插件安装目录重新登录当前工作区，然后完整重启 ChatGPT；已有商品和素材不会丢失。'
   if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。请先查看可用店铺，或明确提供平台和店铺账号；已导入的商品和商品规格不会丢失。'
   if (code === 'STORE_ONBOARDING_REQUIRED') return '当前工作区尚未绑定可用于正式商品任务的店铺，本次正式操作未执行。请联系平台运营完成店铺登记或授权绑定；如当前工作区具备相应权限和额度，你仍可上传自己的商品资料，制作待审核候选，并在审核后导出。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED' && /input\.media|first_frame/u.test(String(details?.provider_error_summary ?? ''))) return '视频尚未生成：视频服务未能正确接收参考图，需修复中转渠道的首帧映射。原图已保留，无需重新上传。'

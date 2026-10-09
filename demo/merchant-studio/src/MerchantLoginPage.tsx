@@ -13,7 +13,7 @@ type MerchantLoginPageProps = {
   error?: string
   loading?: boolean
   onAuthenticated: (account: MerchantAuthAccount) => void
-  onRetry: () => void
+  onRetry?: () => void
 }
 
 export function MerchantLoginPage({
@@ -21,7 +21,7 @@ export function MerchantLoginPage({
   error,
   loading = false,
   onAuthenticated,
-  onRetry: _onRetry,
+  onRetry,
 }: MerchantLoginPageProps) {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
@@ -108,6 +108,11 @@ export function MerchantLoginPage({
               登录商家工作台
             </Button>
           </Form>
+          {error && onRetry ? (
+            <Button className="merchant-login-retry" type="link" loading={loading} onClick={onRetry}>
+              重新检查登录状态
+            </Button>
+          ) : null}
           <Typography.Text type="secondary" className="merchant-login-helper">
             没有账号？请联系平台运营创建商家账号并分配企业工作区。
           </Typography.Text>

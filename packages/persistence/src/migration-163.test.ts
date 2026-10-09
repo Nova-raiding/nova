@@ -21,6 +21,7 @@ describe('migration 163 workspace authorization scope contract', () => {
   it('keeps the authorization PostgreSQL denominator explicit in package and CI entrypoints', async () => {
     const packageJson = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'))
     const ci = await readFile(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const runner = await readFile(new URL('../../../scripts/run-isolated-postgres-tests.ts', import.meta.url), 'utf8')
     const command = packageJson.scripts['test:authorization-postgres'] as string
     const paths = command.split(/\s+/u).filter(path => path.endsWith('.test.ts')).sort()
     expect(paths).toEqual([
@@ -30,8 +31,10 @@ describe('migration 163 workspace authorization scope contract', () => {
       'packages/persistence/src/authorization-rls-boundary.postgres.test.ts',
       'packages/persistence/src/migration-105-release.postgres.test.ts',
     ])
-    expect(command).toContain('--no-file-parallelism')
-    expect(command).toContain('--reporter=json')
+    expect(command).toContain('scripts/run-isolated-postgres-tests.ts')
+    expect(command).not.toContain('vitest run')
+    expect(runner).toContain("'--no-file-parallelism'")
+    expect(runner).toContain("'--reporter=json'")
     expect(ci).toContain('npm run test:authorization-postgres')
     expect(ci).toContain("assert.deepEqual(actual, expected, 'authorization test file set mismatch')")
     expect(ci).toContain("test.status === 'passed'")

@@ -33,9 +33,110 @@ describe('PostgresBusinessRepository', () => {
     client.enqueue() // COMMIT
     const page = await new PostgresBusinessRepository(new RecordingPool(client)).listProductsPage('ws_one', { limit: 10, offset: 0, query: 'STYLE-42' })
     expect(page.items).toEqual([{ id: 'prod_1', localProductKey: 'STYLE-42' }])
-    expect(client.calls[2]?.text).toContain("lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower($5) || '%'")
-    expect(client.calls[2]?.values).toEqual(['ws_one', 'STYLE-42', 'STYLE-42', 'STYLE-42', 'STYLE-42'])
-    expect(client.calls[3]?.text).toContain('LIMIT $6 OFFSET $7')
+    expect(client.calls[2]?.text).toContain("lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower($5) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.text).toContain("lower(coalesce(category,'')) LIKE '%' || lower($6) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.text).toContain("lower(images::text) LIKE '%' || lower($7) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(8).fill('STYLE-42')])
+    expect(client.calls[3]?.text).toContain('LIMIT $10 OFFSET $11')
+  })
+
+  it('searches task account ids in the normalized SQL page', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'task_1', accountId: 'store-42' } })
+    client.enqueue() // COMMIT
+    await new PostgresBusinessRepository(new RecordingPool(client)).listTasksPage('ws_one', { limit: 10, offset: 0, query: 'store-42' })
+    expect(client.calls[2]?.text).toContain("lower(coalesce(platform_account_id,'')) LIKE '%' || lower($5) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', 'store-42', 'store-42', 'store-42', 'store-42'])
+  })
+
+  it.each([
+    ['%', '!%'],
+    ['_', '!_'],
+    ['\\', '\\'],
+    ['100%_\\', '100!%!_\\'],
+  ])('keeps LIKE metacharacters literal in product count and page queries (%s)', async (query, escaped) => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'prod_literal' } })
+    client.enqueue() // COMMIT
+
+    const page = await new PostgresBusinessRepository(new RecordingPool(client)).listProductsPage('ws_one', { limit: 10, offset: 0, query })
+    const countQuery = client.calls[2]!
+    const pageQuery = client.calls[3]!
+    expect(page).toEqual({ items: [{ id: 'prod_literal' }], total: 1, limit: 10, offset: 0 })
+    expect(countQuery.text).toContain("lower(title) LIKE '%' || lower($3) || '%' ESCAPE '!'")
+    expect(countQuery.values).toEqual(['ws_one', ...Array(8).fill(escaped)])
+    expect(pageQuery.text).toContain("lower(title) LIKE '%' || lower($3) || '%' ESCAPE '!'")
+    expect(pageQuery.values).toEqual(['ws_one', ...Array(8).fill(escaped), 10, 0])
+  })
+
+  it.each([
+    ['products', 'storeName', "lower(store_name) LIKE '%' || lower($2) || '%' ESCAPE '!'"] ,
+    ['products', 'brandName', "lower(coalesce(data#>>'{attributes,brand}', '')) LIKE '%' || lower($2) || '%' ESCAPE '!'"] ,
+    ['tasks', 'storeName', "lower(products.store_name) LIKE '%' || lower($2) || '%' ESCAPE '!'"] ,
+    ['tasks', 'brandName', "lower(coalesce(products.data#>>'{attributes,brand}', '')) LIKE '%' || lower($2) || '%' ESCAPE '!'"] ,
+  ] as const)('keeps %s %s filter LIKE metacharacters literal in count and page SQL', async (table, filter, sql) => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: table === 'products' ? 'prod_literal' : 'task_literal' } })
+    client.enqueue() // COMMIT
+
+    const query = 'a!%_\\'
+    const escaped = 'a!!!%!_\\'
+    const repository = new PostgresBusinessRepository(new RecordingPool(client))
+    if (table === 'products') await repository.listProductsPage('ws_one', { limit: 10, offset: 0, [filter]: query })
+    else await repository.listTasksPage('ws_one', { limit: 10, offset: 0, [filter]: query })
+
+    expect(client.calls[2]?.text).toContain(sql)
+    expect(client.calls[2]?.values).toEqual(filter === 'brandName' ? ['ws_one', escaped, escaped] : ['ws_one', escaped])
+    expect(client.calls[3]?.text).toContain(sql)
+    expect(client.calls[3]?.values).toEqual(filter === 'brandName' ? ['ws_one', escaped, escaped, 10, 0] : ['ws_one', escaped, 10, 0])
+  })
+
+
+  it('searches products by case-insensitive platform slug and the merchant-visible platform name', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'prod_taobao', platform: 'taobao' } })
+    client.enqueue() // COMMIT
+
+    const page = await new PostgresBusinessRepository(new RecordingPool(client)).listProductsPage('ws_one', { limit: 10, offset: 0, query: '淘宝' })
+    expect(page).toEqual({ items: [{ id: 'prod_taobao', platform: 'taobao' }], total: 1, limit: 10, offset: 0 })
+    expect(client.calls[2]?.text).toContain("lower(platform) LIKE '%' || lower($8) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.text).toContain("lower(CASE platform WHEN 'jd' THEN '京东' WHEN 'taobao' THEN '淘宝'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(8).fill('淘宝')])
+  })
+
+  it.each([
+    ['%', '!%'],
+    ['_', '!_'],
+    ['\\', '\\'],
+    ['100%_\\', '100!%!_\\'],
+  ])('keeps LIKE metacharacters literal in task count and page queries (%s)', async (query, escaped) => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'task_literal' } })
+    client.enqueue() // COMMIT
+
+    const page = await new PostgresBusinessRepository(new RecordingPool(client)).listTasksPage('ws_one', { limit: 10, offset: 0, query })
+    const countQuery = client.calls[2]!
+    const pageQuery = client.calls[3]!
+    expect(page).toEqual({ items: [{ id: 'task_literal' }], total: 1, limit: 10, offset: 0 })
+    expect(countQuery.text).toContain("lower(products.title) LIKE '%' || lower($4) || '%' ESCAPE '!'")
+    expect(countQuery.values).toEqual(['ws_one', ...Array(4).fill(escaped)])
+    expect(pageQuery.text).toContain("lower(products.title) LIKE '%' || lower($4) || '%' ESCAPE '!'")
+    expect(pageQuery.values).toEqual(['ws_one', ...Array(4).fill(escaped), 10, 0])
   })
 
   it('saves a versioned snapshot and rejects stale writes', async () => {

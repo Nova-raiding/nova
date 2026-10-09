@@ -18,6 +18,7 @@ export interface FinanceSearchController {
   query: FinanceSearchQuery;
   page?: FinanceSearchPage;
   records: FinanceSearchRecord[];
+  resultsStale: boolean;
   loading: boolean;
   loadingMore: boolean;
   error?: string;
@@ -76,6 +77,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
   const [query, setQuery] = useState<FinanceSearchQuery>(initialQuery);
   const [page, setPage] = useState<FinanceSearchPage>();
   const [records, setRecords] = useState<FinanceSearchRecord[]>([]);
+  const [resultsStale, setResultsStale] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string>();
@@ -88,9 +90,18 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
   const searchRequests = useRef(new LatestFinanceRequest());
   const detailRequests = useRef(new LatestFinanceRequest());
   const exportRequests = useRef(new LatestFinanceRequest());
+  const hasLoadedPage = useRef(false);
 
   const runSearch = useCallback(async (next: FinanceSearchQuery, append: boolean) => {
     const request = searchRequests.current.begin();
+    if (!append) {
+      setResultsStale(hasLoadedPage.current);
+      // A download that began under the previous filters must not finish after
+      // the operator has submitted a replacement query.
+      exportRequests.current.cancel();
+      setExporting(false);
+      setExportError(undefined);
+    }
     append ? setLoadingMore(true) : setLoading(true);
     setError(undefined);
     try {
@@ -99,6 +110,8 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
       setPage(loaded);
       setQuery({ ...next, snapshotAt: loaded.snapshotAt });
       setRecords(current => append ? mergeFinanceRecords(current, loaded.records) : loaded.records);
+      hasLoadedPage.current = true;
+      setResultsStale(false);
     } catch (cause) {
       if (!searchRequests.current.isCurrent(request.id)) return;
       setError(financeErrorMessage(cause, "财务记录加载失败，请重试。"));
@@ -140,6 +153,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
   }, [openDetail, selected]);
 
   const downloadCsv = useCallback(async () => {
+    if (loading || resultsStale) return;
     setExporting(true); setExportError(undefined);
     const request = exportRequests.current.begin();
     try {
@@ -154,7 +168,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
     } finally {
       if (exportRequests.current.isCurrent(request.id)) setExporting(false);
     }
-  }, [client, page?.snapshotAt, query]);
+  }, [client, loading, page?.snapshotAt, query, resultsStale]);
 
   useEffect(() => () => {
     searchRequests.current.cancel();
@@ -173,10 +187,12 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
     detailRequests.current.cancel();
     exportRequests.current.cancel();
     setQuery(initialQueryRef.current);
+    hasLoadedPage.current = false;
     setPage(undefined); setRecords([]); setLoading(false); setLoadingMore(false); setError(undefined);
+    setResultsStale(false);
     setSelected(undefined); setDetail(undefined); setDetailLoading(false); setDetailError(undefined);
     setExporting(false); setExportError(undefined);
   }, [autoLoad, runSearch]);
 
-  return { query, page, records, loading, loadingMore, error, selected, detail, detailLoading, detailError, exporting, exportError, search, loadMore, openDetail, retryDetail, closeDetail, downloadCsv };
+  return { query, page, records, resultsStale, loading, loadingMore, error, selected, detail, detailLoading, detailError, exporting, exportError, search, loadMore, openDetail, retryDetail, closeDetail, downloadCsv };
 }

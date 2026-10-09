@@ -18,6 +18,7 @@ export interface ReleaseMetadataSnapshot {
   version: string
   rootPackageVersion: string
   lockRootVersion: string
+  pluginLockVersion: string
   changelogVersion: string
   pluginVersions: Record<string, string>
   migrationFiles: string[]
@@ -51,6 +52,7 @@ export function collectReleaseMetadata(root = process.cwd()): ReleaseMetadataSna
     version: readFileSync(at('VERSION'), 'utf8').trim(),
     rootPackageVersion: String(json(at('package.json')).version ?? ''),
     lockRootVersion: String(lock.packages?.['']?.version ?? lock.version ?? ''),
+    pluginLockVersion: String(lock.packages?.['apps/plugin']?.version ?? ''),
     changelogVersion,
     pluginVersions: {
       sourcePackage: String(json(at('apps/plugin/package.json')).version ?? ''),
@@ -73,6 +75,7 @@ export function validateReleaseMetadata(snapshot: ReleaseMetadataSnapshot): stri
   if (declared.repositoryVersion !== snapshot.version) errors.push('release-metadata repositoryVersion must match VERSION')
   if (snapshot.rootPackageVersion !== snapshot.version) errors.push('package.json version must match VERSION')
   if (snapshot.lockRootVersion !== snapshot.version) errors.push('package-lock root version must match VERSION')
+  if (snapshot.pluginLockVersion !== snapshot.pluginVersions.sourcePackage) errors.push('package-lock plugin workspace version must match source plugin package version')
   if (snapshot.changelogVersion !== snapshot.version) errors.push('latest CHANGELOG version must match VERSION')
 
   const pluginVersions = Object.values(snapshot.pluginVersions)

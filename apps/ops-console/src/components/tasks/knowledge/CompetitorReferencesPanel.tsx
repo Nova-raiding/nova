@@ -6,6 +6,17 @@ interface CompetitorReferencesPanelProps {
   model: OpsConsoleModel;
 }
 
+export function safeCompetitorSourceHref(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password || (url.port && url.port !== "443")) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function CompetitorReferencesPanel({
   model,
 }: CompetitorReferencesPanelProps) {
@@ -49,7 +60,10 @@ export function CompetitorReferencesPanel({
           <Col span={16}>
             <Row gutter={8}>
               <Col span={14}>
-                <Form.Item name="sourceUrl" label="公开来源 URL" rules={[{ required: true, type: "url", message: "请输入有效的公开链接" }]}>
+                <Form.Item name="sourceUrl" label="公开来源 URL" rules={[
+                  { required: true, type: "url", message: "请输入有效的公开链接" },
+                  { validator: (_, value) => !value || safeCompetitorSourceHref(value) ? Promise.resolve() : Promise.reject(new Error("来源必须是无凭据、无自定义端口的 HTTPS 公网页面")) },
+                ]}>
                   <Input placeholder="https://example.com/product" />
                 </Form.Item>
               </Col>
@@ -101,11 +115,12 @@ export function CompetitorReferencesPanel({
           { title: "竞品", dataIndex: "competitorName" },
           {
             title: "来源",
-            render: (_: unknown, row: CompetitorAnalysis) => (
-              <a href={row.source.url} target="_blank" rel="noreferrer">
-                {row.source.title}
-              </a>
-            ),
+            render: (_: unknown, row: CompetitorAnalysis) => {
+              const href = safeCompetitorSourceHref(row.source.url);
+              return href
+                ? <a href={href} target="_blank" rel="noopener noreferrer">{row.source.title}</a>
+                : <Typography.Text title={row.source.url} type="secondary">{row.source.title}（来源链接不安全）</Typography.Text>;
+            },
           },
           {
             title: "合规边界",

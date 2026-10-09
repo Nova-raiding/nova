@@ -21,4 +21,10 @@ describe('content candidate to manual publish workflow', () => {
     expect(app).toContain('onComplete={completePublish}')
     expect(app).toContain('需由运营人员完成平台操作并回填证据，当前不代表平台已受理或已生效。')
   })
+
+  it('returns to the task queue after creating a manual publish job so its history is immediately reachable', () => {
+    expect(app).toContain("navigateTo('task', { clearContext: true, publishJobId: jobId })")
+    expect(app).not.toContain("navigateTo('products')\n    showToast(\n      `人工发布任务已创建：${jobId}")
+    expect(app).toContain('<PublishHistoryPanel baseUrl={baseUrl} />')
+  })
 })

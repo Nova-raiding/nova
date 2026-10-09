@@ -30,36 +30,50 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
   // after a failed decision, so the value has to outlive the first attempt.
   const [approvalToken, setApprovalToken] = useState("");
   const report = model.report;
+  const reportMatchesWorkspace = Boolean(report && report.workspaceId === model.workspaceId);
+  const visibleReport = reportMatchesWorkspace ? report : undefined;
+  const reportStale = Boolean(model.reportStale || model.reportLoading || (report && !reportMatchesWorkspace));
   const load = () => void model.loadReport(previousMonthWindow());
-  const rate = report && report.denominator > 0 ? `${((report.met / report.denominator) * 100).toFixed(1)}%` : "—";
+  const rate = visibleReport && visibleReport.denominator > 0 ? `${((visibleReport.met / visibleReport.denominator) * 100).toFixed(1)}%` : "—";
 
   return (
     <Card
       className="ops-support-sla"
       title="SLA 月报"
-      extra={<Button icon={report ? <ReloadOutlined aria-hidden="true" /> : <FileSearchOutlined aria-hidden="true" />} loading={model.reportLoading} onClick={load}>{report ? "重新生成上月报告" : "生成上月报告"}</Button>}
+      extra={<Button icon={visibleReport ? <ReloadOutlined aria-hidden="true" /> : <FileSearchOutlined aria-hidden="true" />} loading={model.reportLoading} disabled={model.reportLoading} onClick={load}>{visibleReport ? "重新生成上月报告" : "生成上月报告"}</Button>}
     >
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
         报告由服务端依据不可变工单事件生成；当前按钮生成上一个 UTC 自然月，截止时间由服务端记录。页面不在浏览器侧计算 SLA。
       </Typography.Paragraph>
-      {!report ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未生成月报；生成后此处显示服务端快照" />
+      {!visibleReport ? (
+        <>
+          {model.reportError && <Alert role="alert" type="error" showIcon title="月报生成失败" description={model.reportError} />}
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={report && !reportMatchesWorkspace ? "工作区已切换；旧工作区月报已隐藏，正在等待当前工作区报告" : model.reportLoading ? "正在生成月报…" : "尚未生成月报；生成后此处显示服务端快照"} />
+        </>
       ) : (
         <>
+          {reportStale && <Alert
+            role={model.reportError ? "alert" : "status"}
+            style={{ marginBottom: 16 }}
+            type={model.reportError ? "error" : "warning"}
+            showIcon
+            title={model.reportError ? "月报刷新失败，当前显示的是历史快照" : "月报正在刷新或工作区切换，当前显示的是历史快照"}
+            description={model.reportError || "刷新完成前，此快照不能用于创建 correction。历史数据仍保留供核对。"}
+          />}
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} lg={6}><Statistic title="SLA 达成率" value={rate} /></Col>
-            <Col xs={24} sm={12} lg={6}><Statistic title="统计分母" value={report.denominator} suffix="单" /></Col>
-            <Col xs={24} sm={12} lg={6}><Statistic title="达成" value={report.met} suffix="单" /></Col>
-            <Col xs={24} sm={12} lg={6}><Statistic title="失败/未解决" value={report.failed} suffix="单" /></Col>
+            <Col xs={24} sm={12} lg={6}><Statistic title="统计分母" value={visibleReport.denominator} suffix="单" /></Col>
+            <Col xs={24} sm={12} lg={6}><Statistic title="达成" value={visibleReport.met} suffix="单" /></Col>
+            <Col xs={24} sm={12} lg={6}><Statistic title="失败/未解决" value={visibleReport.failed} suffix="单" /></Col>
           </Row>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            周期：{new Date(report.periodStart).toLocaleDateString()} 至 {new Date(report.periodEnd).toLocaleDateString()}；截止：{new Date(report.cutoffAt).toLocaleString()}
+            周期：{new Date(visibleReport.periodStart).toLocaleDateString()} 至 {new Date(visibleReport.periodEnd).toLocaleDateString()}；截止：{new Date(visibleReport.cutoffAt).toLocaleString()}
           </Typography.Paragraph>
-          <Tag color={report.failed > 0 ? "red" : "green"}>{report.failed > 0 ? "需要复盘" : "本报告无失败工单"}</Tag>
-          {report.excluded > 0 && <Tag color="gold">排除 {report.excluded} 单（按合同/测试/合并规则）</Tag>}
-          <Alert style={{ marginTop: 16 }} type="info" showIcon title={`报告 checksum：${report.checksum}`} description="历史报告为不可变证据。迟到事实必须创建 correction run，不得覆盖原报告。" />
+          <Tag color={visibleReport.failed > 0 ? "red" : "green"}>{visibleReport.failed > 0 ? "需要复盘" : "本报告无失败工单"}</Tag>
+          {visibleReport.excluded > 0 && <Tag color="gold">排除 {visibleReport.excluded} 单（按合同/测试/合并规则）</Tag>}
+          <Alert style={{ marginTop: 16 }} type="info" showIcon title={`报告 checksum：${visibleReport.checksum}`} description="历史报告为不可变证据。迟到事实必须创建 correction run，不得覆盖原报告。" />
           <Typography.Paragraph style={{ marginTop: 16, marginBottom: 8 }}>
-            <Button onClick={() => { setReason(""); setCorrectionError(""); setCorrectionOpen(true); }}>创建 correction</Button>
+            <Button disabled={reportStale} onClick={() => { setReason(""); setCorrectionError(""); setCorrectionOpen(true); }}>创建 correction</Button>
             {model.correction && model.correction.status === "pending_review" && !(model.correctionDecision && "decision" in model.correctionDecision) && <>
               <Tag color="gold" style={{ marginLeft: 8 }}>待审批：{model.correction.correctionId}</Tag>
               <Button size="small" type="primary" style={{ marginLeft: 8 }} onClick={() => { setReason(""); setDecisionError(""); setApprovalToken(""); setDecisionOpen("approved"); }}>批准</Button>
@@ -76,10 +90,10 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
         okText="提交 correction"
         cancelText="取消"
         confirmLoading={model.correctionLoading ?? false}
-        okButtonProps={{ disabled: reason.trim().length < 3 }}
+        okButtonProps={{ disabled: reason.trim().length < 3 || reportStale }}
         onCancel={() => { setCorrectionError(""); setCorrectionOpen(false); }}
         onOk={() => {
-          if (!model.createCorrection) return;
+          if (!model.createCorrection || reportStale) return;
           setCorrectionError("");
           void model.createCorrection(reason)
             .then(() => { setCorrectionOpen(false); })
@@ -91,10 +105,10 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
           size="small"
           style={{ minHeight: 44 }}
           loading={model.correctionLoading ?? false}
-          disabled={model.correctionLoading ?? false}
+          disabled={Boolean(model.correctionLoading || reportStale)}
           aria-busy={model.correctionLoading || undefined}
           aria-label={model.correctionLoading ? "正在重试提交 correction" : "重试提交 correction"}
-          onClick={() => { if (!model.createCorrection || model.correctionLoading) return; setCorrectionError(""); void model.createCorrection(reason).then(() => setCorrectionOpen(false)).catch(error => setCorrectionError(supportSlaActionErrorMessage(error))); }}
+          onClick={() => { if (!model.createCorrection || model.correctionLoading || reportStale) return; setCorrectionError(""); void model.createCorrection(reason).then(() => setCorrectionOpen(false)).catch(error => setCorrectionError(supportSlaActionErrorMessage(error))); }}
         >重试提交</Button>} />}
         <Input.TextArea aria-label="correction 理由" rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明迟到事实来源和复核范围（至少 3 个字符）" />
       </Modal>

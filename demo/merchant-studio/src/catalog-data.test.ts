@@ -157,7 +157,7 @@ describe('the store page renders the server catalogue', () => {
 
 describe('product facts come from the server', () => {
   it('lists the server products for the account that owns them', () => {
-    const items = catalogProductsForStore(products, 'fixture-store-ws_demo-taobao')!
+    const items = catalogProductsForStore(products, { platform: 'taobao', accountId: 'fixture-store-ws_demo-taobao' })!
     expect(items).toHaveLength(1)
     expect(items[0]).toMatchObject({
       id: 'prod_demo_fixture_1',
@@ -173,8 +173,8 @@ describe('product facts come from the server', () => {
   })
 
   it('separates an unresolved product read from a store with no products', () => {
-    expect(catalogProductsForStore(null, 'fixture-store-ws_demo-taobao')).toBeNull()
-    expect(catalogProductsForStore(products, 'no-such-account')).toEqual([])
+    expect(catalogProductsForStore(null, { platform: 'taobao', accountId: 'fixture-store-ws_demo-taobao' })).toBeNull()
+    expect(catalogProductsForStore(products, { platform: 'taobao', accountId: 'no-such-account' })).toEqual([])
   })
 
   it('never fabricates a price or an added date', () => {
@@ -183,15 +183,15 @@ describe('product facts come from the server', () => {
     expect(catalogProductAddedAt({})).toBe('')
     expect(catalogProductAddedAt({ createdAt: 'not-a-date' })).toBe('')
     expect(catalogProductAddedAt({ updatedAt: '2026-01-02T00:00:00.000Z' })).toBe('2026-01-02')
-    expect(catalogProductsForStore([{ id: 'p', title: 'p', updatedAt: '2026-01-02T00:00:00.000Z', accountId: 'a' } as Product], 'a')![0]!.price).toBeNull()
+    expect(catalogProductsForStore([{ id: 'p', title: 'p', updatedAt: '2026-01-02T00:00:00.000Z', accountId: 'a', platform: 'jd' } as Product], { platform: 'jd', accountId: 'a' })![0]!.price).toBeNull()
   })
 
   it('keeps null and blank product facts unknown while preserving actual zero values', () => {
     const [item] = catalogProductsForStore([{
-      id: 'p', title: 'p', accountId: 'a', updatedAt: '',
+      id: 'p', title: 'p', accountId: 'a', platform: 'jd', updatedAt: '',
       price: null, stock: null, skuCount: null,
       skus: [{ id: 's-null', name: '未知', price: null, stock: null }, { id: 's-blank', name: '空白', price: ' ', stock: '' }, { id: 's-zero', name: '零值', price: 0, stock: 0 }],
-    } as unknown as Product], 'a')!
+    } as unknown as Product], { platform: 'jd', accountId: 'a' })!
     expect(item).toMatchObject({ price: null, subtitle: '' })
     expect(item!.skus).toEqual([
       { id: 's-null', name: '未知', price: null, stock: null },
@@ -204,10 +204,10 @@ describe('product facts come from the server', () => {
 
   it('does not coerce malformed boolean facts into zero', () => {
     const [item] = catalogProductsForStore([{
-      id: 'p', title: 'p', accountId: 'a', updatedAt: '', price: false,
+      id: 'p', title: 'p', accountId: 'a', platform: 'jd', updatedAt: '', price: false,
       stock: false, skuCount: false,
       skus: [{ id: 's', name: '异常字段', price: false, stock: false }],
-    } as unknown as Product], 'a')!
+    } as unknown as Product], { platform: 'jd', accountId: 'a' })!
     expect(item).toMatchObject({ price: null, subtitle: '' })
     expect(item!.skus).toEqual([{ id: 's', name: '异常字段', price: null, stock: null }])
   })
@@ -225,7 +225,7 @@ describe('the page cannot fall back to a hardcoded catalogue', () => {
     expect(catalogComponent).toContain('fetchPlatformAccounts(baseUrl)')
     expect(catalogComponent).toContain('fetchProducts(baseUrl)')
     expect(catalogComponent).toContain('buildCatalogPlatforms(accounts, products)')
-    expect(catalogComponent).toContain('catalogProductsForStore(products, selectedStore.id')
+    expect(catalogComponent).toContain('catalogProductsForStore(products, { platform: selectedStore.platformId, accountId: selectedStore.id }')
   })
 
   it('keeps the screenshot platform order and labels while deriving each count from server rows', () => {

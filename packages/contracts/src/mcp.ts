@@ -1,4 +1,4 @@
-import type { Platform } from './domain.js'
+import { TASK_STATES, type Platform } from './domain.js'
 import { auditSources } from './ops/audit-center.js'
 
 /**
@@ -1104,7 +1104,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'billing.recharge.list',
     description: 'List recharge orders for the current workspace with optional state filtering.',
-    params: params({ states: { type: 'string' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }),
+    params: params({ states: { type: 'string' }, limit: { type: 'string' }, cursor: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }),
   },
   {
     method: 'billing.transactions',
@@ -1402,7 +1402,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'task.history',
     description: 'Search historical marketing tasks visible to the scoped workspace.',
-    params: params({ query: { type: 'string' }, platform: platformProperty, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: pageLimit100, offset: nonNegativeIntegerString }),
+    params: params({ query: { type: 'string' }, platform: platformProperty, state: { type: 'string', enum: TASK_STATES }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: pageLimit100, offset: nonNegativeIntegerString }),
   },
   {
     method: 'task.resume',
@@ -1911,7 +1911,7 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
       try {
         const raw = paramsObject.source_url
         if (typeof raw !== 'string' || raw !== raw.trim() || !/^https:\/\//iu.test(raw)
-          || /[\u0000-\u0020\u007f-\u009f\\#]/u.test(raw) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/iu.test(raw)) throw new Error()
+          || /[\u0000-\u0020\u007f-\u009f\p{Cf}\\#]/u.test(raw) || /%(?:0[0-9a-f]|1[0-9a-f]|7f|5c)/iu.test(raw)) throw new Error()
         const url = new URL(raw)
         const authority = raw.slice(raw.indexOf('//') + 2).split(/[/?#]/u, 1)[0] ?? ''
         if (url.protocol !== 'https:' || url.username || url.password || authority.includes('@') || url.hash || (url.port && url.port !== '443')) throw new Error()

@@ -21,7 +21,9 @@ type CreateForm = Omit<CreateSupportTicketCommand, "workspaceId" | "idempotencyK
 
 export function SupportQueueSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [form] = Form.useForm<CreateForm>();
+  const createIdempotencyKeyRef = useRef<string | null>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
   const errorRef = useRef<HTMLDivElement>(null);
 
@@ -30,10 +32,20 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
   }, [model.error]);
 
   const submit = async () => {
+    if (model.mutating) return;
+    setCreateError("");
     const values = await form.validateFields();
-    await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: crypto.randomUUID() });
+    createIdempotencyKeyRef.current ??= crypto.randomUUID();
+    await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: createIdempotencyKeyRef.current });
+    createIdempotencyKeyRef.current = null;
     form.resetFields();
     setCreateOpen(false);
+  };
+
+  const submitWithFeedback = () => {
+    void submit().catch(cause => {
+      setCreateError(cause instanceof Error && cause.message ? cause.message : "创建工单失败，请检查连接或权限后重试。");
+    });
   };
 
   return (
@@ -41,9 +53,9 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
       className="ops-support-queue"
       title="客服工单队列"
       aria-busy={model.loading}
-      extra={<Space wrap>
+        extra={<Space wrap>
         <Button icon={<ReloadOutlined aria-hidden="true" />} loading={model.loading} onClick={() => void model.reload()}>刷新</Button>
-        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={!canMutate || initialLoadFailed} title={!canMutate ? "当前会话没有工单变更权限" : initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => setCreateOpen(true)}>新建工单</Button>
+        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={!canMutate || initialLoadFailed} title={!canMutate ? "当前会话没有工单变更权限" : initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => { createIdempotencyKeyRef.current = null; setCreateOpen(true); }}>新建工单</Button>
       </Space>}
     >
       <Space wrap aria-label="工单筛选" style={{ marginBottom: 16 }}>
@@ -138,18 +150,31 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
           { title: "创建时间", dataIndex: "createdAt", width: 190, render: value => new Date(String(value)).toLocaleString() },
         ]}
       />}
+      {model.scanTruncated && <Alert
+        role="status"
+        showIcon
+        type="warning"
+        style={{ marginTop: 12 }}
+        title="工单扫描已达到本次上限，结果可能不完整"
+        description={model.hasMore ? "可能还有匹配工单；请继续加载以检查后续结果。" : "当前结果可能不完整；请收窄筛选条件后重新读取。"}
+      />}
       {model.hasMore && <Button block loading={model.loadingMore} onClick={() => void model.loadMore()} style={{ marginTop: 16 }}>加载更多工单</Button>}
 
       <Modal
         title="新建客服工单"
         open={createOpen}
         confirmLoading={model.mutating}
+        cancelButtonProps={{ disabled: model.mutating }}
+        closable={!model.mutating}
+        maskClosable={!model.mutating}
+        keyboard={!model.mutating}
         okText="创建工单"
         cancelText="取消"
-        onOk={() => void submit().catch(() => undefined)}
-        onCancel={() => setCreateOpen(false)}
+        onOk={submitWithFeedback}
+        onCancel={() => { if (model.mutating) return; createIdempotencyKeyRef.current = null; setCreateOpen(false); setCreateError(""); }}
         destroyOnHidden
       >
+        {createError ? <Alert role="alert" showIcon type="error" title="创建工单失败" description={createError} style={{ marginBottom: 16 }} /> : null}
         <Form form={form} layout="vertical" initialValues={{ priority: "normal", tags: [] }} requiredMark="optional">
           <Form.Item name="subject" label="主题" rules={[{ required: true, min: 3, max: 200 }]}><Input autoFocus maxLength={200} /></Form.Item>
           <Form.Item name="description" label="问题描述" rules={[{ required: true, max: 10000 }]}><Input.TextArea rows={4} maxLength={10000} showCount /></Form.Item>

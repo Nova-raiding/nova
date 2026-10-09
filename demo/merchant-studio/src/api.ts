@@ -58,6 +58,100 @@ export const configuredWorkspaceId = () => {
   return runtimeEnv.MODE === 'test' ? 'ws_demo' : ''
 }
 
+type MerchantWorkspaceScopeSnapshot = {
+  workspaceIds: readonly string[]
+  activeWorkspaceId: string | null
+  revision: number
+}
+
+let merchantWorkspaceIds: readonly string[] | null = null
+let activeMerchantWorkspaceId: string | null = null
+let merchantWorkspaceScopeRevision = 0
+
+function workspaceScopeError(code: string, message: string) {
+  return Object.assign(new Error(message), { code, status: 409 }) as ApiError
+}
+
+function clearMcpWorkspaceSessions() {
+  for (const session of workspaceMcpSessions.values()) session.clear()
+  workspaceMcpSessions.clear()
+  merchantMcpSession.clear()
+}
+
+/** Bind the browser session to the workspace memberships returned by the server. */
+export function configureMerchantWorkspaceScope(workspaceIds: readonly string[], preferredWorkspaceId?: string | null) {
+  const normalized = [...new Set(workspaceIds.map(id => id.trim()))]
+  if (!normalized.length || normalized.some(id => !id)) {
+    throw workspaceScopeError('API_WORKSPACE_MEMBERSHIP_INVALID', '登录会话未返回有效的商家工作区授权')
+  }
+  const nextActive = preferredWorkspaceId
+    ? normalized.includes(preferredWorkspaceId) ? preferredWorkspaceId : null
+    : normalized.length === 1 ? normalized[0]! : null
+  merchantWorkspaceIds = normalized
+  activeMerchantWorkspaceId = nextActive
+  merchantWorkspaceScopeRevision += 1
+  clearMcpWorkspaceSessions()
+  return nextActive
+}
+
+/** Change tenant context only to a workspace the authenticated session owns. */
+export function activateMerchantWorkspace(workspaceId: string) {
+  const candidate = workspaceId.trim()
+  if (!candidate || !merchantWorkspaceIds?.includes(candidate)) {
+    throw workspaceScopeError('API_WORKSPACE_NOT_AUTHORIZED', '所选工作区不属于当前登录账号，已阻止切换')
+  }
+  if (activeMerchantWorkspaceId === candidate) return false
+  activeMerchantWorkspaceId = candidate
+  merchantWorkspaceScopeRevision += 1
+  clearMcpWorkspaceSessions()
+  return true
+}
+
+/** Remove tenant context synchronously on logout/account replacement. */
+export function clearMerchantWorkspaceScope() {
+  merchantWorkspaceIds = null
+  activeMerchantWorkspaceId = null
+  merchantWorkspaceScopeRevision += 1
+  clearMcpWorkspaceSessions()
+}
+
+export function getMerchantWorkspaceScope(): MerchantWorkspaceScopeSnapshot {
+  return { workspaceIds: merchantWorkspaceIds ?? [], activeWorkspaceId: activeMerchantWorkspaceId, revision: merchantWorkspaceScopeRevision }
+}
+
+function requestWorkspaceScope(baseUrl: string, path: string, requestedWorkspaceId?: string): { workspaceId: string | null; revision: number; scoped: boolean; verifyResponseWorkspace: boolean; authPath: boolean; infrastructurePath: boolean } {
+  const sameOriginProxy = baseUrl.trim().startsWith('/')
+  const pathname = path.split('?')[0] ?? ''
+  const authPath = ['/v1/auth/login', '/v1/auth/register', '/v1/auth/session', '/v1/auth/logout', '/v1/auth/refresh', '/v1/auth/mcp-token', '/v1/auth/mcp-token/refresh', '/v1/auth/mcp-token/revoke', '/v1/auth/workspace-bootstrap'].includes(pathname)
+    || pathname.startsWith('/v1/auth/password/')
+  const infrastructurePath = ['/healthz', '/readyz', '/livez', '/releasez'].includes(pathname)
+  const current = getMerchantWorkspaceScope()
+  if (authPath) return { workspaceId: null, revision: current.revision, scoped: false, verifyResponseWorkspace: false, authPath, infrastructurePath }
+  if (infrastructurePath) return { workspaceId: null, revision: current.revision, scoped: false, verifyResponseWorkspace: false, authPath, infrastructurePath }
+  const requested = requestedWorkspaceId?.trim()
+  if (activeMerchantWorkspaceId && requested && requested !== activeMerchantWorkspaceId) {
+    throw workspaceScopeError('API_WORKSPACE_CONTEXT_MISMATCH', '请求工作区与当前工作台不一致，已阻止请求')
+  }
+  const configured = activeMerchantWorkspaceId || requestedWorkspaceId?.trim() || configuredWorkspaceId().trim()
+  const workspaceId = configured || null
+  if (merchantWorkspaceIds && !activeMerchantWorkspaceId) {
+    throw workspaceScopeError('API_WORKSPACE_SCOPE_REQUIRED', '请先选择当前账号已授权的商家工作区')
+  }
+  if (merchantWorkspaceIds && workspaceId && !merchantWorkspaceIds.includes(workspaceId)) {
+    throw workspaceScopeError('API_WORKSPACE_SCOPE_REQUIRED', '请先选择当前账号已授权的商家工作区')
+  }
+  if (sameOriginProxy && !workspaceId && runtimeEnv.MODE !== 'test') {
+    throw workspaceScopeError('API_WORKSPACE_SCOPE_REQUIRED', '商家工作区尚未选择，已阻止请求')
+  }
+  if (!sameOriginProxy && !workspaceId) {
+    throw workspaceScopeError('API_WORKSPACE_ID_MISSING', '商家工作区未配置，已阻止请求')
+  }
+  if (activeMerchantWorkspaceId && workspaceId !== activeMerchantWorkspaceId) {
+    throw workspaceScopeError('API_WORKSPACE_CONTEXT_MISMATCH', '请求工作区与当前工作台不一致，已阻止请求')
+  }
+  return { workspaceId, revision: current.revision, scoped: Boolean(workspaceId), verifyResponseWorkspace: Boolean(merchantWorkspaceIds) || !sameOriginProxy && Boolean(workspaceId), authPath, infrastructurePath }
+}
+
 export interface ApiEnvelope<T> {
   request_id: string
   trace_id: string
@@ -246,10 +340,7 @@ async function issueMcpToken(baseUrl: string, workspaceId?: string) {
   }
 }
 
-function clearWorkspaceMcpSessions() {
-  for (const session of workspaceMcpSessions.values()) session.clear()
-  workspaceMcpSessions.clear()
-}
+function clearWorkspaceMcpSessions() { clearMcpWorkspaceSessions() }
 
 function isSessionAuthFailure(status: number, code?: string, message?: string) {
   if (status === 401) return true
@@ -859,7 +950,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
   return chunks.join('')
 }
 
-export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = configuredWorkspaceId(), maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
+export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId?: string, maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
   if (authExpired && !path.startsWith('/v1/auth/')) {
     const error = new Error('登录会话已失效') as ApiError
     error.code = 'AUTH_SESSION_EXPIRED'
@@ -868,12 +959,13 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   }
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
+  const workspaceScope = requestWorkspaceScope(baseUrl, path, workspaceId)
   if (!token && !sameOriginProxy) {
     const error = new Error('商家工作区鉴权未配置，已阻止请求') as ApiError
     error.code = 'API_AUTH_TOKEN_MISSING'
     throw error
   }
-  if (!workspaceId?.trim() && !sameOriginProxy) {
+  if (!workspaceScope.workspaceId && !sameOriginProxy && !workspaceScope.infrastructurePath) {
     const error = new Error('商家工作区未配置，已阻止请求') as ApiError
     error.code = 'API_WORKSPACE_ID_MISSING'
     throw error
@@ -881,10 +973,10 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   const headers = new Headers(init.headers)
   headers.set('accept', 'application/json')
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  // Same-origin merchant sessions carry their authoritative workspace in the
-  // HttpOnly session cookie. Sending the local demo workspace here can
-  // override that scope and turn an otherwise valid login into a 403.
-  if (workspaceId?.trim() && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
+  // The cookie proves the user identity; the selected, session-authorized
+  // workspace scopes the request. The server validates this header against the
+  // membership list and derives tenant access from its own principal.
+  if (workspaceScope.workspaceId) headers.set('x-workspace-id', workspaceScope.workspaceId)
   if (token) headers.set('authorization', `Bearer ${token}`)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
@@ -895,7 +987,13 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   }
   try {
     const response = await fetch(apiUrl(baseUrl, path), { ...init, credentials: 'include', headers, signal: controller.signal })
+    if (workspaceScope.revision !== merchantWorkspaceScopeRevision) {
+      throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区响应')
+    }
     const raw = await readBoundedResponseText(response, maxResponseBytes)
+    if (workspaceScope.revision !== merchantWorkspaceScopeRevision) {
+      throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区响应')
+    }
     let envelope: ApiEnvelope<T> | null = null
     try { envelope = raw ? JSON.parse(raw) as ApiEnvelope<T> : null } catch {
       const error = new Error(`API request failed: ${response.status}`) as ApiError
@@ -907,12 +1005,10 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
       error.status = response.status
       throw error
     }
-    // A bearer token and an x-workspace-id are a pair. If an upstream or
-    // proxy returns a different workspace, fail closed instead of letting the
-    // merchant UI render another tenant's data. Same-origin sessions are
-    // cookie-scoped and intentionally omit the client-side workspace header;
-    // the server remains authoritative for that case.
-    if (!sameOriginProxy && workspaceId?.trim() && envelope.workspace_id !== workspaceId) {
+    // A workspace response must match the session's active tenant for both
+    // cookie and bearer requests. A stale proxy response cannot populate the
+    // newly selected workspace's page.
+    if (workspaceScope.verifyResponseWorkspace && workspaceScope.scoped && response.ok && !envelope.error && envelope.workspace_id !== workspaceScope.workspaceId) {
       const error = new Error('API 返回了不匹配的商家工作区') as ApiError
       error.code = 'API_WORKSPACE_SCOPE_MISMATCH'
       error.status = 502
@@ -971,7 +1067,7 @@ async function sha256Blob(blob: Blob): Promise<string> {
   return `sha256:${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-export async function downloadContentExport(baseUrl: string, contentVersionId: string, format: 'manifest' | 'json' | 'markdown' | 'bundle' = 'bundle', workspaceId = configuredWorkspaceId()): Promise<ContentExportArtifact> {
+export async function downloadContentExport(baseUrl: string, contentVersionId: string, format: 'manifest' | 'json' | 'markdown' | 'bundle' = 'bundle', workspaceId?: string): Promise<ContentExportArtifact> {
   if (authExpired) {
     const error = new Error('登录会话已失效') as ApiError
     error.code = 'AUTH_SESSION_EXPIRED'
@@ -980,24 +1076,27 @@ export async function downloadContentExport(baseUrl: string, contentVersionId: s
   }
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
+  const scope = requestWorkspaceScope(baseUrl, `/v1/content-versions/${contentVersionId}/export`, workspaceId)
   if (!token && !sameOriginProxy) {
     const error = new Error('商家工作区鉴权未配置，已阻止请求') as ApiError
     error.code = 'API_AUTH_TOKEN_MISSING'
     error.status = 401
     throw error
   }
-  if (!workspaceId?.trim() && !sameOriginProxy) {
+  if (!scope.workspaceId && !sameOriginProxy) {
     const error = new Error('商家工作区未配置，已阻止请求') as ApiError
     error.code = 'API_WORKSPACE_ID_MISSING'
     error.status = 400
     throw error
   }
   const headers = new Headers({ accept: 'application/octet-stream, application/json, text/markdown' })
-  if (workspaceId?.trim() && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
+  if (scope.workspaceId) headers.set('x-workspace-id', scope.workspaceId)
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/export?format=${encodeURIComponent(format)}`), { credentials: 'include', headers })
+  if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区导出')
   if (!response.ok) throw new Error(`导出失败（HTTP ${response.status}）`)
   const blob = await response.blob()
+  if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区导出')
   if (!blob.size) throw new Error('服务端返回了空的导出文件')
   const declaredSha256 = response.headers.get('x-delivery-bundle-sha256')?.trim()
   const declaredVerified = response.headers.get('x-delivery-bundle-verified')
@@ -1059,6 +1158,7 @@ export function describeApiError(error: unknown) {
 export async function loginMerchantAccount(baseUrl: string, input: { login: string; password: string }): Promise<MerchantAuthAccount> {
   const generation = ++merchantAuthGeneration
   authExpired = false
+  clearMerchantWorkspaceScope()
   merchantMcpSession.clear()
   clearWorkspaceMcpSessions()
   const result = await mutateMerchantCookie(generation, () => requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
@@ -1075,6 +1175,17 @@ export async function loginMerchantAccount(baseUrl: string, input: { login: stri
   return result.account
 }
 
+export async function bootstrapMerchantWorkspace(baseUrl: string, displayName: string): Promise<{ workspace_id: string; status: 'active'; reused: boolean; next_action: 'local_plugin_connect' }> {
+  const result = await requestApi<{ workspace_id: string; status: 'active'; reused: boolean; next_action: 'local_plugin_connect' }>(baseUrl, '/v1/auth/workspace-bootstrap', {
+    method: 'POST',
+    body: JSON.stringify({ display_name: displayName }),
+  })
+  if (!/^ws_[A-Za-z0-9_-]{1,120}$/u.test(result.workspace_id) || result.status !== 'active') {
+    throw new Error('首次工作区创建未返回可核实的工作区凭证')
+  }
+  return result
+}
+
 export async function registerMerchantAccount(baseUrl: string, input: { login: string; password: string; enterpriseName: string; contactName: string }): Promise<{ applicationId: string; status: string; login: string }> {
   // 兼容旧有开通入口调用；主流程应由平台侧运营创建商家账号并绑定工作区后登录使用。
   const result = await requestApi<{ application_id?: string; applicationId?: string; status: string; login: string }>(baseUrl, '/v1/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: input.login, password: input.password, enterprise_name: input.enterpriseName, contact_name: input.contactName, terms_agreed: true }) }, '')
@@ -1085,7 +1196,7 @@ export async function registerMerchantAccount(baseUrl: string, input: { login: s
 
 export async function fetchMerchantSession(baseUrl: string): Promise<MerchantAuthAccount> {
   const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/session')
-  if (!result.account || result.account.accountType !== 'merchant' || !result.account.workspaceIds?.length) {
+  if (!result.account || result.account.accountType !== 'merchant' || !Array.isArray(result.account.workspaceIds)) {
     const error = new Error('当前会话不是商家账号') as ApiError
     error.code = 'AUTH_MERCHANT_ACCOUNT_REQUIRED'
     throw error
@@ -1096,6 +1207,9 @@ export async function fetchMerchantSession(baseUrl: string): Promise<MerchantAut
 export async function logoutMerchantAccount(baseUrl: string): Promise<void> {
   const generation = ++merchantAuthGeneration
   const sessions = [merchantMcpSession, ...workspaceMcpSessions.values()]
+  merchantWorkspaceIds = null
+  activeMerchantWorkspaceId = null
+  merchantWorkspaceScopeRevision += 1
   // Detach the old workspace map before asynchronous revocation. Each revoke
   // captures its old refresh token and clears synchronously before awaiting.
   workspaceMcpSessions.clear()
@@ -1137,8 +1251,8 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
   // Vitest's in-process API fixtures intentionally exercise the raw MCP
   // contract with their own test auth repository. The deployed browser bundle
   // has no test MODE and must exchange its HttpOnly session for a bearer.
-  const scopedWorkspace = workspaceId?.trim()
-  if (workspaceId !== undefined && !scopedWorkspace) throw new Error('工作区 ID 不能为空')
+  const workspaceScope = requestWorkspaceScope(baseUrl, '/mcp', workspaceId)
+  const scopedWorkspace = workspaceScope.workspaceId ?? undefined
   const invoke = (bearer?: string) => requestApi<{ result: T }>(baseUrl, '/mcp', {
     method: 'POST',
     ...(bearer ? { headers: { authorization: `Bearer ${bearer}`, ...(scopedWorkspace ? { 'x-workspace-id': scopedWorkspace } : {}) } } : {}),
@@ -1287,7 +1401,13 @@ type CommercialPurchaseOrderWire = Partial<CommercialPurchaseOrder> & { order_id
 export function normalizeCommercialPurchaseOrder(value: CommercialPurchaseOrderWire): CommercialPurchaseOrder {
   const id = value.id ?? value.order_id
   if (!id || !Number.isSafeInteger(value.amount_fen) || (value.amount_fen ?? 0) <= 0 || value.currency !== 'CNY' || !value.sku_version_id || !value.sku_code || !(value.status ?? value.state)) throw new Error('订单事实未确认完整，暂不能付款；请查询原订单或联系运营。')
-  if (value.payment_url) { const url = new URL(value.payment_url); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('支付链接未确认安全，当前不能打开付款请求。') }
+  if (value.payment_url) {
+    const url = new URL(value.payment_url)
+    const providerScheme = url.protocol === 'weixin:' || url.protocol === 'alipays:'
+    const fixtureHost = url.hostname === 'fixture.invalid' || url.hostname.endsWith('.fixture.invalid')
+    const providerWebUrl = url.protocol === 'https:' && !fixtureHost
+    if (!(providerWebUrl || providerScheme) || !url.hostname || url.username || url.password) throw new Error('支付链接未确认安全，当前不能打开付款请求。')
+  }
   return { ...value, id, state: value.status ?? value.state!, sku_code: value.sku_code, sku_version_id: value.sku_version_id, amount_fen: value.amount_fen!, currency: 'CNY', payment_mode: value.payment_mode ?? value.payment_provider }
 }
 export const createCommercialPurchaseOrder = async (baseUrl: string, purchaseKind: 'purchase' | 'point_pack' | 'onboarding_once' | 'upgrade', skuCode: string, reason: string, idempotencyKey: string, upgradeQuoteId?: string, dependency?: { checkout_id?: string; onboarding_order_id?: string }) => normalizeCommercialPurchaseOrder(await requestMcp<CommercialPurchaseOrderWire>(baseUrl, 'commercial.order.create', { purchase_kind: purchaseKind, sku_code: skuCode, reason, idempotency_key: idempotencyKey, ...(upgradeQuoteId ? { upgrade_quote_id: upgradeQuoteId } : {}), ...dependency }))
@@ -1581,12 +1701,13 @@ const assetMimeType = (file: File) => file.type || ({
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.json': 'application/json',
   '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.ai': 'application/postscript', '.eps': 'application/postscript',
 } as Record<string, string>)[file.name.slice(file.name.lastIndexOf('.')).toLowerCase()] || 'application/octet-stream'
-export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory']) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
+export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory'], signal?: AbortSignal) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
   method: 'POST',
   // HTTP headers are byte-oriented; keep Unicode filenames/categories encoded
   // on the wire and let the API decode them before validation/persistence.
   headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': encodeURIComponent(materialCategory) } : {}) },
   body: await file.arrayBuffer(),
+  signal,
 })
 export const updateAssetMaterialCategory = (baseUrl: string, assetId: string, materialCategory: NonNullable<AssetMetadata['materialCategory']>, expectedRevision: number) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/metadata`, { method: 'PUT', body: JSON.stringify({ material_category: materialCategory, expected_revision: expectedRevision }) })
 export const fetchBrandProfile = (baseUrl: string) => requestApi<{ profile: BrandProfile | null }>(baseUrl, '/v1/brand-profile')
@@ -1618,25 +1739,26 @@ export const confirmAssetFacts = (baseUrl: string, assetId: string, facts: Recor
 export const parseAsset = (baseUrl: string, assetId: string) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/parse`, { method: 'POST' })
 export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: AbortSignal): Promise<Blob> {
   const headers = new Headers({ accept: 'application/octet-stream' })
-  const workspaceId = configuredWorkspaceId()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
-  if (!workspaceId && !sameOriginProxy) {
+  const scope = requestWorkspaceScope(baseUrl, `/v1/assets/${assetId}/download`)
+  if (!scope.workspaceId && !sameOriginProxy) {
     const error = new Error('商家工作区未配置，已阻止素材请求') as ApiError
     error.code = 'API_WORKSPACE_ID_MISSING'
     throw error
   }
-  // In the same-origin session flow the HttpOnly cookie owns the workspace;
-  // a build-time demo ID must never override that authenticated scope.
-  if (workspaceId && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
+  if (scope.workspaceId) headers.set('x-workspace-id', scope.workspaceId)
   const token = runtimeConfig('VITE_API_TOKEN')
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal, credentials: 'include' })
+  if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区素材')
   if (!response.ok) {
     const error = new Error(`素材读取失败：HTTP ${response.status}`) as ApiError
     error.status = response.status
     throw error
   }
-  return response.blob()
+  const blob = await response.blob()
+  if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区素材')
+  return blob
 }
 export const reviewProductImages = (baseUrl: string, productId: string) => requestApi<{ productId: string; images: string[]; findings: ReviewFinding[]; externallyUnverified: string[] }>(baseUrl, `/v1/products/${encodeURIComponent(productId)}/image-review`)
 export type ProductImageSize = '1024x1024' | '1024x1536' | '1536x1024' | '1024x3072' | '1024x4096'

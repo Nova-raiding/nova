@@ -23,6 +23,12 @@ describe('MCP method contract', () => {
   ] as const
   const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
 
+  it('restricts task history state to the supported task lifecycle values', () => {
+    const state = getMcpMethodContract('task.history')?.params.properties.state
+    expect(state?.enum).toEqual(expect.arrayContaining(['draft', 'review_required', 'approved', 'delivered']))
+    expect(state?.enum).not.toContain('not-a-task-state')
+  })
+
   it('returns Chinese validation explanations while preserving protocol field names', () => {
     expect(validateMcpRequest(null).errors).toEqual(['请求必须是对象'])
     expect(validateMcpRequest({ jsonrpc: '1.0', id: true, method: 'missing.method' }).errors).toEqual([
@@ -39,6 +45,14 @@ describe('MCP method contract', () => {
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'ops-users-invalid', method: 'ops.users.list', params: { account_type: 'other' },
     }).valid).toBe(false)
+  })
+
+  it('declares a cursor for complete recharge order history paging', () => {
+    expect(MCP_METHOD_SCHEMAS['billing.recharge.list'].properties?.cursor).toMatchObject({ type: 'string' })
+    expect(validateMcpRequest({
+      jsonrpc: '2.0', id: 'recharge-page-2', method: 'billing.recharge.list',
+      params: { states: 'paid', limit: '100', cursor: 'opaque-page-token' },
+    })).toEqual({ valid: true, errors: [] })
   })
 
   it('declares and validates the batch rule approval stdio contract', () => {

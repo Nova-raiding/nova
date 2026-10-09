@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { Alert, Badge, Breadcrumb, Button, Card, Checkbox, DatePicker, Dropdown, Form, Input, InputNumber, List, Modal, Select, Space, Statistic, Table, Tag } from 'antd'
+import { Alert, Badge, Breadcrumb, Button, Card, Checkbox, DatePicker, Dropdown, Form, Input, InputNumber, List, Modal, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import zhCN from 'antd/es/date-picker/locale/zh_CN'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
@@ -9,19 +9,25 @@ import { CommercialNotificationPanel } from './CommercialNotificationPanel'
 import { CommercialPointLedger } from './CommercialGiftDetails'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
+import { ASSET_LIBRARY_PAGE_SIZE, filterAssetLibrary, paginateAssetLibrary } from './asset-library-discovery'
+import { LatestRequestSequence } from './latest-request-sequence'
+import { clampProductPage } from './product-pagination'
 import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
 import { BrandAssetPreviewRegistry, brandAssetFileError, brandAssetMatchesKind, isUsableBrandAsset } from './material-brand-assets'
 import { yesterdayWindowInShanghai } from './entitlement-date'
-import { currentShanghaiMonthRange, filterFinanceEntriesByWindow, fillDailyFinancePoints, shanghaiCalendarDate } from './finance-window'
+import { currentShanghaiMonthRange, filterFinanceEntriesByWindow, fillDailyFinancePoints, fillMonthlyFinancePoints, financeUsageRangeError, shanghaiCalendarDate } from './finance-window'
 import { financeUsageRangeHasPendingChanges, financeUsageRangeReducer, initialFinanceUsageRangeState } from './finance-usage-range'
 import { matchesSearchText } from './search-normalization'
 import { materialPurgeRequestOutcome } from './material-purge-request-state'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
+import { parseProductStoreScope, productMatchesStoreScope, productStoreScopeQuery, productStoreScopeValue } from './product-store-filter'
 import {
   buildCatalogPlatforms,
   catalogPlatformLabel,
   catalogPlatformOrder,
+  catalogImageGenerationTarget,
+  catalogProductMatchesStoreScope,
   catalogProductsForStore,
   catalogUnboundDraftProducts,
   type CatalogPlatformView,
@@ -46,6 +52,16 @@ import {
   type StoreMaterialCategory,
   type StoreMaterialItem,
 } from './material-library'
+import {
+  acceptedPendingMaterialIds,
+  appendPendingMaterialFiles,
+  MAX_PENDING_MATERIAL_FILES,
+  releasePreviewUrls,
+  revokeObsoletePreviewUrls,
+  removePendingMaterialFiles,
+  uploadDialogCloseAllowed,
+  type PendingMaterialFile,
+} from './material-upload-pending'
 import storeNovaLogo from './assets/store-nova-primary-horizontal.png'
 import {
   evidenceSafeTopLevelContent,
@@ -99,6 +115,7 @@ import {
   Zap,
 } from 'lucide-react'
 import {
+  activateMerchantWorkspace,
   answerTask,
   approveContent,
   assertProductTargetIdentity,
@@ -114,6 +131,8 @@ import {
   createTask,
   decideReviewFinding,
   describeApiError,
+  clearMerchantWorkspaceScope,
+  configureMerchantWorkspaceScope,
   diffContentVersions,
   extractBrandProfile,
   fetchApiHealth,
@@ -157,6 +176,7 @@ import {
   MERCHANT_TASK_PAGE_SIZE,
   fetchTaskTimeline,
   fetchWorkspaceMetrics,
+  getMerchantWorkspaceScope,
   generateProductImages,
   generateCampaignBatch,
   generateContent,
@@ -230,7 +250,10 @@ import {
 import { resolveMerchantEnvironmentStatus } from './environment-status'
 import { MerchantLoginPage } from './MerchantLoginPage'
 import { redirectToPluginAuthorization } from './plugin-authorization-return'
+import { merchantSessionProbeFailure } from './merchant-session-probe'
 import { LocalPluginConnection } from './LocalPluginConnection'
+import { navigatePlatformAuthorization, startPlatformAuthorization, type PlatformAuthorizationStart } from './platform-oauth-launch'
+import { MerchantWorkspaceBootstrapPage } from './MerchantWorkspaceBootstrapPage'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationDisplayState, imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
@@ -252,6 +275,9 @@ const taskQuestionEvidenceLabels: Record<NonNullable<TaskQuestion['evidenceKind'
 }
 
 import {
+  clampTaskPage,
+  isKnownMerchantTaskState,
+  merchantTaskStateLabel,
   resolveTaskDirections,
   resolveTaskWorkflow,
   type TaskDirectionEvidence,
@@ -263,6 +289,7 @@ import {
 } from './publish-safety'
 import {
   focusMainAfterMerchantNavigation,
+  merchantNavigationPage,
   merchantRiskDestination,
   merchantRouteFromLocation,
   urlForMerchantRoute,
@@ -335,6 +362,7 @@ const navItems: Array<{
   { id: 'overview', label: '运营概览', icon: LayoutDashboard },
   // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
   { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
+  { id: 'rules', label: '规则与类目', icon: ShieldCheck, description: '查看当前发布的规则包与类目字段模板' },
   { id: 'finance', label: '财务概况', icon: WalletCards },
 ]
 
@@ -928,8 +956,9 @@ export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onR
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
       {state.mode === 'ready' && items.length ? <>
         <div className="merchant-notification-heading">
-          <div><strong>工作区待处理问题</strong><span>{items.length} 项需要关注</span></div>
+          <div><strong>工作区待处理问题</strong><span>{state.truncated ? `至少 ${items.length} 项需要关注，列表已截断` : `${items.length} 项需要关注`}</span></div>
         </div>
+        {state.truncated && <p role="status">{state.notice}</p>}
         <List
         className="merchant-notification-list"
         size="small"
@@ -972,6 +1001,8 @@ function Topbar({
   modelStatus,
   modelStatusRead,
   account,
+  activeWorkspaceId,
+  onWorkspaceChange,
   billing,
   onLogout,
   onPasswordChanged,
@@ -994,6 +1025,8 @@ function Topbar({
   modelStatus: PlatformModelStatus | null
   modelStatusRead: boolean
   account: MerchantAuthAccount | null
+  activeWorkspaceId: string | null
+  onWorkspaceChange: (workspaceId: string) => void
   billing: BillingStatus | null
   onLogout: () => void
   onPasswordChanged: () => void
@@ -1016,6 +1049,7 @@ function Topbar({
   const [issueItems, setIssueItems] = useState<IssueReadOutcome['items']>(null)
   const [issueReadError, setIssueReadError] = useState('')
   const [issueReadPending, setIssueReadPending] = useState(Boolean(apiBaseUrl))
+  const [issueReadTruncated, setIssueReadTruncated] = useState(false)
   const [issueReload, setIssueReload] = useState(0)
   const [issueDetail, setIssueDetail] = useState<WorkspaceMetrics['riskItems'][number] | null>(null)
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
@@ -1051,6 +1085,7 @@ function Topbar({
       setIssueItems(outcome.items)
       setIssueReadError(outcome.error)
       setIssueReadPending(outcome.loading)
+      setIssueReadTruncated(outcome.truncated ?? false)
     })
   }, [apiBaseUrl, issueReload])
   const titles: Record<Page, string> = {
@@ -1080,7 +1115,7 @@ function Topbar({
   const actionableIssues = actionableIssueItems(issueItems)
   // From the settled outcome to the words: one call, so the chain under the bell
   // is the chain `issue-read-state.test.ts` drives through a real response.
-  const issueRead = resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl, outcome: { items: issueItems, error: issueReadError, loading: issueReadPending } })
+  const issueRead = resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl, outcome: { items: issueItems, error: issueReadError, loading: issueReadPending, truncated: issueReadTruncated } })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
@@ -1109,6 +1144,14 @@ function Topbar({
         <h1>{titles[page]}</h1>
       </div>
       <div className="topbar-actions">
+        {(account?.workspaceIds.length ?? 0) > 1 && <Select
+          aria-label="切换当前商家工作区"
+          value={activeWorkspaceId ?? undefined}
+          placeholder="选择工作区"
+          options={(account?.workspaceIds ?? []).map(id => ({ label: id, value: id }))}
+          onChange={onWorkspaceChange}
+          style={{ minWidth: 190 }}
+        />}
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} popupRender={() => notificationPanel}>
           <IssueNotificationBell state={issueRead} />
         </Dropdown>
@@ -1146,7 +1189,7 @@ function Topbar({
                 </dl>
               </div>
               <div className="account-dropdown-actions">
-                {apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} />}
+                {apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} activeWorkspaceId={activeWorkspaceId} onWorkspaceChange={onWorkspaceChange} />}
                 {apiBaseUrl && account ? (
                   <button
                     className="account-secondary-button"
@@ -2082,7 +2125,7 @@ export function AccountDashboard({
 
 /** The count tag for a read that produced no number, named per mode. */
 function transactionCountLabel(read: IssueReadState): string {
-  if (read.count !== null) return `${read.count} 项待处理`
+  if (read.count !== null) return read.truncated ? read.count ? `至少 ${read.count} 项已读取，列表已截断` : '列表已截断，当前页无可处理项' : `${read.count} 项待处理`
   if (read.mode === 'read_error') return '读取失败'
   if (read.mode === 'loading') return '读取中'
   return `${UNREAD_METRIC} 待处理`
@@ -2148,6 +2191,8 @@ export function TransactionDashboard({
         {count === null ? (
           <div className="account-all-clear"><RefreshCw size={28} /><strong>{read.notice}</strong></div>
         ) : issues.length ? (
+          <>
+          {read.truncated && <p role="status">{read.notice}</p>}
           <div className="account-issue-list">
             {issues.map((issue, index) => {
               const copy = transactionIssueCopy(issue, apiMode)
@@ -2158,6 +2203,9 @@ export function TransactionDashboard({
               </button>
             })}
           </div>
+          </>
+        ) : read.truncated ? (
+          <div className="account-all-clear"><strong role="status">{read.notice}</strong></div>
         ) : (
           <div className="account-all-clear"><CheckCircle2 size={28} /><strong>当前没有待处理事务</strong></div>
         )}
@@ -2303,9 +2351,30 @@ export function Overview({
     setActionError('')
     setActionRetry(null)
     setActionMessage('')
-    authorizePlatform(baseUrl, platform)
+    let attempt: PlatformAuthorizationStart
+    try {
+      attempt = startPlatformAuthorization(
+        (url, target) => window.open(url, target),
+        () => authorizePlatform(baseUrl, platform),
+      )
+    } catch (error) {
+      setAction(null)
+      setActionError(`${platformNames[platform]}：无法打开授权窗口：${describeApiError(error)}`)
+      setActionRetry(() => () => connect(platform))
+      return
+    }
+    if (attempt.status === 'popup_blocked') {
+      setAction(null)
+      setActionError(`${platformNames[platform]}授权窗口被浏览器拦截。请允许本网站打开新窗口，然后点击“重试当前操作”；不会复用或展示未验证的授权链接。`)
+      setActionRetry(() => () => connect(platform))
+      return
+    }
+    const authorizationPopup = attempt.popup
+    attempt.result
       .then((result) => {
         if (result.mode === 'fixture') {
+          authorizationPopup.close()
+          if (!result.authorizationUrl) throw new Error('演示授权地址缺失，未完成授权。')
           return completeFixtureAuthorization(
             baseUrl,
             platform,
@@ -2320,13 +2389,9 @@ export function Overview({
         if (!result.authorizationUrl) {
           throw new Error('官方授权地址暂未生成，请检查平台 OAuth 配置后重试。')
         }
-        const popup = window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer')
-        if (!popup) {
-          setActionError('浏览器阻止了官方授权页弹窗。请允许本网站弹窗后，再点击“连接”重试。')
-          return
-        }
+        navigatePlatformAuthorization(authorizationPopup, result.authorizationUrl)
         setActionMessage(
-          `${platformNames[platform]} 官方授权页已打开。请完成授权后返回本页，系统会自动刷新连接状态；授权完成前不会读取或写入店铺数据。`,
+          `${platformNames[platform]} 官方授权页已打开。请完成授权后返回本页查看状态；授权完成前不会读取或写入店铺数据。`,
         )
         loadAccounts()
         let attempts = 0
@@ -2337,6 +2402,7 @@ export function Overview({
         }, 2000)
       })
       .catch((error) => {
+        authorizationPopup.close()
         setActionError(`${platformNames[platform]}：${describeApiError(error)}`)
         // Keep recovery explicit and scoped to the failed platform. Retrying
         // must never guess a different account or silently sync data.
@@ -2466,6 +2532,7 @@ export function Overview({
     items: overviewIssues,
     error: metricsError,
     loading: false,
+    truncated: metrics?.riskSummary.truncated ?? false,
   })
   const approvedCount = metrics ? String(metrics.taskFunnel.approved ?? 0) : '—'
   const riskCount = metrics ? String(metrics.riskSummary.total) : '—'
@@ -3025,6 +3092,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
   const [usageRange, dispatchUsageRange] = useReducer(financeUsageRangeReducer, initialFinanceUsageRangeState)
   const { draft: draftUsageRange, applied: appliedUsageRange } = usageRange
   const rangePending = financeUsageRangeHasPendingChanges(usageRange)
+  const usageRangeError = financeUsageRangeError(draftUsageRange)
   const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
   // `null` while the ledger read is unresolved or failed; `[]` is a real read
   // that returned no entries. Neither case may fall back to sample numbers.
@@ -3123,8 +3191,11 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
     const filtered = source.filter((item) => (!startValue || (item.dateLabel ?? item.label) >= startValue) && (!endValue || (item.dateLabel ?? item.label) <= endValue))
     const ledgerComplete = statementEntries !== null && !statementTruncated && statementUnreadable === 0
     const boundedDayRange = defaultDayWindow || Boolean(appliedUsageRange.start && appliedUsageRange.end)
-    if (appliedUsageRange.mode === 'day' && ledgerComplete && boundedDayRange) {
+    if (ledgerComplete && appliedUsageRange.mode === 'day' && boundedDayRange) {
       return fillDailyFinancePoints(filtered, startValue, endValue)
+    }
+    if (ledgerComplete && appliedUsageRange.mode === 'month' && appliedUsageRange.start && appliedUsageRange.end) {
+      return fillMonthlyFinancePoints(filtered, appliedUsageRange.start, appliedUsageRange.end)
     }
     return filtered
   }, [appliedUsageRange, currentMonthWindow.end, currentMonthWindow.start, dailyUsage, defaultDayWindow, monthlyUsage, statementEntries, statementTruncated, statementUnreadable])
@@ -3158,7 +3229,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
       <CommercialPurchaseCenter baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
       <CommercialPointLedger entries={statementEntries} unavailableMessage={statementNote} partial={statementTruncated || statementUnreadable > 0} />
       <section className="finance-panel finance-usage-panel">
-        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p>{rangePending && <p className="finance-range-pending" role="status">日期范围已修改，点击“查询”后应用。</p>}</div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault(); dispatchUsageRange({ type: 'apply' }) }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={draftUsageRange.mode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => dispatchUsageRange({ type: 'set-mode', mode: value })} /></label><label><span>开始{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.start ? dayjs(draftUsageRange.start).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-start', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><i>至</i><label><span>结束{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.end ? dayjs(draftUsageRange.end).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-end', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
+        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p>{rangePending && <p className="finance-range-pending" role="status">日期范围已修改，点击“查询”后应用。</p>}{usageRangeError && <p className="finance-range-pending" role="alert">{usageRangeError}</p>}</div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault(); if (financeUsageRangeError(draftUsageRange)) return; dispatchUsageRange({ type: 'apply' }) }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={draftUsageRange.mode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => dispatchUsageRange({ type: 'set-mode', mode: value })} /></label><label><span>开始{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.start ? dayjs(draftUsageRange.start).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-start', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><i>至</i><label><span>结束{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.end ? dayjs(draftUsageRange.end).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-end', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
             or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
             caption reports a consumed total that was never measured. */}
@@ -3234,7 +3305,7 @@ function createTaskOnce(
   requestText?: string,
 ): Promise<Task> {
   const intentKey = target.taskIntentKey ?? crypto.randomUUID()
-  const lockKey = `${baseUrl}:${target.productId}:${target.platform}:${target.accountId ?? ''}:${intentKey}`
+  const lockKey = `${getMerchantWorkspaceScope().activeWorkspaceId ?? 'unselected'}:${baseUrl}:${target.productId}:${target.platform}:${target.accountId ?? ''}:${intentKey}`
   const active = taskCreationRequests.get(lockKey)
   if (active) return active
   const request = createTask(baseUrl, {
@@ -3448,6 +3519,8 @@ function AssetLibrary({
   const [usageAsset, setUsageAsset] = useState<AssetMetadata | null>(null)
   const [knowledgePage, setKnowledgePage] = useState(1)
   const [knowledgePageSize, setKnowledgePageSize] = useState(10)
+  const [assetSearchQuery, setAssetSearchQuery] = useState('')
+  const [assetCardPage, setAssetCardPage] = useState(1)
   useEffect(() => {
     setAssetEntry(initialEntry)
   }, [initialEntry])
@@ -3465,14 +3538,16 @@ function AssetLibrary({
           return cleanDelta || right.sizeBytes - left.sizeBytes
         })
       : visibleAssets
-  // Keep the desktop workspace usable when a workspace contains a long
-  // historical archive. Metadata is still fetched for counts and actions, but
-  // rendering thousands of cards at once makes every button hard to reach and
-  // causes the browser to issue unnecessary thumbnail work.
-  const renderedAssets = orderedAssets.slice(0, 100)
+  const searchedAssets = filterAssetLibrary(orderedAssets, assetSearchQuery)
+  const assetCardPagination = paginateAssetLibrary(searchedAssets, assetCardPage, ASSET_LIBRARY_PAGE_SIZE)
+  const renderedAssets = assetCardPagination.items
   useEffect(() => {
     setKnowledgePage(1)
-  }, [assetEntry, visibleAssets.length])
+    setAssetCardPage(1)
+  }, [assetEntry, visibleAssets.length, assetSearchQuery])
+  useEffect(() => {
+    setAssetCardPage((current) => Math.min(current, assetCardPagination.pageCount))
+  }, [assetCardPagination.pageCount])
   const knowledgeColumns = [
     {
       title: '文件',
@@ -3550,7 +3625,7 @@ function AssetLibrary({
       },
     },
   ]
-  const knowledgeCounts = countKnowledgeAssets(visibleAssets)
+  const knowledgeCounts = countKnowledgeAssets(searchedAssets)
   const knowledgeReadyCount = knowledgeCounts.ready
   const knowledgePendingCount = knowledgeCounts.pending
   const load = async () => {
@@ -4303,6 +4378,22 @@ function AssetLibrary({
           <ShieldCheck size={15} />
           上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。
         </div>
+        {assetEntry !== 'rules' && (
+          <div className="asset-library-discovery" role="search" aria-label="搜索工作区资料" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0' }}>
+            <label className="catalog-search-field" style={{ flex: 1, maxWidth: 520 }}>
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="搜索资料名称、来源、扫描、解析或权益状态"
+                placeholder="搜索资料名称、来源、扫描、解析或权益状态"
+                value={assetSearchQuery}
+                onChange={(event) => setAssetSearchQuery(event.target.value)}
+              />
+            </label>
+            <span role="status" aria-live="polite">{assetSearchQuery.trim() ? `找到 ${searchedAssets.length} / ${visibleAssets.length} 项` : `共 ${visibleAssets.length} 项`}</span>
+            {assetSearchQuery && <button type="button" className="secondary" onClick={() => setAssetSearchQuery('')}>清除搜索</button>}
+          </div>
+        )}
         {brandMessage && (
           <div className="info-notice" role="status">
             <CircleHelp size={15} />
@@ -4690,7 +4781,15 @@ function AssetLibrary({
             <span>切换到“全部素材”，或上传符合当前类型的文件。</span>
           </div>
         )}
-        {!loading && !error && !!visibleAssets.length && (
+        {!loading && !error && !!visibleAssets.length && !searchedAssets.length && assetSearchQuery.trim() && (
+          <div className="asset-empty" role="status">
+            <FileText size={24} />
+            <b>没有找到匹配的资料</b>
+            <span>试试文件名、来源或扫描、解析、权益状态，或清除搜索查看全部资料。</span>
+            <button type="button" className="secondary" onClick={() => setAssetSearchQuery('')}>清除搜索</button>
+          </div>
+        )}
+        {!loading && !error && !!searchedAssets.length && (
           assetEntry === 'knowledge' ? (
             <div className="knowledge-list-section">
               <div className="knowledge-list-heading">
@@ -4702,12 +4801,12 @@ function AssetLibrary({
                   rowKey="id"
                   size="middle"
                   columns={knowledgeColumns}
-                  dataSource={orderedAssets}
+                  dataSource={searchedAssets}
                   scroll={{ x: 1050 }}
                   pagination={{
                     current: knowledgePage,
                     pageSize: knowledgePageSize,
-                    total: orderedAssets.length,
+                    total: searchedAssets.length,
                     showSizeChanger: true,
                     pageSizeOptions: [10, 20, 50],
                     showTotal: (total) => `共 ${total} 项`,
@@ -4720,6 +4819,7 @@ function AssetLibrary({
               </div>
             </div>
           ) : (
+            <>
             <div className="asset-grid">
               {renderedAssets.map((asset) => (
                 <article
@@ -4744,6 +4844,12 @@ function AssetLibrary({
                 </article>
               ))}
             </div>
+            {assetCardPagination.pageCount > 1 && <nav className="asset-card-pagination" aria-label="资料分页" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, margin: '16px 0' }}>
+              <button type="button" className="secondary" disabled={assetCardPagination.page === 1} onClick={() => setAssetCardPage((page) => Math.max(1, page - 1))}>上一页</button>
+              <span aria-live="polite">共 {searchedAssets.length} 项 · 第 {assetCardPagination.page} / {assetCardPagination.pageCount} 页</span>
+              <button type="button" className="secondary" disabled={assetCardPagination.page === assetCardPagination.pageCount} onClick={() => setAssetCardPage((page) => Math.min(assetCardPagination.pageCount, page + 1))}>下一页</button>
+            </nav>}
+            </>
           )
         )}
       </div>
@@ -5461,10 +5567,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const selectedStore = catalogStores.find((store) => store.id === selectedStoreId && (!selectedPlatform || store.platformId === selectedPlatform)) ?? null
   const selectedPlatformView = (platforms ?? []).find((platform) => platform.id === selectedPlatform) ?? null
   const selectedPlatformStores = selectedPlatformView?.stores ?? []
+  useEffect(() => {
+    if (!platforms || selectedPlatform || initialCatalogContext?.platform) return
+    const populatedPlatforms = platforms.filter((platform) => platform.stores.length > 0)
+    if (populatedPlatforms.length === 1) setSelectedPlatform(populatedPlatforms[0]!.id)
+  }, [initialCatalogContext?.platform, platforms, selectedPlatform])
   // `null` while the product read is unresolved (distinct from a store with no
   // products, which is a real answer).
   const storeItems = useMemo(
-    () => (selectedStore ? catalogProductsForStore(products, selectedStore.id, {}) : null),
+    () => (selectedStore ? catalogProductsForStore(products, { platform: selectedStore.platformId, accountId: selectedStore.id }, {}) : null),
     [products, selectedStore],
   )
   const storeItemsRead = storeItems !== null
@@ -5473,7 +5584,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     [storeItems],
   )
   const selectedProduct = storeProducts.find((product) => product.id === selectedProductId) ?? null
-  const selectedApiProduct = products?.find((product) => product.id === selectedProductId) ?? null
+  const selectedApiProduct = products?.find((product) =>
+    product.id === selectedProductId
+      && selectedStore !== null
+      && catalogProductMatchesStoreScope(product, { platform: selectedStore.platformId, accountId: selectedStore.id }),
+  ) ?? null
   const imageModelReady = modelStatusRead && modelStatus?.state === 'ready' && modelStatus.capabilities?.image_generation !== false
   const imageModelBlocker = !baseUrl
     ? '尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。'
@@ -5536,7 +5651,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const submitCatalogImageGeneration = async () => {
-    if (!baseUrl || !selectedApiProduct || !selectedStore || imageGenerationBusy) return
+    const target = catalogImageGenerationTarget(
+      selectedApiProduct,
+      selectedStore ? { platform: selectedStore.platformId, accountId: selectedStore.id } : null,
+    )
+    if (!baseUrl || !selectedApiProduct || !selectedStore || !target || imageGenerationBusy) return
     const direction = imageGenerationDirection.trim()
     const count = Number(imageGenerationCount)
     if (!direction) {
@@ -5554,14 +5673,14 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     setImageGenerationErrorField(null)
     try {
       const result = await generateProductImages(baseUrl, {
-        product_id: selectedApiProduct.id,
-        platform: selectedStore.platformId as PlatformId,
-        account_id: selectedStore.id,
+        product_id: target.productId,
+        platform: target.platform as PlatformId,
+        account_id: target.accountId,
         direction,
         mode: selectedApiProduct.sourceAssetIds?.length ? 'optimize' : 'create',
         size: imageGenerationSize,
         count: String(count),
-        idempotency_key: `merchant-studio-image-${selectedApiProduct.id}-${selectedStore.platformId}-${imageGenerationSize}-${count}-${direction}`,
+        idempotency_key: `merchant-studio-image-${target.productId}-${target.platform}-${target.accountId}-${imageGenerationSize}-${count}-${direction}`,
       })
       setImageGenerationOpen(false)
       window.location.href = `${window.location.pathname.replace(/\/merchant\/products\/?$/u, '/merchant/tasks')}?image_job=${encodeURIComponent(result.job_id)}`
@@ -5907,6 +6026,10 @@ const materialBrandFromScope = (value?: { color?: string; persona?: string; sell
 export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void }) {
   const logoInputId = useId()
   const assetInputId = useId()
+  // Upload responses may arrive after the merchant edits another field. Keep
+  // the latest draft so applying the uploaded asset cannot restore stale text.
+  const latestValueRef = useRef(value)
+  latestValueRef.current = value
   const [draftColor, setDraftColor] = useState(value.color)
   const [assetUploadStatus, setAssetUploadStatus] = useState('')
   const [assetUploadError, setAssetUploadError] = useState('')
@@ -5928,10 +6051,11 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
       const uploaded = await uploadAsset(baseUrl, file)
       onAssetUploaded?.(uploaded, kind, file)
       const ready = isUsableBrandAsset(uploaded)
+      const latestValue = latestValueRef.current
       if (kind === 'logo') {
-        onChange({ ...value, logoAssetId: uploaded.id, logoUrl: '', logoFileName: uploaded.name })
+        onChange({ ...latestValue, logoAssetId: uploaded.id, logoUrl: '', logoFileName: uploaded.name })
       } else {
-        onChange({ ...value, documentAssetId: uploaded.id, assetFileName: uploaded.name })
+        onChange({ ...latestValue, documentAssetId: uploaded.id, assetFileName: uploaded.name })
       }
       setAssetUploadStatus(ready
         ? `${uploaded.name} 已上传并通过素材检查；保存后写入品牌配置。`
@@ -6272,9 +6396,82 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
   const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
   const [purgeConfirmation, setPurgeConfirmation] = useState('')
   const [purgeReason, setPurgeReason] = useState('')
+  const purgeTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const purgeDialogRef = useRef<HTMLElement | null>(null)
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const previewDialogRef = useRef<HTMLDivElement | null>(null)
+  const recycleHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const selectedItems = items.filter((item) => selectedIds.includes(item.id))
   const previewItem = items.find((item) => item.id === previewId)
   const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id))
+
+  const closePreview = () => {
+    setPreviewId(null)
+    window.requestAnimationFrame(() => {
+      if (previewTriggerRef.current?.isConnected) previewTriggerRef.current.focus({ preventScroll: true })
+      else recycleHeadingRef.current?.focus({ preventScroll: true })
+    })
+  }
+
+  useEffect(() => {
+    if (!previewId) return
+    window.requestAnimationFrame(() => previewDialogRef.current?.focus({ preventScroll: true }))
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      closePreview()
+    }
+    document.addEventListener('keydown', closeOnEscape, true)
+    return () => document.removeEventListener('keydown', closeOnEscape, true)
+  }, [previewId])
+
+  useEffect(() => {
+    if (!purgeDialogOpen) return
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstControl = purgeDialogRef.current?.querySelector<HTMLElement>(
+        'textarea:not(:disabled), input:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )
+      ;(firstControl ?? purgeDialogRef.current)?.focus({ preventScroll: true })
+    })
+    const handlePurgeDialogKeydown = (event: KeyboardEvent) => {
+      const dialog = purgeDialogRef.current
+      if (!dialog) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setPurgeDialogOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+      if (focusable.length === 0) {
+        event.preventDefault()
+        dialog.focus({ preventScroll: true })
+        return
+      }
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      const active = document.activeElement
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+    document.addEventListener('keydown', handlePurgeDialogKeydown, true)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handlePurgeDialogKeydown, true)
+      window.requestAnimationFrame(() => {
+        if (purgeTriggerRef.current?.isConnected) purgeTriggerRef.current.focus({ preventScroll: true })
+        else recycleHeadingRef.current?.focus({ preventScroll: true })
+      })
+    }
+  }, [purgeDialogOpen])
 
   useEffect(() => {
     let active = true
@@ -6360,12 +6557,12 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
-          <div><h2>已删除素材</h2><p>可恢复到原店铺，也可以申请提前彻底删除。</p></div>
+          <div><h2 ref={recycleHeadingRef} tabIndex={-1}>已删除素材</h2><p>可恢复到原店铺，也可以申请提前彻底删除。</p></div>
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={readState !== 'ready' || busy || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
             <button type="button" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
-            <button type="button" className="danger" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => { setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
+            <button ref={purgeTriggerRef} type="button" className="danger" disabled={!selectedItems.length || busy || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={(event) => { purgeTriggerRef.current = event.currentTarget; setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
           </div>
         </div>
         {readState === 'loading' ? <div className="material-empty" role="status"><RefreshCw size={25} /><strong>正在读取服务端回收站</strong><span>读取完成前不会显示记录数量。</span></div>
@@ -6382,7 +6579,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
           const selected = selectedIds.includes(item.id)
           return <article className={selected ? 'selected' : ''} key={item.id}>
             <div className="material-recycle-preview">
-              <button type="button" className="material-recycle-open" aria-label={`放大${item.name}`} onClick={() => setPreviewId(item.id)}>{item.previewUrl && item.format !== 'MP4' ? <img src={item.previewUrl} alt="" /> : item.category === '商品视频' ? <Play size={34} fill="currentColor" /> : <ImageIcon size={34} />}</button>
+              <button type="button" className="material-recycle-open" aria-label={`放大${item.name}`} onClick={(event) => { previewTriggerRef.current = event.currentTarget; setPreviewId(item.id) }}>{item.previewUrl && item.format !== 'MP4' ? <img src={item.previewUrl} alt="" /> : item.category === '商品视频' ? <Play size={34} fill="currentColor" /> : <ImageIcon size={34} />}</button>
               <button type="button" className="material-recycle-select" aria-label={`选择${item.name}`} aria-pressed={selected} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
               <span>{item.category}</span>
             </div>
@@ -6392,7 +6589,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
           </article>
         })}</div> : <RecycleBinEmptyState />}
       </section>
-      {purgeDialogOpen && <div className="material-recycle-confirm-backdrop"><section className="material-recycle-confirm" role="alertdialog" aria-modal="true" aria-labelledby="material-purge-title">
+      {purgeDialogOpen && <div className="material-recycle-confirm-backdrop"><section ref={purgeDialogRef} className="material-recycle-confirm" role="alertdialog" aria-modal="true" aria-labelledby="material-purge-title" tabIndex={-1}>
         <span className="section-kicker">PERMANENT DELETE</span><h2 id="material-purge-title">提前彻底删除素材</h2>
         <p>该请求会交给服务端清理 worker。对象存储确认删除前，素材记录与空间配额都会保留；worker 开始处理前可撤销请求。</p>
         <div className="material-recycle-confirm-list">{selectedItems.map(item => <span key={item.id}>{item.name}</span>)}</div>
@@ -6401,7 +6598,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
         <label>输入“彻底删除”确认<input value={purgeConfirmation} disabled={busy} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
         <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
       </section></div>}
-      {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
+      {previewItem && <div ref={previewDialogRef} className="material-upload-lightbox" role="dialog" aria-modal="true" aria-label={`素材预览：${previewItem.name}`} tabIndex={-1} onClick={closePreview}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭，按 Escape 返回</small></span></div>}
       {recycleError && readState !== 'error' && !purgeDialogOpen && <p role="alert">{recycleError}</p>}
     </div>
   )
@@ -6604,7 +6801,7 @@ export function MaterialLibraryWorkspace({
   const [uploadedBytes, setUploadedBytes] = useState(0)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [uploadStoreId, setUploadStoreId] = useState(materialStores[0]?.id ?? '')
-  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [pendingFiles, setPendingFiles] = useState<PendingMaterialFile[]>([])
   const [pendingSelectedKeys, setPendingSelectedKeys] = useState<string[]>([])
   const [uploadCategory, setUploadCategory] = useState<StoreMaterialCategory>('未分类')
   const [uploadSeries, setUploadSeries] = useState('')
@@ -6613,6 +6810,10 @@ export function MaterialLibraryWorkspace({
   const [uploadBusy, setUploadBusy] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
+  const ownedUploadPreviewUrls = useRef(new Set<string>())
+  const uploadOperationIdRef = useRef(0)
+  const uploadControllerRef = useRef<AbortController | null>(null)
+  const uploadMountedRef = useRef(true)
   const pendingPreviewTriggerRef = useRef<HTMLButtonElement>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [materialStorageError, setMaterialStorageError] = useState('')
@@ -6649,7 +6850,7 @@ export function MaterialLibraryWorkspace({
   const [scopedBrandDraftDirty, setScopedBrandDraftDirty] = useState(false)
   const uploadInput = useRef<HTMLInputElement>(null)
   const storeBrandTransitionTimer = useRef<number | null>(null)
-  const pendingPreviews = useMemo(() => pendingFiles.map((file) => ({ file, url: URL.createObjectURL(file) })), [pendingFiles])
+  const pendingPreviews = useMemo(() => pendingFiles.map((item) => ({ ...item, url: URL.createObjectURL(item.file) })), [pendingFiles])
   const availableSeries = scopedBrandRead
     ? ['未分类', ...scopedBrandRead.series.filter((row) => row.accountId === activeStoreId && row.name !== '未分类').map((row) => row.name)]
     : ['未分类']
@@ -6706,6 +6907,21 @@ export function MaterialLibraryWorkspace({
   }, [baseUrl, activeStoreId])
 
   useEffect(() => () => pendingPreviews.forEach((item) => URL.revokeObjectURL(item.url)), [pendingPreviews])
+  useEffect(() => {
+    const current = new Set(Object.values(materialsByStore).flatMap((items) => items.flatMap((item) => item.previewUrl?.startsWith('blob:') ? [item.previewUrl] : [])))
+    ownedUploadPreviewUrls.current = revokeObsoletePreviewUrls(ownedUploadPreviewUrls.current, current)
+  }, [materialsByStore])
+  useEffect(() => {
+    uploadMountedRef.current = true
+    return () => {
+      uploadMountedRef.current = false
+      uploadOperationIdRef.current += 1
+      uploadControllerRef.current?.abort()
+      uploadControllerRef.current = null
+      releasePreviewUrls(ownedUploadPreviewUrls.current)
+      ownedUploadPreviewUrls.current.clear()
+    }
+  }, [])
 
   // The store list arrives asynchronously from `/v1/platform-accounts`. Until
   // the merchant picks a store, follow the server's first real store rather
@@ -6991,6 +7207,7 @@ export function MaterialLibraryWorkspace({
   }
 
   const closeUploadDialog = () => {
+    if (!uploadDialogCloseAllowed(uploadBusy)) return
     setUploadDialogOpen(false)
     setPendingFiles([])
     setPendingSelectedKeys([])
@@ -7005,20 +7222,19 @@ export function MaterialLibraryWorkspace({
   const addPendingFiles = (files: FileList | null) => {
     if (!files?.length) return
     const incoming = Array.from(files)
-    setPendingFiles((current) => {
-      const known = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`))
-      const additions = incoming.filter((file) => !known.has(`${file.name}-${file.size}-${file.lastModified}`))
-      return [...current, ...additions].slice(0, 50)
-    })
+    const result = appendPendingMaterialFiles(pendingFiles, incoming)
+    if (result.notAdded) {
+      setUploadError(`最多可添加 ${MAX_PENDING_MATERIAL_FILES} 个文件；本次选择的 ${result.notAdded} 个未加入，请删除部分文件后重新选择。`)
+    } else {
+      setPendingFiles(result.items)
+      setUploadError('')
+    }
     if (uploadInput.current) uploadInput.current.value = ''
   }
 
-  const pendingFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`
-
   const deleteSelectedPendingFiles = () => {
     if (!pendingSelectedKeys.length) return
-    const selected = new Set(pendingSelectedKeys)
-    setPendingFiles((current) => current.filter((file) => !selected.has(pendingFileKey(file))))
+    setPendingFiles((current) => removePendingMaterialFiles(current, pendingSelectedKeys))
     setPendingSelectedKeys([])
     setPendingPreviewIndex(null)
   }
@@ -7042,17 +7258,31 @@ export function MaterialLibraryWorkspace({
       setUploadError('未配置 API，素材无法上传到服务端；配置 API 后再上传。')
       return
     }
-    const incoming = pendingFiles
+    const operationId = ++uploadOperationIdRef.current
+    const controller = new AbortController()
+    uploadControllerRef.current = controller
+    const isCurrentOperation = () => uploadMountedRef.current && uploadOperationIdRef.current === operationId
+    const incoming = pendingFiles.map((item) => item.file)
     setUploadBusy(true)
     setUploadError('')
     const { accepted, acceptedFiles, failures } = await uploadMaterialFiles({
       files: incoming,
-      upload: (file) => uploadAsset(baseUrl, file, uploadCategory),
+      upload: (file, signal) => uploadAsset(baseUrl, file, uploadCategory, signal),
       labels: { category: uploadCategory, series: uploadSeries },
-      // A thumbnail of the file this browser just sent: an object URL for this
-      // session only, never a second copy of the asset.
-      previewUrlFor: (file) => URL.createObjectURL(file),
+      signal: controller.signal,
+      // Register immediately so unmount cleanup owns each URL. If the component
+      // has already left, dispose the URL before returning it to the helper.
+      previewUrlFor: (file) => {
+        const url = URL.createObjectURL(file)
+        if (!isCurrentOperation()) {
+          URL.revokeObjectURL(url)
+          return undefined
+        }
+        ownedUploadPreviewUrls.current.add(url)
+        return url
+      },
     })
+    if (!isCurrentOperation()) return
     const assignmentFailures: string[] = []
     const assigned: StoreMaterialItem[] = []
     const unassigned: StoreMaterialItem[] = []
@@ -7062,11 +7292,14 @@ export function MaterialLibraryWorkspace({
           ? undefined
           : scopedBrandRead?.series.find((row) => row.accountId === uploadStore.id && row.name === uploadSeries)
             ?? await createScopedBrandSeries(baseUrl, uploadStore.id, uploadSeries)
+        if (!isCurrentOperation()) return
         const seriesId = seriesRow?.id ?? null
         const newAssignments: ScopedBrandRead['assignments'] = []
         for (const item of accepted) {
+          if (!isCurrentOperation()) return
           try {
             const result = await assignScopedBrandAsset(baseUrl, item.id, uploadStore.id, seriesId, 0)
+            if (!isCurrentOperation()) return
             newAssignments.push(result)
             assigned.push(item)
           } catch (cause) {
@@ -7076,10 +7309,12 @@ export function MaterialLibraryWorkspace({
         }
         setScopedBrandRead((current) => current ? { ...current, series: seriesRow && !current.series.some((row) => row.id === seriesRow.id) ? [...current.series, seriesRow] : current.series, assignments: [...current.assignments, ...newAssignments] } : current)
       } catch (cause) {
+        if (!isCurrentOperation()) return
         unassigned.push(...accepted)
         assignmentFailures.push(`系列创建失败：${describeApiError(cause)}`)
       }
     } else unassigned.push(...accepted)
+    if (!isCurrentOperation()) return
     if (accepted.length) {
       setMaterialsByStore((current) => ({ ...current,
         [uploadStore.id]: [...assigned, ...(current[uploadStore.id] ?? [])],
@@ -7091,15 +7326,16 @@ export function MaterialLibraryWorkspace({
       setQuery('')
       // Re-read so the list is the server's answer rather than this browser's.
       void fetchAssets(baseUrl)
-        .then((assets) => setRemoteAssets(assets))
-        .catch((cause) => setAssetsError(describeApiError(cause)))
+        .then((assets) => { if (isCurrentOperation()) setRemoteAssets(assets) })
+        .catch((cause) => { if (isCurrentOperation()) setAssetsError(describeApiError(cause)) })
       // A partial batch can stay open so the merchant can fix only rejected
       // files. Remove files whose bytes were accepted; retrying the unchanged
       // pending list would upload those files a second time.
-      const acceptedKeys = new Set(acceptedFiles.map(pendingFileKey))
-      setPendingFiles((current) => current.filter((file) => !acceptedKeys.has(pendingFileKey(file))))
-      setPendingSelectedKeys((current) => current.filter((key) => !acceptedKeys.has(key)))
+      const acceptedIds = acceptedPendingMaterialIds(pendingFiles, acceptedFiles)
+      setPendingFiles((current) => current.filter((item) => !acceptedIds.has(item.id)))
+      setPendingSelectedKeys((current) => current.filter((id) => !acceptedIds.has(id)))
     }
+    if (uploadControllerRef.current === controller) uploadControllerRef.current = null
     setUploadBusy(false)
     if (failures.length || assignmentFailures.length) {
       // Partial success stays visible: the accepted files are listed and the
@@ -7347,9 +7583,10 @@ export function MaterialLibraryWorkspace({
           title="上传素材"
           kicker="上传素材"
           onClose={closeUploadDialog}
+          busy={uploadBusy}
           testId="material-upload-dialog"
           actions={<>
-            <button type="button" className="catalog-asset-cancel" onClick={closeUploadDialog}>取消</button>
+            <button type="button" className="catalog-asset-cancel" disabled={uploadBusy} onClick={closeUploadDialog}>取消</button>
             <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries || uploadBusy} onClick={() => { void confirmUpload() }}><Upload size={15} />{uploadBusy ? '正在上传…' : `确认上传${pendingFiles.length ? `（${pendingFiles.length}）` : ''}`}</button>
           </>}
         >
@@ -7357,21 +7594,20 @@ export function MaterialLibraryWorkspace({
             {materialUploadBalanceNotice(billing ?? null) && <p className="material-upload-access-notice" role="alert" data-testid="material-upload-access-notice">{materialUploadBalanceNotice(billing ?? null)}</p>}
             <div className="material-upload-top">
               <div className="material-upload-store"><MaterialCategoryDropdown ariaLabel="选择上传目标" value={uploadStore.id} options={uploadTargets.map((store) => ({ value: store.id, label: store.name }))} onChange={(value) => { setUploadStoreId(value); setUploadSeries('') }} searchable searchPlaceholder="搜索店铺" triggerContent={<span className="material-upload-store-trigger"><span className="catalog-store-logo" aria-hidden="true">{uploadStore.logoUrl ? <img src={uploadStore.logoUrl} alt="" /> : uploadStore.mark}</span><span className="material-upload-store-copy"><small>上传目标</small><strong>{uploadStore.name}</strong><em>{uploadStore.platform} · 服务端资产按工作区保存</em></span></span>} /></div>
-              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= 50} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或文档'}</strong><small>最多 50 个文件</small></span></button>
+              <button type="button" className="material-upload-picker" data-dialog-initial-focus disabled={pendingFiles.length >= MAX_PENDING_MATERIAL_FILES} onClick={() => uploadInput.current?.click()}><Upload size={18} /><span><strong>{pendingFiles.length ? '继续选择' : '选择图片或文档'}</strong><small>最多 {MAX_PENDING_MATERIAL_FILES} 个文件</small></span></button>
             </div>
-            <input ref={uploadInput} className="sr-only" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps" multiple onChange={(event) => addPendingFiles(event.target.files)} />
+            <input ref={uploadInput} className="sr-only" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.xlsx,.csv,.txt,.md,.json,.ai,.eps" multiple disabled={uploadBusy} onChange={(event) => addPendingFiles(event.target.files)} />
             <div className="material-upload-controls">
               <div className="material-upload-category"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类" value={uploadCategory} options={materialStoreCategories.filter((item): item is StoreMaterialCategory => item !== '全部').map((item) => ({ value: item, label: item }))} onChange={(value) => setUploadCategory(value as StoreMaterialCategory)} /></div>
               <div className="material-upload-category"><span>所属系列</span><MaterialCategoryDropdown ariaLabel="所属系列" value={uploadSeries} options={[{ value: '', label: '请选择系列' }, ...uploadAvailableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => setUploadSeries(value)} /></div>
             </div>
-            <div className="material-upload-preview-heading"><span>待上传素材 <strong>{pendingFiles.length}</strong> / 50</span><div className="material-upload-batch-actions"><button type="button" disabled={!pendingFiles.length} onClick={() => setPendingSelectedKeys(pendingSelectedKeys.length === pendingFiles.length ? [] : pendingFiles.map(pendingFileKey))}>{pendingSelectedKeys.length === pendingFiles.length && pendingFiles.length ? '取消全选' : '全选'}</button><span>已选 {pendingSelectedKeys.length} 项</span><button type="button" className="danger" disabled={!pendingSelectedKeys.length} onClick={deleteSelectedPendingFiles}><Trash2 size={13} />批量删除</button></div></div>
+            <div className="material-upload-preview-heading"><span>待上传素材 <strong>{pendingFiles.length}</strong> / {MAX_PENDING_MATERIAL_FILES}</span><div className="material-upload-batch-actions"><button type="button" disabled={!pendingFiles.length} onClick={() => setPendingSelectedKeys(pendingSelectedKeys.length === pendingFiles.length ? [] : pendingFiles.map((item) => item.id))}>{pendingSelectedKeys.length === pendingFiles.length && pendingFiles.length ? '取消全选' : '全选'}</button><span>已选 {pendingSelectedKeys.length} 项</span><button type="button" className="danger" disabled={!pendingSelectedKeys.length} onClick={deleteSelectedPendingFiles}><Trash2 size={13} />批量删除</button></div></div>
             <div className={`material-upload-preview-grid ${pendingFiles.length ? '' : 'empty'}`}>
-              {pendingPreviews.length ? pendingPreviews.map(({ file, url }, index) => {
-                const fileKey = pendingFileKey(file)
-                const selected = pendingSelectedKeys.includes(fileKey)
-                return <article className={selected ? 'selected' : ''} key={fileKey}>
+              {pendingPreviews.length ? pendingPreviews.map(({ id, file, url }, index) => {
+                const selected = pendingSelectedKeys.includes(id)
+                return <article className={selected ? 'selected' : ''} key={id}>
                   <button type="button" className="material-upload-thumb" aria-label={`预览${file.name}`} onClick={(event) => { pendingPreviewTriggerRef.current = event.currentTarget; setPendingPreviewIndex(index) }}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <FileText size={24} />}</button>
-                  <button type="button" className="material-upload-select" aria-label={`选择${file.name}`} aria-pressed={selected} onClick={() => setPendingSelectedKeys((current) => current.includes(fileKey) ? current.filter((key) => key !== fileKey) : [...current, fileKey])}>{selected && <Check size={13} />}</button>
+                  <button type="button" className="material-upload-select" aria-label={`选择${file.name}`} aria-pressed={selected} onClick={() => setPendingSelectedKeys((current) => current.includes(id) ? current.filter((key) => key !== id) : [...current, id])}>{selected && <Check size={13} />}</button>
                   <strong title={file.name}>{file.name}</strong>
                   <small>{formatMaterialFileSize(file.size)}</small>
                 </article>
@@ -7522,6 +7758,7 @@ export function Products({
   )
   const [platformMenuOpen, setPlatformMenuOpen] = useState(false)
   const [accountFilter, setAccountFilter] = useState('')
+  const selectedStoreScope = parseProductStoreScope(accountFilter)
   useEffect(() => {
     if (!platformMenuOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -7602,7 +7839,7 @@ export function Products({
     fetchProductPage(baseUrl, {
       query: query.trim() || undefined,
       ...(platformFilter !== 'all' ? { platform: platformFilter } : {}),
-      ...(accountFilter ? { accountId: accountFilter } : {}),
+      ...productStoreScopeQuery(selectedStoreScope),
       ...(productFilter === 'needsReview' ? { factsConfirmed: false } : {}),
       limit: productPageSize,
       offset: productPage * productPageSize,
@@ -7611,6 +7848,8 @@ export function Products({
         if (requestId === productsRequestId.current) {
           setRemoteProducts(result.items)
           setProductTotal(result.total)
+          const clampedPage = clampProductPage(productPage, result.total, productPageSize)
+          if (clampedPage !== productPage) setProductPage(clampedPage)
         }
       })
       .catch((cause: Error) => {
@@ -7755,7 +7994,7 @@ export function Products({
         if (!baseUrl) {
           if (platformFilter !== 'all' && p.platformId !== platformFilter)
             return false
-          if (accountFilter && p.accountId !== accountFilter) return false
+          if (!productMatchesStoreScope(p, selectedStoreScope)) return false
         }
         if (baseUrl) return true
         if (!(
@@ -7842,13 +8081,15 @@ export function Products({
         const refreshed = await fetchProductPage(baseUrl, {
           query: query.trim() || undefined,
           ...(platformFilter !== 'all' ? { platform: platformFilter } : {}),
-          ...(accountFilter ? { accountId: accountFilter } : {}),
+          ...productStoreScopeQuery(selectedStoreScope),
           ...(productFilter === 'needsReview' ? { factsConfirmed: false } : {}),
           limit: productPageSize,
           offset: productPage * productPageSize,
         })
         setRemoteProducts(refreshed.items)
         setProductTotal(refreshed.total)
+        const clampedPage = clampProductPage(productPage, refreshed.total, productPageSize)
+        if (clampedPage !== productPage) setProductPage(clampedPage)
       } catch (cause) {
         setRemoteProducts(null)
         // The refresh failed, so the list is gone and so is the total it came
@@ -8178,12 +8419,12 @@ export function Products({
           </b>
           <span>→</span>
           <b>
-            {accountFilter
+            {selectedStoreScope
               ? ((accounts ?? []).find(
-                  (account) => account.accountId === accountFilter,
+                  (account) => account.accountId === selectedStoreScope.accountId && account.platform === selectedStoreScope.platform,
                 )?.storeName ??
                 (accounts ?? []).find(
-                  (account) => account.accountId === accountFilter,
+                  (account) => account.accountId === selectedStoreScope.accountId && account.platform === selectedStoreScope.platform,
                 )?.label ??
                 '店铺身份待确认')
               : '全部店铺'}
@@ -8357,7 +8598,7 @@ export function Products({
               )
               .map((account) => (
                 <option
-                  value={account.accountId}
+                  value={productStoreScopeValue({ platform: account.platform, accountId: account.accountId ?? '' })}
                   key={`${account.platform}:${account.accountId}`}
                 >
                   {account.storeName ??
@@ -9656,6 +9897,7 @@ function TaskWorkspace({
   const taskListRequestId = useRef(0)
   const taskProductsRequestId = useRef(0)
   const taskDirectionsRequestId = useRef(0)
+  const contentReviewRequests = useRef(new LatestRequestSequence())
   const [direction, setDirection] = useState(0)
   const [version, setVersion] = useState<'v4' | 'diff'>('v4')
   const [approved, setApproved] = useState(false)
@@ -9944,16 +10186,17 @@ function TaskWorkspace({
         onContext({ task: current, version: restored })
         setReviewStatus('loading')
         setReviewError('')
+        const reviewRequestId = contentReviewRequests.current.begin()
         try {
           const result = await reviewContent(baseUrl, restored.id)
-          if (!cancelled) {
+          if (!cancelled && contentReviewRequests.current.isCurrent(reviewRequestId)) {
             setReviewStatus('succeeded')
             setFindings(result.findings)
             setReviewCategories(result.categories)
           }
           return null
         } catch (cause) {
-          if (!cancelled) {
+          if (!cancelled && contentReviewRequests.current.isCurrent(reviewRequestId)) {
             setReviewStatus('failed')
             setReviewError(describeApiError(cause))
             setApproved(false)
@@ -9972,6 +10215,7 @@ function TaskWorkspace({
       })
     return () => {
       cancelled = true
+      contentReviewRequests.current.invalidate()
     }
   }, [baseUrl, targetProductId, targetPlatform, target])
   useEffect(() => {
@@ -10028,6 +10272,7 @@ function TaskWorkspace({
         if (requestId === taskListRequestId.current) {
           setTaskList(result.items)
           setTaskTotal(result.total)
+          setTaskPage((page) => clampTaskPage(page, result.total, MERCHANT_TASK_PAGE_SIZE))
         }
       })
       .catch((cause) => {
@@ -10099,13 +10344,16 @@ function TaskWorkspace({
         setVersion('v4')
         setReviewTab('findings')
         onContext({ task: confirmed, version: draft })
+        const reviewRequestId = contentReviewRequests.current.begin()
         return reviewContent(baseUrl, draft.id)
           .then((result) => {
+            if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
             setFindings(result.findings)
             setReviewCategories(result.categories)
             setReviewStatus('succeeded')
           })
           .catch((cause) => {
+            if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
             setReviewStatus('failed')
             setReviewError(describeApiError(cause))
             setApproved(false)
@@ -10146,19 +10394,24 @@ function TaskWorkspace({
     setFindings([])
     setReviewCategories([])
     setApproved(false)
+    const reviewRequestId = contentReviewRequests.current.begin()
     reviewContent(baseUrl, item.id)
       .then((result) => {
+        if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
         setFindings(result.findings)
         setReviewCategories(result.categories)
         setReviewStatus('succeeded')
         if (task) onContext({ task, version: item })
       })
       .catch((cause) => {
+        if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
         setReviewStatus('failed')
         setReviewError(describeApiError(cause))
         setError(describeApiError(cause))
       })
-      .finally(() => setOperation(''))
+      .finally(() => {
+        if (contentReviewRequests.current.isCurrent(reviewRequestId)) setOperation('')
+      })
   }
   const approve = (checked: boolean) => {
     if (reviewStatus !== 'succeeded') return
@@ -10569,48 +10822,13 @@ function TaskWorkspace({
       setOperation('')
     }
   }
-  const knownTaskStates = new Set([
-    'draft',
-    'ready_for_direction',
-    'direction_selected',
-    'plan_confirmed',
-    'generating',
-    'content_generated',
-    'review_required',
-    'changes_requested',
-    'approved',
-    'publish_prepared',
-    'publishing',
-    'delivered',
-    'failed_recoverable',
-    'failed_terminal',
-    'canceled',
-  ])
-  const taskStateLabel = (state: string) =>
-    ({
-      '': '待分析需求',
-      draft: '待补充信息',
-      ready_for_direction: '待选创意方向',
-      direction_selected: '待确认制作方案',
-      plan_confirmed: '待生成内容',
-      generating: '内容生成中',
-      content_generated: '待审核',
-      review_required: '待审核',
-      changes_requested: '待修改',
-      approved: '已批准',
-      publish_prepared: '待确认发布',
-      publishing: '发布处理中',
-      delivered: '已交付',
-      failed_recoverable: '可重试',
-      failed_terminal: '处理失败',
-      canceled: '已取消',
-    })[state] ?? '状态待确认'
+  const taskStateLabel = merchantTaskStateLabel
   // A failed create response is not proof that no task was persisted. Keep this
   // state explicit so the UI never presents an empty, failed create as a saved task.
   const taskCreationUnconfirmed = Boolean(
     target && !target.taskId && !task && taskCreationAttempted && error,
   )
-  const taskStateBlocked = Boolean(task && !knownTaskStates.has(task.state))
+  const taskStateBlocked = Boolean(task && !isKnownMerchantTaskState(task.state))
   // Keep the conversation mounted while a recoverable request error is shown.
   // The recovery card owns the next action; the thread remains the user's
   // source of context instead of disappearing on failure.
@@ -11998,13 +12216,16 @@ function TaskWorkspace({
                     if (!baseUrl || !content) return
                     setReviewStatus('loading')
                     setReviewError('')
+                    const reviewRequestId = contentReviewRequests.current.begin()
                     reviewContent(baseUrl, content.id)
                       .then((result) => {
+                        if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
                         setFindings(result.findings)
                         setReviewCategories(result.categories)
                         setReviewStatus('succeeded')
                       })
                       .catch((cause) => {
+                        if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
                         setReviewStatus('failed')
                         setReviewError(describeApiError(cause))
                       })
@@ -12445,6 +12666,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
     matchesSearchText(`${row.name}${row.scope}${row.version}`, query),
   )
   const filteredCategories = categories.filter((row) =>
+    (platform === 'all' || row.platforms.includes(platform)) &&
     matchesSearchText(`${row.name}${row.code}${row.fields.join('')}`, query),
   )
   const attributeTemplateCount = new Set(
@@ -12563,7 +12785,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
               className="text-button"
               onClick={() => setSelectedCategory(category)}
             >
-              查看字段映射 <ArrowRight size={14} />
+              查看类目字段模板 <ArrowRight size={14} />
             </button>
           </div>
         </article>
@@ -12572,7 +12794,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
       <div className="empty-state">
         <Search size={20} />
         <b>没有匹配品类</b>
-        <span>请调整关键词。</span>
+        <span>请调整关键词或平台筛选。</span>
       </div>
     )
   return (
@@ -12664,11 +12886,11 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
             tabIndex={tab === 'categories' ? 0 : -1}
           >
             <Boxes size={15} />
-            品类库 <span>{categories.length}</span>
+            品类库 <span>{['loading', 'api_error'].includes(categoriesData.mode) ? '—' : filteredCategories.length}</span>
           </button>
         </div>
         <label className="library-platform-filter">
-          <span>规则平台</span>
+          <span>{tab === 'rules' ? '规则平台' : '品类平台'}</span>
           <select
             value={platform}
             onChange={(event) =>
@@ -12685,15 +12907,17 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
             )}
           </select>
         </label>
-        <label className="library-platform-filter">
-          <span>规则分类</span>
-          <select value={ruleCategory} onChange={(event) => setRuleCategory(event.target.value as typeof ruleCategory)}>
-            <option value="all">全部规则</option>
-            <option value="platform">平台规则</option>
-            <option value="category">品类规则</option>
-            <option value="advertising_publish">广告发布规则</option>
-          </select>
-        </label>
+        {tab === 'rules' && (
+          <label className="library-platform-filter">
+            <span>规则分类</span>
+            <select value={ruleCategory} onChange={(event) => setRuleCategory(event.target.value as typeof ruleCategory)}>
+              <option value="all">全部规则</option>
+              <option value="platform">平台规则</option>
+              <option value="category">品类规则</option>
+              <option value="advertising_publish">广告发布规则</option>
+            </select>
+          </label>
+        )}
         <label className="library-search">
           <Search size={15} />
           <span className="sr-only">搜索规则或品类</span>
@@ -12762,8 +12986,8 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
         >
           <div className="panel-heading">
             <div>
-              <span className="section-kicker">字段映射</span>
-              <h3>{selectedCategory.name} · 字段映射</h3>
+              <span className="section-kicker">类目字段模板</span>
+              <h3>{selectedCategory.name} · 类目字段模板</h3>
               <p className="panel-subtitle">
                 当前展示平台类目模板字段；提交前仍需以目标平台实时校验为准。
               </p>
@@ -13088,6 +13312,8 @@ export default function App() {
     apiBaseUrl ? 'loading' : 'authenticated',
   )
   const [authAccount, setAuthAccount] = useState<MerchantAuthAccount | null>(null)
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() => getMerchantWorkspaceScope().activeWorkspaceId)
+  const [authProbeRetryable, setAuthProbeRetryable] = useState(false)
   const [commercialNotificationTarget, setCommercialNotificationTarget] = useState<CommercialNotification | null>(null)
   useEffect(() => { setCommercialNotificationTarget(null) }, [authAccount?.id])
   const [authError, setAuthError] = useState('')
@@ -13100,9 +13326,19 @@ export default function App() {
   const publishPreviewLock = useRef(false)
   const routeRequestId = useRef(0)
   const mainContentRef = useRef<HTMLElement>(null)
+  const acceptMerchantAccount = (account: MerchantAuthAccount) => {
+    let workspaceId: string | null = null
+    if (account.workspaceIds.length) workspaceId = configureMerchantWorkspaceScope(account.workspaceIds)
+    else clearMerchantWorkspaceScope()
+    setAuthAccount(account)
+    setActiveWorkspaceId(workspaceId)
+    setAuthState('authenticated')
+  }
   useEffect(() => {
     if (!apiBaseUrl) return
     let cancelled = false
+    clearMerchantWorkspaceScope()
+    setActiveWorkspaceId(null)
     setAuthState('loading')
     setAuthError('')
     fetchMerchantSession(apiBaseUrl)
@@ -13111,15 +13347,15 @@ export default function App() {
         if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) {
           return
         }
-        setAuthAccount(account)
-        setAuthState('authenticated')
+        acceptMerchantAccount(account)
       })
       .catch(cause => {
         if (cancelled) return
-        const code = (cause as { code?: string }).code
+        const failure = merchantSessionProbeFailure(cause, describeApiError)
         setAuthAccount(null)
-        setAuthState(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? 'error' : 'signed_out')
-        setAuthError(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? describeApiError(cause) : '')
+        setAuthState(failure.state)
+        setAuthError(failure.message)
+        setAuthProbeRetryable(failure.retryable)
       })
     return () => { cancelled = true }
   }, [apiBaseUrl])
@@ -13148,9 +13384,12 @@ export default function App() {
   )
   useEffect(() => {
     const handleAuthExpired = () => {
+      clearMerchantWorkspaceScope()
+      setActiveWorkspaceId(null)
       setAuthAccount(null)
       setAuthState('signed_out')
       setAuthError('登录已失效，请重新登录商家工作台。')
+      setAuthProbeRetryable(false)
     }
     window.addEventListener('merchant-auth-expired', handleAuthExpired)
     return () => window.removeEventListener('merchant-auth-expired', handleAuthExpired)
@@ -13188,9 +13427,9 @@ export default function App() {
       setModelStatusRead(true)
     })
     return () => { cancelled = true }
-  }, [apiBaseUrl, authState])
+  }, [apiBaseUrl, authState, activeWorkspaceId])
   useEffect(() => {
-    if (!apiBaseUrl || authState !== 'authenticated') {
+    if (!apiBaseUrl || authState !== 'authenticated' || !activeWorkspaceId) {
       setAccountBilling(null)
       return
     }
@@ -13205,7 +13444,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [apiBaseUrl, authState])
+  }, [apiBaseUrl, authState, activeWorkspaceId])
   const refreshEnvironmentStatus = () => {
     if (!apiBaseUrl || !modelStatusRead) return
     setModelStatusRead(false)
@@ -13297,15 +13536,15 @@ export default function App() {
     options: {
       target?: Target
       searchQuery?: string
+      publishJobId?: string
       entry?: MerchantEntryPoint
       catalogContext?: MerchantCatalogContext
       clearContext?: boolean
     } = {},
   ) => {
-    // Keep publish and rules as in-context workflow steps. Any legacy or
-    // programmatic request for those pages lands on the product workspace.
-    const effectivePage: Page =
-      nextPage === 'publish' || nextPage === 'rules' ? 'products' : nextPage
+    // Publish remains an in-context workflow step; rules has its own page
+    // and retains its route when reached from the sidebar or programmatically.
+    const effectivePage: Page = merchantNavigationPage(nextPage)
     const requestedEntry = options.entry ?? (effectivePage === 'products' ? 'knowledge' : undefined)
     const targetForRoute = options.target
     const resolvedTarget =
@@ -13329,6 +13568,7 @@ export default function App() {
       searchQuery: options.searchQuery,
       entry: requestedEntry,
       catalogContext: options.catalogContext,
+      publishJobId: options.publishJobId,
     })
     window.history.pushState(null, '', url)
     routeRequestId.current += 1
@@ -13481,7 +13721,10 @@ export default function App() {
   const completePublish = (jobId: string) => {
     setPublishModal(false)
     setPublishPreview(null)
-    navigateTo('products')
+    // Keep the newly created manual publish job in the user's line of sight.
+    // Publish history is part of the task queue, so sending the merchant back
+    // to Products made the success toast the only confirmation of the write.
+    navigateTo('task', { clearContext: true, publishJobId: jobId })
     showToast(
       `人工发布任务已创建：${jobId}。需由运营人员完成平台操作并回填证据，当前不代表平台已受理或已生效。`,
       'info',
@@ -13496,12 +13739,47 @@ export default function App() {
     if (!apiBaseUrl) return
     try {
       await logoutMerchantAccount(apiBaseUrl)
+      setActiveWorkspaceId(null)
       setAuthAccount(null)
       setAccountBilling(null)
       setAuthState('signed_out')
       setUtilityPanel(null)
     } catch (cause) {
+      clearMerchantWorkspaceScope()
+      setActiveWorkspaceId(null)
+      setAuthAccount(null)
+      setAccountBilling(null)
+      setAuthState('signed_out')
+      setUtilityPanel(null)
       showToast(`退出登录失败：${describeApiError(cause)}`, 'error')
+    }
+  }
+  const switchMerchantWorkspace = (workspaceId: string) => {
+    try {
+      if (!authAccount?.workspaceIds.includes(workspaceId)) throw new Error('工作区不属于当前账号')
+      const changed = activateMerchantWorkspace(workspaceId)
+      setActiveWorkspaceId(workspaceId)
+      if (!changed) return
+      routeRequestId.current += 1
+      setPage('overview')
+      setActiveEntry(undefined)
+      setCatalogContext(undefined)
+      setGlobalSearch('')
+      setTarget(undefined)
+      setTaskContext(null)
+      setPublishPreview(null)
+      setPublishModal(false)
+      setUtilityPanel(null)
+      setCapabilityDenied(null)
+      setCommercialNotificationTarget(null)
+      setAccountBilling(null)
+      setRouteTargetLoading(false)
+      setRouteTargetError('')
+      setWorkspaceNavigationKey(key => key + 1)
+      const url = urlForMerchantRoute(window.location, { page: 'overview' })
+      window.history.replaceState(null, '', url)
+    } catch (cause) {
+      showToast(`无法切换工作区：${describeApiError(cause)}`, 'error')
     }
   }
   const openRiskIssue = (issue: WorkspaceMetrics['riskItems'][number]) => {
@@ -13533,29 +13811,40 @@ export default function App() {
         apiBaseUrl={apiBaseUrl}
         error={authError}
         loading={authState === 'loading'}
-        onRetry={() => {
+        onRetry={authProbeRetryable ? () => {
           setAuthState('loading')
           setAuthError('')
           fetchMerchantSession(apiBaseUrl)
             .then(account => {
               if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) return
-              setAuthAccount(account)
-              setAuthState('authenticated')
+              acceptMerchantAccount(account)
+              setAuthProbeRetryable(false)
             })
             .catch(cause => {
-              const code = (cause as { code?: string }).code
-              setAuthState(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? 'error' : 'signed_out')
-              setAuthError(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? describeApiError(cause) : '')
+              const failure = merchantSessionProbeFailure(cause, describeApiError)
+              setAuthState(failure.state)
+              setAuthError(failure.message)
+              setAuthProbeRetryable(failure.retryable)
             })
-        }}
+        } : undefined}
         onAuthenticated={(account) => {
           if (redirectToPluginAuthorization(window.location.search, path => window.location.assign(path))) return
-          setAuthAccount(account)
-          setAuthState('authenticated')
+          acceptMerchantAccount(account)
           setAuthError('')
+          setAuthProbeRetryable(false)
         }}
       />
     )
+  }
+  if (apiBaseUrl && authState === 'authenticated' && authAccount && !activeWorkspaceId) {
+    const authorizedWorkspaces = authAccount.workspaceIds.filter(id => id.trim())
+    if (authorizedWorkspaces.length === 0) return <MerchantWorkspaceBootstrapPage
+      apiBaseUrl={apiBaseUrl}
+      account={authAccount}
+      onComplete={acceptMerchantAccount}
+      onLogout={() => void handleMerchantLogout()}
+    />
+    return <main className="merchant-login-page" aria-labelledby="merchant-workspace-select-title"><section className="merchant-login-form-panel"><Card className="merchant-login-card" variant="borderless"><div className="merchant-login-card-heading"><img className="merchant-login-logo" src={storeNovaLogo} alt="Store Nova" /><Typography.Title id="merchant-workspace-select-title" level={2}>选择工作区</Typography.Title></div><Typography.Paragraph>此账号已获多个工作区授权。选定后，商家工作台的页面、请求和缓存都会绑定到该工作区。</Typography.Paragraph><label htmlFor="merchant-active-workspace">当前工作区</label><Select id="merchant-active-workspace" aria-label="选择当前商家工作区" placeholder="选择已授权的工作区" options={authorizedWorkspaces.map(id => ({ label: id, value: id }))} onChange={switchMerchantWorkspace} style={{ width: '100%' }} /></Card></section></main>
   }
   return (
     <div className="app-shell">
@@ -13587,6 +13876,7 @@ export default function App() {
       >
         <div className="main-shell">
           <Topbar
+            key={`${authAccount?.id ?? 'unbound'}:${activeWorkspaceId ?? 'unselected'}`}
             page={page}
             activeEntry={activeEntry}
             openMenu={() => setMobileNav(true)}
@@ -13599,9 +13889,13 @@ export default function App() {
             modelStatus={modelStatus}
             modelStatusRead={modelStatusRead}
             account={authAccount}
+            activeWorkspaceId={activeWorkspaceId}
+            onWorkspaceChange={switchMerchantWorkspace}
             billing={accountBilling}
             onLogout={() => void handleMerchantLogout()}
             onPasswordChanged={() => {
+              clearMerchantWorkspaceScope()
+              setActiveWorkspaceId(null)
               setAuthAccount(null)
               setAuthState('signed_out')
               setAuthError('密码已修改，请使用新密码重新登录。')
@@ -13618,6 +13912,7 @@ export default function App() {
             tabIndex={-1}
             className={`page ${page === 'task' ? 'task-page' : ''} ${page === 'overview' ? 'overview-page' : ''}`}
           >
+            <div key={workspaceNavigationKey}>
             {routeTargetLoading ? (
               <LoadingState label="正在从链接安全恢复商品与任务上下文…" />
             ) : routeTargetError ? (
@@ -13669,7 +13964,7 @@ export default function App() {
                   />
                 )}
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
-                {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} />}
+                {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} activeWorkspaceId={activeWorkspaceId} onWorkspaceChange={switchMerchantWorkspace} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
                     <StoreCatalogExperience
@@ -13734,6 +14029,7 @@ export default function App() {
                 {page === 'rules' && <Rules baseUrl={apiBaseUrl} />}
               </>
             )}
+            </div>
           </main>
         </div>
       </div>

@@ -19,7 +19,7 @@ test('platform global password session shows member context gate without an invi
 
   await openPlatformConsole(page, '/ops/users')
   await expect(page.getByRole('heading', { name: '已接入用户', exact: true })).toBeAttached()
-  await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('平台全局')
+  await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('平台运营视图')
   // The runner seeds platform_admin + security_admin, which intentionally lacks
   // workspace.member.read. Assign ops_admin through the real isolated MCP API
   // so the member tab is reachable under a genuine server authorization.

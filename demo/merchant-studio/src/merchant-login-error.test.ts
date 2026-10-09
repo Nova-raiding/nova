@@ -3,11 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { MerchantLoginPage } from './MerchantLoginPage'
 
-const render = (error?: string) => renderToStaticMarkup(createElement(MerchantLoginPage, {
+const render = (error?: string, onRetry?: () => void) => renderToStaticMarkup(createElement(MerchantLoginPage, {
   apiBaseUrl: 'http://127.0.0.1:9',
   ...(error === undefined ? {} : { error }),
   onAuthenticated: () => undefined,
-  onRetry: () => undefined,
+  ...(onRetry ? { onRetry } : {}),
 }))
 
 describe('merchant login page shows why the session ended', () => {
@@ -32,5 +32,10 @@ describe('merchant login page shows why the session ended', () => {
     const html = render(undefined)
     expect(html).not.toContain('登录未完成')
     expect(html).toContain('登录商家工作台')
+  })
+
+  it('renders the retry action only when session recovery is available', () => {
+    expect(render('无法验证登录状态：API 请求超时', () => undefined)).toContain('重新检查登录状态')
+    expect(render('无法验证登录状态：API 请求超时')).not.toContain('重新检查登录状态')
   })
 })

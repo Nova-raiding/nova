@@ -26,7 +26,9 @@ function parseMcpRequestSchema(source: string) {
     properties.set(property, nested)
   }
   const methodEnumLine = properties.get('method')?.find(line => /^          enum: \[/u.test(line))
-  const methodEnum = methodEnumLine?.slice(methodEnumLine.indexOf('[') + 1, methodEnumLine.lastIndexOf(']')).split(',').map(item => item.trim()) ?? []
+  const methodInlineEnum = propertyLines.find(line => /^        method: \{[^\n]*enum: \[/u.test(line))
+  const enumSource = methodEnumLine ?? methodInlineEnum
+  const methodEnum = enumSource?.slice(enumSource.indexOf('[') + 1, enumSource.lastIndexOf(']')).split(',').map(item => item.trim().replace(/^'|'$/gu, '')) ?? []
   return { block, properties, methodEnum }
 }
 
@@ -55,6 +57,8 @@ describe('OpenAPI security contract', () => {
     expect(platformEnum, 'Platform must enumerate the runtime platforms').not.toBeNull()
     expect(platformEnum![1]!.split(',').map(value => value.trim())).toEqual([...PLATFORMS])
     expect(operation).toContain("'400': { $ref: '#/components/responses/ErrorEnvelope' }")
+    expect(operation).toContain("'401': { $ref: '#/components/responses/ErrorEnvelope' }")
+    expect(openApiOperation(source, '/v1/products', 'get')).toContain("'401': { $ref: '#/components/responses/ErrorEnvelope' }")
   })
 
   it('documents invalid product facts_confirmed filters as a 400 response', () => {
@@ -103,7 +107,7 @@ describe('OpenAPI security contract', () => {
       'platform.media.spec.list', 'platform.media.spec.get', 'platform.media.spec.create',
       'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire',
       'platform.mapping.preflight', 'delivery.bundle.verify',
-    ]) expect(source).toMatch(new RegExp(`^            ${method.replaceAll('.', '\\.')}: '#/components/schemas/Mcp`, 'mu'))
+    ]) expect(source).toMatch(new RegExp(`^            '${method.replaceAll('.', '\\.')}': '#/components/schemas/Mcp`, 'mu'))
     for (const schema of [
       'McpPlatformMediaSpecListParams', 'McpPlatformMediaSpecGetParams', 'McpPlatformMediaSpecCreateParams',
       'McpPlatformMediaSpecUpdateParams', 'McpPlatformMediaSpecTransitionParams',
@@ -111,12 +115,12 @@ describe('OpenAPI security contract', () => {
       'McpMarketingImageReconcileParams', 'McpMarketingImageEvidenceExportParams', 'McpMarketingImageArchiveAuditParams', 'McpMarketingImageBillingAuditParams',
     ]) expect(source).toContain(`    ${schema}:`)
     for (const method of ['campaign.batch.pause', 'campaign.batch.resume']) {
-      expect(source).toContain(`${method}: '#/components/schemas/McpCampaignBatchControlParams'`)
+      expect(source).toContain(`'${method}': '#/components/schemas/McpCampaignBatchControlParams'`)
     }
-    expect(source).toContain("campaign.batch.retry_failed: '#/components/schemas/McpCampaignBatchRetryFailedParams'")
-    expect(source).toContain("brand-unit.bind-store: '#/components/schemas/McpBrandUnitBindStoreParams'")
+    expect(source).toContain("'campaign.batch.retry_failed': '#/components/schemas/McpCampaignBatchRetryFailedParams'")
+    expect(source).toContain("'brand-unit.bind-store': '#/components/schemas/McpBrandUnitBindStoreParams'")
     for (const method of ['ops.marketing.image.reconcile', 'ops.marketing.image.evidence.export', 'ops.marketing.image.archive.audit', 'ops.marketing.image.billing.audit']) {
-      expect(source).toContain(`${method}: '#/components/schemas/McpMarketingImage`)
+      expect(source).toContain(`'${method}': '#/components/schemas/McpMarketingImage`)
     }
     expect(source).toContain('    McpBrandUnitBindStoreParams:')
     expect(source).toContain('    McpCanonicalProductConsistencyBlocking:')

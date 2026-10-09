@@ -51,15 +51,24 @@ export function rechargeOrderTotal(
   return total ?? summary?.total ?? orders.length;
 }
 
-export function rechargeOrderListParams(state?: RechargeOrderState) {
-  return { limit: "100", ...(state ? { states: state } : {}) };
+export function rechargeOrderListParams(state?: RechargeOrderState, cursor?: string) {
+  return { limit: "100", ...(state ? { states: state } : {}), ...(cursor ? { cursor } : {}) };
+}
+
+export function mergeRechargeOrderPages<T extends { id: string }>(current: readonly T[], next: readonly T[]): T[] {
+  const byId = new Map(current.map(order => [order.id, order]));
+  for (const order of next) byId.set(order.id, order);
+  return [...byId.values()];
 }
 
 export function safePaymentUrl(value: string | null) {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:"
+    const providerScheme = url.protocol === "weixin:" || url.protocol === "alipays:";
+    const fixtureHost = url.hostname === "fixture.invalid" || url.hostname.endsWith(".fixture.invalid");
+    const providerWebUrl = url.protocol === "https:" && !fixtureHost;
+    return (providerWebUrl || providerScheme) && Boolean(url.hostname) && !url.username && !url.password
       ? url.toString()
       : undefined;
   } catch {

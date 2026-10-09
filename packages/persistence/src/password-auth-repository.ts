@@ -62,6 +62,18 @@ export interface McpOAuthPrincipal {
   issuedAt: string
   expiresAt: string
 }
+/** Optional durable-state projection for the in-memory OAuth test adapter.
+ * Production Postgres auth joins identity, member and workspace state on every
+ * access-token validation. The Memory adapter has no such repositories, so
+ * tests that claim that boundary must inject an equivalent projection. */
+export interface MemoryMcpOAuthState {
+  identityStatus: 'active' | 'suspended' | 'revoked' | 'pending'
+  riskDecision: 'allow' | 'review' | 'deny'
+  identityAuthEpoch: number
+  memberStatus: 'active' | 'invited' | 'suspended' | 'removed'
+  workspaceStatus: 'active' | 'disabled' | 'pending'
+}
+export type MemoryMcpOAuthStateResolver = (input: { identityId: string; workspaceId: string }) => MemoryMcpOAuthState | undefined | Promise<MemoryMcpOAuthState | undefined>
 export interface McpOAuthTokenPair {
   accessToken: string
   refreshToken: string
@@ -157,7 +169,14 @@ function assertRegistration(input: { login: string; password: string; enterprise
 }
 function auditMemory(events: Array<Record<string, unknown>>, eventType: string, accountId: string, evidence: Record<string, unknown> = {}) { events.push({ id: randomUUID(), eventType, accountId, evidence, createdAt: new Date().toISOString() }) }
 
+/**
+ * Protocol-level in-memory auth fixture. It does not model identity lifecycle,
+ * membership or workspace state unless `resolveMcpOAuthState` is supplied.
+ * Tests asserting production token authorization parity must inject that state;
+ * production uses `PostgresPasswordAuthRepository` and never this adapter.
+ */
 export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
+  constructor(private readonly resolveMcpOAuthState?: MemoryMcpOAuthStateResolver) {}
   private bootstrapAdminIdentityId?: string
   private readonly accounts = new Map<string, AccountRecord>()
   private readonly sessions = new Map<string, SessionRecord>()
@@ -409,13 +428,21 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     record.used = true
     return this.issueMemoryMcpTokenPair(record)
   }
-  private activeMemoryMcpToken(record: McpTokenRecord, input: McpOAuthContext) {
+  private async activeMemoryMcpToken(record: McpTokenRecord, input: McpOAuthContext) {
     const account = [...this.accounts.values()].find(item => item.id === record.accountId)
-    return record.status === 'active' && record.expiresAt > Date.now() && record.clientId === input.clientId && record.issuer === input.issuer && record.audience === input.audience && record.resource === input.resource && record.scope.includes('merchant') && Boolean(account && account.status === 'active' && account.authEpoch === record.accountAuthEpoch && account.workspaceIds.includes(record.workspaceId))
+    if (!(record.status === 'active' && record.expiresAt > Date.now() && record.clientId === input.clientId && record.issuer === input.issuer && record.audience === input.audience && record.resource === input.resource && record.scope.includes('merchant') && account && account.status === 'active' && account.authEpoch === record.accountAuthEpoch && account.workspaceIds.includes(record.workspaceId))) return false
+    if (!this.resolveMcpOAuthState) return true
+    const state = await this.resolveMcpOAuthState({ identityId: record.identityId, workspaceId: record.workspaceId })
+    return Boolean(state
+      && state.identityStatus === 'active'
+      && state.riskDecision === 'allow'
+      && state.identityAuthEpoch === record.identityAuthEpoch
+      && state.memberStatus === 'active'
+      && state.workspaceStatus === 'active')
   }
   async refreshMcpOAuthToken(input: McpOAuthContext & { refreshToken: string }) {
     const record = this.mcpTokens.get(tokenDigest(input.refreshToken))
-    if (!record || record.kind !== 'refresh' || !this.activeMemoryMcpToken(record, input)) {
+    if (!record || record.kind !== 'refresh' || !await this.activeMemoryMcpToken(record, input)) {
       if (record) for (const token of this.mcpTokens.values()) if (token.familyId === record.familyId && token.status === 'active') token.status = 'revoked'
       throw mcpOAuthError('MCP_OAUTH_INVALID_GRANT')
     }
@@ -432,7 +459,7 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
   async authenticateMcpAccessToken(input: McpOAuthContext & { accessToken: string }) {
     const record = this.mcpTokens.get(tokenDigest(input.accessToken))
     const account = record ? [...this.accounts.values()].find(item => item.id === record.accountId) : undefined
-    if (!record || record.kind !== 'access' || record.status !== 'active' || record.expiresAt <= Date.now() || record.clientId !== input.clientId || record.issuer !== input.issuer || record.audience !== input.audience || record.resource !== input.resource || input.scope.some(scope => !record.scope.includes(scope)) || !record.scope.includes('merchant') || !account || account.status !== 'active' || account.authEpoch !== record.accountAuthEpoch || !account.workspaceIds.includes(record.workspaceId)) return undefined
+    if (!record || record.kind !== 'access' || input.scope.some(scope => !record.scope.includes(scope)) || !await this.activeMemoryMcpToken(record, input) || !account) return undefined
     return { identityId: record.identityId, accountId: record.accountId, accountLogin: account.login, workspaceId: record.workspaceId, scope: [...record.scope], tokenId: record.id, issuedAt: new Date(record.issuedAt).toISOString(), expiresAt: new Date(record.expiresAt).toISOString() }
   }
 }

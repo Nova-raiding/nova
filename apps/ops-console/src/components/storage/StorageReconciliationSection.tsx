@@ -21,6 +21,7 @@ function bytes(value?: number | null) {
 }
 
 const knownStorageStatuses = ["clean", "attention_required", "failed", "unavailable"];
+const knownStorageFreshness = ["fresh", "stale", "expired"];
 
 export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry, fixtureDataPresent = false }: StorageReconciliationSectionProps) {
   const errorRef = useRef<HTMLDivElement>(null);
@@ -35,10 +36,10 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   }, [summaries]);
   const counts = summary?.counts;
   const unknownStatus = Boolean(summary && !knownStorageStatuses.includes(String(summary.status)));
-  const freshnessUnknown = !summary?.lastRunAt || summary.freshness === "unknown";
+  const freshnessUnknown = !summary?.lastRunAt || !knownStorageFreshness.includes(String(summary.freshness));
   const unavailable = !loading && !error && (!summary || summary.status === "unavailable" || freshnessUnknown || unknownStatus);
   const attention = summary?.status === "attention_required";
-  const failed = summary?.status === "failed";
+  const failed = summary?.status === "failed" || summary?.runStatus === "failed";
   const expired = summary?.freshness === "expired";
   const stale = summary?.freshness === "stale";
   const freshnessLabel = freshnessUnknown ? "新鲜度待确认" : expired ? "已过期" : stale ? "已变旧" : "最近已更新";
@@ -54,14 +55,17 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
       <Card size="small">
         <div role="list" aria-label="workspace 存储对账状态">
           {workspacePageRows.map(item => {
+            const itemUnknownStatus = !knownStorageStatuses.includes(String(item.status));
+            const itemFreshnessUnknown = !item.lastRunAt || !knownStorageFreshness.includes(String(item.freshness));
             const itemExpired = item.freshness === "expired";
-            const itemFailed = item.status === "failed";
+            const itemFailed = item.status === "failed" || item.runStatus === "failed";
             const itemStale = item.freshness === "stale";
             const itemAttention = item.status === "attention_required" || itemExpired || itemStale;
-            const itemUnavailable = item.status === "unavailable" || !item.lastRunAt || item.freshness === "unknown";
+            const itemUnavailable = item.status === "unavailable" || itemUnknownStatus || itemFreshnessUnknown;
+            const itemUnverified = fixtureDataPresent || itemUnavailable;
             return <div role="listitem" key={item.workspaceId} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, padding: "10px 0", borderBottom: "1px solid #f0f0f0" }}>
-              <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><Typography.Text strong>{item.workspaceId}</Typography.Text><br /><Typography.Text type="secondary">最近对账：{item.lastRunAt ?? "暂无"}</Typography.Text></div>
-              <Tag color={error ? "default" : itemUnavailable ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{error ? "上次快照，未复核" : itemUnavailable ? "状态不可验证" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
+              <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><Typography.Text strong>{item.workspaceId}</Typography.Text><br /><Typography.Text type="secondary">最近对账：{item.lastRunAt ?? "暂无"} · {itemFreshnessUnknown ? "新鲜度待确认" : itemExpired ? "已过期" : itemStale ? "已变旧" : "最近已更新"}</Typography.Text></div>
+              <Tag color={error || fixtureDataPresent || itemUnverified ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{error ? "上次快照，未复核" : fixtureDataPresent ? "演示数据，未验证" : itemUnverified ? "状态不可验证" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
             </div>;
           })}
         </div>

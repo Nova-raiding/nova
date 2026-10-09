@@ -42,4 +42,11 @@ describe("SupportQueueSection error recovery", () => {
     expect(html).toContain('title="当前会话没有工单变更权限"');
     expect(html).toContain('disabled=""');
   });
+
+  it("surfaces a bounded SLA scan and tells the operator to continue loading", () => {
+    const html = renderToStaticMarkup(<SupportQueueSection model={model({ scanTruncated: true, hasMore: true })} />);
+    expect(html).toContain("工单扫描已达到本次上限，结果可能不完整");
+    expect(html).toContain("可能还有匹配工单；请继续加载以检查后续结果。");
+    expect(html).toContain("加载更多工单");
+  });
 });

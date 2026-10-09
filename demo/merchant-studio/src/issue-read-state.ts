@@ -27,10 +27,12 @@ export type IssueReadState = {
   /** The bell's accessible name. */
   ariaLabel: string
   /**
-   * The single line the panel shows instead of the list. Empty in `ready` mode
-   * with issues, because the list itself is the answer then.
+   * Read error / empty / truncation notice. A truncated list can have useful
+   * items and a notice at the same time.
    */
   notice: string
+  /** The API paged the risk list; the displayed actionable count is only this page. */
+  truncated: boolean
 }
 
 export const ISSUE_READ_UNCONFIGURED_NOTICE = '未配置商家 API，工作区待处理问题未读取。'
@@ -53,12 +55,13 @@ export type IssueReadOutcome = {
   error: string
   /** Whether a read is in flight. Cleared by every settle, success or failure. */
   loading: boolean
+  truncated?: boolean
 }
 
 /** No API is configured, so nothing was read and nothing is pending. */
-export const IDLE_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loading: false }
+export const IDLE_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loading: false, truncated: false }
 /** A read is in flight; its result is not in yet, so there is no count. */
-export const PENDING_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loading: true }
+export const PENDING_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loading: true, truncated: false }
 
 /** The two things a read needs from outside, so a test can drive it with a real response shape. */
 export type IssueReadDeps = {
@@ -81,9 +84,9 @@ export type IssueReadDeps = {
 export async function readIssueOutcome(baseUrl: string, deps: IssueReadDeps): Promise<IssueReadOutcome> {
   try {
     const metrics = await deps.load(baseUrl)
-    return { items: metrics.riskItems, error: '', loading: false }
+    return { items: metrics.riskItems, error: '', loading: false, truncated: metrics.riskSummary.truncated }
   } catch (cause) {
-    return { items: null, error: deps.describeError(cause), loading: false }
+    return { items: null, error: deps.describeError(cause), loading: false, truncated: false }
   }
 }
 
@@ -112,6 +115,7 @@ export function resolveIssueReadStateFromOutcome({ baseUrl, outcome }: { baseUrl
     items: actionableIssueItems(outcome.items),
     error: outcome.error,
     loading: outcome.loading,
+    truncated: outcome.truncated ?? false,
   })
 }
 
@@ -164,19 +168,22 @@ export function resolveIssueReadState(input: {
   error: string
   /** Whether a read is in flight. */
   loading: boolean
+  truncated?: boolean
 }): IssueReadState {
-  const { baseUrl, items, error, loading } = input
+  const { baseUrl, items, error, loading, truncated = false } = input
   const unresolved = (mode: IssueReadMode, ariaLabel: string, notice: string): IssueReadState => ({
     mode,
     count: null,
     badgeCount: undefined,
     ariaLabel,
     notice,
+    truncated: false,
   })
   if (!baseUrl) return unresolved('unconfigured', '工作区待处理问题，未读取', ISSUE_READ_UNCONFIGURED_NOTICE)
   if (error) return unresolved('read_error', '工作区待处理问题，读取失败', `工作区待处理问题读取失败：${error}`)
   if (loading || items === null) return unresolved('loading', '工作区待处理问题，正在读取', ISSUE_READ_LOADING_NOTICE)
   const count = items.length
+  const partialLabel = truncated ? count ? `，至少 ${count} 项，列表已截断` : '，列表已截断，当前页无可处理项' : count ? `，${count} 项` : '，暂无'
   return {
     mode: 'ready',
     count,
@@ -184,7 +191,10 @@ export function resolveIssueReadState(input: {
     // zero count anyway, and passing `undefined` keeps that guarantee here
     // instead of depending on the renderer.
     badgeCount: count || undefined,
-    ariaLabel: `工作区待处理问题${count ? `，${count} 项` : '，暂无'}`,
-    notice: count ? '' : ISSUE_READ_EMPTY_NOTICE,
+    ariaLabel: `工作区待处理问题${partialLabel}`,
+    notice: truncated
+      ? count ? `风险列表已截断；当前页至少有 ${count} 项可处理，完整数量未知。` : '当前页没有可处理问题，但风险列表已截断，完整情况尚未确认。'
+      : count ? '' : ISSUE_READ_EMPTY_NOTICE,
+    truncated,
   }
 }

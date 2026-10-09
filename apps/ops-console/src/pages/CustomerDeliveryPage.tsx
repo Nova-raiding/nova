@@ -5,7 +5,7 @@ import { OpsPage } from "../components/OpsPage.js";
 import { ACCEPTANCE_ITEMS, CustomerDeliverySection, INTEGRATION_ITEMS, checklistDisplayLabel } from "../components/delivery/CustomerDeliverySection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 import type { WorkspaceSummary } from "../types/ops.js";
-import { customerDeliveryClient, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
+import { customerDeliveryClient, validateCustomerDeliveryContractUrl, type CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 import { describeOpsError } from "../api/opsClient.js";
 import { accountLabel } from "../authz/accountLabel.js";
 import { useUnsavedChanges } from "../components/authz/UnsavedChangesContext.js";
@@ -14,6 +14,11 @@ import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUplo
 
 export function isCustomerDeliveryRevisionConflict(cause: unknown) {
   return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
+}
+export function openCustomerDeliveryContractLink(assetRef: string, openWindow: (url: string, target: string, features: string) => unknown) {
+  if (!/^https:\/\//iu.test(assetRef)) return false;
+  openWindow(validateCustomerDeliveryContractUrl(assetRef), "_blank", "noopener,noreferrer");
+  return true;
 }
 export async function waitForUsableDeliveryAsset(initialAsset: CustomerDeliveryAsset, input: {
   targetWorkspaceId: string;
@@ -344,8 +349,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     catch (cause) { reportMutationError(cause); throw cause; }
   };
   const openDeliveryAsset = async (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract", mode: "open" | "download") => {
-    if (/^https:\/\//iu.test(assetRef)) {
-      window.open(assetRef, "_blank", "noopener,noreferrer");
+    try {
+      if (openCustomerDeliveryContractLink(assetRef, (url, target, features) => window.open(url, target, features))) return;
+    } catch (cause) {
+      const messageText = describeOpsError(cause);
+      setMutationError(messageText);
+      message.error(messageText);
       return;
     }
     const preview = mode === "open" ? window.open("", "_blank") : null;

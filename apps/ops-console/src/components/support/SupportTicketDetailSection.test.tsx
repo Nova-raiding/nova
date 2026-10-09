@@ -55,6 +55,22 @@ describe("SupportTicketDetailSection", () => {
     expect(html).toContain("创建工单 · #1");
   });
 
+  it("returns to the reachable support domain while preserving the related task id", () => {
+    const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
+      selected: {
+        ticket: {
+          id: "ticket_1", workspaceId: "ws_1", ticketNumber: "SUP-001", subject: "支付异常", description: "客户付款未到账",
+          status: "in_progress", priority: "urgent", customerId: "customer_1", customerName: "云朵商家", tags: [], revision: 2,
+          relatedTaskId: "task/42 ?x=1", createdBy: "support_1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:01:00.000Z",
+          sla: { policy: { version: 1, calendar: "business_weekday_utc", firstResponseMinutes: 120, resolutionMinutes: 480 }, firstResponseDueAt: "2026-08-31T11:00:00.000Z", resolutionDueAt: "2026-09-01T17:00:00.000Z", pausedMinutes: 0, state: "on_track" },
+        }, events: [],
+      },
+    })} />);
+    expect(html).toContain('href="/ops/support?task_id=task%2F42%20%3Fx%3D1"');
+    expect(html).toContain("回到客服队列");
+    expect(html).not.toContain('href="/ops/tasks');
+  });
+
   it("renders a focusable, actionable error without losing the selected ticket", () => {
     const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
       error: "权限已失效，请刷新权限后重试。",

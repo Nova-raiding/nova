@@ -1,7 +1,7 @@
 import type { AssetMetadata } from './api'
 
 export type AssetPrimaryStatus = {
-  key: 'scanning' | 'blocked' | 'parsing' | 'rights' | 'facts' | 'ready'
+  key: 'scanning' | 'unknown' | 'blocked' | 'parsing' | 'rights' | 'facts' | 'ready'
   label: string
   detail: string
   action: 'refresh' | 'manual_review' | 'parse' | 'confirm_rights' | 'confirm_facts' | 'none'
@@ -19,7 +19,10 @@ export function resolveAssetPrimaryStatus(asset: AssetMetadata): AssetPrimarySta
   if (!asset.display && asset.readiness?.status !== 'ready') return { key: 'blocked', label: '暂不能确认可用性', detail: '服务端状态投影不可用，请刷新后再继续', action: 'refresh', tone: 'amber' }
   if (asset.readiness?.status === 'blocked' && asset.scanStatus === 'clean' && asset.parseStatus !== 'failed' && asset.rightsStatus !== 'rejected') return { key: 'blocked', label: '当前暂不可用', detail: asset.readiness.reasons[0] || '服务端 readiness 未通过，请查看详情', action: 'manual_review', tone: 'red' }
   if (asset.scanStatus === 'rejected') return { key: 'blocked', label: '安全检查未通过', detail: '请更换文件或联系管理员处理', action: 'manual_review', tone: 'red' }
-  if (asset.scanStatus !== 'clean') return { key: 'scanning', label: '安全检查中', detail: '素材仍在隔离区，完成后才能继续', action: 'refresh', tone: 'amber' }
+  if (!['clean', 'quarantined', 'unscanned', 'pending', 'scanning', 'blocked'].includes(asset.scanStatus)) return { key: 'unknown', label: '安全状态待核实', detail: '服务端返回了无法识别的安全扫描状态，请刷新状态后再继续', action: 'refresh', tone: 'amber' }
+  if (asset.scanStatus !== 'clean') return asset.scanStatus === 'blocked'
+    ? { key: 'blocked', label: '安全检查未通过', detail: '安全扫描已阻断，请联系管理员处理', action: 'manual_review', tone: 'red' }
+    : { key: 'scanning', label: '安全检查中', detail: '素材仍在隔离区，完成后才能继续', action: 'refresh', tone: 'amber' }
   if (asset.parseStatus === 'failed') return { key: 'blocked', label: '内容读取失败', detail: asset.parseError || '请重试读取或改用人工确认', action: 'manual_review', tone: 'red' }
   if (asset.parseStatus === 'processing') return { key: 'parsing', label: '正在读取内容', detail: '读取完成后再核对素材事实', action: 'refresh', tone: 'blue' }
   if (asset.parseStatus === 'pending') return { key: 'parsing', label: '等待读取内容', detail: '读取完成后再核对素材事实', action: 'parse', tone: 'blue' }
@@ -30,7 +33,8 @@ export function resolveAssetPrimaryStatus(asset: AssetMetadata): AssetPrimarySta
 }
 
 export function resolveAssetSecondaryStatus(asset: AssetMetadata): string {
-  const scan = asset.scanStatus === 'clean' ? '扫描通过' : asset.scanStatus === 'rejected' ? '扫描未通过' : '扫描处理中'
+  const knownScanStates = ['clean', 'quarantined', 'unscanned', 'pending', 'scanning', 'blocked', 'rejected']
+  const scan = asset.scanStatus === 'clean' ? '扫描通过' : asset.scanStatus === 'rejected' || asset.scanStatus === 'blocked' ? '扫描未通过' : knownScanStates.includes(asset.scanStatus) ? '扫描处理中' : '扫描状态待核实'
   const rights = asset.rightsStatus === 'approved' ? '权益已确认' : asset.rightsStatus === 'rejected' ? '权益受限' : '权益待确认'
   const facts = asset.factsConfirmedBy ? '事实已确认' : asset.parseStatus === 'succeeded' ? '事实待核对' : '事实未读取'
   return `${scan} · ${rights} · ${facts}`

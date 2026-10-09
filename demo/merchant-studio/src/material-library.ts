@@ -271,17 +271,25 @@ export type MaterialUploadOutcome = {
  */
 export async function uploadMaterialFiles(input: {
   files: File[]
-  upload: (file: File) => Promise<AssetMetadata>
+  upload: (file: File, signal?: AbortSignal) => Promise<AssetMetadata>
   labels: { category: StoreMaterialCategory; series: StoreMaterialSeries }
   previewUrlFor?: (file: File) => string | undefined
+  signal?: AbortSignal
 }): Promise<MaterialUploadOutcome> {
   const accepted: StoreMaterialItem[] = []
   const acceptedFiles: File[] = []
   const failures: string[] = []
   for (const file of input.files) {
+    if (input.signal?.aborted) break
     try {
-      const uploaded = await input.upload(file)
-      const preview = input.previewUrlFor?.(file)
+      const uploaded = await input.upload(file, input.signal)
+      let preview: string | undefined
+      try {
+        preview = input.previewUrlFor?.(file)
+      } catch {
+        // A local preview is optional. The server's confirmed upload remains
+        // accepted even when the browser cannot allocate a preview URL.
+      }
       accepted.push({
         ...materialItemFromAsset(uploaded),
         // The category is also sent to the upload endpoint and persisted on the

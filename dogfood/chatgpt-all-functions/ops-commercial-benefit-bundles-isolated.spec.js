@@ -41,7 +41,7 @@ async function saveBundle(page, manager, { code, name, usage, points, version, e
       await usageField.press('ArrowDown')
       await usageField.press('Enter')
     }
-    await expect(editor.getByText(usage === 'included' ? '套餐内含' : '独立销售', { exact: true })).toBeVisible({ timeout: 20_000 })
+    await expect(editor.getByTitle(usage === 'included' ? '套餐内含' : '独立销售', { exact: true })).toBeVisible({ timeout: 20_000 })
   }
   await editor.getByLabel('权益包名称', { exact: true }).fill(name)
   if (!edit) await editor.getByRole('button', { name: '添加已注册权益', exact: true }).click()

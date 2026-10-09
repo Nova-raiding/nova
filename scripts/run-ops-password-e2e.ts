@@ -36,6 +36,8 @@ export function validateOpsE2eArguments(args: readonly string[], source: NodeJS.
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]!
     if (/^dogfood\/chatgpt-all-functions\/(?:ops[a-z0-9-]*|ops-merchant-matrix-bootstrap)\.spec\.js$/u.test(argument)
+      || (argument === 'dogfood/chatgpt-all-functions/image-generation-desktop.spec.js' && source.OPS_E2E_MERCHANT_UI === 'true')
+      || (argument === 'demo/merchant-studio/merchant-workspace-switch.browser.spec.js' && source.OPS_E2E_MERCHANT_WORKSPACE_SWITCH === 'true' && source.OPS_E2E_MERCHANT_UI === 'true')
       || (argument === 'scripts/merchant-isolated-screenshot-matrix.ts' && source.OPS_E2E_MERCHANT_UI === 'true')
       || argument === '--workers=1') continue
     if ((argument === '--grep' || argument === '-g') && args[index + 1]?.trim() && !/[\u0000-\u001f\u007f]/u.test(args[index + 1]!)) { index++; continue }
@@ -43,6 +45,35 @@ export function validateOpsE2eArguments(args: readonly string[], source: NodeJS.
   }
   if (args.length && !args.some(argument => argument.endsWith('.spec.js'))) throw new Error('OPS_E2E_EXPLICIT_SPEC_REQUIRED')
   return args.length ? [...args] : ['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js']
+}
+
+/** Reuse an isolated API/UI fixture to exercise only an afterRun browser flow.
+ * This is deliberately restricted to the Merchant Members verifier so it
+ * cannot silently turn another named browser acceptance into a no-op. */
+export function validateOpsE2eAfterRunOnly(source: NodeJS.ProcessEnv, args: readonly string[], hasAfterRun: boolean): boolean {
+  const requested = source.OPS_E2E_AFTER_RUN_ONLY
+  if (requested === undefined) return false
+  if (requested !== 'true') throw new Error('OPS_E2E_AFTER_RUN_ONLY_INVALID')
+  if (!hasAfterRun || source.OPS_E2E_MERCHANT_UI !== 'true'
+    || args.length !== 1 || args[0] !== 'dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js') {
+    throw new Error('OPS_E2E_AFTER_RUN_ONLY_REQUIRES_ISOLATED_MERCHANT_MEMBERS_VERIFIER')
+  }
+  return true
+}
+
+/** Restrict dual-workspace merchant auth to its one dedicated fixture and seed hook. */
+export function validateMerchantWorkspaceSwitchMode(source: NodeJS.ProcessEnv, args: readonly string[], hasBeforeRun: boolean): boolean {
+  const requested = source.OPS_E2E_MERCHANT_WORKSPACE_SWITCH
+  if (requested === undefined) {
+    if (hasBeforeRun) throw new Error('OPS_E2E_MERCHANT_WORKSPACE_SWITCH_REQUIRES_EXACT_MODE')
+    return false
+  }
+  const specs = args.filter(argument => argument.endsWith('.spec.js'))
+  if (requested !== 'true' || source.OPS_E2E_MERCHANT_UI !== 'true' || !hasBeforeRun
+    || specs.length !== 1 || specs[0] !== 'demo/merchant-studio/merchant-workspace-switch.browser.spec.js') {
+    throw new Error('OPS_E2E_MERCHANT_WORKSPACE_SWITCH_REQUIRES_DEDICATED_FIXTURE')
+  }
+  return true
 }
 
 export function isolatedManualOperationsMode(source: NodeJS.ProcessEnv): boolean {
@@ -264,9 +295,11 @@ export function createOpsPasswordProxy(uiUpstream: string, apiUpstream: string):
   })
 }
 
-export async function runOpsE2e(requested: readonly string[], source: NodeJS.ProcessEnv = process.env, afterRun?: (context: OpsE2eContext) => Promise<void>): Promise<number> {
+export async function runOpsE2e(requested: readonly string[], source: NodeJS.ProcessEnv = process.env, afterRun?: (context: OpsE2eContext) => Promise<void>, beforeRun?: (context: OpsE2eContext) => Promise<void>): Promise<number> {
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
+  const afterRunOnly = validateOpsE2eAfterRunOnly(source, args, Boolean(afterRun))
+  const merchantWorkspaceSwitchMode = validateMerchantWorkspaceSwitchMode(source, args, Boolean(beforeRun))
   const commercialSalesMode = isolatedCommercialSalesMode(args, source)
   const unmatchedReadonlyMode = args.includes('dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js')
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
@@ -540,6 +573,10 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       ...(merchantBaseUrl ? { MERCHANT_STUDIO_URL: merchantBaseUrl } : {}),
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
+    if (merchantWorkspaceSwitchMode) {
+      throwSite = 'fixture_setup'
+      await guardRuntime(beforeRun!({ fixture, baseUrl, username, password, evidenceDir, environment }))
+    }
     writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({
       runId: fixture.runId, evidenceDir, baseUrl, apiPort, uiPort, gatewayPort,
       persistence: health.data.persistence, redis: health.data.redis,
@@ -547,24 +584,30 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       models: { configured: false, called: false }, sharedConfigurationRead: false,
       ...(scanner ? { scanner: { runId: scanner.runId, evidenceDir: scanner.evidenceDir, startupTimeoutMs: scannerStartupTimeoutMs, readiness: scanner.readiness, real: true, pointsGranted: false, purpose: scanPurpose } } : {}),
     }, null, 2), { mode: 0o600, flag: 'wx' })
-    console.log(JSON.stringify({ evidenceDir, runId: fixture.runId, isolated: true, persistence: 'postgres', testFiles: args.filter(argument => argument.endsWith('.spec.js')) }))
-    const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
-    // Bound the browser child independently so a stuck Playwright test cannot
-    // prevent fixture teardown or leave detached processes behind forever.
-    // The bound is a hang guard, not a performance assertion. Full commercial
-    // acceptance crosses real minute-boundary receipt facts for multiple orders;
-    // 10 minutes can end a healthy scenario between those assertions.
-    let browserTimer: ReturnType<typeof setTimeout> | undefined
-    const browserOutcome = Promise.race([
-      exited(run),
-      new Promise<number>(resolveTimeout => { browserTimer = setTimeout(() => {
-        run.kill('SIGTERM')
-        setTimeout(() => { if (run.exitCode === null && run.signalCode === null) run.kill('SIGKILL') }, 2_000).unref()
-        resolveTimeout(124)
-      }, browserTimeoutMs) }),
-    ]).finally(() => clearTimeout(browserTimer))
-    throwSite = 'browser_run'
-    const exitCode = await guardRuntime(browserOutcome)
+    const selectedBrowserSpecs = args.filter(argument => argument.endsWith('.spec.js'))
+    console.log(JSON.stringify({ evidenceDir, runId: fixture.runId, isolated: true, persistence: 'postgres', testFiles: afterRunOnly ? [] : selectedBrowserSpecs, ...(afterRunOnly ? { browserSpecSkipped: true, reason: 'after-run-only isolated Merchant Members journey' } : {}) }))
+    let exitCode = 0
+    if (afterRunOnly) {
+      writeFileSync(resolve(evidenceDir, 'browser-spec-skipped.json'), JSON.stringify({ skipped: true, reason: 'after-run-only isolated Merchant Members journey', originalSpecNotRun: selectedBrowserSpecs, productionBrowser: false }, null, 2), { mode: 0o600, flag: 'wx' })
+    } else {
+      const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
+      // Bound the browser child independently so a stuck Playwright test cannot
+      // prevent fixture teardown or leave detached processes behind forever.
+      // The bound is a hang guard, not a performance assertion. Full commercial
+      // acceptance crosses real minute-boundary receipt facts for multiple orders;
+      // 10 minutes can end a healthy scenario between those assertions.
+      let browserTimer: ReturnType<typeof setTimeout> | undefined
+      const browserOutcome = Promise.race([
+        exited(run),
+        new Promise<number>(resolveTimeout => { browserTimer = setTimeout(() => {
+          run.kill('SIGTERM')
+          setTimeout(() => { if (run.exitCode === null && run.signalCode === null) run.kill('SIGKILL') }, 2_000).unref()
+          resolveTimeout(124)
+        }, browserTimeoutMs) }),
+      ]).finally(() => clearTimeout(browserTimer))
+      throwSite = 'browser_run'
+      exitCode = await guardRuntime(browserOutcome)
+    }
     browserExitCode = exitCode
     assertRuntimeHealthy()
     // These hooks can hold database transactions. Drain them before cleanup;

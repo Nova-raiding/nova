@@ -56,6 +56,8 @@ coverage/
 /report-source.md
 /.codegraph.db
 /test-results/
+demo/merchant-studio/test-results/
+dogfood/chatgpt-all-functions/test-results/
 
 __pycache__/
 *.py[cod]

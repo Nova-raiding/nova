@@ -11,8 +11,8 @@ type Grant = { id: string; accessMode: "read" | "write"; workspaceId: string; ca
 type RoleList = { subject_identity_id: string; authorization_revision: number; assignments: RoleAssignment[] };
 type GrantList = { subject_identity_id: string; workspace_id: string; authorization_revision: number; grants: Grant[] };
 type PendingRevocation =
-  | { kind: "role"; title: string; role: RoleAssignment }
-  | { kind: "grant"; title: string; grant: Grant };
+  | { kind: "role"; title: string; role: RoleAssignment; authorizationRevision: number }
+  | { kind: "grant"; title: string; grant: Grant; subjectIdentityId: string; authorizationRevision: number };
 type GrantStatus = { label: string; color: "green" | "gold" | "orange" | "red" };
 
 const platformRoleLabels: Record<string, string> = {
@@ -87,11 +87,14 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [subjectIdentityId, setSubjectIdentityId] = useState("");
   const [targetWorkspaceId, setTargetWorkspaceId] = useState("");
   const [roles, setRoles] = useState<RoleList>();
+  const [rolesTarget, setRolesTarget] = useState<string>();
   const [assignableRoles, setAssignableRoles] = useState<string[]>([]);
   const [grants, setGrants] = useState<GrantList>();
+  const [grantsTarget, setGrantsTarget] = useState<{ subjectIdentityId: string; workspaceId: string }>();
   const [roleLoadError, setRoleLoadError] = useState<unknown>();
   const [grantLoadError, setGrantLoadError] = useState<unknown>();
-  const [loading, setLoading] = useState(false);
+  const [roleLoading, setRoleLoading] = useState(false);
+  const [grantLoading, setGrantLoading] = useState(false);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [roleSubmitError, setRoleSubmitError] = useState<unknown>();
   const [grantSubmitting, setGrantSubmitting] = useState(false);
@@ -101,16 +104,37 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [revocationSubmitting, setRevocationSubmitting] = useState(false);
   const [revocationError, setRevocationError] = useState<string>();
   const [grantStatusNow, setGrantStatusNow] = useState(() => Date.now());
+  const roleRequestRef = useRef(0);
+  const grantRequestRef = useRef(0);
+  const priorModelWorkspaceTargetRef = useRef<string | undefined>(undefined);
   const [roleForm] = Form.useForm();
   const [grantForm] = Form.useForm();
   const revocationTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const workspaceId = model.authorizationTargetWorkspaceId?.trim();
-    if (workspaceId) {
+    const workspaceId = model.authorizationTargetWorkspaceId?.trim() || undefined;
+    const priorWorkspaceId = priorModelWorkspaceTargetRef.current;
+    priorModelWorkspaceTargetRef.current = workspaceId;
+    if (workspaceId && workspaceId !== targetWorkspaceId.trim()) {
+      grantRequestRef.current += 1;
       setTargetWorkspaceId(workspaceId);
+      setGrants(undefined);
+      setGrantsTarget(undefined);
+      setGrantLoadError(undefined);
+      setGrantLoading(false);
+      setPendingRevocation(undefined);
+      grantForm.resetFields();
+    } else if (!workspaceId && priorWorkspaceId) {
+      grantRequestRef.current += 1;
+      setTargetWorkspaceId("");
+      setGrants(undefined);
+      setGrantsTarget(undefined);
+      setGrantLoadError(undefined);
+      setGrantLoading(false);
+      setPendingRevocation(undefined);
+      grantForm.resetFields();
     }
-  }, [model.authorizationTargetWorkspaceId]);
+  }, [model.authorizationTargetWorkspaceId, grantForm]);
 
   useEffect(() => {
     if (!grants?.grants.length) return undefined;
@@ -135,20 +159,71 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
 
   if (!canViewAuthorizationGovernance(model.authorization, model.opsSession?.account_login)) return null;
 
-  const loadRoles = async () => {
-    if (!subjectIdentityId.trim()) return;
-    setLoading(true);
+  const currentSubject = subjectIdentityId.trim();
+  const currentWorkspace = targetWorkspaceId.trim();
+  const currentRoles = roles && rolesTarget === currentSubject ? roles : undefined;
+  const currentGrants = grants && grantsTarget?.subjectIdentityId === currentSubject && grantsTarget.workspaceId === currentWorkspace ? grants : undefined;
+
+  const changeSubjectIdentity = (value: string) => {
+    roleRequestRef.current += 1;
+    grantRequestRef.current += 1;
+    setSubjectIdentityId(value);
+    setRoles(undefined);
+    setRolesTarget(undefined);
+    setGrants(undefined);
+    setGrantsTarget(undefined);
     setRoleLoadError(undefined);
-    try { setRoles(await rpc<RoleList>("ops.authorization.roles.list", { subject_identity_id: subjectIdentityId.trim() }) ?? undefined); }
-    catch (error) { setRoleLoadError(error); }
-    finally { setLoading(false); }
+    setGrantLoadError(undefined);
+    setRoleLoading(false);
+    setGrantLoading(false);
+    setPendingRevocation(undefined);
+    grantForm.resetFields();
+  };
+  const changeTargetWorkspace = (value: string) => {
+    grantRequestRef.current += 1;
+    setTargetWorkspaceId(value);
+    setGrants(undefined);
+    setGrantsTarget(undefined);
+    setGrantLoadError(undefined);
+    setGrantLoading(false);
+    setPendingRevocation(undefined);
+    grantForm.resetFields();
+  };
+
+  const loadRoles = async () => {
+    const subjectIdentity = subjectIdentityId.trim();
+    if (!subjectIdentity) return;
+    const requestId = ++roleRequestRef.current;
+    setRoleLoading(true);
+    setRoleLoadError(undefined);
+    try {
+      const result = await rpc<RoleList>("ops.authorization.roles.list", { subject_identity_id: subjectIdentity }) ?? undefined;
+      if (requestId === roleRequestRef.current && subjectIdentity === subjectIdentityId.trim()) {
+        setRoles(result);
+        setRolesTarget(result?.subject_identity_id ?? subjectIdentity);
+      }
+    } catch (error) {
+      if (requestId === roleRequestRef.current && subjectIdentity === subjectIdentityId.trim()) setRoleLoadError(error);
+    } finally {
+      if (requestId === roleRequestRef.current) setRoleLoading(false);
+    }
   };
   const loadGrants = async () => {
-    if (!subjectIdentityId.trim() || !targetWorkspaceId.trim()) return;
-    setLoading(true);
+    const subjectIdentity = subjectIdentityId.trim();
+    const workspaceId = targetWorkspaceId.trim();
+    if (!subjectIdentity || !workspaceId) return;
+    const requestId = ++grantRequestRef.current;
+    setGrantLoading(true);
     setGrantLoadError(undefined);
-    try { setGrants(await rpc<GrantList>("ops.authorization.grants.list", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim() }) ?? undefined); }
+    try {
+      const result = await rpc<GrantList>("ops.authorization.grants.list", { subject_identity_id: subjectIdentity, target_workspace_id: workspaceId }) ?? undefined;
+      if (requestId === grantRequestRef.current && subjectIdentity === subjectIdentityId.trim() && workspaceId === targetWorkspaceId.trim()) {
+        setGrants(result);
+        setGrantsTarget(result ? { subjectIdentityId: result.subject_identity_id, workspaceId: result.workspace_id } : { subjectIdentityId: subjectIdentity, workspaceId });
+      }
+    }
     catch (error) {
+      if (requestId !== grantRequestRef.current || subjectIdentity !== subjectIdentityId.trim() || workspaceId !== targetWorkspaceId.trim()) return;
       // A platform session may not yet have a tenant workspace bound. Treat
       // this as an unavailable optional panel, not an inline page failure.
       const detail = describeOpsError(error);
@@ -157,10 +232,10 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
         message.info("请先选择已授权的商家工作区，再查看临时授权");
       } else setGrantLoadError(error);
     }
-    finally { setLoading(false); }
+    finally { if (requestId === grantRequestRef.current) setGrantLoading(false); }
   };
 
-  const locallyExpiredGrantCount = grants?.grants.filter((grant) => describeGrantStatus(grant, grantStatusNow).label === "已过期").length ?? 0;
+  const locallyExpiredGrantCount = currentGrants?.grants.filter((grant) => describeGrantStatus(grant, grantStatusNow).label === "已过期").length ?? 0;
 
   const submitRevocation = async () => {
     if (!pendingRevocation || revocationSubmitting) return;
@@ -179,7 +254,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           assignment_id: role.id,
           subject_identity_id: role.subjectIdentityId,
           expected_revision: String(role.revision),
-          expected_authorization_revision: String(roles?.authorization_revision ?? role.authorizationRevision),
+          expected_authorization_revision: String(pendingRevocation.authorizationRevision),
           reason: revocationReason.trim(),
         });
         await loadRoles();
@@ -187,9 +262,9 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
         const { grant } = pendingRevocation;
         await rpc("ops.authorization.grant.revoke", {
           grant_id: grant.id,
-          subject_identity_id: subjectIdentityId.trim(),
+          subject_identity_id: pendingRevocation.subjectIdentityId,
           expected_revision: String(grant.revision),
-          expected_authorization_revision: String(grants?.authorization_revision ?? grant.authorizationRevision),
+          expected_authorization_revision: String(pendingRevocation.authorizationRevision),
           reason: revocationReason.trim(),
         });
         model.recordJitRevocation({
@@ -225,9 +300,9 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
       <div className="ops-authorization-section-heading"><div><Typography.Text className="ops-authorization-eyebrow">01 · 授权目标</Typography.Text><Typography.Title id="jit-grants-heading" level={5}>JIT 临时授权</Typography.Title></div><Typography.Text>精确身份 · 精确商家主体</Typography.Text></div>
       <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap className="ops-authorization-target-fields">
-          <div className="ops-authorization-target-field"><label htmlFor="jit-subject-identity">目标持久身份 ID</label><Input id="jit-subject-identity" value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="输入目标身份" aria-label="JIT 目标身份 ID" style={{ width: 300 }} /></div>
-          <div className="ops-authorization-target-field"><label htmlFor="jit-workspace">商家主体 ID</label><Input id="jit-workspace" value={targetWorkspaceId} onChange={(event) => setTargetWorkspaceId(event.target.value)} placeholder="输入精确商家主体" aria-label="JIT 目标商家主体 ID" style={{ width: 260 }} /></div>
-          <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={loading} disabled={!subjectIdentityId.trim() || !targetWorkspaceId.trim()}>读取有效 JIT</Button>
+          <div className="ops-authorization-target-field"><label htmlFor="jit-subject-identity">目标持久身份 ID</label><Input id="jit-subject-identity" value={subjectIdentityId} onChange={(event) => changeSubjectIdentity(event.target.value)} placeholder="输入目标身份" aria-label="JIT 目标身份 ID" style={{ width: 300 }} /></div>
+          <div className="ops-authorization-target-field"><label htmlFor="jit-workspace">商家主体 ID</label><Input id="jit-workspace" value={targetWorkspaceId} onChange={(event) => changeTargetWorkspace(event.target.value)} placeholder="输入精确商家主体" aria-label="JIT 目标商家主体 ID" style={{ width: 260 }} /></div>
+          <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={grantLoading} aria-busy={grantLoading} disabled={!currentSubject || !currentWorkspace}>读取有效 JIT</Button>
         </Space>
         <OpsPageError error={grantLoadError} onRetry={() => void loadGrants()} />
         {locallyExpiredGrantCount ? <div role="status" aria-live="polite" aria-atomic="true">
@@ -280,7 +355,9 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
               // handed to any persistence helper. The success path below clears it
               // together with the rest of the form; the failure path keeps it so
               // the retry control can resubmit the same evidence.
-              await rpc("ops.authorization.grant.issue", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim(), grant_kind: "support", access_mode: values.access_mode, capabilities_json: JSON.stringify(capabilities), resource_scope_json: JSON.stringify({ workspace_ids: [targetWorkspaceId.trim()] }), ticket_ref: values.ticket_ref, approved_by: values.approved_by, approved_at: values.approved_at, expires_at: values.expires_at, max_uses: String(values.max_uses), expected_authorization_revision: String(grants?.authorization_revision ?? 0), reason: values.reason }, { authorizationApprovalToken: String(values.approval_token ?? "").trim() });
+              const targetIdentity = subjectIdentityId.trim();
+              const targetWorkspace = targetWorkspaceId.trim();
+              await rpc("ops.authorization.grant.issue", { subject_identity_id: targetIdentity, target_workspace_id: targetWorkspace, grant_kind: "support", access_mode: values.access_mode, capabilities_json: JSON.stringify(capabilities), resource_scope_json: JSON.stringify({ workspace_ids: [targetWorkspace] }), ticket_ref: values.ticket_ref, approved_by: values.approved_by, approved_at: values.approved_at, expires_at: values.expires_at, max_uses: String(values.max_uses), expected_authorization_revision: String(currentGrants?.authorization_revision ?? 0), reason: values.reason }, { authorizationApprovalToken: String(values.approval_token ?? "").trim() });
               grantForm.resetFields();
               await loadGrants();
             } catch (error) {
@@ -306,7 +383,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           </Row>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
         </Form></div></>}
-        <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
+        <Table<Grant> size="small" rowKey="id" loading={grantLoading} dataSource={currentGrants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
           { title: "状态", render: (_value, row) => {
             const status = describeGrantStatus(row, grantStatusNow);
             return <Tag color={status.color}>{status.label}</Tag>;
@@ -316,7 +393,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           { title: "工单", dataIndex: "ticketRef" },
           { title: "使用", render: (_value, row) => `${row.useCount}/${row.maxUses}` },
           { title: "到期", dataIndex: "expiresAt" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={(event) => requestRevocationReason({ kind: "grant", title: `立即撤销 ${row.id}`, grant: row }, event.currentTarget)}>立即撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants || !currentGrants} onClick={(event) => requestRevocationReason({ kind: "grant", title: `立即撤销 ${row.id}`, grant: row, subjectIdentityId: currentGrants!.subject_identity_id, authorizationRevision: currentGrants!.authorization_revision }, event.currentTarget)}>立即撤销</Button> },
         ]} />
 
       </Space>
@@ -325,15 +402,15 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
       <Divider><span id="platform-roles-heading">平台角色</span></Divider>
       <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap>
-          <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
-          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
+          <Input value={subjectIdentityId} onChange={(event) => changeSubjectIdentity(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
+          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={roleLoading} aria-busy={roleLoading} disabled={!currentSubject}>读取当前分配</Button>
         </Space>
         <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
-        <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
+        <Table<RoleAssignment> size="small" rowKey="id" loading={roleLoading} dataSource={currentRoles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
           { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue" title={`技术标识：${value}`}>{platformRoleLabels[value] ?? value}</Tag> },
           { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
           { title: "修订", dataIndex: "revision" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row }, event.currentTarget)}>撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles || !currentRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row, authorizationRevision: currentRoles!.authorization_revision }, event.currentTarget)}>撤销</Button> },
         ]} />
         {canManageRoles && <>
           <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
@@ -342,7 +419,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             setRoleSubmitting(true);
             setRoleSubmitError(undefined);
             try {
-              await rpc("ops.authorization.role.assign", { subject_identity_id: subjectIdentityId.trim(), role: values.role, expected_authorization_revision: String(roles?.authorization_revision ?? 0), reason: values.reason, ...(values.expires_at ? { expires_at: values.expires_at } : {}) });
+              await rpc("ops.authorization.role.assign", { subject_identity_id: subjectIdentityId.trim(), role: values.role, expected_authorization_revision: String(currentRoles?.authorization_revision ?? 0), reason: values.reason, ...(values.expires_at ? { expires_at: values.expires_at } : {}) });
               roleForm.resetFields();
               await loadRoles();
             } catch (error) {

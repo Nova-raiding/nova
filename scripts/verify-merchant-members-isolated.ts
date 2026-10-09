@@ -77,15 +77,70 @@ async function verify(context: OpsE2eContext) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Shanghai' })
     const pageErrors: string[] = []
     page.on('pageerror', error => pageErrors.push(error.message))
+    const observedApiRequests: string[] = []
+    const observedApiResponses: string[] = []
+    page.on('request', request => {
+      const url = new URL(request.url())
+      if (url.origin === origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/'))) {
+        observedApiRequests.push(`${request.method()} ${url.pathname}`)
+      }
+    })
     const failedRequests: string[] = []
-    page.on('response', response => { if (response.url().includes('/api/') && response.status() >= 400) void response.json().then((body: { error?: { code?: string } }) => failedRequests.push(`${response.request().method()} ${new URL(response.url()).pathname} ${response.status()} ${body.error?.code ?? ''}`)).catch(() => undefined) })
+    page.on('response', response => {
+      const url = new URL(response.url())
+      if (url.origin === origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/'))) {
+        observedApiResponses.push(`${response.request().method()} ${url.pathname} ${response.status()}`)
+      }
+      if (url.origin === origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/')) && response.status() >= 400) void response.json().then((body: { error?: { code?: string } }) => failedRequests.push(`${response.request().method()} ${url.pathname} ${response.status()} ${body.error?.code ?? ''}`)).catch(() => undefined)
+    })
+    const loginResponses: Array<{ status: number; code: string | null }> = []
+    page.on('response', response => {
+      const url = new URL(response.url())
+      if (url.origin !== origin || !url.pathname.endsWith('/v1/auth/login')) return
+      void response.json().then((body: { error?: { code?: string } }) => loginResponses.push({ status: response.status(), code: body.error?.code ?? null })).catch(() => loginResponses.push({ status: response.status(), code: null }))
+    })
+    page.on('requestfailed', request => {
+      const url = new URL(request.url())
+      if (url.origin === origin && url.pathname.endsWith('/v1/auth/login')) failedRequests.push(`POST /v1/auth/login network ${request.failure()?.errorText ?? 'unknown'}`)
+    })
     await page.goto(`${origin}/merchant/members`, { waitUntil: 'domcontentloaded' })
-    await page.getByPlaceholder('例如 merchant@example.com').fill(login)
-    await page.getByPlaceholder('请输入商家密码').fill(password)
-    await page.getByRole('button', { name: '登录商家工作台' }).click()
-    await page.waitForTimeout(1200)
-    console.log(JSON.stringify({ memberBrowserUrl: page.url(), headings: await page.getByRole('heading').allTextContents(), alerts: await page.getByRole('alert').allTextContents(), failedRequests, pageErrors }))
+    const loginName = page.locator('#merchant-login-account')
+    const loginPassword = page.locator('#merchant-login-password')
+    const loginForm = page.getByRole('form', { name: '商家账号登录' })
+    await expect(loginForm).toBeVisible()
+    const loginButton = page.getByRole('button', { name: '登录商家工作台', exact: true })
+    await loginName.fill(login)
+    await loginPassword.fill(password)
+    await expect.poll(async () => {
+      if (await page.locator('.app-shell').isVisible().catch(() => false)) return 'authenticated'
+      if (await loginButton.isVisible().catch(() => false)) return await loginButton.isEnabled() ? 'ready' : 'loading'
+      return 'loading'
+    }, { timeout: 30_000, message: 'merchant login button must become ready after filling the account fields' }).toMatch(/authenticated|ready/)
+    const appShell = page.locator('.app-shell')
+    if (!await appShell.isVisible().catch(() => false)) await loginButton.click()
+    try {
+      await expect.poll(() => loginResponses.length, { timeout: 15_000, message: 'merchant login form must submit an API request' }).toBeGreaterThan(0)
+    } catch (error) {
+      const debug = {
+        url: page.url(),
+        headings: await page.getByRole('heading').allTextContents(),
+        alerts: await page.getByRole('alert').allTextContents(),
+        loginFormCount: await loginForm.count(),
+        loginNamePresent: Boolean(await loginName.inputValue().catch(() => '')),
+        passwordLength: (await loginPassword.inputValue().catch(() => '')).length,
+        submitDisabled: await loginButton.isDisabled().catch(() => true),
+        observedApiRequests,
+        observedApiResponses,
+        failedRequests,
+        pageErrors,
+      }
+      await page.screenshot({ path: resolve(output, 'merchant-login-submit-failure.png'), fullPage: true }).catch(() => undefined)
+      await writeFile(resolve(output, 'merchant-login-submit-failure.json'), JSON.stringify(debug, null, 2), { mode: 0o600 })
+      throw error
+    }
+    expect(loginResponses[0]?.status, `merchant login API response code: ${loginResponses[0]?.code ?? 'unknown'}`).toBe(200)
     await expect(page.getByLabel('工作区成员管理').getByRole('heading', { name: '成员与权限' })).toBeVisible({ timeout: 30_000 })
+    console.log(JSON.stringify({ memberBrowserUrl: page.url(), headings: await page.getByRole('heading').allTextContents(), alerts: await page.getByRole('alert').allTextContents(), failedRequests, pageErrors, loginResponses }))
     await expect(page.getByRole('table', { name: '工作区成员列表' })).toContainText('隔离成员管理员', { timeout: 30_000 })
     await expect(page.getByRole('form', { name: '邀请工作区成员' })).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)

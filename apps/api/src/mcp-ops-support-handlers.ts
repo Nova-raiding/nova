@@ -111,6 +111,7 @@ export async function handleMcpOpsSupport(method: string, params: Record<string,
         const limit = Math.min(100, Math.max(1, optionalNumberValue(params, 'limit') ?? 50))
         const workspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
         const pages = [] as SupportTicketContract[]
+        let scanTruncated = false
         for (let offset = 0; offset < workspaceIds.length; offset += 8) {
           const batch = await Promise.all(workspaceIds.slice(offset, offset + 8).map(targetWorkspaceId => new SupportService(repository).list(supportContext(req, targetWorkspaceId), {
             workspaceId: targetWorkspaceId,
@@ -122,7 +123,10 @@ export async function handleMcpOpsSupport(method: string, params: Record<string,
             ...(optionalStringValue(params, 'query') ? { query: optionalStringValue(params, 'query') } : {}),
             limit,
           })))
-          for (const page of batch) pages.push(...page.items)
+          for (const page of batch) {
+            pages.push(...page.items)
+            scanTruncated ||= Boolean(page.scanTruncated)
+          }
         }
         const groups = new Map<string, { status: SupportTicketStatus; priority: SupportTicketPriority; count: number; latestCreatedAt: string }>()
         for (const ticket of pages) {
@@ -132,7 +136,7 @@ export async function handleMcpOpsSupport(method: string, params: Record<string,
           else groups.set(key, { status: ticket.status, priority: ticket.priority, count: 1, latestCreatedAt: ticket.createdAt })
         }
         const items = [...groups.values()].sort((left, right) => right.latestCreatedAt.localeCompare(left.latestCreatedAt)).map((group, index) => ({ id: `platform-support-group-${index + 1}`, workspaceId: 'platform-aggregate', ticketNumber: `平台聚合-${index + 1}`, subject: `${group.count} 个客服工单`, description: '平台聚合视图已脱敏；切换到明确工作区授权会话查看工单详情。', status: group.status, priority: group.priority, customerId: 'redacted', customerName: '平台聚合', tags: [], revision: 0, createdBy: 'platform_aggregate', createdAt: group.latestCreatedAt, updatedAt: group.latestCreatedAt, aggregate: true, count: group.count }))
-        return ({ items: items.slice(0, limit), aggregate: true, truncated: items.length > limit })
+        return ({ items: items.slice(0, limit), aggregate: true, truncated: items.length > limit, ...(scanTruncated ? { scanTruncated: true } : {}) })
       }
       return (await invokeOpsDomain(() => new SupportService(repository).list(supportContext(req, workspaceId), {
         workspaceId,

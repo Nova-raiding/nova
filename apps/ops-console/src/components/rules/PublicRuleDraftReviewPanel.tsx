@@ -29,6 +29,7 @@ export function parsePublicRuleDraftList(value: unknown): { items: ReviewRule[];
     if (!["id", "platform", "pack_id", "name", "version", "status", "checksum", "created_by", "created_at"].every(key => typeof row[key] === "string")
       || !platforms.includes(row.platform as Platform) || !Number.isSafeInteger(row.revision) || (row.revision as number) < 1
       || typeof row.checksum_valid !== "boolean" || !row.source || typeof row.source !== "object" || Array.isArray(row.source)
+      || !Number.isFinite(Date.parse(row.created_at as string))
       || !["kind", "reference", "checked_at", "trust"].every(key => typeof (row.source as Record<string, unknown>)[key] === "string")) throw new Error("公共规则草稿记录字段不完整");
   }
   if (result.next_cursor !== undefined && typeof result.next_cursor !== "string") throw new Error("公共规则草稿游标格式无效");
@@ -41,7 +42,8 @@ function parsePublicRuleDraftDetail(value: unknown): ReviewDetail {
   const listShape = parsePublicRuleDraftList({ items: result.rule ? [result.rule] : [] });
   if (!listShape.items[0] || !Array.isArray(result.audit)) throw new Error("公共规则详情缺少规则或审核记录");
   if (!result.audit.every(event => event && typeof event === "object" && !Array.isArray(event)
-    && ["id", "action", "actor_id", "occurred_at"].every(key => typeof (event as Record<string, unknown>)[key] === "string"))) throw new Error("公共规则审核记录格式无效");
+    && ["id", "action", "actor_id", "occurred_at"].every(key => typeof (event as Record<string, unknown>)[key] === "string")
+    && Number.isFinite(Date.parse((event as Record<string, unknown>).occurred_at as string)))) throw new Error("公共规则审核记录格式无效");
   const rule = listShape.items[0];
   if (!rule.checks || typeof rule.checks !== "object" || Array.isArray(rule.checks)
     || !Number.isSafeInteger(rule.revision) || !Number.isFinite(Date.parse(rule.created_at))) throw new Error("公共规则详情字段不完整");

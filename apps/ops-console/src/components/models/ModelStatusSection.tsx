@@ -2,6 +2,7 @@ import { Alert, Button, Card, Col, Row, Skeleton, Statistic, Tag, Typography } f
 import { useEffect, useRef } from "react";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { ModelReadinessTable } from "./ModelReadinessTable";
+import { modelStateLabel } from "../sections/overview/modelReadiness";
 
 interface ModelStatusSectionProps {
   model: OpsConsoleModel;
@@ -15,7 +16,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   // a launch gate: stale data must not be presented as current evidence.
   const displayStatus = modelError ? undefined : modelStatus;
   const errorRef = useRef<HTMLDivElement>(null);
-  const statusLabel = displayStatus?.state ?? (modelStatusLoading ? "加载中" : "不可用");
+  const statusLabel = displayStatus ? modelStateLabel(displayStatus.state) : modelStatusLoading ? "加载中" : "不可用";
   // `platform.model.status` is a model-service diagnostic. Even when it says
   // ready, it does not carry the immutable identity returned by `/api/releasez`.
   // Blue means this endpoint reports model runtime ready; green is reserved
@@ -48,7 +49,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
           <Statistic title="模型归属" value="平台统一" />
         </Col>
         <Col xs={24} sm={12} xl={6}>
-            <Statistic title="自有中转站" value={displayStatus?.relay?.configured ? "已配置" : "未配置"} />
+            <Statistic title="平台中转站" value={fixtureData ? "演示数据" : !displayStatus ? "未核实" : displayStatus.relay?.configured ? "已配置" : "未配置"} />
         </Col>
         <Col xs={24} sm={12} xl={6}>
             <Statistic title="文案模型" value={displayStatus?.text_model ?? "-"} />
@@ -106,14 +107,15 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
             aria-live="polite"
             showIcon
             title="平台模型状态不可用"
-            description="请检查页面顶部错误并重试，当前状态不能视为配置完成。"
+            description="本次读取没有返回可展示的模型状态；这不代表无权限或模型未配置。请重试以核实当前状态。"
+            action={<Button size="small" aria-label="重试读取平台模型状态" onClick={() => void model.load()}>重试</Button>}
           />
         ) : modelStatus.next_actions.length ? (
           <Alert type="warning" showIcon title="模型上线门禁" description={modelStatus.next_actions.join("；")} />
         ) : modelStatus.state === "ready" ? (
           <Alert type="info" showIcon title="模型运行状态为 ready，生产发布身份未核验" description="请以 /api/releasez 的完整不可变发布身份和 ready=true 作为生产发布结论。" />
         ) : (
-          <Alert type="warning" showIcon title="模型状态未达到就绪" description={`服务端模型状态为 ${modelStatus.state}，且未返回可执行的修复建议；不得按空建议推断为通过。`} />
+          <Alert type="warning" showIcon title="模型状态未达到就绪" description={`服务端模型状态为 ${modelStateLabel(modelStatus.state)}，且未返回可执行的修复建议；不得按空建议推断为通过。`} />
         )
       ) : null}
       </> : null}

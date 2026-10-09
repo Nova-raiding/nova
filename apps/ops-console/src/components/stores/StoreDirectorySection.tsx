@@ -54,6 +54,7 @@ export function StoreDirectorySection({
   const [manualAccountId, setManualAccountId] = useState("");
   const [manualAlias, setManualAlias] = useState("");
   const [manualReason, setManualReason] = useState("");
+  const [manualStoreError, setManualStoreError] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
@@ -80,13 +81,17 @@ export function StoreDirectorySection({
   const resetManualForm = () => {
     setRegisterOpen(false); setManualWorkspaceId(""); setManualPlatform(undefined);
     setManualAccountId(""); setManualAlias(""); setManualReason("");
+    setManualStoreError("");
   };
   const submitManualStore = async () => {
     if (!onRegisterManualStore || !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim()) return;
     setRegistering(true);
+    setManualStoreError("");
     try {
       await onRegisterManualStore({ workspaceId: manualWorkspaceId, platform: manualPlatform, accountId: manualAccountId.trim(), ...(manualAlias.trim() ? { storeAlias: manualAlias.trim() } : {}), reason: manualReason.trim() });
       resetManualForm();
+    } catch (error) {
+      setManualStoreError(error instanceof Error && error.message.trim() ? error.message : "人工店铺登记失败，请检查输入和权限后重试。");
     } finally { setRegistering(false); }
   };
 
@@ -101,7 +106,7 @@ export function StoreDirectorySection({
       title="平台连接与授权健康"
       extra={
         <Space>
-          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => setRegisterOpen(true)}>登记人工店铺</Button> : null}
+          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => { setManualStoreError(""); setRegisterOpen(true); }}>登记人工店铺</Button> : null}
           <Tag color={storeDirectory.length ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${storeDirectory.length} 个已登记店铺`}</Tag>
         </Space>
       }
@@ -236,6 +241,7 @@ export function StoreDirectorySection({
         okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
         onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          {manualStoreError ? <Alert role="alert" type="error" showIcon title="人工店铺登记失败" description={manualStoreError} /> : null}
           <label htmlFor="manual-store-workspace">商家工作区</label>
           <Select id="manual-store-workspace" value={manualWorkspaceId || undefined} onChange={setManualWorkspaceId} options={workspaces.filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName ?? "未命名企业主体"} · ${item.workspaceId}` }))} placeholder="选择已启用商家工作区" showSearch optionFilterProp="label" />
           <label htmlFor="manual-store-platform">平台</label>

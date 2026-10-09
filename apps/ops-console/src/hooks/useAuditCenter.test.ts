@@ -84,4 +84,10 @@ describe('audit center hook', () => {
     expect(source).toContain("typeof page?.nextCursor === 'string'")
     expect(source).toContain('setTotalRecords')
   })
+
+  it('does not leave manual-mode filtering in a permanent loading state', async () => {
+    const source = await readFile(new URL('./useAuditCenter.ts', import.meta.url), 'utf8')
+    const setFiltersBody = source.match(/const setFilters = useCallback\(\(next: AuditCenterFilters\) => \{([\s\S]*?)\n  \}, \[autoLoad\]\)/)?.[1]
+    expect(setFiltersBody).toContain('setLoading(autoLoad)')
+  })
 })

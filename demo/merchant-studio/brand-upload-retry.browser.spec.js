@@ -22,6 +22,7 @@ test('brand logo upload reports server refusal and allows selecting the same fil
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   const page = await context.newPage()
   let uploadAttempts = 0
+  let releaseSuccessfulUpload
   await page.route('**/api/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
@@ -37,6 +38,7 @@ test('brand logo upload reports server refusal and allows selecting the same fil
     } else if (path === '/api/v1/assets/upload') {
       uploadAttempts += 1
       if (uploadAttempts === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'STORAGE_UNAVAILABLE', message: '对象存储暂不可用' })) })
+      await new Promise(resolve => { releaseSuccessfulUpload = resolve })
       data = { id: 'asset-brand-logo-retry', workspaceId, name: 'brand-logo.png', mimeType: 'image/png', sizeBytes: png.length, sha256: 'c'.repeat(64), scanStatus: 'unscanned', rightsStatus: 'pending', source: 'merchant_upload', createdAt: '2026-10-09T00:00:00.000Z', updatedAt: '2026-10-09T00:00:00.000Z' }
     }
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
@@ -50,8 +52,13 @@ test('brand logo upload reports server refusal and allows selecting the same fil
     await expect(page.getByRole('alert')).toContainText('品牌素材上传失败')
     await expect(logoInput).toHaveValue('')
     await logoInput.setInputFiles(logoFile)
+    await expect.poll(() => uploadAttempts).toBe(2)
+    const personaInput = page.getByRole('textbox', { name: '全局用户画像' })
+    await personaInput.fill('上传等待期间新增的用户画像')
+    releaseSuccessfulUpload()
     await expect(page.getByRole('status').filter({ hasText: 'brand-logo.png 已上传' })).toBeVisible()
     await expect(page.getByText(/已引用素材 brand-logo\.png/).first()).toBeVisible()
+    await expect(personaInput).toHaveValue('上传等待期间新增的用户画像')
     expect(uploadAttempts).toBe(2)
   } finally {
     await context.close()
