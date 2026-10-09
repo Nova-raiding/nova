@@ -25,11 +25,19 @@ export interface MerchantRiskDestinationInput {
 }
 
 export function merchantRiskDestination(issue: MerchantRiskDestinationInput) {
+  const hasProductRiskCode = ['LOW_STOCK', 'MISSING_IMAGES'].includes(issue.type)
+  if (hasProductRiskCode && issue.entityType !== undefined && issue.entityType !== 'product') {
+    return { page: 'overview' as const }
+  }
   if (issue.entityType === 'content_version' || issue.entityType === 'publish_job') {
     const taskId = typeof issue.evidence?.taskId === 'string' ? issue.evidence.taskId.trim() : ''
     if (taskId) return { page: 'task' as const, target: { kind: 'task' as const, taskId } }
   }
-  if (issue.entityType === 'product' && issue.title?.trim()) {
+  // Older metrics projections may omit entityType even though their stable
+  // risk code still identifies a product row. Preserve the product title as
+  // the catalog search query for those two product-specific risk types.
+  const isProductRisk = issue.entityType === 'product' || (issue.entityType === undefined && hasProductRiskCode)
+  if (isProductRisk && issue.title?.trim()) {
     return { page: 'products' as const, entry: 'products' as const, searchQuery: issue.title.trim() }
   }
   if (issue.entityType === 'platform_account' || issue.entityType === 'sync_job') {

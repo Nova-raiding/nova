@@ -68,6 +68,29 @@ describe('transaction risk navigation boundaries', () => {
     expect(merchantRouteFromLocation(parsed)).toEqual({ page: 'products', entry: 'products', searchQuery: title })
   })
 
+  it.each(['LOW_STOCK', 'MISSING_IMAGES'])('preserves the catalog search context for %s metrics without entityType', (type) => {
+    const title = '贵人鸟儿童运动鞋 雾霾蓝 42'
+    const destination = merchantRiskDestination({ type, title, entityId: 'product-id', entityType: undefined })
+    expect(destination).toEqual({ page: 'products', entry: 'products', searchQuery: title })
+    const href = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, destination)
+    const parsed = new URL(href, 'https://example.test')
+    expect(parsed.searchParams.get('section')).toBe('products')
+    expect(parsed.searchParams.get('q')).toBe(title)
+    expect(merchantRouteFromLocation(parsed)).toEqual({ page: 'products', entry: 'products', searchQuery: title })
+  })
+
+  it.each(['LOW_STOCK', 'MISSING_IMAGES'])('does not override an explicit unknown or conflicting entity for %s', (type) => {
+    for (const entityType of ['future_entity', '', 'content_version', 'publish_job', 'platform_account', 'sync_job']) {
+      const destination = merchantRiskDestination({
+        type, entityType, entityId: 'not-a-product', title: '商品标题不能证明实体身份',
+        evidence: { taskId: 'must-not-follow-conflicting-task' },
+      })
+      expect(destination).toEqual({ page: 'overview' })
+      expect(urlForMerchantRoute({ pathname: '/merchant/overview', search: '?q=old&section=products' }, destination))
+        .toBe('/merchant/overview')
+    }
+  })
+
   it('falls back safely when a product has no searchable title', () => {
     for (const title of [undefined, '', ' \t ']) {
       expect(merchantRiskDestination({ type: 'MISSING_IMAGES', entityType: 'product', entityId: 'product-id', title }))
