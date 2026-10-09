@@ -1153,10 +1153,10 @@ function Topbar({
       </div>
       <div className="topbar-actions">
         {(account?.workspaceIds.length ?? 0) > 1 && <Select
-          aria-label="切换当前商家工作区"
+          aria-label="按工作区 ID 切换当前商家工作区"
           value={activeWorkspaceId ?? undefined}
           placeholder="选择工作区"
-          options={(account?.workspaceIds ?? []).map(id => ({ label: id, value: id }))}
+          options={(account?.workspaceIds ?? []).map(id => ({ label: `工作区 ID · ${id}`, value: id }))}
           onChange={onWorkspaceChange}
           style={{ minWidth: 190 }}
         />}
@@ -5502,6 +5502,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [products, setProducts] = useState<ApiProduct[] | null>(null)
   const [catalogReadNote, setCatalogReadNote] = useState('正在读取平台与店铺…')
   const [productsNote, setProductsNote] = useState('正在读取商品…')
+  const [catalogReadAttempt, setCatalogReadAttempt] = useState(0)
   useEffect(() => {
     const requested = initialCatalogContext?.productId
     if (!requested || !products) return
@@ -5539,7 +5540,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
       .then((items) => { if (active) setProducts(items) })
       .catch((cause) => { if (active) { setProducts(null); setProductsNote(`商品读取失败：${describeApiError(cause)}`) } })
     return () => { active = false }
-  }, [baseUrl, apiMode])
+  }, [baseUrl, apiMode, catalogReadAttempt])
 
   const submitManualStore = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -5865,6 +5866,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   if (selectedStore) {
     return (
       <div className="store-catalog-page catalog-products-page">
+        {baseUrl && productsNote.startsWith('商品读取失败：') && (
+          <div className="catalog-read-errors" aria-label="商品目录读取错误">
+            <ErrorNotice message={productsNote} onRetry={() => setCatalogReadAttempt(attempt => attempt + 1)} />
+          </div>
+        )}
         {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权状态待核实</strong><span>当前店铺状态为“{selectedStore.connectionLabel}”。此页面不会发起授权或读取、同步平台数据；请联系客户经理确认平台接入方式。</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
         <section className={`catalog-store-hero ${selectedStore.tone}`}>
           <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={storeNovaLogo} alt="" /></div>
@@ -5907,7 +5913,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
               <div className="catalog-no-results">
                 <PackageSearch size={25} />
                 <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
-                <span>{!storeItemsRead ? productsNote : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
+                <span>{!storeItemsRead ? '请使用上方重新读取操作重试。' : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
                 {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
               </div>
             )}
@@ -5928,6 +5934,12 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             overview uses. Before the read answers the page says so. */}
         <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
+      {baseUrl && (catalogReadNote.startsWith('平台与店铺读取失败：') || productsNote.startsWith('商品读取失败：')) && (
+        <div className="catalog-read-errors" aria-label="商品目录读取错误">
+          {catalogReadNote.startsWith('平台与店铺读取失败：') && <ErrorNotice message={catalogReadNote} onRetry={() => setCatalogReadAttempt(attempt => attempt + 1)} />}
+          {productsNote.startsWith('商品读取失败：') && <ErrorNotice message={productsNote} onRetry={() => setCatalogReadAttempt(attempt => attempt + 1)} />}
+        </div>
+      )}
       {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权待核实</strong><span>{selectedPlatform ? '当前平台运行模式为人工登记，没有在线 OAuth 连接入口。请在下方查看店铺状态，并联系客户经理确认接入方式。' : '该待办未返回平台标识，暂时无法定位具体连接状态；请联系客户经理确认平台和店铺后再处理。'}</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
       <section className="catalog-platform-store-browser">
         <aside className="catalog-platform-rail" aria-label="平台列表">
@@ -12759,7 +12771,7 @@ function TaskWorkspace({
   )
 }
 
-function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
+function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { baseUrl?: string; target?: Target; rulesPlatform?: PlatformId; onRulesPlatformChange?: (platform?: PlatformId) => void }) {
   const [rulePacks, setRulePacks] = useState<RulePack[] | null>(null)
   const [remoteCategories, setRemoteCategories] = useState<
     CatalogCategory[] | null
@@ -12783,13 +12795,13 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
         : undefined),
   )
   const [platform, setPlatform] = useState<PlatformId | 'all'>(
-    ruleContext.platform,
+    rulesPlatform ?? ruleContext.platform,
   )
   const [selectedCategory, setSelectedCategory] =
     useState<CatalogCategory | null>(null)
   useEffect(() => {
-    setPlatform(ruleContext.platform)
-  }, [ruleContext.platform])
+    setPlatform(rulesPlatform ?? ruleContext.platform)
+  }, [ruleContext.platform, rulesPlatform])
   useEffect(() => {
     if (!baseUrl) {
       setRulePacks(null)
@@ -13145,9 +13157,19 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
           <span>{tab === 'rules' ? '规则平台' : '品类平台'}</span>
           <select
             value={platform}
-            onChange={(event) =>
-              setPlatform(event.target.value as PlatformId | 'all')
-            }
+            onChange={(event) => {
+              const nextPlatform = event.target.value as PlatformId | 'all'
+              setPlatform(nextPlatform)
+              onRulesPlatformChange?.(nextPlatform === 'all' ? undefined : nextPlatform)
+              // Keep the visible rules scope shareable and recoverable. The
+              // browser back/forward handler in App restores this same filter.
+              const url = urlForMerchantRoute(window.location, {
+                page: 'rules',
+                ...(target ? { target: { kind: 'product', productId: target.productId, ...(target.platform ? { platform: target.platform } : {}), ...(target.accountId ? { accountId: target.accountId } : {}) } } : {}),
+                rulesPlatform: nextPlatform === 'all' ? undefined : nextPlatform,
+              })
+              window.history.pushState(null, '', url)
+            }}
           >
             <option value="all">全部平台</option>
             {(Object.entries(platformNames) as Array<[PlatformId, string]>).map(
@@ -13537,6 +13559,7 @@ export default function App() {
     MerchantEntryPoint | undefined
   >(initialRoute.entry)
   const [catalogContext, setCatalogContext] = useState<MerchantCatalogContext | undefined>(initialRoute.catalogContext)
+  const [rulesPlatform, setRulesPlatform] = useState<PlatformId | undefined>(initialRoute.rulesPlatform)
   const [mobileNav, setMobileNav] = useState(false)
   const [publishModal, setPublishModal] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
@@ -13725,6 +13748,7 @@ export default function App() {
     setPage(route.page)
     setActiveEntry(route.entry)
     setCatalogContext(route.catalogContext)
+    setRulesPlatform(route.rulesPlatform)
     setGlobalSearch(route.searchQuery)
     setTaskContext(null)
     setPublishPreview(null)
@@ -13827,6 +13851,7 @@ export default function App() {
     setPage(effectivePage)
     setActiveEntry(requestedEntry)
     setCatalogContext(options.catalogContext)
+    setRulesPlatform(undefined)
     setRouteTargetLoading(false)
     setRouteTargetError('')
     setWorkspaceNavigationKey((key) => key + 1)
@@ -14099,7 +14124,7 @@ export default function App() {
       onComplete={acceptMerchantAccount}
       onLogout={() => void handleMerchantLogout()}
     />
-    return <main className="merchant-login-page" aria-labelledby="merchant-workspace-select-title"><section className="merchant-login-form-panel"><Card className="merchant-login-card" variant="borderless"><div className="merchant-login-card-heading"><img className="merchant-login-logo" src={storeNovaLogo} alt="Store Nova" /><Typography.Title id="merchant-workspace-select-title" level={2}>选择工作区</Typography.Title></div><Typography.Paragraph>此账号已获多个工作区授权。选定后，商家工作台的页面、请求和缓存都会绑定到该工作区。</Typography.Paragraph><label htmlFor="merchant-active-workspace">当前工作区</label><Select id="merchant-active-workspace" aria-label="选择当前商家工作区" placeholder="选择已授权的工作区" options={authorizedWorkspaces.map(id => ({ label: id, value: id }))} onChange={switchMerchantWorkspace} style={{ width: '100%' }} /></Card></section></main>
+    return <main className="merchant-login-page" aria-labelledby="merchant-workspace-select-title"><section className="merchant-login-form-panel"><Card className="merchant-login-card" variant="borderless"><div className="merchant-login-card-heading"><img className="merchant-login-logo" src={storeNovaLogo} alt="Store Nova" /><Typography.Title id="merchant-workspace-select-title" level={2}>选择工作区</Typography.Title></div><Typography.Paragraph>此账号已获多个工作区授权。当前会话只返回已授权工作区 ID，没有返回对应企业名称；请按管理员提供的工作区 ID 选择。选定后，页面顶部会继续显示当前工作区 ID。</Typography.Paragraph><label htmlFor="merchant-active-workspace">当前工作区 ID</label><Select id="merchant-active-workspace" aria-label="选择当前商家工作区 ID" placeholder="选择已授权的工作区 ID" options={authorizedWorkspaces.map(id => ({ label: `工作区 ID · ${id}`, value: id }))} onChange={switchMerchantWorkspace} style={{ width: '100%' }} /></Card></section></main>
   }
   return (
     <div className="app-shell">
@@ -14303,7 +14328,7 @@ export default function App() {
                     }
                   />
                 )}
-                {page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} />}
+                {page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} rulesPlatform={rulesPlatform} onRulesPlatformChange={setRulesPlatform} />}
               </>
             )}
             </div>

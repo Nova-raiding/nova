@@ -151,7 +151,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
 
   return <section className="page-stack merchant-members" aria-label="工作区成员管理">
     <header><span className="section-kicker">工作区成员</span><h1>成员与权限</h1><p>查看当前商家工作区成员；邀请与变更由服务端权限和成员治理规则决定，并记录操作原因。</p></header>
-    {account.workspaceIds.length > 1 && !onWorkspaceChange && <label>商家工作区 <select aria-label="选择商家工作区" value={selectedWorkspaceId} disabled={saving} onChange={(event) => { const next = event.target.value; requestGate.current.invalidate(next); selectedWorkspaceRef.current = next; setSession(null); setPage(null); setAction(null); setError(''); setNotice(''); setLoading(true); setLocalWorkspaceId(next) }}>{account.workspaceIds.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>}
+    {account.workspaceIds.length > 1 && !onWorkspaceChange && <label>商家工作区 ID <select aria-label="选择商家工作区 ID" value={selectedWorkspaceId} disabled={saving} onChange={(event) => { const next = event.target.value; requestGate.current.invalidate(next); selectedWorkspaceRef.current = next; setSession(null); setPage(null); setAction(null); setError(''); setNotice(''); setLoading(true); setLocalWorkspaceId(next) }}>{account.workspaceIds.map((id) => <option key={id} value={id}>工作区 ID · {id}</option>)}</select></label>}
     {workspaceId && <p>当前工作区：<code>{workspaceId}</code></p>}
     {notice && <div role="status" className="success-notice">{notice}</div>}
     {error && <div role="alert" className="error-notice">{error}</div>}

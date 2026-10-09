@@ -18,6 +18,8 @@ export interface MerchantCatalogContext {
 export interface MerchantRoute {
   page: MerchantPage
   target?: MerchantRouteTarget
+  /** Platform scope for Rules URLs that do not target a specific product. */
+  rulesPlatform?: MerchantPlatformId
   searchQuery: string
   entry?: MerchantEntryPoint
   imageJobId?: string
@@ -156,10 +158,12 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
   if (segment === 'rules') {
     const productId = params.get('product_id')?.trim()
     const platform = platformFromQuery(params.get('platform'))
+    const rulesPlatform = platformFromQuery(params.get('rules_platform')) ?? (!productId ? platform : undefined)
     const accountId = params.get('account_id')?.trim()
     return {
       page: 'rules',
       searchQuery: '',
+      ...(rulesPlatform ? { rulesPlatform } : {}),
       ...(productId ? {
         target: {
           kind: 'product' as const,
@@ -201,7 +205,7 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
 
 export function urlForMerchantRoute(
   location: Pick<Location, 'pathname' | 'search'>,
-  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; publishJobId?: string; catalogContext?: MerchantCatalogContext },
+  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; publishJobId?: string; catalogContext?: MerchantCatalogContext; rulesPlatform?: MerchantPlatformId },
 ): string {
   const basePath = merchantRoutePattern.test(location.pathname)
     ? location.pathname.replace(merchantRoutePattern, '')
@@ -210,7 +214,7 @@ export function urlForMerchantRoute(
   // image_job is a transient deep-link consumed by the task workspace.  It
   // must not leak into later navigation (for example when opening the task
   // list or publish center), otherwise the old job panel reappears unexpectedly.
-  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent', 'image_job', 'publish_job_id']) params.delete(key)
+  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent', 'image_job', 'publish_job_id', 'rules_platform']) params.delete(key)
 
   let path = `${basePath}/merchant/${route.page === 'task' ? 'tasks' : route.page}`
   if (route.page === 'products' && route.searchQuery?.trim()) params.set('q', route.searchQuery.trim())
@@ -231,6 +235,9 @@ export function urlForMerchantRoute(
     params.set('product_id', route.target.productId)
     if (route.target.platform) params.set('platform', route.target.platform)
     if (route.target.accountId) params.set('account_id', route.target.accountId)
+  }
+  if (route.page === 'rules' && route.rulesPlatform && platforms.has(route.rulesPlatform)) {
+    params.set(route.target?.kind === 'product' ? 'rules_platform' : 'platform', route.rulesPlatform)
   }
   if (route.page === 'task' && route.imageJobId?.trim()) params.set('image_job', route.imageJobId.trim())
   if (route.page === 'task' && !route.target && route.publishJobId?.trim()) params.set('publish_job_id', route.publishJobId.trim())

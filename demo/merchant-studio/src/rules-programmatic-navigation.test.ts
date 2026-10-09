@@ -8,7 +8,7 @@ describe('merchant rules page navigation', () => {
   it('keeps programmatic rules navigation on the dedicated rules page', () => {
     expect(merchantNavigationPage('rules')).toBe('rules')
     expect(app).toContain('const effectivePage: Page = merchantNavigationPage(nextPage)')
-    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} />}")
+    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} rulesPlatform={rulesPlatform} onRulesPlatformChange={setRulesPlatform} />}")
   })
 
   it('passes the restored product and store target from a rules deep link into Rules', () => {
@@ -23,7 +23,7 @@ describe('merchant rules page navigation', () => {
     })
     // The app resolves the route target to a server-backed Target before
     // rendering Rules, which uses it to label platform/store scope.
-    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} />}")
+    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} rulesPlatform={rulesPlatform} onRulesPlatformChange={setRulesPlatform} />}")
   })
 
   it('makes the dedicated rules page discoverable from the merchant sidebar', () => {
@@ -53,6 +53,22 @@ describe('merchant rules page navigation', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: url.split('?')[1] ?? '', hash: '' })).toMatchObject({
       page: 'rules',
       target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' },
+    })
+  })
+
+  it('keeps the product/store scope and rule filter as separate URL fields', () => {
+    const url = urlForMerchantRoute(
+      { pathname: '/merchant/rules', search: '' },
+      {
+        page: 'rules',
+        target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' },
+        rulesPlatform: 'jd',
+      },
+    )
+    expect(url).toBe('/merchant/rules?product_id=product-a&platform=taobao&account_id=store-a&rules_platform=jd')
+    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: url.split('?')[1] ?? '', hash: '' })).toMatchObject({
+      target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' },
+      rulesPlatform: 'jd',
     })
   })
 })

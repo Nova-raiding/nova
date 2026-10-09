@@ -66,5 +66,7 @@ describe('merchant first-workspace onboarding', () => {
     const noWorkspaceRoute = app.slice(app.indexOf('if (apiBaseUrl && authState === \'authenticated\' && authAccount && !activeWorkspaceId)'), app.indexOf('return (\n    <div className="app-shell">'))
     expect(noWorkspaceRoute).toContain('if (authorizedWorkspaces.length === 0) return <MerchantWorkspaceBootstrapPage')
     expect(noWorkspaceRoute).toContain('onLogout={() => void handleMerchantLogout()}')
+    expect(noWorkspaceRoute).toContain('当前会话只返回已授权工作区 ID，没有返回对应企业名称')
+    expect(noWorkspaceRoute).toContain('label: `工作区 ID · ${id}`')
   })
 })
