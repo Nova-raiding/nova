@@ -67,13 +67,47 @@ export function buildCustomerDeliveryProfilePatch(record: CustomerDeliveryRecord
 }
 
 export function customerDeliveryWorkspaceOptions(workspaces: WorkspaceSummary[]) {
-  return workspaces.map((workspace) => ({
-    value: workspace.workspaceId,
-    label: workspace.enterpriseName?.trim()
-      ? `${workspace.enterpriseName} · ${workspace.workspaceId}`
-      : workspace.workspaceId,
-    disabled: workspace.status !== "active",
-  }));
+  return workspaces.map((workspace) => {
+    const enterpriseName = workspace.enterpriseName?.trim();
+    return {
+      value: workspace.workspaceId,
+      label: enterpriseName
+        ? `${enterpriseName} · ${workspace.workspaceId}`
+        : `未命名企业主体 · ${workspace.workspaceId}`,
+      disabled: workspace.status !== "active",
+    };
+  });
+}
+
+export function customerDeliveryContractSource(value: string, file?: File) {
+  if (file) return { kind: "file" as const, file, cacheKey: file as File };
+  const sourceUrl = validateCustomerDeliveryContractUrl(value);
+  return { kind: "url" as const, sourceUrl, cacheKey: sourceUrl };
+}
+
+type CustomerDeliveryContractAttempt = { contract?: { sourceKey: File | string; assetRef: string } };
+export async function ensureCustomerDeliveryContractAsset(input: {
+  attempt: CustomerDeliveryContractAttempt;
+  source: ReturnType<typeof customerDeliveryContractSource>;
+  targetWorkspaceId: string;
+  deliveryId: string;
+  signal: AbortSignal;
+  upload: typeof customerDeliveryClient.uploadAsset;
+  getAsset: typeof customerDeliveryClient.getAsset;
+  wait: typeof waitForUsableDeliveryAsset;
+}) {
+  let asset: CustomerDeliveryAsset;
+  if (!input.attempt.contract || input.attempt.contract.sourceKey !== input.source.cacheKey) {
+    asset = await input.upload({ targetWorkspaceId: input.targetWorkspaceId, deliveryId: input.deliveryId, purpose: "contract", ...(input.source.kind === "file" ? { file: input.source.file } : { sourceUrl: input.source.sourceUrl }) }, input.signal);
+    // Save the returned isolated reference before waiting for asynchronous
+    // scanning. Retrying after a scan timeout must resume this asset.
+    input.attempt.contract = { sourceKey: input.source.cacheKey, assetRef: asset.assetRef };
+  } else {
+    asset = await input.getAsset({ targetWorkspaceId: input.targetWorkspaceId, deliveryId: input.deliveryId, purpose: "contract", assetRef: input.attempt.contract.assetRef }, input.signal);
+  }
+  asset = await input.wait(asset, { targetWorkspaceId: input.targetWorkspaceId, deliveryId: input.deliveryId, signal: input.signal, purpose: "contract", label: "合同文件" });
+  input.attempt.contract = { sourceKey: input.source.cacheKey, assetRef: asset.assetRef };
+  return asset.assetRef;
 }
 
 export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
@@ -110,7 +144,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const pendingCreate = useRef<{
     companyName: string;
     record: CustomerDeliveryRecord;
-    contract?: { file: File; assetRef: string };
+    contract?: { sourceKey: File | string; assetRef: string };
   } | undefined>(undefined);
   const [createForm] = Form.useForm<{
     companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid";
@@ -242,10 +276,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string }) => {
     if (createSubmissionController.current) return;
-    if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length || !uploadedContractFile) {
-      message.error("请上传合同，并完成系统接入、功能验收全部勾选");
+    if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length) {
+      message.error("请完成系统接入、功能验收全部勾选");
       return;
     }
+    let contractSource: ReturnType<typeof customerDeliveryContractSource>;
+    try { contractSource = customerDeliveryContractSource(values.contractFile, uploadedContractFile); }
+    catch (cause) { message.error(describeOpsError(cause)); return; }
     const companyName = values.companyName.trim();
     const controller = new AbortController();
     createSubmissionController.current = controller;
@@ -262,18 +299,23 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         attempt = { companyName, record };
         pendingCreate.current = attempt;
       }
-      if (!attempt.contract || attempt.contract.file !== uploadedContractFile) {
-        const uploaded = await customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: attempt.record.id, purpose: "contract", file: uploadedContractFile }, controller.signal);
-        const asset = await waitForUsableDeliveryAsset(uploaded, { targetWorkspaceId, deliveryId: attempt.record.id, signal: controller.signal, purpose: "contract", label: "合同文件" });
-        attempt.contract = { file: uploadedContractFile, assetRef: asset.assetRef };
-      }
+      const contractAssetRef = await ensureCustomerDeliveryContractAsset({
+        attempt,
+        source: contractSource,
+        targetWorkspaceId,
+        deliveryId: attempt.record.id,
+        signal: controller.signal,
+        upload: customerDeliveryClient.uploadAsset.bind(customerDeliveryClient),
+        getAsset: customerDeliveryClient.getAsset.bind(customerDeliveryClient),
+        wait: waitForUsableDeliveryAsset,
+      });
       attempt.record = await saveProfile({
         ...attempt.record,
         companyName,
         contractNo: values.contractNumber,
         paymentStatus: values.paymentStatus,
         paymentDate: values.paymentDate.format("YYYY-MM-DD"),
-        contractFile: attempt.contract.assetRef,
+        contractFile: contractAssetRef,
         owner: values.owner,
         afterSalesOwner: values.afterSalesOwner,
         profile: true,
@@ -438,8 +480,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="paymentStatus" label="付款形式" rules={[{ required: true, message: "请选择付款形式" }]}><Select className="customer-delivery-payment-select" options={[{ value: "paid", label: "接入费" }, { value: "unpaid", label: "赠送" }]} /></Form.Item>
             <Form.Item name="paymentDate" label="付款时间" rules={[{ required: true, message: "请选择付款日期" }]}><DatePicker classNames={{ popup: { root: "customer-delivery-date-popup" } }} format="YYYY-MM-DD" placeholder="请选择付款日期" style={{ width: "100%" }} /></Form.Item>
             <Form.Item label="合同文件或链接" required>
-              <Form.Item name="contractFile" noStyle rules={[{ required: true, message: "请上传合同或填写合同链接" }]}>
-                <Input placeholder="" suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
+              <Form.Item name="contractFile" noStyle rules={[{ required: true, message: "请上传合同文件或填写 HTTPS 合同直链" }]}>
+                <Input placeholder="上传文件，或填写 HTTPS 合同直链" onChange={() => { if (uploadedContractFile) { setUploadedContractFile(undefined); setUploadedContractName(""); } }} suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
               </Form.Item>
               <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); setCreateDraftDirty(true); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}

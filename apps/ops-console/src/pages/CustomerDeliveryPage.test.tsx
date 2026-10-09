@@ -71,6 +71,12 @@ describe("customer delivery workspace selection", () => {
       { value: "ws_active", label: "Store Nova测试商家 · ws_active", disabled: false },
       { value: "ws_disabled", label: "已停用商家 · ws_disabled", disabled: true },
     ]);
+    expect(customerDeliveryWorkspaceOptions([
+      { workspaceId: "ws_unnamed", enterpriseName: "  ", status: "active", planName: "基础版", monthlyPriceCny: 0, usedTasks: 0, includedTasks: 10, subscriptionStatus: "active", memberCount: 1 },
+    ])).toEqual([{ value: "ws_unnamed", label: "未命名企业主体 · ws_unnamed", disabled: false }]);
+    expect(customerDeliveryWorkspaceOptions([
+      { workspaceId: "ws_trimmed", enterpriseName: "  Store Nova  ", status: "active", planName: "基础版", monthlyPriceCny: 0, usedTasks: 0, includedTasks: 10, subscriptionStatus: "active", memberCount: 1 },
+    ])).toEqual([{ value: "ws_trimmed", label: "Store Nova · ws_trimmed", disabled: false }]);
   });
 
   it("requires an explicit active tenant selection for customer-delivery reads and writes", () => {
