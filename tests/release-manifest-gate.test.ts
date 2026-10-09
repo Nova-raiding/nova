@@ -9,6 +9,7 @@ import { signProductionEvidence } from './production-evidence-gate.js'
 import { signManualCandidate } from '../infra/protected/attest-manual-operations-evidence.mjs'
 import { validateReleaseManifest } from './release-manifest-gate.js'
 import { manualCaptureJournal, manualCaptureJournalSha256 } from './manual-operations-evidence-fixture.js'
+import { pluginSkillMirrors } from '../scripts/plugin-skill-mirrors.js'
 
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 const inputNames = { capability: 'capabilityEvidenceRef', capacity: 'capacityEvidenceRef', modelRelay: 'modelRelayEvidenceRef', payment: 'paymentEvidenceRef', restore: 'restoreEvidenceRef', objectStorage: 'objectStorageEvidenceRef', codexAppHost: 'codexAppHostEvidenceRef', canonicalCutover: 'canonicalCutoverEvidenceRef' } as const
@@ -255,6 +256,32 @@ describe('release manifest production gate', () => {
     manifest.artifacts = manifest.artifacts.filter(item => item.path !== '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs')
     expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toEqual(expect.arrayContaining(['mcp.bridgeSha256 does not match the current source bridge', 'artifact is missing: .codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs']))
   })
+
+  it('pins marketplace plugin metadata and content mirrors to the source candidate', () => {
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })
+    const mirrorPairs = [
+      ['apps/plugin/.codex-plugin/plugin.json', '.codex-marketplace/plugins/merchant-marketing/.codex-plugin/plugin.json'],
+      ['apps/plugin/package.json', '.codex-marketplace/plugins/merchant-marketing/package.json'],
+      ['apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'],
+      ...pluginSkillMirrors,
+    ] as const
+    for (const [, marketplacePath] of mirrorPairs) {
+      expect(manifest.artifacts.map(item => item.path)).toContain(marketplacePath)
+      const tampered = structuredClone(manifest)
+      tampered.artifacts.find(item => item.path === marketplacePath)!.sha256 = 'f'.repeat(64)
+      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain(`artifact SHA-256 does not match current source: ${marketplacePath}`)
+    }
+
+    const missingSkillReference = structuredClone(manifest)
+    const missingMarketplaceReference = '.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-video-marketing/references/video_guide.md'
+    missingSkillReference.artifacts = missingSkillReference.artifacts.filter(item => item.path !== missingMarketplaceReference)
+    expect(validateReleaseManifest(missingSkillReference, { root: process.cwd(), expectedReleaseId: fixtureReleaseId })).toContain(`artifact is missing: ${missingMarketplaceReference}`)
+
+    const staged = stagedManifestFixture()
+    const driftedSkillReference = '.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/references/product-image-workflow.md'
+    writeFileSync(join(staged.stagedRoot, driftedSkillReference), `${readFileSync(join(staged.stagedRoot, driftedSkillReference), 'utf8')}\n`)
+    expect(validateReleaseManifest(staged.manifest, { ...staged.options, root: staged.stagedRoot })).toContain(`marketplace plugin mirror differs from source: ${driftedSkillReference}`)
+  }, 90_000)
 
   it('rejects duplicate artifact paths instead of silently overwriting one entry', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: fixtureReleaseId })

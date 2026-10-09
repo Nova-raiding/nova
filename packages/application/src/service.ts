@@ -838,6 +838,8 @@ export interface DeliverableListFilters {
   state?: ContentVersion['state']
   dateFrom?: string
   dateTo?: string
+  /** Brand access is applied before sorting, cursor pagination, and matched counts. */
+  accessibleBrandIds?: readonly string[]
   limit?: number
   cursor?: string
 }
@@ -2032,8 +2034,8 @@ export class MerchantService {
       if (filters.dateFrom && task.createdAt < filters.dateFrom) return false
       if (filters.dateTo && task.createdAt > filters.dateTo) return false
       if (!query) return true
-      return [task.id, task.productId, product?.title, task.accountId].some(value => value?.toLocaleLowerCase().includes(query))
-    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      return [task.id, task.productId, product?.title, product?.storeName, task.accountId].some(value => value?.toLocaleLowerCase().includes(query))
+    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
   }
   resumeTask(workspaceId: string, taskId: string) {
     const task = this.mustTask(taskId)
@@ -3707,7 +3709,8 @@ export class MerchantService {
       const normalized = value.normalize('NFKC').replace(/[\u0000-\u001f\u007f\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim()
       return !normalized || /^data:/iu.test(normalized) ? fallback : normalized.slice(0, 200)
     }
-    const scope = JSON.stringify({ query: query ?? null, platform: filters.platform ?? null, accountId: filters.accountId ?? null, productId: filters.productId ?? null, taskId: filters.taskId ?? null, state: filters.state ?? null, dateFrom: filters.dateFrom ?? null, dateTo: filters.dateTo ?? null })
+    const accessibleBrandIds = filters.accessibleBrandIds === undefined ? undefined : new Set(filters.accessibleBrandIds)
+    const scope = JSON.stringify({ query: query ?? null, platform: filters.platform ?? null, accountId: filters.accountId ?? null, productId: filters.productId ?? null, taskId: filters.taskId ?? null, state: filters.state ?? null, dateFrom: filters.dateFrom ?? null, dateTo: filters.dateTo ?? null, accessibleBrandIds: accessibleBrandIds === undefined ? null : [...accessibleBrandIds].sort() })
     let asOf = now()
     let afterRef: string | undefined
     if (filters.cursor) {
@@ -3722,6 +3725,9 @@ export class MerchantService {
     const rows = [...this.contentVersions.values()].flatMap(version => {
       const task = this.tasks.get(version.taskId)
       if (!task || task.workspaceId !== workspaceId) return []
+      // Enforce brand visibility before pagination and totalMatched calculation.
+      // A restricted member cannot infer matches from inaccessible brands.
+      if (accessibleBrandIds !== undefined && (!task.brandId || !accessibleBrandIds.has(task.brandId))) return []
       const product = this.products.get(task.productId)
       if (!product || product.workspaceId !== workspaceId) return []
       const createdAt = version.versionVector?.createdAt ?? task.createdAt
@@ -4501,18 +4507,43 @@ export class MerchantService {
       return { id: prior.groupId, workspaceId: input.workspaceId, requestText: normalizedRequestText || undefined, taskIds: tasks.map(task => task.id), tasks, createdAt: prior.createdAt, replayed: true }
     }
     const groupId = id('task-group')
-    const tasks = input.entries.map(entry => {
-      const { skuId, ...taskEntry } = entry
-      let task = this.createTask({ ...taskEntry, workspaceId: input.workspaceId, ...(input.requestText ? { requestText: input.requestText } : {}) })
-      if (skuId) task = this.answerTask(input.workspaceId, task.id, { sku_id: skuId }, task.version)
-      task.taskGroupId = groupId
-      if (keyHash) task.taskGroupKeyHash = keyHash
-      if (keyHash) task.taskGroupIntentHash = intentHash
-      return task
-    })
+    const createdTaskIds: string[] = []
+    let tasks: Task[]
+    try {
+      tasks = input.entries.map(entry => {
+        const { skuId, ...taskEntry } = entry
+        let task = this.createTask({ ...taskEntry, workspaceId: input.workspaceId, ...(input.requestText ? { requestText: input.requestText } : {}) })
+        createdTaskIds.push(task.id)
+        if (skuId) task = this.answerTask(input.workspaceId, task.id, { sku_id: skuId }, task.version)
+        task.taskGroupId = groupId
+        if (keyHash) task.taskGroupKeyHash = keyHash
+        if (keyHash) task.taskGroupIntentHash = intentHash
+        return task
+      })
+    } catch (error) {
+      // Preflight covers shared scope errors, but per-task construction can
+      // still reject (for example an incomplete canonical binding). Keep the
+      // group all-or-nothing in memory and leave its idempotency key unbound.
+      this.rollbackUnpersistedTaskCreation(input.workspaceId, createdTaskIds)
+      throw error
+    }
     const createdAt = now()
     if (keyHash) this.taskGroupIdempotency.set(`${input.workspaceId}:${keyHash}`, { groupId, intentHash, createdAt })
     return { id: groupId, workspaceId: input.workspaceId, requestText: normalizedRequestText || undefined, taskIds: tasks.map(task => task.id), tasks, createdAt, replayed: false }
+  }
+
+  /** Remove fresh task snapshots and their in-memory idempotency records after durable write failure. */
+  rollbackUnpersistedTaskCreation(workspaceId: string, taskIds: string[], groupId?: string): void {
+    const ids = new Set(taskIds)
+    const tasks = taskIds.map(taskId => this.tasks.get(taskId)).filter((task): task is Task => task?.workspaceId === workspaceId && (!groupId || task.taskGroupId === groupId))
+    if (!tasks.length) return
+    for (const task of tasks) this.tasks.delete(task.id)
+    for (const [key, value] of this.taskRequestIdempotency) {
+      if (key.startsWith(`${workspaceId}:`) && ids.has(value.taskId)) this.taskRequestIdempotency.delete(key)
+    }
+    for (const [key, value] of this.taskGroupIdempotency) {
+      if (key.startsWith(`${workspaceId}:`) && groupId && value.groupId === groupId) this.taskGroupIdempotency.delete(key)
+    }
   }
 
   splitTaskBySku(input: { workspaceId: string; taskId: string; idempotencyKey?: string }): SkuTaskSplitCreation {
@@ -4572,8 +4603,14 @@ export class MerchantService {
     return { requestText: text, platformCandidates, productCandidates, extracted, merchantIntent, questions, executionPlan: { mode, canCreate, reason, splitBySku, childTasks } }
   }
 
-  createTaskFromRequest(input: { workspaceId: string; requestText: string; idempotencyKey?: string; canonicalScopes?: Array<{ productId: string; platform: Platform; accountId?: string; brandId?: string; canonicalProductId?: string; listingId?: string }> }): TaskRequestCreation {
+  createTaskFromRequest(input: { workspaceId: string; requestText: string; idempotencyKey?: string; expectedScopes?: Array<{ productId: string; platform: Platform; skuIds?: string[] }>; canonicalScopes?: Array<{ productId: string; platform: Platform; accountId?: string; brandId?: string; canonicalProductId?: string; listingId?: string }> }): TaskRequestCreation {
     const understanding = this.understandTaskRequest(input.workspaceId, input.requestText)
+    if (input.expectedScopes) {
+      const normalizeScopes = (scopes: Array<{ productId: string; platform: Platform; skuIds?: string[] }>) => scopes.map(scope => ({ platform: scope.platform, productId: scope.productId, skuIds: [...(scope.skuIds ?? [])].sort() })).sort((left, right) => `${left.platform}:${left.productId}:${left.skuIds.join(',')}`.localeCompare(`${right.platform}:${right.productId}:${right.skuIds.join(',')}`))
+      const expected = normalizeScopes(input.expectedScopes)
+      const current = normalizeScopes(understanding.executionPlan.childTasks.map(child => ({ platform: child.platform, productId: child.candidateProductIds[0] ?? '', skuIds: understanding.executionPlan.splitBySku ? child.skuIds : [] })))
+      if (JSON.stringify(expected) !== JSON.stringify(current)) throw new DomainError('TASK_REQUEST_SCOPE_CHANGED', '商品或 SKU 范围在创建前发生变化；任务未创建，请重新分析并确认范围', 409, { expected_scopes: expected, actual_scopes: current })
+    }
     if (!understanding.executionPlan.canCreate) {
       throw new DomainError('TASK_REQUEST_NEEDS_CLARIFICATION', '自然语言请求仍缺少可执行的平台或商品绑定', 409, { understanding })
     }

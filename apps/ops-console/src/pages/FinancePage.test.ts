@@ -33,4 +33,8 @@ describe("finance workspace context", () => {
     expect(financeSource).toContain('model.authorization.can("commercial.receipt.record") || model.authorization.can("commercial.receipt.allocate") ? <CashReceiptOperationsPanel controller={commercial} /> : null');
     expect(financeSource).toContain('aria-label="代购与收款目标企业主体"');
   });
+
+  it("exposes recharge refunds in the platform workbench only with the server-projected refund capability", () => {
+    expect(financeSource).toContain('{model.authorization.can("billing.refund.execute") ? <RefundSection model={model} /> : null}');
+  });
 });

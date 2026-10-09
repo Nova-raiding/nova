@@ -20,7 +20,10 @@ describe('asset primary status projection', () => {
   it('prioritizes safety and fails closed for unknown scan states', () => {
     expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'quarantined' })).label).toBe('安全检查中')
     expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'rejected' })).key).toBe('blocked')
-    expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'future_state' })).label).toBe('安全检查中')
+    expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'future_state' })).key).toBe('unknown')
+    expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'future_state' }))).toMatchObject({
+      label: '安全状态待核实', action: 'refresh', tone: 'amber',
+    })
   })
   it('surfaces parsing recovery and rights confirmation', () => {
     expect(resolveAssetPrimaryStatus(asset({ parseStatus: 'failed', parseError: '无法读取' }))).toMatchObject({ label: '内容读取失败', action: 'manual_review', tone: 'red' })
@@ -35,6 +38,7 @@ describe('asset primary status projection', () => {
   })
   it('keeps raw lifecycle details secondary to one primary status', () => {
     expect(resolveAssetSecondaryStatus(asset({ rightsStatus: 'approved', factsConfirmedBy: 'merchant-1' }))).toBe('扫描通过 · 权益已确认 · 事实已确认')
+    expect(resolveAssetSecondaryStatus(asset({ scanStatus: 'future_state' }))).toContain('扫描状态待核实')
   })
   it('maps every lifecycle state to one safe next action', () => {
     expect(resolveAssetPrimaryAction(asset({ scanStatus: 'quarantined' }))).toMatchObject({ kind: 'refresh', label: '刷新状态' })

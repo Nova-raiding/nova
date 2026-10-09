@@ -56,6 +56,7 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
   const [detailError, setDetailError] = useState<string>()
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string>()
+  const [exportNotice, setExportNotice] = useState<{ message: string; truncated: boolean }>()
 
   const filtersRef = useRef(filters)
   const workspaceRef = useRef(workspaceId)
@@ -101,6 +102,7 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
     setError(undefined)
     setExporting(false)
     setExportError(undefined)
+    setExportNotice(undefined)
     setSelected(undefined)
     setDetail(undefined)
     setDetailLoading(false)
@@ -189,6 +191,7 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
     exportAbort.current = controller
     setExporting(true)
     setExportError(undefined)
+    setExportNotice(undefined)
 
     try {
       const result = await client.exportCsv(
@@ -196,6 +199,12 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
         controller.signal,
       )
       if (request !== exportRequest.current || controller.signal.aborted) return
+      setExportNotice({
+        truncated: result.truncated,
+        message: result.truncated
+          ? `审计导出已截断：本次文件包含前 ${result.rowCount.toLocaleString()} 条记录（服务端上限 5,000 条），请缩小筛选条件后重新导出。`
+          : `审计导出完成：已导出 ${result.rowCount.toLocaleString()} 条记录。`,
+      })
       const url = URL.createObjectURL(new Blob([result.csv], { type: result.contentType }))
       const anchor = document.createElement('a')
       anchor.href = url
@@ -228,6 +237,7 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
     setDetailError(undefined)
     setError(undefined)
     setExportError(undefined)
+    setExportNotice(undefined)
     setLoading(false)
     setLoadingMore(false)
     setDetailLoading(false)
@@ -271,6 +281,7 @@ export function useAuditCenter(client: AuditCenterClient, workspaceId: string, a
     detailError,
     exporting,
     exportError,
+    exportNotice,
     reload: () => run(false),
     loadMore: () => run(true),
     openDetail,

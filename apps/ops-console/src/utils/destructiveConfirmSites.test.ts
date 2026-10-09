@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 const read = (relative: string) => readFileSync(resolve(import.meta.dirname, relative), "utf8");
 
 const hook = read("../hooks/useOpsConsoleModel.ts");
+const storeDirectory = read("../components/stores/StoreDirectorySection.tsx");
 const refundSection = read("../components/finance/RefundSection.tsx");
 const deliverySection = read("../components/delivery/CustomerDeliverySection.tsx");
 const marketingQueue = read("../components/tasks/knowledge/MarketingQueuePanel.tsx");
@@ -48,8 +49,11 @@ const refund = functionBody(hook, "const refund = async");
 const runReconciliation = functionBody(hook, "const runReconciliation = async");
 
 describe("destructive confirmation call sites", () => {
-  it("keeps the keyboard off the confirm button when revoking a store authorization", () => {
-    expect(revokeStore).toContain('confirmPolicyPropsFor("store.revoke")');
+  it("keeps one cancel-focused confirmation before the store revoke callback", () => {
+    expect(revokeStore).not.toContain("modal.confirm(");
+    expect(revokeStore.match(/rpc\("platform\.revoke"/gu)).toHaveLength(1);
+    expect(storeDirectory).toContain('...confirmPolicyPropsFor("store.revoke")');
+    expect(storeDirectory).toContain("await revoke(revokeTarget)");
   });
 
   it("keeps the keyboard off the confirm button when creating a refund", () => {

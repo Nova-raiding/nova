@@ -19,6 +19,68 @@ const statusMeta: Record<Status, { label: string; color: string }> = {
   conflict: { label: "存在冲突", color: "error" },
   blocked: { label: "已阻断", color: "warning" },
 };
+export function findingStatusPresentation(status: Status, currentVerifiedEvidence: boolean) {
+  if (status === "verified" && !currentVerifiedEvidence) return { label: "当前未核验", color: "default" };
+  return statusMeta[status];
+}
+
+export function findingHasCurrentEvidence(
+  finding: ConsistencyFinding,
+  reportEvidenceCurrent: boolean,
+  report?: Pick<PresentationReport, "generatedAt" | "revision">,
+) {
+  const generatedAt = finding.evidence?.generatedAt;
+  const reportGeneratedAt = report?.generatedAt;
+  const revision = finding.evidence?.revision;
+  const reportRevision = report?.revision;
+  return reportEvidenceCurrent
+    && typeof reportGeneratedAt === "string" && Number.isFinite(Date.parse(reportGeneratedAt))
+    && typeof generatedAt === "string" && Number.isFinite(Date.parse(generatedAt))
+    && generatedAt === reportGeneratedAt
+    && revision !== null && revision !== undefined && String(revision).trim() !== ""
+    && reportRevision !== null && reportRevision !== undefined && String(reportRevision).trim() !== ""
+    && String(revision) === String(reportRevision);
+}
+
+export function findingHasCurrentVerifiedEvidence(
+  finding: ConsistencyFinding,
+  reportEvidenceCurrent: boolean,
+  report?: Pick<PresentationReport, "generatedAt" | "revision">,
+) {
+  return findingHasCurrentEvidence(finding, reportEvidenceCurrent, report)
+    && finding.status === "verified"
+    && finding.codes.length === 0
+    && !finding.blocking
+    && (finding.evidence?.codes.length ?? 0) === 0;
+}
+export function canonicalActionIsCurrent(
+  reportEvidenceCurrent: boolean,
+  pendingFinding: ConsistencyFinding | undefined,
+  currentFinding: ConsistencyFinding | undefined,
+  report?: Pick<PresentationReport, "generatedAt" | "revision">,
+) {
+  if (!reportEvidenceCurrent || !pendingFinding || !currentFinding) return false;
+  const pendingAction = pendingFinding.nextAction;
+  const currentAction = currentFinding.nextAction;
+  if (!pendingAction || !currentAction || !currentAction.permission.allowed) return false;
+  if (currentFinding.legacyProductId !== pendingFinding.legacyProductId
+    || currentFinding.status !== pendingFinding.status
+    || currentAction.id !== pendingAction.id
+    || currentAction.method !== pendingAction.method) return false;
+  if (!findingHasCurrentEvidence(currentFinding, reportEvidenceCurrent, report)) return false;
+  return currentFinding.status !== "verified" || findingHasCurrentVerifiedEvidence(currentFinding, reportEvidenceCurrent, report);
+}
+export function filterConsistencyFindings(
+  findings: ConsistencyFinding[],
+  filter: "all" | Status,
+  reportEvidenceCurrent: boolean,
+  report?: Pick<PresentationReport, "generatedAt" | "revision">,
+) {
+  return findings.filter(row => filter === "all"
+    || (filter === "verified"
+      ? findingHasCurrentVerifiedEvidence(row, reportEvidenceCurrent, report)
+      : row.status === filter));
+}
 const codeMessage = (code: string) => ({
   CANONICAL_MAPPING_MISSING: "未找到规范商品映射",
   CANONICAL_MAPPING_AMBIGUOUS: "存在多个规范商品映射，无法自动判断",
@@ -26,8 +88,11 @@ const codeMessage = (code: string) => ({
   ASSET_SCAN_NOT_CLEAN: "关联素材尚未通过安全扫描",
   ASSET_RIGHTS_NOT_APPROVED: "关联素材权益尚未批准",
 }[code] ?? code);
-const nextActionCopy = (finding: CanonicalProductConsistencyReport["findings"][number]) => {
+const nextActionCopy = (finding: CanonicalProductConsistencyReport["findings"][number], reportEvidenceCurrent: boolean, report?: Pick<PresentationReport, "generatedAt" | "revision">) => {
   const action = finding.nextAction;
+  if (finding.status === "verified" && !findingHasCurrentVerifiedEvidence(finding, reportEvidenceCurrent, report)) {
+    return reportEvidenceCurrent ? "当前商品级验证证据不完整；请重新检查" : "该商品仅在历史报告中显示已验证；当前未核验，请重新检查";
+  }
   if (!action) return finding.status === "verified" ? "无需修复；继续动作仍需通过发布门禁" : "服务端未提供可执行动作，当前保持只读阻断";
   if (!action.permission.allowed) return `${action.label}（需要 ${action.permission.requiredRole ?? "指定角色"} 权限）`;
   return `服务端动作：${action.label}`;
@@ -35,15 +100,22 @@ const nextActionCopy = (finding: CanonicalProductConsistencyReport["findings"][n
 function NextActionEvidence({
   finding,
   onExecute,
+  reportEvidenceCurrent,
+  report,
 }: {
   finding: CanonicalProductConsistencyReport["findings"][number];
   onExecute?: (finding: CanonicalProductConsistencyReport["findings"][number]) => void;
+  reportEvidenceCurrent: boolean;
+  report?: Pick<PresentationReport, "generatedAt" | "revision">;
 }) {
   const action = finding.nextAction;
-  if (!action) return <Typography.Text type={finding.status === "verified" ? "secondary" : "warning"}>{nextActionCopy(finding)}</Typography.Text>;
-  const executable = action.permission.allowed && Boolean(onExecute);
+  const currentVerifiedEvidence = findingHasCurrentVerifiedEvidence(finding, reportEvidenceCurrent, report);
+  if (!action) return <Typography.Text type={currentVerifiedEvidence ? "secondary" : "warning"}>{nextActionCopy(finding, reportEvidenceCurrent, report)}</Typography.Text>;
+  const findingCanAct = findingHasCurrentEvidence(finding, reportEvidenceCurrent, report)
+    && (finding.status !== "verified" || currentVerifiedEvidence);
+  const executable = action.permission.allowed && reportEvidenceCurrent && findingCanAct && Boolean(onExecute);
   return <Space orientation="vertical" size={2}>
-    <Typography.Text type={finding.status === "verified" ? "secondary" : "warning"}>{nextActionCopy(finding)}</Typography.Text>
+    <Typography.Text type={currentVerifiedEvidence ? "secondary" : "warning"}>{nextActionCopy(finding, reportEvidenceCurrent, report)}</Typography.Text>
     <Typography.Text type="secondary" aria-label="服务端动作证据">
       {action.method} · {action.reason}
       {action.requiredInputs.length > 0 ? ` · 输入：${action.requiredInputs.join("、")}` : " · 无额外输入"}
@@ -55,9 +127,9 @@ function NextActionEvidence({
       type="link"
       disabled={!executable}
       aria-disabled={!executable}
-      aria-label={executable ? `执行：${action.label}` : `服务端动作 ${action.label} 尚未接入`}
+      aria-label={executable ? `执行：${action.label}` : !reportEvidenceCurrent ? `服务端动作 ${action.label} 因报告未核验而暂停` : !findingCanAct ? `服务端动作 ${action.label} 因商品证据不完整而暂停` : `服务端动作 ${action.label} 尚未接入`}
       onClick={() => { if (executable) onExecute?.(finding); }}
-    >{executable ? action.label : `${action.label}（待接入）`}</Button>}
+    >{executable ? action.label : !reportEvidenceCurrent ? `${action.label}（报告未核验）` : !findingCanAct ? `${action.label}（商品证据不完整）` : `${action.label}（待接入）`}</Button>}
   </Space>;
 }
 const freshnessMeta = {
@@ -139,10 +211,16 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const detailErrorSummaryRef = useRef<HTMLDivElement>(null);
   const orphanDetailErrorSummaryRef = useRef<HTMLDivElement>(null);
   const previousErrorSignature = useRef<string | undefined>(undefined);
-  const findings = useMemo(() => report?.findings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
-  const orphanFindings = useMemo(() => report?.orphanFindings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
   const errorCodes = [...new Set(report?.findings.flatMap((row) => row.codes) ?? [])];
   const errorSignature = report ? [report.error?.code, report.error?.message, report.availability, report.contractStatus, report.freshness, ...errorCodes].filter(Boolean).join("|") : "";
+  const reportEvidenceCurrent = Boolean(report
+    && !loading
+    && !report.error
+    && report.freshness === "fresh"
+    && report.availability === "available"
+    && report.contractStatus === "clean");
+  const findings = useMemo(() => filterConsistencyFindings(report?.findings ?? [], filter, reportEvidenceCurrent, report), [filter, report, reportEvidenceCurrent]);
+  const orphanFindings = useMemo(() => report?.orphanFindings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
   useEffect(() => {
     if (errorSignature && previousErrorSignature.current && previousErrorSignature.current !== errorSignature) {
       errorSummaryRef.current?.focus({ preventScroll: true });
@@ -150,13 +228,13 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     previousErrorSignature.current = errorSignature;
   }, [errorSignature]);
   useEffect(() => {
-    if (selected && (selected.status !== "verified" || selected.codes.length > 0 || selected.blocking)) {
+    if (selected && !findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report)) {
       window.requestAnimationFrame(() => detailErrorSummaryRef.current?.focus({ preventScroll: true }));
     }
     if (selectedOrphan) {
       window.requestAnimationFrame(() => orphanDetailErrorSummaryRef.current?.focus({ preventScroll: true }));
     }
-  }, [selected, selectedOrphan]);
+  }, [report, reportEvidenceCurrent, selected, selectedOrphan]);
   const closeSelected = () => {
     setSelected(undefined);
     window.requestAnimationFrame(() => selectedTriggerRef.current?.focus({ preventScroll: true }));
@@ -166,7 +244,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     window.requestAnimationFrame(() => selectedOrphanTriggerRef.current?.focus({ preventScroll: true }));
   };
   const openNextAction = (finding: ConsistencyFinding) => {
-    if (!report || !finding.nextAction) return;
+    if (!report || !finding.nextAction || !findingHasCurrentEvidence(finding, reportEvidenceCurrent, report)) return;
     setActionInputs(nextActionInputDefaults(report, finding));
     setActionError("");
     setPendingAction(finding);
@@ -174,7 +252,13 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const submitNextAction = async () => {
     const action = pendingAction?.nextAction;
     if (!pendingAction || !action || !onNextAction) return;
-    const missing = action.requiredInputs.filter((key) => !(actionInputs[key] ?? "").trim());
+    const currentFinding = report?.findings.find(finding => finding.legacyProductId === pendingAction.legacyProductId);
+    if (!currentFinding || !canonicalActionIsCurrent(reportEvidenceCurrent, pendingAction, currentFinding, report)) {
+      setActionError("报告或商品动作证据已变化或失效；请关闭此窗口并重新检查后再操作。");
+      return;
+    }
+    const currentAction = currentFinding.nextAction!;
+    const missing = currentAction.requiredInputs.filter((key) => !(actionInputs[key] ?? "").trim());
     if (missing.length > 0) {
       setActionError(`请补齐：${missing.map((key) => actionInputLabel[key] ?? key).join("、")}`);
       return;
@@ -182,7 +266,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     setActionSubmitting(true);
     setActionError("");
     try {
-      await onNextAction(pendingAction, actionInputs);
+      await onNextAction(currentFinding, actionInputs);
       setPendingAction(undefined);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "服务端动作执行失败");
@@ -195,10 +279,12 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const expired = report.freshness === "expired";
   const stale = report.freshness === "stale" || report.freshness === "unknown";
   const unavailable = report.availability === "unavailable" || report.contractStatus === "unavailable";
-  const uncertain = report.availability === "unknown" || report.contractStatus === "unknown";
+  const uncertain = !unavailable && (report.availability !== "available" || report.contractStatus !== "clean" || report.freshness == null || report.freshness === "unknown");
   // A stale/unknown report is not evidence that the current chain is clean.
   // Keep the card in an attention state until a fresh server report arrives.
-  const hasAttention = loading || report.status !== "clean" || expired || stale || Boolean(report.error);
+  // An apparently clean report cannot override an unavailable or uncertain
+  // read contract. Keep all success labels and empty-state copy fail-closed.
+  const hasAttention = loading || report.status !== "clean" || report.freshness !== "fresh" || report.availability !== "available" || report.contractStatus !== "clean" || Boolean(report.error);
   return <>
     <Card className="canonical-consistency-card" title={<Space>规范商品一致性 <Tag color={loading ? "processing" : hasAttention ? "warning" : "success"}>{loading ? "检查中" : hasAttention ? "需处理" : "已验证"}</Tag></Space>} extra={<Button className="canonical-consistency-action" aria-label="重新检查一致性报告" icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>重新检查</Button>}>
       <Typography.Paragraph type="secondary">只读检查 canonical → listing → campaign item → task 关系链；未验证状态不会自动修复或允许继续发布。</Typography.Paragraph>
@@ -226,9 +312,14 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           { title: "规范商品 ID", dataIndex: "canonicalProductId", render: (value: string | undefined) => value ?? "—" },
           { title: "关系引用", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => `${row.listingIds.length} listing / ${row.taskIds.length} task` },
           { title: "证据时间", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.evidence?.generatedAt ?? "未返回" },
-          { title: "原因", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.codes.length ? row.codes.map(codeMessage).join("、") : "关系链已验证" },
-          { title: "状态", dataIndex: "status", render: (value: Status) => <Tag color={statusMeta[value].color} icon={value === "verified" ? <CheckCircleOutlined /> : <WarningOutlined />}>{statusMeta[value].label}</Tag> },
-          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} onExecute={onNextAction ? openNextAction : undefined} /> },
+          { title: "原因", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.codes.length ? row.codes.map(codeMessage).join("、") : row.status === "verified" && !findingHasCurrentVerifiedEvidence(row, reportEvidenceCurrent, report) ? reportEvidenceCurrent ? "当前商品级验证证据不完整" : "历史报告曾验证；当前状态未核验" : "关系链已验证" },
+          { title: "状态", dataIndex: "status", render: (value: Status, row: CanonicalProductConsistencyReport["findings"][number]) => {
+            const currentEvidence = findingHasCurrentVerifiedEvidence(row, reportEvidenceCurrent, report);
+            const presentation = findingStatusPresentation(value, currentEvidence);
+            const verified = value === "verified" && currentEvidence;
+            return <Tag color={presentation.color} icon={verified ? <CheckCircleOutlined /> : <WarningOutlined />}>{presentation.label}</Tag>;
+          } },
+          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} reportEvidenceCurrent={reportEvidenceCurrent} report={report} onExecute={onNextAction ? openNextAction : undefined} /> },
           { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.legacyProductId} 一致性详情`} onClick={(event) => { selectedTriggerRef.current = event.currentTarget as HTMLButtonElement; setSelected(row); }}>查看详情</Button> },
         ]} /> : report.findings.length === 0 && report.orphanFindings.length === 0 ? <Alert
           type={report.status === "clean" && !hasAttention ? "success" : "warning"}
@@ -252,7 +343,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     </Card>
     <Drawer title="一致性详情" open={Boolean(selected)} onClose={closeSelected} size={480} destroyOnClose>
       {selected && <Space orientation="vertical" style={{ width: "100%" }} size={16}>
-        {(selected.status !== "verified" || selected.codes.length > 0 || selected.blocking) && <div
+        {!findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report) && <div
           ref={detailErrorSummaryRef}
           id="canonical-detail-error-summary"
           role="alert"
@@ -271,16 +362,16 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           <Descriptions.Item label="旧商品 ID">{selected.legacyProductId}</Descriptions.Item>
           <Descriptions.Item label="商品对象 ID">{selected.productId ?? selected.legacyProductId}</Descriptions.Item>
           <Descriptions.Item label="规范商品 ID">{selected.canonicalProductId ?? "未映射"}</Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag color={statusMeta[selected.status].color}>{statusMeta[selected.status].label}</Tag></Descriptions.Item>
+          <Descriptions.Item label="状态"><Tag color={findingStatusPresentation(selected.status, findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report)).color}>{findingStatusPresentation(selected.status, findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report)).label}</Tag></Descriptions.Item>
           <Descriptions.Item label="品牌 / 平台 / 店铺">{selected.scope ? `${selected.scope.brandId ?? "未绑定品牌"} / ${selected.scope.platform ?? "未绑定平台"} / ${selected.scope.accountId ?? "未绑定店铺"}` : "服务端未返回范围"}</Descriptions.Item>
           <Descriptions.Item label="Listing">{selected.relation?.listingIds.join(", ") || selected.listingIds.join(", ") || "无"}</Descriptions.Item>
           <Descriptions.Item label="批次 / 任务 / 发布">{selected.relation ? `${selected.relation.campaignItemIds.length} / ${selected.relation.taskIds.length} / ${selected.relation.publishJobIds.length}` : `${selected.campaignItemIds.length} / ${selected.taskIds.length} / ${selected.publishJobIds.length}`}</Descriptions.Item>
           <Descriptions.Item label="检查证据">{selected.evidence ? `${selected.evidence.generatedAt} · revision ${selected.evidence.revision ?? "—"}` : "服务端未返回证据摘要"}</Descriptions.Item>
         </Descriptions>
         <CanonicalRelationChain finding={selected} />
-        <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} onExecute={onNextAction ? openNextAction : undefined} />} />
+        <Alert type={findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report) ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} reportEvidenceCurrent={reportEvidenceCurrent} report={report} onExecute={onNextAction ? openNextAction : undefined} />} />
         {selected.blocking && <Alert type="error" showIcon title={`阻断：${selected.blocking.code}`} description={`${selected.blocking.message} ${selected.blocking.impact}`} />}
-        {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : selected.evidence ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title="验证证据不完整" description="服务端未返回该商品的证据摘要，当前不能作为发布依据。" />}
+        {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : findingHasCurrentVerifiedEvidence(selected, reportEvidenceCurrent, report) ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title={selected.status === "verified" ? "当前状态未核验" : "验证证据不完整"} description={selected.status === "verified" ? "该商品曾在报告中显示已验证，但当前报告证据陈旧或不完整，不能作为当前结论或发布依据。" : "服务端未返回该商品的当前可验证证据，当前不能作为发布依据。"} />}
       </Space>}
     </Drawer>
     <Drawer title="未挂接关系详情" open={Boolean(selectedOrphan)} onClose={closeSelectedOrphan} size={480} destroyOnClose>

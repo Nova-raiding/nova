@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { platformLabels, platforms, type Platform, type StoreDirectory, type WorkspaceSummary } from "../../types/ops";
+import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
 
 interface StoreDirectorySectionProps {
   storeDirectory: StoreDirectory[];
@@ -11,7 +12,7 @@ interface StoreDirectorySectionProps {
   onSaveAlias: (store: StoreDirectory, alias: string) => Promise<boolean>;
   onRevoke: (store: StoreDirectory) => Promise<void>;
   workspaces?: WorkspaceSummary[];
-  onRegisterManualStore?: (input: { workspaceId: string; platform: Platform; accountId: string; storeAlias?: string; reason: string }) => Promise<void>;
+  onRegisterManualStore?: (input: { workspaceId: string; platform: Platform; accountId: string; storeAlias?: string; reason: string }) => Promise<boolean>;
 }
 
 // Every value `platform_accounts.token_state` can hold needs an honest label here.
@@ -55,6 +56,7 @@ export function StoreDirectorySection({
   const [manualAlias, setManualAlias] = useState("");
   const [manualReason, setManualReason] = useState("");
   const [manualStoreError, setManualStoreError] = useState("");
+  const [manualStoreBoundaryApplicable, setManualStoreBoundaryApplicable] = useState<boolean>();
   const errorRef = useRef<HTMLDivElement>(null);
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
@@ -78,6 +80,7 @@ export function StoreDirectorySection({
     setRevokeTarget(undefined);
   };
   const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
+  const representedStoreCount = storeDirectory.reduce((total, store) => total + (store.aggregate === true && Number.isSafeInteger(store.count) && (store.count ?? 0) >= 0 ? store.count! : 1), 0);
   const resetManualForm = () => {
     setRegisterOpen(false); setManualWorkspaceId(""); setManualPlatform(undefined);
     setManualAccountId(""); setManualAlias(""); setManualReason("");
@@ -88,8 +91,9 @@ export function StoreDirectorySection({
     setRegistering(true);
     setManualStoreError("");
     try {
-      await onRegisterManualStore({ workspaceId: manualWorkspaceId, platform: manualPlatform, accountId: manualAccountId.trim(), ...(manualAlias.trim() ? { storeAlias: manualAlias.trim() } : {}), reason: manualReason.trim() });
+      const appliesToStoreBoundary = await onRegisterManualStore({ workspaceId: manualWorkspaceId, platform: manualPlatform, accountId: manualAccountId.trim(), ...(manualAlias.trim() ? { storeAlias: manualAlias.trim() } : {}), reason: manualReason.trim() });
       resetManualForm();
+      setManualStoreBoundaryApplicable(appliesToStoreBoundary);
     } catch (error) {
       setManualStoreError(error instanceof Error && error.message.trim() ? error.message : "人工店铺登记失败，请检查输入和权限后重试。");
     } finally { setRegistering(false); }
@@ -106,8 +110,8 @@ export function StoreDirectorySection({
       title="平台连接与授权健康"
       extra={
         <Space>
-          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => { setManualStoreError(""); setRegisterOpen(true); }}>登记人工店铺</Button> : null}
-          <Tag color={storeDirectory.length ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${storeDirectory.length} 个已登记店铺`}</Tag>
+          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button> : null}
+          <Tag color={representedStoreCount ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${representedStoreCount} 个已登记店铺`}</Tag>
         </Space>
       }
     >
@@ -115,7 +119,7 @@ export function StoreDirectorySection({
         rowKey={(row: StoreDirectory) => row.aggregate === true
           ? `summary:${row.platform}:${row.state}:${row.dataMode}:${Number(row.readable)}:${Number(row.writeEnabled)}`
           : `${row.platform}:${row.accountId}`}
-        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => storeDirectory.some((store) => store.aggregate === true) ? `共 ${total} 个平台汇总组` : `共 ${total} 条` }}
         loading={loading}
         dataSource={storeDirectory}
         locale={{
@@ -237,6 +241,18 @@ export function StoreDirectorySection({
       <Typography.Text type="secondary">
         此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。
       </Typography.Text>
+      {manualStoreBoundaryApplicable !== undefined ? (
+        <Alert
+          role="status"
+          style={{ marginTop: 16 }}
+          type={manualStoreBoundaryApplicable ? "success" : "warning"}
+          showIcon
+          title="人工店铺已登记"
+          description={manualStoreBoundaryApplicable
+            ? "该记录适用于当前人工运营边界。它不包含平台凭证，也不代表已获得平台授权。"
+            : "当前部署的人工运营边界策略未启用。该记录已保存为账号记录，但不会因此获得人工运营边界、平台授权或同步权限。"}
+        />
+      ) : null}
       <Modal title="登记人工店铺" open={registerOpen} okText="确认登记" cancelText="取消" confirmLoading={registering}
         okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
         onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
@@ -249,7 +265,8 @@ export function StoreDirectorySection({
           <label htmlFor="manual-store-account">平台店铺账号 ID</label>
           <Input id="manual-store-account" value={manualAccountId} onChange={event => setManualAccountId(event.target.value)} maxLength={256} />
           <label htmlFor="manual-store-alias">店铺别名（可选）</label>
-          <Input id="manual-store-alias" value={manualAlias} onChange={event => setManualAlias(event.target.value)} maxLength={200} />
+          <Input id="manual-store-alias" aria-describedby="manual-store-alias-limit" value={manualAlias} onChange={event => setManualAlias(event.target.value)} maxLength={40} showCount />
+          <Typography.Text id="manual-store-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
           <label htmlFor="manual-store-reason">登记理由</label>
           <Input.TextArea id="manual-store-reason" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
         </Space>
@@ -257,14 +274,15 @@ export function StoreDirectorySection({
       <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: alias.trim().length < 1 }} onCancel={closeAlias} onOk={() => void submitAlias()}>
         <Typography.Paragraph>仅修改运营后台展示名称，不会修改平台店铺真实名称。</Typography.Paragraph>
         <label htmlFor="store-display-alias">店铺展示别名</label>
-        <Input id="store-display-alias" autoFocus maxLength={120} showCount value={alias} onChange={(event) => setAlias(event.target.value)} />
+        <Input id="store-display-alias" aria-describedby="store-display-alias-limit" autoFocus maxLength={40} showCount value={alias} onChange={(event) => setAlias(event.target.value)} />
+        <Typography.Text id="store-display-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
       </Modal>
       <Modal
         title="确认撤销平台授权？"
         open={Boolean(revokeTarget)}
         okText="确认撤销"
         cancelText="取消"
-        okButtonProps={{ danger: true }}
+        {...confirmPolicyPropsFor("store.revoke")}
         confirmLoading={Boolean(revokingKey)}
         onCancel={() => { if (!revokingKey) setRevokeTarget(undefined); }}
         onOk={() => void confirmRevoke()}

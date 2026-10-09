@@ -539,6 +539,8 @@ export interface CommercialPage<T> {
   nextCursor?: string | null
 }
 
+export type CommercialTimelinePage = CommercialPage<CommercialTimelineEvent> & { sourceTruncated: boolean }
+
 export function parseCommercialAccessSummary(value: unknown): CommercialAccessSummary {
   const method = commercialOperationsMethods.accessSummary;
   if (!object(value)) invalid(method, "结果必须是对象");
@@ -727,10 +729,13 @@ export function parseServices(value: unknown): CommercialPage<ServiceFulfillment
   })) };
 }
 
-export function parseCommercialTimeline(value: unknown): CommercialPage<CommercialTimelineEvent> {
+export function parseCommercialTimeline(value: unknown): CommercialTimelinePage {
   const method = commercialOperationsMethods.timeline;
   const page = pageRows(value, method);
-  return { ...pageMeta(page), items: page.rows.map((row) => ({
+  const sourceTruncated = object(value) && value.source_truncated !== undefined
+    ? typeof value.source_truncated === "boolean" ? value.source_truncated : invalid(method, "source_truncated 必须是布尔值")
+    : false;
+  return { ...pageMeta(page), sourceTruncated, items: page.rows.map((row) => ({
     id: requiredText(row, method, "id", "id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
     kind: requiredText(row, method, "kind", "kind", "event_type", "eventType"), status: requiredText(row, method, "status", "status"),
     occurredAt: requiredText(row, method, "occurred_at", "occurred_at", "occurredAt", "created_at", "createdAt"),
@@ -811,11 +816,11 @@ export const commercialOperationsClient = {
   orders: async (targetWorkspaceId: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, ...page.params }, { signal: page.signal })); },
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
-  timeline: async (targetWorkspaceId: string, inputOrSignal?: { from?: string; to?: string; status?: string } | AbortSignal, signal?: AbortSignal) => {
+  timeline: async (targetWorkspaceId: string, inputOrSignal?: { from?: string; to?: string; status?: string; cursor?: string; limit?: number } | AbortSignal, signal?: AbortSignal) => {
     const isSignal = typeof AbortSignal !== "undefined" && inputOrSignal instanceof AbortSignal;
-    const input = isSignal ? {} : (inputOrSignal as { from?: string; to?: string; status?: string } | undefined ?? {});
+    const input = isSignal ? {} : (inputOrSignal as { from?: string; to?: string; status?: string; cursor?: string; limit?: number } | undefined ?? {});
     const requestSignal = isSignal ? inputOrSignal : signal;
-    return parseCommercialTimeline(await rpc(commercialOperationsMethods.timeline, { target_workspace_id: targetWorkspaceId, limit: "200", ...(input.from ? { from_at: input.from } : {}), ...(input.to ? { to_at: input.to } : {}), ...(input.status ? { status: input.status } : {}) }, { signal: requestSignal }));
+    return parseCommercialTimeline(await rpc(commercialOperationsMethods.timeline, { target_workspace_id: targetWorkspaceId, limit: String(input.limit ?? 100), ...(input.cursor ? { cursor: input.cursor } : {}), ...(input.from ? { from_at: input.from } : {}), ...(input.to ? { to_at: input.to } : {}), ...(input.status ? { status: input.status } : {}) }, { signal: requestSignal }));
   },
   readiness: async (signal?: AbortSignal) => parseCommercialReadiness(await rpc(commercialOperationsMethods.readiness, {}, { signal })),
   createPrivateTrialInvite: (workspace: string, customerRef: string, expiresAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialInviteCreate, { target_workspace_id: workspace, customer_ref: customerRef, expires_at: expiresAt, idempotency_key: operationId("private_trial_invite"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "invite_create" }) }, { signal }),
@@ -876,7 +881,7 @@ export const commercialOperationsClient = {
   proposeReceiptReturn: (input: { workspace: string; receiptId: string; returnId: string; amountFen: number; payerRef: string; expectedRevision: number; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnPropose, { target_workspace_id: input.workspace, receipt_id: input.receiptId, return_id: input.returnId, amount_fen: String(input.amountFen), payer_ref: input.payerRef, expected_revision: String(input.expectedRevision), reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
   decideReceiptReturn: (input: { workspace: string; returnId: string; action: "approve" | "reject"; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnDecide, { target_workspace_id: input.workspace, return_id: input.returnId, decision: input.action, reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
   completeReceiptReturn: (input: { workspace: string; returnId: string; outcome: "completed" | "unknown"; externalReturnId?: string; evidenceRef: string; reason: string; idempotencyKey: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.receiptReturnComplete, { target_workspace_id: input.workspace, return_id: input.returnId, outcome: input.outcome, ...(input.externalReturnId ? { external_return_id: input.externalReturnId } : {}), reason: input.reason, idempotency_key: input.idempotencyKey, evidence_json: JSON.stringify({ evidence_ref: input.evidenceRef }) }, { signal }),
-  listCommercialRefunds: async (workspace: string, signal?: AbortSignal) => parseCommercialRefunds(await rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, limit: "100" }, { signal })),
+  listCommercialRefunds: async (workspace: string, input?: CommercialPageInput, signal?: AbortSignal) => { const page = pageRequest(input, signal); return parseCommercialRefunds(await rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, ...page.params }, { signal: page.signal })); },
   requestCommercialRefund: async (input: { workspace: string; orderId: string; requestId: string; kind: CommercialRefundKind; amountFen: number; pointsToRevoke: number; reason: string; evidenceRef: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundRequest, { target_workspace_id: input.workspace, order_id: input.orderId, request_id: input.requestId, refund_kind: input.kind, amount_fen: String(input.amountFen), points_to_revoke: String(input.pointsToRevoke), reason: input.reason, evidence_json: JSON.stringify(commercialRefundEvidence(input.kind, input.evidenceRef)) }, { signal, idempotencyKey: await refundOperationKey("request", input.workspace, input.requestId) }),
   approveCommercialRefund: async (workspace: string, requestId: string, policyApproval: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundApprove, { target_workspace_id: workspace, request_id: requestId, reason, policy_approval_json: JSON.stringify(refundPolicyApproval(policyApproval)) }, { signal, idempotencyKey: await refundOperationKey("approve", workspace, requestId) }),
   completeCommercialRefund: async (workspace: string, requestId: string, externalRefundId: string, evidenceJson: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundComplete, { target_workspace_id: workspace, request_id: requestId, external_refund_id: externalRefundId, reason, evidence_json: evidenceJson }, { signal, idempotencyKey: await refundOperationKey("complete", workspace, requestId) }),

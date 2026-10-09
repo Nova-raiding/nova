@@ -391,7 +391,7 @@ function requirePublishExecutionConfig(config: Pick<WorkerConfig, 'apiBaseUrl' |
 
 const workerRouting: Record<Exclude<WorkerRole, 'all' | 'automation'>, { eventTypes: string[]; snapshotEntityTypes?: string[] }> = {
   sync: { eventTypes: ['sync.requested', 'state.snapshot'], snapshotEntityTypes: ['product', 'platform_account', 'sync_job'] },
-    generation: { eventTypes: ['task.created', 'state.snapshot', 'generation.requested', 'image.generation.requested', 'asset.generation_continuations.ready', 'asset.generation_continuation.waiting_scan', 'asset.generation_continuation.awaiting_rights', 'asset.generation_continuations.awaiting_confirmation'], snapshotEntityTypes: ['task', 'content_version'] },
+    generation: { eventTypes: ['task.created', 'task.sku_split', 'state.snapshot', 'generation.requested', 'image.generation.requested', 'asset.generation_continuations.ready', 'asset.generation_continuation.waiting_scan', 'asset.generation_continuation.awaiting_rights', 'asset.generation_continuations.awaiting_confirmation'], snapshotEntityTypes: ['task', 'content_version'] },
   publish: { eventTypes: ['publish.requested'] },
   reconcile: { eventTypes: ['publish.reconcile_requested'] },
   scan: { eventTypes: ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT] },

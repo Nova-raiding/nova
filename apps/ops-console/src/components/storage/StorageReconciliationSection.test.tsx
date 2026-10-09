@@ -11,7 +11,7 @@ describe("StorageReconciliationSection accessibility states", () => {
   });
 
   it("shows redacted workspace status without object download fields", () => {
-    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "attention_required", lastRunAt: "2026-08-29T10:00:00Z", quota: { usedBytes: 4096, limitBytes: 8192, reservedBytes: 512, projectedBytes: 4608 }, counts: { references: 3, inventoryObjects: 4, matched: 2, missing: 1, metadataMismatches: 0, orphans: 1, crossWorkspace: 0, duplicates: 0 } }} />);
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "attention_required", runStatus: "succeeded", freshness: "fresh", lastRunAt: "2026-08-29T10:00:00Z", quota: { usedBytes: 4096, limitBytes: 8192, reservedBytes: 512, projectedBytes: 4608 }, counts: { references: 3, inventoryObjects: 4, matched: 2, missing: 1, metadataMismatches: 0, orphans: 1, crossWorkspace: 0, duplicates: 0 } }} />);
     expect(html).toContain("需要处理");
     expect(html).toContain("缺失 1");
     expect(html).not.toContain("storageKey");
@@ -25,7 +25,7 @@ describe("StorageReconciliationSection accessibility states", () => {
   });
 
   it("does not show a clean report without verifiable freshness as normal", () => {
-    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", freshness: "unknown", lastRunAt: "2026-08-29T10:00:00Z" }} />);
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", runStatus: "succeeded", freshness: "unknown", lastRunAt: "2026-08-29T10:00:00Z" }} />);
     expect(html).toContain("状态不可验证");
     expect(html).not.toContain("对账正常");
     expect(html).toContain("新鲜度待确认");
@@ -40,7 +40,7 @@ describe("StorageReconciliationSection accessibility states", () => {
   });
 
   it("renders failed, expired, and multi-workspace states without object details", () => {
-    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "failed", errorMessage: "worker timeout" }} summaries={[{ workspaceId: "ws-a", status: "failed", errorMessage: "worker timeout" }, { workspaceId: "ws-b", status: "clean", freshness: "expired", lastRunAt: "2026-08-27T10:00:00Z" }, { workspaceId: "ws-c", status: "clean", freshness: "stale", lastRunAt: "2026-08-28T10:00:00Z" }]} />);
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "failed", runStatus: "failed", freshness: "stale", lastRunAt: "2026-08-29T10:00:00Z", errorMessage: "worker timeout" }} summaries={[{ workspaceId: "ws-a", status: "failed", runStatus: "failed", errorMessage: "worker timeout" }, { workspaceId: "ws-b", status: "clean", runStatus: "succeeded", freshness: "expired", lastRunAt: "2026-08-27T10:00:00Z" }, { workspaceId: "ws-c", status: "clean", runStatus: "succeeded", freshness: "stale", lastRunAt: "2026-08-28T10:00:00Z" }]} />);
     expect(html).toContain("对账失败");
     expect(html).toContain("ws-a");
     expect(html).toContain("已过期");
@@ -61,6 +61,16 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(markup).toContain('aria-busy="true"');
     expect(markup).toContain('role="status"');
     expect(markup).toContain("正在加载对账结果");
+  });
+
+  it("marks retained quota, counts, and workspace rows as an unverified snapshot while refreshing", () => {
+    const markup = renderToStaticMarkup(<StorageReconciliationSection loading summary={{ status: "clean", lastRunAt: "2026-08-29T10:00:00Z", quota: { usedBytes: 4096, reservedBytes: 0, projectedBytes: 4096 }, counts: { references: 3, inventoryObjects: 4, matched: 2, missing: 1, metadataMismatches: 0, orphans: 1, crossWorkspace: 0, duplicates: 0 } }} summaries={[{ workspaceId: "ws-old", status: "clean", lastRunAt: "2026-08-29T10:00:00Z", freshness: "fresh" }]} />);
+    expect(markup).toContain("正在刷新；以下数据为上次快照");
+    expect(markup).toContain("刷新完成前，下面保留的容量、计数和 workspace 状态未经本次复核");
+    expect(markup).toContain('data-snapshot-state="stale"');
+    expect(markup).toContain("上次快照，未复核");
+    expect(markup).toContain("缺失 1");
+    expect(markup).toContain("ws-old");
   });
 
   it("focuses and announces errors with a keyboard-sized retry action", () => {

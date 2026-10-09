@@ -55,6 +55,12 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
         timeline={model.timeline}
         timelineNextCursor={model.timelineNextCursor}
         loading={model.detailLoading}
+        detailVerified={model.detailVerified}
+        detailError={model.detailError}
+        onRetryDetail={model.retryDetail}
+        timelineVerified={model.timelineVerified}
+        timelineError={model.timelineError}
+        onRetryTimeline={model.retryTimeline}
         mutating={model.mutating}
         error={model.error}
         canMutate={canMutate}

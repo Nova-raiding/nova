@@ -125,7 +125,11 @@ export async function handleMcpOpsSupport(method: string, params: Record<string,
           })))
           for (const page of batch) {
             pages.push(...page.items)
-            scanTruncated ||= Boolean(page.scanTruncated)
+            // The platform view intentionally reads one bounded page per
+            // workspace before grouping. A continuation cursor means the
+            // displayed group counts are only a lower bound even when the
+            // repository did not hit its separate SLA scan bound.
+            scanTruncated ||= Boolean(page.scanTruncated || page.nextCursor)
           }
         }
         const groups = new Map<string, { status: SupportTicketStatus; priority: SupportTicketPriority; count: number; latestCreatedAt: string }>()

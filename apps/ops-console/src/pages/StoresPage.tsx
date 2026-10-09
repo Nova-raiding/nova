@@ -12,27 +12,15 @@ import { CanonicalBackfillConflictSection } from "../components/stores/Canonical
 import { opsRestPost } from "../api/opsClient.js";
 import { rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { platformLabels, platforms, type Platform } from "../types/ops";
+import { platformLabels } from "../types/ops";
 import type { OpsDomain } from "../navigation/opsNavigation";
+import { openBrandStore } from "./brandStoreTaskNavigation.js";
+export { openBrandStore } from "./brandStoreTaskNavigation.js";
 import { Button } from "antd";
 import { useState } from "react";
 
 interface StoresPageProps {
   model: OpsConsoleModel;
-}
-
-export async function openBrandStore(
-  model: Pick<OpsConsoleModel, "setQueueFilters" | "load">,
-  onNavigate: (domain: OpsDomain) => void,
-  platform: string,
-  accountId: string,
-) {
-  if (!platforms.includes(platform as Platform)) return false;
-  const queueFilters = { platform: platform as Platform, accountId };
-  model.setQueueFilters(queueFilters);
-  onNavigate("tasks");
-  await model.load({ queueFilters });
-  return true;
 }
 
 /** Keep the empty-state brand create affordance aligned with the server's
@@ -46,7 +34,7 @@ export function canScanCanonicalBackfill(platformScope: boolean, canUpdate: bool
   return platformScope && canUpdate && updateScope === "platform";
 }
 
-export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void }) {
+export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void; onNavigateWithQuery?: (domain: OpsDomain, query: Record<string, string | undefined>) => void }) {
   const [conflictWorkspaceId, setConflictWorkspaceId] = useState("");
   const storeLoadError = model.dataSetError("workspace.health", "ops.stores.list");
   const platformScope = model.authorization.scope.kind === "platform";
@@ -73,7 +61,7 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
       <div className="ops-stores-page">
       <OpsPageError error={storeLoadError || automationLoadError || ""} onRetry={() => void model.load()} />
       <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} platformLabels={platformLabels} />
-      {!platformScope && <BrandTreeSection brands={model.brandNavigation} canRead={canCanonicalRead} canCreate={canCreateBrand} stores={model.storeDirectory} canBind={model.authorization.can("customer.content.update")} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenStore={(platform, accountId) => void openBrandStore(model, onNavigate, platform, accountId)} onCreateBrand={model.createBrand} onBindStore={async ({ brandId, platform, accountId, expectedRevision }) => {
+      {!platformScope && <BrandTreeSection brands={model.brandNavigation} canRead={canCanonicalRead} canCreate={canCreateBrand} stores={model.storeDirectory} canBind={model.authorization.can("customer.content.update")} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenStore={(platform, accountId) => void openBrandStore(model, onNavigate, platform, accountId, onNavigateWithQuery)} onCreateBrand={model.createBrand} onBindStore={async ({ brandId, platform, accountId, expectedRevision }) => {
         await rpc("brand-unit.bind-store", { brand_id: brandId, platform, account_id: accountId, ...(expectedRevision !== undefined ? { expected_revision: String(expectedRevision) } : {}), reason: "运营台绑定品牌与已授权平台店铺" });
         await model.load();
         return true;
@@ -99,10 +87,11 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
           const response = await rpcForWorkspace<{ connection?: { mode?: string; token_state?: string; credential_free?: boolean; authorization_receipt?: unknown }; applies_to_store_boundary?: boolean }>(workspaceId, "ops.platform.store.record.create", {
             workspace_id: workspaceId, platform, account_id: accountId, ...(storeAlias ? { store_alias: storeAlias } : {}), reason,
           });
-          if (response?.connection?.mode !== "manual_store_record" || response?.connection?.token_state !== "manually_registered" || response?.connection?.credential_free !== true || response?.connection?.authorization_receipt !== null || response?.applies_to_store_boundary !== true) {
-            throw new Error("人工店铺登记未返回可用于人工运营边界的确认结果");
+          if (response?.connection?.mode !== "manual_store_record" || response?.connection?.token_state !== "manually_registered" || response?.connection?.credential_free !== true || response?.connection?.authorization_receipt !== null || typeof response?.applies_to_store_boundary !== "boolean") {
+            throw new Error("人工店铺登记未返回有效的创建结果和边界策略状态");
           }
           await model.load();
+          return response.applies_to_store_boundary;
         }}
       />
       {platformScope && model.authorization.can("customer.manual_import") && <PlatformManualProductImport workspaces={model.workspaceDirectory?.items ?? []} />}

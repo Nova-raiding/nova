@@ -143,6 +143,12 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const reportRequest = useRef(0);
   const correctionRequest = useRef(0);
   const correctionSubmissionRef = useRef<{ fingerprint: string; idempotencyKey: string } | undefined>(undefined);
+  const correctionDecisionSubmissionRef = useRef<{ fingerprint: string; idempotencyKey: string } | undefined>(undefined);
+  const correctionDecisionInFlightRef = useRef<Promise<void> | undefined>(undefined);
+  // Keep a stable key for each unresolved support mutation intent. A lost
+  // response must be replayed with the original key so the repository can
+  // return its committed event instead of creating another one.
+  const supportMutationIntents = useRef(new Map<string, { fingerprint: string; idempotencyKey: string }>());
   const filterRefreshPending = useRef(false);
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
@@ -272,6 +278,18 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     });
   }, [client, selected, workspaceId]);
 
+  const supportMutationKey = (kind: string, fingerprint: string) => {
+    const current = supportMutationIntents.current.get(kind);
+    if (current?.fingerprint === fingerprint) return current.idempotencyKey;
+    const intent = { fingerprint, idempotencyKey: crypto.randomUUID() };
+    supportMutationIntents.current.set(kind, intent);
+    return intent.idempotencyKey;
+  };
+  const resolveSupportMutationKey = (kind: string, fingerprint: string, idempotencyKey: string) => {
+    const current = supportMutationIntents.current.get(kind);
+    if (current?.fingerprint === fingerprint && current.idempotencyKey === idempotencyKey) supportMutationIntents.current.delete(kind);
+  };
+
   const create = useCallback(async (command: Omit<CreateSupportTicketCommand, "workspaceId">) => {
     const request = ++mutationRequest.current;
     const requestWorkspaceId = workspaceId;
@@ -302,26 +320,35 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
 
   const assign = useCallback(async (assigneeId: string) => {
     if (!selected) return;
+    const fingerprint = JSON.stringify([workspaceId, selected.ticket.id, selected.ticket.revision, assigneeId]);
+    const idempotencyKey = supportMutationKey("assign", fingerprint);
     await updateSelected(() => client.assign({
       workspaceId, ticketId: selected.ticket.id, assigneeId,
-      expectedRevision: selected.ticket.revision, idempotencyKey: crypto.randomUUID(),
+      expectedRevision: selected.ticket.revision, idempotencyKey,
     }));
+    resolveSupportMutationKey("assign", fingerprint, idempotencyKey);
   }, [client, selected, updateSelected, workspaceId]);
 
   const transition = useCallback(async (status: SupportTicketStatus, reason: string) => {
     if (!selected) return;
+    const fingerprint = JSON.stringify([workspaceId, selected.ticket.id, selected.ticket.revision, status, reason]);
+    const idempotencyKey = supportMutationKey("transition", fingerprint);
     await updateSelected(() => client.transition({
       workspaceId, ticketId: selected.ticket.id, status, reason,
-      expectedRevision: selected.ticket.revision, idempotencyKey: crypto.randomUUID(),
+      expectedRevision: selected.ticket.revision, idempotencyKey,
     }));
+    resolveSupportMutationKey("transition", fingerprint, idempotencyKey);
   }, [client, selected, updateSelected, workspaceId]);
 
   const comment = useCallback(async (body: string, visibility: "internal" | "customer") => {
     if (!selected) return;
+    const fingerprint = JSON.stringify([workspaceId, selected.ticket.id, selected.ticket.revision, body, visibility]);
+    const idempotencyKey = supportMutationKey("comment", fingerprint);
     await updateSelected(() => client.comment({
       workspaceId, ticketId: selected.ticket.id, body, visibility,
-      expectedRevision: selected.ticket.revision, idempotencyKey: crypto.randomUUID(),
+      expectedRevision: selected.ticket.revision, idempotencyKey,
     }));
+    resolveSupportMutationKey("comment", fingerprint, idempotencyKey);
   }, [client, selected, updateSelected, workspaceId]);
 
   const loadReport = useCallback(async (input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }) => {
@@ -380,26 +407,44 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     }
   }, [client, report, reportLoading, reportStale, workspaceId]);
 
-  const decideCorrection = useCallback(async (decision: "approved" | "rejected", reason: string, approvalToken?: string) => {
-    if (!correction || correction.status === "no_change") throw new Error("当前没有待审批 correction。");
+  const decideCorrection = useCallback((decision: "approved" | "rejected", reason: string, approvalToken?: string) => {
+    // A synchronous single-flight lock covers rapid duplicate submits before
+    // React has rendered the loading state. Reuse the same promise so duplicate
+    // callers keep the dialog open if the actual request fails.
+    if (correctionDecisionInFlightRef.current) return correctionDecisionInFlightRef.current;
+    if (!correction || correction.status === "no_change") return Promise.reject(new Error("当前没有待审批 correction。"));
     const request = ++correctionRequest.current;
     const requestWorkspaceId = workspaceId;
+    const fingerprint = JSON.stringify([workspaceId, correction.correctionId, decision, reason]);
+    if (correctionDecisionSubmissionRef.current?.fingerprint !== fingerprint) {
+      correctionDecisionSubmissionRef.current = { fingerprint, idempotencyKey: crypto.randomUUID() };
+    }
+    const idempotencyKey = correctionDecisionSubmissionRef.current.idempotencyKey;
     setCorrectionLoading(true);
     setError("");
-    try {
-      // The token rides in the second argument (OpsRpcOptions) so the console
-      // emits it as the x-authorization-approval-token header, never as an rpc
-      // param: a param field would recreate the caller-supplied `approved_by`
-      // claim the token exists to replace, and a whitespace-only token trims to
-      // empty here so no blank header is sent.
-      const loaded = await client.decideCorrection({ workspaceId, correctionId: correction.correctionId, decision, reason, idempotencyKey: crypto.randomUUID() }, { authorizationApprovalToken: approvalToken?.trim() });
-      if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrectionDecision(loaded);
-    } catch (cause) {
-      if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
-      throw cause;
-    } finally {
-      if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrectionLoading(false);
-    }
+    const submission = (async () => {
+      try {
+        // The token rides in the second argument (OpsRpcOptions) so the console
+        // emits it as the x-authorization-approval-token header, never as an rpc
+        // param: a param field would recreate the caller-supplied `approved_by`
+        // claim the token exists to replace, and a whitespace-only token trims to
+        // empty here so no blank header is sent.
+        const loaded = await client.decideCorrection({ workspaceId, correctionId: correction.correctionId, decision, reason, idempotencyKey }, { authorizationApprovalToken: approvalToken?.trim() });
+        if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) {
+          setCorrectionDecision(loaded);
+          if (correctionDecisionSubmissionRef.current?.idempotencyKey === idempotencyKey) correctionDecisionSubmissionRef.current = undefined;
+        }
+      } catch (cause) {
+        if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
+        throw cause;
+      } finally {
+        if (isCurrentSupportRequest(request, correctionRequest.current, requestWorkspaceId, workspaceRef.current)) setCorrectionLoading(false);
+      }
+    })();
+    let tracked: Promise<void>;
+    tracked = submission.finally(() => { if (correctionDecisionInFlightRef.current === tracked) correctionDecisionInFlightRef.current = undefined; });
+    correctionDecisionInFlightRef.current = tracked;
+    return tracked;
   }, [client, correction, workspaceId]);
 
   useEffect(() => {

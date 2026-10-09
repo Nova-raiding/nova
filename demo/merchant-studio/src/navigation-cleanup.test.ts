@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Sidebar } from './App.js'
-import { merchantRiskDestination, merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
+import { merchantRiskDestination, merchantRouteFromLocation, urlForMerchantCatalogProductList, urlForMerchantCatalogSearch, urlForMerchantCatalogStore, urlForMerchantCatalogStoreSelection, urlForMerchantRoute } from './navigation.js'
 
 const app = readFileSync(resolve(import.meta.dirname, 'App.tsx'), 'utf8')
 const css = readFileSync(resolve(import.meta.dirname, 'styles.css'), 'utf8')
@@ -19,6 +19,71 @@ describe('merchant navigation cleanup contract', () => {
     const href = urlForMerchantRoute({ pathname: '/merchant/products', search: '?q=old&publish_job_id=stale' }, { page: 'task', publishJobId: 'job-42' })
     expect(href).toBe('/merchant/tasks?publish_job_id=job-42')
     expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '?publish_job_id=job-42', hash: '' })).toEqual({ page: 'task', searchQuery: '', publishJobId: 'job-42' })
+  })
+
+  it('keeps the store catalog search recoverable in q and removes stale q when cleared', () => {
+    const location = { pathname: '/merchant/products', search: '?q=old&section=products&platform=jd&account_id=store-1', hash: '' }
+    const searched = urlForMerchantCatalogSearch(location, '新商品')
+    const parsed = new URL(searched, 'https://example.test')
+    expect(parsed.searchParams.get('q')).toBe('新商品')
+    expect(merchantRouteFromLocation(parsed).searchQuery).toBe('新商品')
+    expect(parsed.searchParams.get('account_id')).toBe('store-1')
+
+    const cleared = new URL(urlForMerchantCatalogSearch(parsed, ''), 'https://example.test')
+    expect(cleared.searchParams.has('q')).toBe(false)
+    expect(cleared.searchParams.get('section')).toBe('products')
+    expect(merchantRouteFromLocation(cleared).searchQuery).toBe('')
+  })
+
+  it('restores the opened store from URL scope and removes stale query and product scope', () => {
+    const href = urlForMerchantCatalogStore(
+      { pathname: '/merchant/products', search: '?q=old&section=products&product_id=stale&platform=taobao&account_id=old-store', hash: '' },
+      { platform: 'jd', accountId: 'jd-store-2' },
+    )
+    const parsed = new URL(href, 'https://example.test')
+    expect(parsed.searchParams.has('q')).toBe(false)
+    expect(parsed.searchParams.has('product_id')).toBe(false)
+    expect(merchantRouteFromLocation(parsed).catalogContext).toEqual({ platform: 'jd', accountId: 'jd-store-2' })
+  })
+
+  it('returns to platform store selection without restoring the prior store on refresh', () => {
+    const href = urlForMerchantCatalogStoreSelection({
+      pathname: '/merchant/products',
+      search: '?q=old&section=products&product_id=stale&platform=jd&account_id=jd-store-2',
+      hash: '',
+    })
+    const parsed = new URL(href, 'https://example.test')
+    expect(parsed.searchParams.get('platform')).toBe('jd')
+    expect(parsed.searchParams.has('account_id')).toBe(false)
+    expect(parsed.searchParams.has('product_id')).toBe(false)
+    expect(parsed.searchParams.has('q')).toBe(false)
+    expect(merchantRouteFromLocation(parsed).catalogContext).toEqual({ platform: 'jd' })
+    expect(app.match(/onClick=\{returnToStoreSelection\}/gu)).toHaveLength(3)
+    expect(app).toContain('urlForMerchantCatalogStoreSelection(window.location)')
+  })
+
+  it('returns from a product deep link to the same store list while retaining search and store scope', () => {
+    const href = urlForMerchantCatalogProductList({
+      pathname: '/merchant/products',
+      search: '?q=防晒&section=products&product_id=product-7&platform=jd&account_id=jd-store-2',
+      hash: '',
+    })
+    const parsed = new URL(href, 'https://example.test')
+    expect(parsed.searchParams.get('q')).toBe('防晒')
+    expect(parsed.searchParams.get('platform')).toBe('jd')
+    expect(parsed.searchParams.get('account_id')).toBe('jd-store-2')
+    expect(parsed.searchParams.has('product_id')).toBe(false)
+    expect(merchantRouteFromLocation(parsed).catalogContext).toEqual({ platform: 'jd', accountId: 'jd-store-2' })
+    expect(app).toContain('setSelectedProductId(null); onCatalogProductList()')
+    expect(app).toContain('urlForMerchantCatalogProductList(window.location)')
+  })
+
+  it('resets the store-local search when opening a store and restores it from the URL after popstate', () => {
+    expect(app).toContain("setCatalogQuery('')\n    onCatalogStoreOpen({ platform: store.platformId as MerchantPlatformId, accountId: store.id })")
+    expect(app).toContain('urlForMerchantCatalogStore(window.location, store)')
+    expect(app).toContain("onChange={(event) => { setCatalogQuery(event.target.value); onCatalogQueryChange(event.target.value) }}")
+    expect(app).toContain("const onPopState = () => applyLocation(window.location)")
+    expect(app).toContain('key={`products-${workspaceNavigationKey}`}')
   })
 
   it('keeps only knowledge as a new-session entry', () => {

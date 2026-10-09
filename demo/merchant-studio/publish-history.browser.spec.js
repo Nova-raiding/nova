@@ -24,11 +24,11 @@ const report = index => ({
   evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-29T09:00:00.000Z',
 })
 
-async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false } = {}) {
+async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false, focusJobId = '' } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const page = await context.newPage()
-  const observations = { jobOffsets: [], manualOffsets: [], jobAttempts: 0, manualAttempts: 0, unexpectedWrites: [] }
+  const observations = { jobOffsets: [], manualOffsets: [], focusedJobIds: [], jobAttempts: 0, manualAttempts: 0, unexpectedWrites: [] }
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.route('**/api/**', async route => {
@@ -41,7 +41,12 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
     else if (pathname === '/healthz') data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'mock', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
     else if (pathname === '/v1/tasks') data = { items: [], total: 0, limit: 50, offset: 0 }
     else if (pathname === '/v1/products') data = { items: [], total: 0, limit: 50, offset: 0 }
-    else if (pathname === '/v1/publish-jobs') {
+    else if (/^\/v1\/publish-jobs\/[^/]+$/u.test(pathname)) {
+      const id = decodeURIComponent(pathname.slice('/v1/publish-jobs/'.length))
+      observations.focusedJobIds.push(id)
+      if (id === 'pub-42') data = job(42)
+      else return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_JOB_NOT_FOUND', message: '发布任务不存在' })) })
+    } else if (pathname === '/v1/publish-jobs') {
       const offset = Number(parsed.searchParams.get('offset') ?? 0)
       observations.jobOffsets.push(offset)
       observations.jobAttempts++
@@ -71,7 +76,7 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
   })
   // Isolated local candidate mount: the browser sees the production panel
   // component, while all backend responses are controlled read-only mocks.
-  await page.goto(`${studioUrl}/publish-history-visual.html`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`${studioUrl}/publish-history-visual.html${focusJobId ? `?publish_job_id=${encodeURIComponent(focusJobId)}` : ''}`, { waitUntil: 'domcontentloaded' })
   return { browser, context, page, observations, pageErrors }
 }
 
@@ -144,5 +149,33 @@ test('刷新后总数缩小时自动回到最后有效页', async () => {
     await expect(panel).toContainText('任务 task-25')
     await expect(panel.getByRole('button', { name: '下一页' })).toBeDisabled()
     expect(observations.manualOffsets.slice(-2)).toEqual([100, 20])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('发布任务深链按 ID 读取，不受最近 20 条分页限制', async () => {
+  const { browser, context, page, observations, pageErrors } = await openMock({ focusJobId: 'pub-42' })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel).toContainText('刚创建的发布任务：pub-42')
+    await expect(panel).toContainText('任务 task-42')
+    await expect(panel).not.toContainText('任务 task-1')
+    expect(observations.focusedJobIds).toEqual(['pub-42'])
+    expect(observations.jobOffsets).toEqual([])
+    expect(observations.unexpectedWrites).toEqual([])
+    expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('不可达的发布任务深链明确报错，不回退显示普通首页', async () => {
+  const { browser, context, page, observations, pageErrors } = await openMock({ focusJobId: 'pub-missing' })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel.getByRole('alert')).toContainText('无法读取指定发布任务 pub-missing')
+    await expect(panel).not.toContainText('任务 task-1')
+    await expect(panel.getByRole('link', { name: '返回发布记录列表' })).toHaveAttribute('href', /\/merchant\/tasks$/u)
+    expect(observations.focusedJobIds).toEqual(['pub-missing'])
+    expect(observations.jobOffsets).toEqual([])
+    expect(observations.unexpectedWrites).toEqual([])
+    expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })

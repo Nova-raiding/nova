@@ -12,10 +12,10 @@ import {
   type CommercialOrderItem,
   type CommercialRefundEvent,
   type CommercialPage,
+  type CommercialTimelinePage,
   type CreativePointLedgerEntry,
   type CreativePointRateItem,
   type ServiceFulfillmentItem,
-  type CommercialTimelineEvent,
 } from "../api/commercialOperationsClient.js";
 import type { OpsRequestError } from "../types/ops.js";
 
@@ -68,7 +68,7 @@ export interface CommercialDataMap {
   orders: CommercialPage<CommercialOrderItem>;
   rates: CommercialPage<CreativePointRateItem>;
   services: CommercialPage<ServiceFulfillmentItem>;
-  timeline: CommercialPage<CommercialTimelineEvent>;
+  timeline: CommercialTimelinePage;
 }
 
 const initialDataStates = (): { [K in CommercialView]: CommercialDataState<CommercialDataMap[K]> } => ({
@@ -220,6 +220,8 @@ export function useCommercialOperations(
   const [summary, setSummary] = useState<CommercialDataState<CommercialAccessSummary>>({ status: "idle" });
   const [data, setData] = useState(initialDataStates);
   const [refunds, setRefunds] = useState<CommercialDataState<CommercialPage<CommercialRefundEvent>>>({ status: "idle" });
+  const [refundsLoadingMore, setRefundsLoadingMore] = useState(false);
+  const [timelineLoadingMore, setTimelineLoadingMore] = useState(false);
   const requestRef = useRef<Partial<Record<CommercialView, number>>>({});
   const controllerRef = useRef<Partial<Record<CommercialView, AbortController>>>({});
   const commercialPageCursorsRef = useRef<Partial<Record<CommercialView, Record<number, string>>>>({});
@@ -274,6 +276,8 @@ export function useCommercialOperations(
     setSummary({ status: "idle" });
     setData(initialDataStates());
     setRefunds({ status: "idle" });
+    setRefundsLoadingMore(false);
+    setTimelineLoadingMore(false);
     setQueryState((current) => ({ ...current, record: "", page: 1 }));
     if (typeof window !== "undefined") window.history.replaceState({}, "", commercialQueryUrl(window.location, { record: "", page: 1 }));
   }, [targetWorkspaceId]);
@@ -304,6 +308,7 @@ export function useCommercialOperations(
   }, [authorization, client, enabled, targetWorkspaceId]);
 
   const loadView = useCallback(async (target: CommercialView = view) => {
+    if (target === "timeline") setTimelineLoadingMore(false);
     if (!enabled || !canLoadCommercialView(authorization, targetWorkspaceId, target)) {
       controllerRef.current[target]?.abort();
       requestRef.current[target] = (requestRef.current[target] ?? 0) + 1;
@@ -381,7 +386,35 @@ export function useCommercialOperations(
     }
   }, [authorization, client, enabled, privateSkuReadable, queryState.page, targetWorkspaceId, view]);
 
+  const loadMoreTimeline = useCallback(async () => {
+    const current = data.timeline.data;
+    if (!current || !current.nextCursor || timelineLoadingMore || !enabled || !canLoadCommercialView(authorization, targetWorkspaceId, "timeline")) return;
+    const cursor = current.nextCursor;
+    const target = "timeline" as const;
+    controllerRef.current[target]?.abort();
+    const controller = new AbortController();
+    controllerRef.current[target] = controller;
+    const request = (requestRef.current[target] ?? 0) + 1;
+    requestRef.current[target] = request;
+    setTimelineLoadingMore(true);
+    setData((previous) => ({ ...previous, timeline: { status: "loading", data: previous.timeline.data } }));
+    try {
+      const page = await client.timeline(targetWorkspaceId, { limit: 100, cursor }, controller.signal);
+      if (request !== requestRef.current[target]) return;
+      const seen = new Set(current.items.map((item) => item.id));
+      const items = [...current.items, ...page.items.filter((item) => !seen.has(item.id))];
+      setData((previous) => ({ ...previous, timeline: { status: "ready", data: { ...page, items } } }));
+    } catch (cause) {
+      if (request !== requestRef.current[target] || cause instanceof DOMException && cause.name === "AbortError") return;
+      const error = errorEvidence(cause);
+      setData((previous) => ({ ...previous, timeline: { status: isForbiddenError(error) ? "forbidden" : "error", data: previous.timeline.data, error } }));
+    } finally {
+      if (request === requestRef.current[target]) setTimelineLoadingMore(false);
+    }
+  }, [authorization, client, data.timeline.data, enabled, targetWorkspaceId, timelineLoadingMore]);
+
   const loadRefunds = useCallback(async () => {
+    setRefundsLoadingMore(false);
     refundControllerRef.current?.abort();
     const request = ++refundRequestRef.current;
     if (!(enabled || platformRefundReadEnabled) || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) {
@@ -392,7 +425,7 @@ export function useCommercialOperations(
     refundControllerRef.current = controller;
     setRefunds({ status: "loading" });
     try {
-      const result = await client.listCommercialRefunds(targetWorkspaceId, controller.signal);
+      const result = await client.listCommercialRefunds(targetWorkspaceId, undefined, controller.signal);
       if (request !== refundRequestRef.current) return null;
       setRefunds({ status: "ready", data: result });
       return result;
@@ -403,6 +436,29 @@ export function useCommercialOperations(
       return null;
     }
   }, [authorization, client, enabled, platformRefundReadEnabled, targetWorkspaceId]);
+
+  const loadMoreRefunds = useCallback(async () => {
+    const current = refunds.data;
+    if (!current?.nextCursor || refundsLoadingMore || !(enabled || platformRefundReadEnabled) || !authorization.can(commercialCapabilities.paymentReconcile) || !targetWorkspaceId) return;
+    refundControllerRef.current?.abort();
+    const request = ++refundRequestRef.current;
+    const controller = new AbortController();
+    refundControllerRef.current = controller;
+    setRefundsLoadingMore(true);
+    setRefunds(previous => ({ ...previous, status: "loading", data: previous.data }));
+    try {
+      const page = await client.listCommercialRefunds(targetWorkspaceId, { limit: 100, cursor: current.nextCursor }, controller.signal);
+      if (request !== refundRequestRef.current) return;
+      const seen = new Set(current.items.map(item => item.id));
+      setRefunds({ status: "ready", data: { ...page, items: [...current.items, ...page.items.filter(item => !seen.has(item.id))] } });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      const error = errorEvidence(cause);
+      if (request === refundRequestRef.current) setRefunds({ status: isForbiddenError(error) ? "forbidden" : "error", data: refunds.data, error });
+    } finally {
+      if (request === refundRequestRef.current) setRefundsLoadingMore(false);
+    }
+  }, [authorization, client, enabled, platformRefundReadEnabled, refunds.data, refundsLoadingMore, targetWorkspaceId]);
 
   useEffect(() => {
     void loadSummary();
@@ -439,7 +495,7 @@ export function useCommercialOperations(
     canWriteService: authorization.can(commercialCapabilities.serviceWrite),
   }), [authorization, privateSkuReadable]);
 
-  return { view, setView, query: queryState, setQuery, setTargetWorkspace, summary, data, refunds, loadSummary, loadView, loadRefunds, permissions, targetWorkspaceId, client };
+  return { view, setView, query: queryState, setQuery, setTargetWorkspace, summary, data, refunds, loadSummary, loadView, loadRefunds, loadMoreRefunds, refundsLoadingMore, loadMoreTimeline, timelineLoadingMore, permissions, targetWorkspaceId, client };
 }
 
 export type CommercialOperationsController = ReturnType<typeof useCommercialOperations>;

@@ -11,11 +11,13 @@ import { ISOLATED_REDIS_TEST_FILES } from '../vitest.redis.config.js'
 import {
   UNSCHEDULED_BROWSER_SPECS,
   UNCOLLECTED_VITEST_TEST_FILES,
+  browserSpecsFromPackageScripts,
   brokenDocumentTestReferences,
   browserSpecFilesOnDisk,
   entrypointTestFiles,
   findUnscheduledBrowserSpecs,
   findUncollectedVitestTests,
+  packageScriptBrowserSpecs,
   staleManifestEntries,
   vitestTestFilesOnDisk,
 } from './test-entrypoint-coverage.js'
@@ -119,6 +121,7 @@ describe('quality entrypoint coverage', () => {
     expect(script('test:ecs-staging-toolchain')).toBe('node --test tests/ecs-staging-toolchain-installer.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('.codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs')
+    expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product-meta-order.test.mjs')
     // `invariants:verify` was the only mechanism in this repository that proves
     // other assertions can fail, and nothing executed it: the 23/23 headline
     // was a one-off run, not a gate. The strict pass needs an isolated
@@ -161,6 +164,25 @@ describe('quality entrypoint coverage', () => {
     }
   })
 
+  it('counts browser specs passed directly by package.json browser scripts', () => {
+    const fixture = browserSpecsFromPackageScripts({
+      'test:browser:canonical-desktop': 'playwright test --config=demo/merchant-studio demo/merchant-studio/canonical-product-desktop.spec.js --workers=1',
+      'test:browser:image-generation-desktop': 'playwright test --config=demo/merchant-studio demo/merchant-studio/image-generation-desktop.spec.js demo/merchant-studio/image-generation-desktop-responsive.spec.js --workers=1',
+      'test:unit': 'vitest run demo/merchant-studio/not-a-browser.spec.js',
+    })
+    expect([...fixture].sort()).toEqual([
+      'demo/merchant-studio/canonical-product-desktop.spec.js',
+      'demo/merchant-studio/image-generation-desktop-responsive.spec.js',
+      'demo/merchant-studio/image-generation-desktop.spec.js',
+    ])
+
+    const scheduled = packageScriptBrowserSpecs(root)
+    expect(scheduled).toContain('demo/merchant-studio/canonical-product-desktop.spec.js')
+    expect(scheduled).toContain('demo/merchant-studio/image-generation-desktop.spec.js')
+    expect(scheduled).toContain('demo/merchant-studio/image-generation-desktop-responsive.spec.js')
+    expect(findUnscheduledBrowserSpecs(root)).toEqual([])
+  })
+
   it('keeps every document reference to a test file pointing at a file that exists', () => {
     expect(brokenDocumentTestReferences(root)).toEqual([])
   })
@@ -196,6 +218,7 @@ describe('quality entrypoint coverage', () => {
 
   it('keeps all fail-closed gate tests in the explicit release suite', () => {
     const releaseGate = script('test:release-gates')
+    expect(releaseGate).toContain('tests/browser-gate-entrypoints.test.ts')
     expect(releaseGate).toContain('&& npm run test:ecs-staging-toolchain')
     expect(releaseGate).not.toContain('tests/kubernetes-release-gate.test.ts')
     expect(script('test:kubernetes-release-gate')).toBe('vitest run --config vitest.kubernetes.config.ts --no-file-parallelism tests/kubernetes-release-gate.test.ts tests/rendered-kubernetes-config.test.ts')
@@ -212,6 +235,16 @@ describe('quality entrypoint coverage', () => {
     expect(script('test:local-release-gate')).toContain('--config vitest.runtime.config.ts tests/local-docker-release-gate.test.ts')
     for (const contract of [
       'tests/quality-entrypoints.test.ts',
+      'tests/browser-gate-entrypoints.test.ts',
+      'tests/ops-e2e-isolation.test.ts',
+      'tests/merchant-provision-isolated-runner.test.ts',
+      'apps/plugin/mcp/host-boundary.e2e.test.ts',
+      'apps/plugin/mcp/local-content-chain.e2e.test.ts',
+      'apps/plugin/mcp/first-use-chain.e2e.test.ts',
+      'apps/plugin/mcp/visual-permission-denial.e2e.test.ts',
+      'apps/plugin/mcp/bridge-api-transport-contract.e2e.test.ts',
+      'apps/plugin/mcp/bridge-error-contract.test.ts',
+      'apps/plugin/install-smoke.test.ts',
       'tests/mcp-surface-contract.test.ts',
       'tests/openapi-contract.test.ts',
       'tests/ops-api-surface.test.ts',

@@ -189,6 +189,6 @@ async function expectText(page: Page, text: string) {
 
 declare global {
   interface Window {
-    __publicRuleRpcMock?: (method: string, params?: unknown) => Promise<unknown>;
+    __publicRuleRpcMock?: (method: string, params?: unknown, options?: unknown) => Promise<unknown>;
   }
 }

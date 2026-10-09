@@ -4,11 +4,12 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const root = resolve(import.meta.dirname, '..')
 const port = 5194
+const workspaceId = 'ws_publish_history_local_mock'
 const studioUrl = `http://127.0.0.1:${port}`
 const evidenceDir = resolve(root, 'docs/qa/evidence/2026-09-29-chatgpt-app/local-publish-history')
 const vite = spawn(resolve(root, 'demo/merchant-studio/node_modules/.bin/vite'), [
   '--host', '127.0.0.1', '--port', String(port), '--strictPort',
-], { cwd: resolve(root, 'demo/merchant-studio'), env: { ...process.env, VITE_API_BASE_URL: '/api' }, stdio: 'ignore' })
+], { cwd: resolve(root, 'demo/merchant-studio'), env: { ...process.env, VITE_API_BASE_URL: '/api', VITE_WORKSPACE_ID: workspaceId }, stdio: 'ignore' })
 
 try {
   let ready = false

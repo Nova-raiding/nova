@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
+import { pluginSkillMirrors } from '../scripts/plugin-skill-mirrors.js'
 import { releaseGitShaForRoot } from '../scripts/release-identity.js'
 
 function testReleaseId(root: string): string {
@@ -69,10 +70,14 @@ describe('release manifest', () => {
         codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(151)
+    expect(manifest.artifacts).toHaveLength(189)
     expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining([
       'scripts/release-manifest.ts',
       'scripts/release-identity.ts',
+      'scripts/plugin-skill-mirrors.ts',
+      '.codex-marketplace/plugins/merchant-marketing/.codex-plugin/plugin.json',
+      '.codex-marketplace/plugins/merchant-marketing/package.json',
+      '.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md',
       'scripts/collect-codex-app-host-evidence.mjs',
       'tests/codex-app-host-evidence-gate.ts',
       'infra/scripts/ecs-demo-254-host-inventory.mjs',
@@ -84,6 +89,7 @@ describe('release manifest', () => {
       'infra/protected/attest-canonical-safe-state.d.mts',
       'infra/protected/canonical-safe-state-snapshot.mjs',
       'infra/protected/canonical-safe-state-snapshot.d.mts',
+      ...pluginSkillMirrors.flatMap(([sourcePath, marketplacePath]) => [sourcePath, marketplacePath]),
       'infra/protected/canonical-safe-state-reader-bootstrap.sql',
       'infra/scripts/verify-canonical-safe-state-reader.sh',
       'tests/canonical-product-cutover-evidence-gate.ts',

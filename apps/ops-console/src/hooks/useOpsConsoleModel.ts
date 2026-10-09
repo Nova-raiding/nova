@@ -71,6 +71,7 @@ import { createAuthorizationProjection, type AuthorizationProjection } from "../
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 import { manualPublishClient, type RecordManualPublishEvidenceInput } from "../api/manualPublishClient.js";
 import { loadUserDirectory, userDirectoryResultKey } from "../api/userDirectoryCompatibility.js";
+import { canExportUserDirectory } from "../api/userDirectoryPermission.js";
 import { SingleFlightGate } from "./singleFlightGate.js";
 import { canReadOpsUserDetail } from "./userDetailAccess.js";
 
@@ -1346,7 +1347,7 @@ export function useOpsConsoleModel() {
   const canFinance = financeAccess.refund;
   const canPaymentReconciliation = financeAccess.paymentReconciliation;
   const canModelSettlement = financeAccess.modelSettlement;
-  const canBillingExport = financeAccess.billingExport;
+  const canBillingExport = canExportUserDirectory(authorization);
   const canAuditExport = authorization.can("audit.export");
   // Compatibility presentation flag for sections not yet split into granular
   // controls. Every mutation below still checks its exact capability.
@@ -1578,19 +1579,6 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少平台运营权限");
       return;
     }
-    const confirmed = await new Promise<boolean>((resolve) => {
-      modal.confirm({
-        title: `确认撤销 ${row.label} 的本地授权状态？`,
-        content: "撤销后不会再执行同步或发布，可重新完成官方授权后恢复。",
-        okText: "确认撤销",
-        cancelText: "取消",
-        // 破坏性确认：焦点落在“取消”，避免误按回车直接撤销授权。
-        ...confirmPolicyPropsFor("store.revoke"),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
-    });
-    if (!confirmed) return;
     try {
       await rpc("platform.revoke", {
         platform: row.platform,
@@ -1675,7 +1663,14 @@ export function useOpsConsoleModel() {
     }
   };
   const loadWorkspaceDirectory = async (filters: { query?: string; status?: "active" | "disabled"; subscriptionStatus?: string; merchantOnly?: boolean; page?: number; pageSize?: number } = {}) => {
-    if (!hasOpsConnection() || !authorization.can("workspace.directory.read")) return false;
+    if (!hasOpsConnection()) {
+      setWorkspaceDirectoryError("运营后台尚未连接，无法查询企业工作区。请重新连接后重试。");
+      return false;
+    }
+    if (!authorization.can("workspace.directory.read")) {
+      setWorkspaceDirectoryError("当前会话缺少 workspace.directory.read 权限，无法查询企业工作区。请联系平台管理员核实授权。");
+      return false;
+    }
     const controller = userRequestsRef.current.beginWorkspaceDirectory();
     const requestId = ++workspaceDirectoryRequestRef.current;
     const page = filters.page ?? Math.floor(workspaceDirectory.offset / workspaceDirectory.limit) + 1;
@@ -1720,8 +1715,8 @@ export function useOpsConsoleModel() {
     }
   };
   const exportUsers = async (filters: { query?: string; status?: string; workspaceId?: string } = {}) => {
-    if (!canUserGovernance) {
-      message.error("当前会话为只读，缺少平台用户导出权限");
+    if (!canExportUserDirectory(authorization)) {
+      message.error("当前会话缺少 billing.export 用户目录导出权限");
       return false;
     }
     const controller = userRequestsRef.current.beginExport();
@@ -1783,10 +1778,11 @@ export function useOpsConsoleModel() {
   const suspendUsers = async (targets: Array<{ workspaceId: string; externalSubject: string; revision?: number }>, reason: string) => {
     if (!canUserGovernance) {
       message.error("当前会话为只读，缺少平台用户治理权限");
-      return { succeeded: 0, failed: targets.length };
+      return { succeeded: 0, failed: targets.length, failedTargets: targets };
     }
     let succeeded = 0;
     let failed = 0;
+    const failedTargets: typeof targets = [];
     for (const target of targets) {
       try {
         if (target.revision === undefined) throw new Error("用户成员版本已过期，请刷新后重试");
@@ -1794,12 +1790,13 @@ export function useOpsConsoleModel() {
         succeeded += 1;
       } catch {
         failed += 1;
+        failedTargets.push(target);
       }
     }
     await loadUsers(userDirectoryFilters);
     if (failed) message.warning(`已停用 ${succeeded} 个成员，${failed} 个失败，请查看刷新后的状态并单独处理`);
     else message.success(`已停用 ${succeeded} 个成员`);
-    return { succeeded, failed };
+    return { succeeded, failed, failedTargets };
   };
   const suspendUser = async (workspaceId: string, externalSubject: string, reason: string) => {
     if (!canUserGovernance) {

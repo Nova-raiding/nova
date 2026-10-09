@@ -116,6 +116,6 @@ describe("public rule detail request ordering", () => {
 declare global {
   interface Window {
     __pendingRuleDetails?: Record<string, ((value: unknown) => void) | undefined>;
-    __publicRuleRpcMock?: (method: string, params?: unknown) => Promise<unknown>;
+    __publicRuleRpcMock?: (method: string, params?: unknown, options?: unknown) => Promise<unknown>;
   }
 }

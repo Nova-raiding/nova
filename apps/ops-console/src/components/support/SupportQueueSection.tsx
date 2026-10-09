@@ -9,10 +9,9 @@ import type {
   SupportSlaState,
 } from "../../../../../packages/contracts/src/ops/support.js";
 import type { SupportDomainModel } from "../../hooks/useSupportDomain.js";
+import { supportStatusLabels } from "./supportStatusLabels.js";
 
-const statusLabels: Record<SupportTicketStatus, string> = {
-  open: "待处理", in_progress: "处理中", waiting_customer: "等待客户", resolved: "已解决", closed: "已关闭",
-};
+const statusLabels = supportStatusLabels;
 const priorityLabels: Record<SupportTicketPriority, string> = { low: "低", normal: "普通", high: "高", urgent: "紧急" };
 const priorityColors: Record<SupportTicketPriority, string> = { low: "default", normal: "blue", high: "orange", urgent: "red" };
 const slaLabels: Record<SupportSlaState, string> = { on_track: "正常", at_risk: "临期", breached: "已超时", met: "已达成" };
@@ -176,11 +175,11 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
       >
         {createError ? <Alert role="alert" showIcon type="error" title="创建工单失败" description={createError} style={{ marginBottom: 16 }} /> : null}
         <Form form={form} layout="vertical" initialValues={{ priority: "normal", tags: [] }} requiredMark="optional">
-          <Form.Item name="subject" label="主题" rules={[{ required: true, min: 3, max: 200 }]}><Input autoFocus maxLength={200} /></Form.Item>
-          <Form.Item name="description" label="问题描述" rules={[{ required: true, max: 10000 }]}><Input.TextArea rows={4} maxLength={10000} showCount /></Form.Item>
+          <Form.Item name="subject" label="主题" normalize={(value: string) => value.trim()} rules={[{ required: true, min: 3, max: 200, whitespace: true }]}><Input autoFocus maxLength={200} /></Form.Item>
+          <Form.Item name="description" label="问题描述" normalize={(value: string) => value.trim()} rules={[{ required: true, max: 10000, whitespace: true }]}><Input.TextArea rows={4} maxLength={10000} showCount /></Form.Item>
           <Form.Item name="priority" label="优先级" rules={[{ required: true }]}><Select options={Object.entries(priorityLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-          <Form.Item name="customerId" label="客户 ID" rules={[{ required: true, max: 256 }]}><Input maxLength={256} /></Form.Item>
-          <Form.Item name="customerName" label="客户名称" rules={[{ required: true, max: 200 }]}><Input maxLength={200} /></Form.Item>
+          <Form.Item name="customerId" label="客户 ID" normalize={(value: string) => value.trim()} rules={[{ required: true, max: 256, whitespace: true }]}><Input maxLength={256} /></Form.Item>
+          <Form.Item name="customerName" label="客户名称" normalize={(value: string) => value.trim()} rules={[{ required: true, max: 200, whitespace: true }]}><Input maxLength={200} /></Form.Item>
           <Form.Item name="customerEmail" label="客户邮箱" rules={[{ type: "email", max: 320 }]}><Input type="email" maxLength={320} /></Form.Item>
           <Form.Item name="relatedTaskId" label="关联任务 ID" extra="从任务、生成或发布异常创建工单时填写，便于客服接回处理链路"><Input maxLength={256} /></Form.Item>
           <Form.Item name="relatedOrderId" label="关联订单 ID"><Input maxLength={256} /></Form.Item>

@@ -12,7 +12,6 @@ import JSZip from 'jszip'
 import { chromium } from 'playwright'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
-import { TASK_STATES } from '../../../packages/contracts/src/domain.js'
 // The two byte-identical copies of this file sit at different depths relative to
 // the repository root (`apps/plugin/mcp` vs
 // `.codex-marketplace/plugins/merchant-marketing/mcp`), so no fixed relative
@@ -31,6 +30,9 @@ const repositoryRoot = (() => {
   throw new Error('bridge test could not locate the repository root')
 })()
 const pluginVersion = (JSON.parse(await readFile(join(repositoryRoot, 'apps/plugin/package.json'), 'utf8')) as { version: string }).version
+const { TASK_STATES } = await import(join(repositoryRoot, 'packages/contracts/src/domain.js')) as {
+  TASK_STATES: readonly string[]
+}
 const {
   MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS,
   MCP_POINT_CHARGED_DISABLED_METHODS,

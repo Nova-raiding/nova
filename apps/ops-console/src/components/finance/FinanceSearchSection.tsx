@@ -2,13 +2,14 @@ import { DownloadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/ic
 import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useRef, useState } from "react";
-import { financeRecordKinds, type FinanceRecordKind, type FinanceSearchRecord } from "../../../../../packages/contracts/src/ops/finance-search.js";
+import { financeRecordKinds, type FinanceRecordKind, type FinanceSearchQuery, type FinanceSearchRecord } from "../../../../../packages/contracts/src/ops/finance-search.js";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
 import { FinanceDetailDrawer, financeRecordCostEvidence } from "./FinanceDetailDrawer.js";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 
 interface FinanceSearchSectionProps {
   controller: FinanceSearchController
+  canExport?: boolean
   showProviderStatementStatus?: boolean
   compactSummary?: boolean
 }
@@ -27,9 +28,10 @@ const statusLabel: Record<string, string> = {
 const readableStatus = (value: string) => statusLabel[value.toLowerCase()] ?? value;
 const money = (value: number | undefined, precision = 2) => value === undefined ? "—" : `¥${value.toFixed(precision)}`;
 
-export function FinanceSearchSection({ controller, showProviderStatementStatus = true, compactSummary = false }: FinanceSearchSectionProps) {
+export function FinanceSearchSection({ controller, canExport = false, showProviderStatementStatus = true, compactSummary = false }: FinanceSearchSectionProps) {
   const [form] = Form.useForm<Filters>();
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const submittedQueryRef = useRef<Partial<FinanceSearchQuery> | undefined>(undefined);
   const initialErrorRef = useRef<HTMLDivElement>(null);
   const detailTriggerRef = useRef<HTMLElement>(null);
   const summary = controller.page?.summary;
@@ -41,6 +43,22 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
   useEffect(() => {
     if (initialLoadFailed) initialErrorRef.current?.focus({ preventScroll: true });
   }, [initialLoadFailed]);
+  useEffect(() => {
+    // Reflect the server-confirmed query in the controls only after a successful
+    // search. A failed attempt must leave its submitted values available to retry.
+    form.setFieldsValue({
+      text: controller.query.text,
+      workspaceIds: controller.query.workspaceIds?.join(", "),
+      kinds: controller.query.kinds,
+      statuses: controller.query.statuses,
+    });
+    submittedQueryRef.current = {
+      text: controller.query.text,
+      workspaceIds: controller.query.workspaceIds,
+      kinds: controller.query.kinds,
+      statuses: controller.query.statuses,
+    };
+  }, [controller.query, form]);
   const columns: ColumnsType<FinanceSearchRecord> = [
     { title: "类型", dataIndex: "kind", width: 120, fixed: "left", render: (kind: FinanceRecordKind) => <Tag>{kindLabel[kind]}</Tag> },
     { title: "企业主体", key: "enterprise", width: 220, render: (_value, record) => <EnterpriseIdentity name={record.enterpriseName} workspaceId={record.workspaceId} /> },
@@ -52,12 +70,26 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
     { title: "操作", key: "action", width: 100, fixed: "right", render: (_, record) => <Button type="link" ref={button => { if (controller.selected?.id === record.id) detailTriggerRef.current = button; }} onClick={event => { detailTriggerRef.current = event.currentTarget; void controller.openDetail(record); }} aria-label={`查看 ${record.label} ${record.id} 详情`}>详情</Button> },
   ];
 
-  const submit = async (values: Filters) => controller.search({
-    text: values.text?.trim() || undefined,
-    workspaceIds: parseFinanceWorkspaceIdFilter(values.workspaceIds),
-    kinds: values.kinds,
-    statuses: values.statuses?.map(value => value.trim()).filter(Boolean),
-  });
+  const submit = async (values: Filters) => {
+    const submittedQuery = {
+      text: values.text?.trim() || undefined,
+      workspaceIds: parseFinanceWorkspaceIdFilter(values.workspaceIds),
+      kinds: values.kinds,
+      statuses: values.statuses?.map(value => value.trim()).filter(Boolean),
+    };
+    submittedQueryRef.current = submittedQuery;
+    await controller.search(submittedQuery);
+  };
+  const retrySearch = () => void controller.search(submittedQueryRef.current ?? {});
+  const refreshSearch = () => {
+    submittedQueryRef.current = {
+      text: controller.query.text,
+      workspaceIds: controller.query.workspaceIds,
+      kinds: controller.query.kinds,
+      statuses: controller.query.statuses,
+    };
+    void controller.search(submittedQueryRef.current);
+  };
 
   return (
     <Card
@@ -65,8 +97,8 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
       className="ops-section-anchor"
       title="跨企业主体财务检索"
       extra={<Space wrap>
-        <Button icon={<ReloadOutlined />} loading={controller.loading} onClick={() => void controller.search()} aria-label="刷新财务检索结果">刷新</Button>
-        <Button icon={<DownloadOutlined />} loading={controller.exporting} disabled={!controller.records.length || controller.loading || controller.resultsStale} onClick={() => void controller.downloadCsv()}>导出当前筛选</Button>
+        <Button icon={<ReloadOutlined />} loading={controller.loading} onClick={refreshSearch} aria-label="刷新财务检索结果">刷新</Button>
+        {canExport ? <Button icon={<DownloadOutlined />} loading={controller.exporting} disabled={!controller.records.length || controller.loading || controller.resultsStale} onClick={() => void controller.downloadCsv()}>导出当前筛选</Button> : null}
       </Space>}
     >
       <Form form={form} layout="vertical" onFinish={values => void submit(values)} aria-label="财务检索筛选">
@@ -90,7 +122,7 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
       /> : null}
 
       {controller.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} aria-label={initialLoadFailed ? "财务检索错误摘要" : undefined}>
-        <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={() => void controller.search()}>重试</Button>} role="alert" aria-live="assertive" aria-atomic="true" />
+        <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={retrySearch}>重试</Button>} role="alert" aria-live="assertive" aria-atomic="true" />
       </div>}
       {controller.exportError && <Alert type="error" showIcon title="财务导出失败" description={controller.exportError} role="alert" />}
 
@@ -107,6 +139,9 @@ export function FinanceSearchSection({ controller, showProviderStatementStatus =
       {showProviderStatementStatus && summary?.providerStatementStatus && summary.providerStatementStatus !== "balanced" ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title={summary.providerStatementStatus === "not_checked" ? "本次检索未执行 Provider 对账" : "Provider 尚未完成对账"} description={summary.providerStatementStatus === "not_checked" ? "当前结果只证明本地成本快照；它不代表全局已与 Provider 平账。请打开模型用量对账页执行或查看外部账单核对。" : summary.providerStatementStatus === "unavailable" ? "Provider 对账状态不可用，不能将本地成本解释为已验证。" : "Provider 对账仍需人工处理，当前不显示为已平账。"} /> : null}
 
       <div aria-live="polite" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>{controller.loading ? "正在加载财务记录" : `已加载 ${controller.records.length} 条财务记录`}</div>
+      {summary ? <Typography.Text type="secondary" aria-live="polite" style={{ display: "block", marginBottom: 8 }}>
+        已展示 {controller.records.length} 条，共 {summary.totalRecords} 条匹配记录。{controller.page?.nextCursor ? "还有未加载记录。" : "已加载全部匹配记录。"}
+      </Typography.Text> : null}
       <Table<FinanceSearchRecord>
         rowKey={record => `${record.kind}:${record.workspaceId}:${record.id}`}
         size="small"

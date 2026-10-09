@@ -1991,6 +1991,22 @@ describe('MerchantService', () => {
     expect(service.listTasks('ws_other')).toHaveLength(0)
   })
 
+  it('orders same-timestamp tasks by id so offset pages are deterministic', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_task_page_order', platform: 'jd', title: '分页商品' })
+    const tasks = ['task-z', 'task-a', 'task-m'].map(id => {
+      const task = service.createTask({ workspaceId: 'ws_task_page_order', productId: product.id, platform: 'jd' })
+      Object.assign(task, { id, createdAt: '2026-10-09T00:00:00.000Z' })
+      return task
+    })
+
+    const ordered = service.listTasks('ws_task_page_order')
+    expect(ordered.map(task => task.id)).toEqual(['task-a', 'task-m', 'task-z'])
+    expect(ordered.slice(0, 2).map(task => task.id)).toEqual(['task-a', 'task-m'])
+    expect(ordered.slice(2, 4).map(task => task.id)).toEqual(['task-z'])
+    expect(tasks).toHaveLength(3)
+  })
+
 
   it('keeps an imported product code separate from SKU IDs and finds it by text query', () => {
     const service = new MerchantService()
@@ -3330,6 +3346,8 @@ describe('publish delivery drift, idempotency key binding and jsonb-stable diges
     expect(() => restarted.createTaskGroup({ workspaceId: 'ws_group_binding', entries, requestText: '改成主图素材', idempotencyKey: 'group-binding-1' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
     expect(restarted.tasks.size).toBe(2)
   })
+
+
 
   it('keeps publish prepare and confirm valid across a jsonb snapshot round trip', () => {
     const service = new MerchantService({ fixtureMode: true })

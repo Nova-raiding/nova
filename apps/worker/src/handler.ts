@@ -153,6 +153,21 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       return { value: { handled: event.eventType, taskId } }
     }
 
+    if (event.eventType === 'task.sku_split') {
+      const sourceTaskId = typeof event.payload.source_task_id === 'string' ? event.payload.source_task_id : undefined
+      const taskGroupId = typeof event.payload.task_group_id === 'string' ? event.payload.task_group_id.trim() : ''
+      const skuIds = event.payload.sku_ids
+      if (!sourceTaskId || sourceTaskId !== event.aggregateId || !taskGroupId
+        || !Array.isArray(skuIds) || skuIds.length < 2 || skuIds.some(id => typeof id !== 'string' || !id.trim())
+        || new Set(skuIds).size !== skuIds.length) {
+        throw unknownFailure('MALFORMED_TASK_SKU_SPLIT', `Event ${event.id} is not a valid task SKU split projection`)
+      }
+      // This event records the creation of a child group. Its task.created
+      // events own the worker task projections; splitting has no external
+      // side effect and needs only a validated acknowledgement here.
+      return { value: { handled: event.eventType, sourceTaskId, taskGroupId } }
+    }
+
     if (event.eventType === 'generation.requested' && options.generationRequested) {
       try {
         // Keep the initial authorization inside the same terminal-error path

@@ -1,4 +1,5 @@
 import type { Product, Task } from './api.js'
+import { taskTransitions } from '../../../packages/domain/src/task.js'
 
 /**
  * The ordering contract for the merchant-facing product picker.
@@ -61,7 +62,7 @@ function productScore(product: Product): number {
   return score
 }
 
-export type TaskRecoveryGroup = 'needs-attention' | 'ready-to-continue' | 'completed'
+export type TaskRecoveryGroup = 'needs-attention' | 'ready-to-continue' | 'completed' | 'ended'
 
 export type TaskRecoveryItem = {
   task: Task
@@ -70,10 +71,18 @@ export type TaskRecoveryItem = {
   actionLabel: string
 }
 
-const completedStates = new Set(['approved', 'publish_prepared', 'publishing', 'delivered'])
-const attentionStates = new Set(['failed_recoverable', 'failed_terminal'])
+const completedStates = new Set(['approved', 'publish_prepared', 'publishing'])
+const attentionStates = new Set(['failed_recoverable'])
+// The domain transition graph is the source of truth for terminal task states.
+// A state with no legal outgoing transition can only be inspected in the queue.
+const terminalStates = new Set(
+  Object.entries(taskTransitions)
+    .filter(([, nextStates]) => nextStates.length === 0)
+    .map(([state]) => state),
+)
 
 export function taskRecoveryGroup(task: Pick<Task, 'state' | 'missingQuestions'>): TaskRecoveryGroup {
+  if (terminalStates.has(task.state)) return 'ended'
   if (completedStates.has(task.state)) return 'completed'
   if (attentionStates.has(task.state) || Boolean(task.missingQuestions?.length)) return 'needs-attention'
   return 'ready-to-continue'
@@ -85,13 +94,15 @@ export function groupTasksForRecovery(tasks: Task[]): TaskRecoveryItem[] {
     'needs-attention': '需要我处理',
     'ready-to-continue': '可以继续',
     completed: '已完成',
+    ended: '已结束',
   }
   const actions: Record<TaskRecoveryGroup, string> = {
     'needs-attention': '恢复任务',
     'ready-to-continue': '恢复任务',
     completed: '恢复任务',
+    ended: '仅查看',
   }
-  const order: Record<TaskRecoveryGroup, number> = { 'needs-attention': 0, 'ready-to-continue': 1, completed: 2 }
+  const order: Record<TaskRecoveryGroup, number> = { 'needs-attention': 0, 'ready-to-continue': 1, completed: 2, ended: 3 }
   return tasks
     .map(task => {
       const group = taskRecoveryGroup(task)

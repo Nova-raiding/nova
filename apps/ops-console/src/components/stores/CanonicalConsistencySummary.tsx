@@ -17,12 +17,31 @@ const codeMessage = (code: string) => ({
 
 function reportState(report: CanonicalProductConsistencyReport) {
   if (report.availability === "unavailable" || report.contractStatus === "unavailable") return { kind: "error" as const, title: "一致性数据暂不可读取", description: "服务端没有返回可验证数据；这不是零结果，请重试或联系具备权限的运营人员。" };
-  if (report.availability === "unknown" || report.contractStatus === "unknown" || report.freshness === "expired" || report.freshness === "unknown") return { kind: "warning" as const, title: "一致性结果尚未确认", description: "当前结果不能视为已验证，也不能据此继续发布；请重新检查并等待新的服务端证据。" };
   if (report.freshness === "stale") return { kind: "warning" as const, title: "一致性结果已变旧", description: "结果可能未覆盖最新关系；处理前请重新检查。" };
+  if (report.availability !== "available" || report.contractStatus !== "clean" || report.freshness !== "fresh") return { kind: "warning" as const, title: "一致性结果尚未确认", description: "当前结果不能视为已验证，也不能据此继续发布；请重新检查并等待新的服务端证据。" };
   return undefined;
 }
 
-function nextActionLabel(finding: CanonicalProductConsistencyReport["findings"][number]) {
+function rowHasCurrentVerifiedEvidence(report: CanonicalProductConsistencyReport, finding: CanonicalProductConsistencyReport["findings"][number]) {
+  const generatedAt = finding.evidence?.generatedAt;
+  const reportGeneratedAt = report.generatedAt;
+  const revision = finding.evidence?.revision;
+  const reportRevision = report.revision;
+  return !reportState(report)
+    && finding.status === "verified"
+    && finding.codes.length === 0
+    && !finding.blocking
+    && (finding.evidence?.codes.length ?? 0) === 0
+    && typeof reportGeneratedAt === "string" && Number.isFinite(Date.parse(reportGeneratedAt))
+    && typeof generatedAt === "string" && Number.isFinite(Date.parse(generatedAt))
+    && generatedAt === reportGeneratedAt
+    && revision !== null && revision !== undefined && String(revision).trim() !== ""
+    && reportRevision !== null && reportRevision !== undefined && String(reportRevision).trim() !== ""
+    && String(revision) === String(reportRevision);
+}
+
+function nextActionLabel(finding: CanonicalProductConsistencyReport["findings"][number], currentVerified: boolean) {
+  if (finding.status === "verified" && !currentVerified) return "当前未核验；请重新检查";
   const action = finding.nextAction;
   if (!action) return finding.status === "verified" ? "无需修复；继续动作仍需通过发布门禁" : "服务端未提供动作，保持只读";
   return action.permission.allowed
@@ -43,11 +62,19 @@ export function CanonicalConsistencySummary({ report }: { report?: CanonicalProd
       {rows.length === 0 ? <Alert role={state ? "alert" : "status"} type={state ? "warning" : "success"} showIcon title={state ? "没有可验证的商品记录" : "当前没有商品级一致性记录"} description={state ? "空结果不代表已验证；请重新检查或转人工处理。" : "服务端返回了真实零结果，不是客户端未加载。"} /> : <Table style={{ marginTop: 16 }} rowKey="legacyProductId" size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={rows} columns={[
         { title: "旧商品 ID", dataIndex: "legacyProductId", render: (value: string) => <Typography.Text copyable={{ text: value }}>{value}</Typography.Text> },
         { title: "标准商品 ID", dataIndex: "canonicalProductId", render: (value?: string) => value ?? "未映射" },
-        { title: "状态", dataIndex: "status", render: (value: keyof typeof statusMeta) => <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag> },
+        { title: "状态", dataIndex: "status", render: (value: keyof typeof statusMeta, row: CanonicalProductConsistencyReport["findings"][number]) => {
+          const currentVerified = rowHasCurrentVerifiedEvidence(report, row);
+          return value === "verified" && !currentVerified
+            ? <Tag color="default">当前未核验</Tag>
+            : <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag>;
+        } },
         { title: "问题码", dataIndex: "codes", render: (codes: string[]) => codes.length ? codes.join("、") : "—" },
         { title: "关系引用", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => `${row.listingIds.length} listing / ${row.taskIds.length} task / ${row.publishJobIds.length} publish` },
         { title: "证据时间", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.evidence?.generatedAt ?? "未返回" },
-        { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Typography.Text type={row.status === "verified" ? "secondary" : "warning"}>{nextActionLabel(row)}</Typography.Text> },
+        { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => {
+          const currentVerified = rowHasCurrentVerifiedEvidence(report, row);
+          return <Typography.Text type={currentVerified ? "secondary" : "warning"}>{nextActionLabel(row, currentVerified)}</Typography.Text>;
+        } },
       ]} />}
       {report.orphanFindings.length > 0 && <Typography.Text type="secondary">另有 {report.orphanFindings.length} 条未挂接实体记录，需要在标准商品链中处理。</Typography.Text>}
     </Card>

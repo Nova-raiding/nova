@@ -1,12 +1,11 @@
 import { Alert, Button, Card, Empty, Form, Input, Modal, Select, Space, Spin, Tag, Timeline, Typography } from "antd";
-import { useEffect, useRef, useState } from "react";
-import type { SupportTicketEventContract, SupportTicketStatus } from "../../../../../packages/contracts/src/ops/support.js";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { supportTicketTransitions, type SupportTicketEventContract, type SupportTicketStatus } from "../../../../../packages/contracts/src/ops/support.js";
 import type { SupportDomainModel } from "../../hooks/useSupportDomain.js";
+import { supportStatusLabels } from "./supportStatusLabels.js";
 
-const transitionOptions: Array<{ value: SupportTicketStatus; label: string }> = [
-  { value: "open", label: "待处理" }, { value: "in_progress", label: "处理中" },
-  { value: "waiting_customer", label: "等待客户" }, { value: "resolved", label: "已解决" }, { value: "closed", label: "已关闭" },
-];
+const transitionOptionsFor = (status: SupportTicketStatus): Array<{ value: SupportTicketStatus; label: string }> =>
+  supportTicketTransitions[status].map(value => ({ value, label: supportStatusLabels[value] }));
 const eventLabels: Record<SupportTicketEventContract["eventType"], string> = {
   created: "创建工单", assigned: "分配负责人", status_changed: "变更状态", commented: "添加备注", sla_at_risk: "SLA 临期提醒", sla_breached: "SLA 违约提醒",
 };
@@ -24,6 +23,25 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
   const [visibility, setVisibility] = useState<"internal" | "customer">("internal");
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
+  const selectedTicket = model.selected?.ticket;
+  const selectedTicketIdentity = selectedTicket
+    ? `${selectedTicket.workspaceId}\u0000${selectedTicket.id}\u0000${selectedTicket.revision}\u0000${selectedTicket.status}`
+    : null;
+  const previousTicketIdentity = useRef(selectedTicketIdentity);
+
+  useLayoutEffect(() => {
+    if (previousTicketIdentity.current === selectedTicketIdentity) return;
+    previousTicketIdentity.current = selectedTicketIdentity;
+    setAssignOpen(false);
+    setTransitionOpen(false);
+    setCommentOpen(false);
+    setAssignee("");
+    setStatus(selectedTicket ? transitionOptionsFor(selectedTicket.status)[0]?.value ?? selectedTicket.status : "open");
+    setReason("");
+    setComment("");
+    setVisibility("internal");
+    setActionError("");
+  }, [selectedTicketIdentity]);
 
   useEffect(() => {
     if (actionError || model.error) actionErrorRef.current?.focus();
@@ -56,7 +74,7 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
         style={{ marginBottom: 16 }}
       /> : null}
       <Space wrap style={{ marginBottom: 16 }}>
-        <Tag>{ticket.status}</Tag><Tag color={ticket.priority === "urgent" ? "red" : "blue"}>{ticket.priority}</Tag>
+        <Tag>{supportStatusLabels[ticket.status]}</Tag><Tag color={ticket.priority === "urgent" ? "red" : "blue"}>{ticket.priority}</Tag>
         {sla ? <Tag color={slaStateColors[sla.state]}>{slaStateLabels[sla.state]}</Tag> : <Tag>旧工单待回填 SLA</Tag>}
         <Typography.Text>版本 {ticket.revision}</Typography.Text>
         <Typography.Text>负责人：{ticket.assignedTo ?? "未分配"}</Typography.Text>
@@ -80,14 +98,14 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
       </Card>
       <Card size="small" title="关联处理对象" style={{ marginBottom: 16 }}>
         <Space orientation="vertical" size={4}>
-          {ticket.relatedTaskId ? <Space size={8}><Typography.Text copyable={{ text: ticket.relatedTaskId }}>任务 ID：{ticket.relatedTaskId}</Typography.Text><Typography.Link href={`/ops/support?task_id=${encodeURIComponent(ticket.relatedTaskId)}`}>回到客服队列</Typography.Link></Space> : null}
+          {ticket.relatedTaskId ? <Space size={8}><Typography.Text copyable={{ text: ticket.relatedTaskId }}>任务 ID：{ticket.relatedTaskId}</Typography.Text><Typography.Link href="/ops/support">回到客服队列</Typography.Link></Space> : null}
           {ticket.relatedOrderId ? <Typography.Text copyable={{ text: ticket.relatedOrderId }}>订单 ID：{ticket.relatedOrderId}</Typography.Text> : null}
           {!ticket.relatedTaskId && !ticket.relatedOrderId ? <Typography.Text type="secondary">未关联任务或订单；如问题来自生成、发布或支付，请补充关联 ID 后再流转。</Typography.Text> : null}
         </Space>
       </Card>
       <Space wrap style={{ marginBottom: 24 }}>
         <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setAssignOpen(true)}>分配负责人</Button>
-        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setTransitionOpen(true)}>变更状态</Button>
+        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => { setStatus(transitionOptionsFor(ticket.status)[0]?.value ?? ticket.status); setReason(""); setTransitionOpen(true); }}>变更状态</Button>
         <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setCommentOpen(true)}>添加备注</Button>
       </Space>
       <Typography.Title level={5}>不可变事件历史</Typography.Title>
@@ -107,8 +125,8 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
       </Modal>
       <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okText="确认变更" okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => { setActionError(""); void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "变更工单状态失败，请重试。")); }}>
         <Form layout="vertical">
-          <Form.Item label="目标状态" required><Select value={status} options={transitionOptions} onChange={setStatus} /></Form.Item>
-          <Form.Item label="变更原因" required><Input.TextArea value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
+          <Form.Item label="目标状态" required><Select aria-label="目标状态" value={status} options={transitionOptionsFor(ticket.status)} onChange={setStatus} /></Form.Item>
+          <Form.Item label="变更原因" required><Input.TextArea aria-label="变更原因" value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
         </Form>
       </Modal>
       <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okText="添加备注" okButtonProps={{ disabled: !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>

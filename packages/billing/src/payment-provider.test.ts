@@ -114,6 +114,45 @@ describe('payment provider adapter', () => {
     expect(() => new HttpPaymentProvider({ endpoint: 'https://127.0.0.1/checkout', apiKey: 'key', merchantId: 'merchant' })).toThrow(/PRIVATE_ADDRESS_BLOCKED/)
   })
 
+  it.each([
+    ['credential-bearing HTTPS', 'https://user:pass@pay.example/order/1'],
+    ['empty userinfo HTTPS', 'https://@pay.example/order/1'],
+    ['fragment-bearing HTTPS', 'https://pay.example/order/1#pay'],
+    ['private IPv4 HTTPS', 'https://192.168.1.8/order/1'],
+    ['loopback HTTPS', 'https://[::1]/order/1'],
+    ['local hostname HTTPS', 'https://pay.local/order/1'],
+    ['malformed HTTPS authority', 'https:///order/1'],
+    ['HTTP checkout', 'http://pay.example/order/1'],
+    ['wrong WeChat host', 'weixin://evil.example/bizpayurl?pr=abc'],
+    ['wrong WeChat path', 'weixin://wxpay/other?pr=abc'],
+    ['WeChat without payload', 'weixin://wxpay/bizpayurl'],
+    ['WeChat with empty payload', 'weixin://wxpay/bizpayurl?pr='],
+    ['wrong Alipay host', 'alipays://evil.example/startapp?appId=123'],
+    ['wrong Alipay path', 'alipays://platformapi/other?appId=123'],
+    ['Alipay without app id', 'alipays://platformapi/startapp?x=123'],
+    ['Alipay with empty app id', 'alipays://platformapi/startapp?appId='],
+    ['fragment-bearing wallet link', 'alipays://platformapi/startapp?appId=123#pay'],
+  ])('rejects unsafe provider checkout URI (%s)', async (_case, paymentUrl) => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ payment_url: paymentUrl, order_id: 'order-1', workspace_id: 'ws-1', amount_fen: 1000 }), { status: 200 }) })
+    await expect(provider.createCheckout({ channel: 'wechat', orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 1000, callbackUrl: 'https://merchant.example/callback', description: 'checkout' })).rejects.toThrow('safe supported checkout URI')
+  })
+
+  it.each([
+    ['WeChat Pay', 'wechat', 'weixin://wxpay/bizpayurl?pr=abc'],
+    ['Alipay', 'alipay', 'alipays://platformapi/startapp?appId=20000067'],
+  ] as const)('accepts an exact %s deep link returned by the provider', async (_case, channel, paymentUrl) => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ code_url: paymentUrl, order_id: 'order-1', workspace_id: 'ws-1', amount_fen: 1000 }), { status: 200 }) })
+    await expect(provider.createCheckout({ channel, orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 1000, callbackUrl: 'https://merchant.example/callback', description: 'checkout' })).resolves.toMatchObject({ paymentUrl })
+  })
+
+  it.each([
+    ['wechat', 'alipays://platformapi/startapp?appId=20000067'],
+    ['alipay', 'weixin://wxpay/bizpayurl?pr=abc'],
+  ] as const)('rejects a checkout URI whose scheme does not match channel %s', async (channel, paymentUrl) => {
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ payment_url: paymentUrl, order_id: 'order-1', workspace_id: 'ws-1', amount_fen: 1000 }), { status: 200 }) })
+    await expect(provider.createCheckout({ channel, orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 1000, callbackUrl: 'https://merchant.example/callback', description: 'checkout' })).rejects.toThrow('selected channel')
+  })
+
   it('rejects a checkout response that is not bound to the requested tenant order and amount', async () => {
     const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify({ payment_url: 'https://pay.example/order/1', provider_order_id: 'provider-1', order_id: 'other-order', workspace_id: 'ws-1', amount_fen: 1000 }), { status: 200 }) })
     await expect(provider.createCheckout({ channel: 'wechat', orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 1000, callbackUrl: 'https://merchant.example/callback', description: '充值' })).rejects.toThrow('did not match the request')

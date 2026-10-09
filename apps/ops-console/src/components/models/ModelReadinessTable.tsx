@@ -35,12 +35,12 @@ export function ModelReadinessTable({ status }: ModelReadinessTableProps) {
             ),
           },
           {
-            title: "运行态 ready",
+            title: "配置与额度门禁",
             dataIndex: "ready",
             width: 150,
             render: (ready: boolean) => (
               <Tag color={ready ? "green" : "red"}>
-                {ready ? "可用" : "阻断"}
+                {ready ? "门禁通过" : "阻断"}
               </Tag>
             ),
           },
@@ -53,6 +53,12 @@ export function ModelReadinessTable({ status }: ModelReadinessTableProps) {
                 : reasons.join("；") || "尚未通过最终运行与商业门禁",
           },
         ]}
+      />
+      <Alert
+        type="info"
+        showIcon
+        title="真实生成尚未验证"
+        description="配置与额度门禁通过不代表模型已成功推理；本状态未执行真实生成 canary。"
       />
       {status && (
         <Alert

@@ -9,7 +9,7 @@ describe("storage reconciliation fail-closed display regressions", () => {
     const page = renderToStaticMarkup(<StorageReconciliationSection summary={summary} />);
     const overview = renderToStaticMarkup(<StorageReconciliationSummary summary={summary} onOpen={() => undefined} />);
 
-    expect(page).toContain("状态不可验证");
+    expect(page).toContain("状态待确认，未验证");
     expect(page).toContain("新鲜度待确认");
     expect(page).not.toContain(">对账正常<");
     expect(overview).toContain("状态不可验证");
@@ -36,5 +36,34 @@ describe("storage reconciliation fail-closed display regressions", () => {
     expect(html).toContain("对象存储状态不可视为真实就绪");
     expect(html).toContain("演示数据，未验证");
     expect(html).not.toContain(">正常<");
+  });
+
+  it("fails closed when a summary or workspace row has an unknown runtime run status", () => {
+    const summary = { status: "clean" as const, runStatus: "future_state" as never, lastRunAt: "2026-08-29T10:00:00Z", freshness: "fresh" as const };
+    const page = renderToStaticMarkup(<StorageReconciliationSection summary={summary} />);
+    const overview = renderToStaticMarkup(<StorageReconciliationSummary summary={summary} onOpen={() => undefined} />);
+    const workspace = renderToStaticMarkup(<StorageReconciliationSection summaries={[{ ...summary, workspaceId: "ws-unknown-run" }]} />);
+
+    expect(page).toContain("状态待确认，未验证");
+    expect(page).not.toContain(">对账正常<");
+    expect(overview).toContain("状态不可验证");
+    expect(overview).not.toContain("对账正常");
+    expect(workspace).toContain("ws-unknown-run");
+    expect(workspace).toContain("状态不可验证");
+    expect(workspace).not.toContain(">正常<");
+  });
+
+  it("requires run status for an otherwise clean API reconciliation report", () => {
+    const summary = { status: "clean" as const, lastRunAt: "2026-08-29T10:00:00Z", freshness: "fresh" as const };
+    const page = renderToStaticMarkup(<StorageReconciliationSection summary={summary} />);
+    const overview = renderToStaticMarkup(<StorageReconciliationSummary summary={summary} onOpen={() => undefined} />);
+    const workspace = renderToStaticMarkup(<StorageReconciliationSection summaries={[{ ...summary, workspaceId: "ws-missing-run-status" }]} />);
+
+    expect(page).toContain("状态待确认，未验证");
+    expect(page).not.toContain(">对账正常<");
+    expect(overview).toContain("状态不可验证");
+    expect(workspace).toContain("ws-missing-run-status");
+    expect(workspace).toContain("状态不可验证");
+    expect(workspace).not.toContain(">正常<");
   });
 });

@@ -66,6 +66,18 @@ describe("trusted platform rule boundary", () => {
     expect(html).not.toContain("签名来源已验证");
   });
 
+  it("labels unverified rules as excluded from the merchant plugin while keeping them visible to admins", () => {
+    const draft = platformRule({ name: "待核验规则卡片" });
+    const html = renderToStaticMarkup(<RuleCenterSection model={{
+      canRules: true,
+      rules: [draft],
+      updateRuleStatus: async () => true,
+    } as unknown as OpsConsoleModel} />);
+    expect(html).toContain("1 条未验证（不进入商家插件）");
+    expect(html).toContain("待核验规则卡片");
+    expect(html).not.toContain("未验证（不展示）");
+  });
+
   it("validates every Markdown card before any upload can be started", () => {
     const markdown = [
       "# 知识库 v2026.09",

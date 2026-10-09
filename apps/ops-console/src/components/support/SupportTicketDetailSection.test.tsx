@@ -55,7 +55,7 @@ describe("SupportTicketDetailSection", () => {
     expect(html).toContain("创建工单 · #1");
   });
 
-  it("returns to the reachable support domain while preserving the related task id", () => {
+  it("returns to the support queue without carrying an unsupported task filter", () => {
     const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
       selected: {
         ticket: {
@@ -66,7 +66,7 @@ describe("SupportTicketDetailSection", () => {
         }, events: [],
       },
     })} />);
-    expect(html).toContain('href="/ops/support?task_id=task%2F42%20%3Fx%3D1"');
+    expect(html).toContain('href="/ops/support"');
     expect(html).toContain("回到客服队列");
     expect(html).not.toContain('href="/ops/tasks');
   });

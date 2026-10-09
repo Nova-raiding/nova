@@ -179,6 +179,7 @@ import { CommercialStorageEntitlementError } from '../../../packages/persistence
 import { appendOperationAuditInTransaction } from '../../../packages/persistence/src/operations-repository.js'
 import { StorageQuotaExceededError, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
+import { acquireWorkspaceStatusLocks } from '../../../packages/persistence/src/repository.js'
 import { PostgresDemoEvaluationEntitlementRepository } from '../../../packages/persistence/src/demo-evaluation-entitlement-repository.js'
 import { verifyBridgeMigrationPrefix } from '../../../packages/persistence/src/migration.js'
 import { commercialSchemaAttestationDigest } from './commercial-schema-attestation.js'
@@ -323,6 +324,7 @@ import { MemoryPlatformMediaSpecRepository, PostgresPlatformMediaSpecRepository,
 import { MappingPreflightApprovalRepositoryError, MemoryMappingPreflightApprovalRepository, PostgresMappingPreflightApprovalRepository, type MappingPreflightApprovalRepository, type StoredMappingPreflightApproval } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { MemoryInteractiveConfirmationTicketRepository, PostgresInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicketRepository, type TransactionalInteractiveConfirmationTicketRepository } from '../../../packages/persistence/src/interactive-confirmation-ticket-repository.js'
 import { AssetParseExecutionError, executeAssetParse } from './asset-parse-runtime.js'
+import { persistTaskGroupTransaction } from './task-group-persistence.js'
 import { checkpointFromKnowledgeSnapshot, isKnowledgeEventAfterCheckpoint, isKnowledgeHydrationCheckpointCurrent, mergeKnowledgeHydrationEvents, type KnowledgeHydrationCheckpoint } from './knowledge-hydration-checkpoint.js'
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from '../../../packages/application/src/platform-field-mapping-gate.js'
 import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVideoStoryboardRenderReadiness, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
@@ -715,6 +717,8 @@ async function requireSettledContentExecutionEvidence(workspaceId: string, actio
 }
 
 type SnapshotInput = { entityType: BusinessEntityType; entityId: string; entityVersion: number; payload: Record<string, unknown> }
+type TaskSnapshotInput = SnapshotInput & { entityType: 'task' }
+type PersistableSnapshotEntityType = Exclude<BusinessEntityType, 'merchant_intent'>
 function orderProductSnapshotsForLocking(snapshots: readonly SnapshotInput[]): SnapshotInput[] {
   const products = snapshots.filter(snapshot => snapshot.entityType === 'product').sort((left, right) => left.entityId.localeCompare(right.entityId))
   let productIndex = 0
@@ -815,6 +819,7 @@ export interface ApiPersistence {
   persistSnapshotAndEvent?: (input: { workspaceId: string; entityType: BusinessEntityType; entityId: string; entityVersion: number; payload: Record<string, unknown>; eventType: string; eventPayload: Record<string, unknown> }) => Promise<void>
   persistChargedGenerationEnqueue?: (input: { workspaceId: string; job: import('../../../packages/application/src/service.js').GenerationJob; eventPayload: Record<string, unknown>; claim: LeasedCreativeAction; reservationId: string }) => Promise<void>
   persistSnapshotsAndEvent?: (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown> }) => Promise<void>
+  persistTaskGroup?: (input: { workspaceId: string; snapshots: SnapshotInput[]; events: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) => Promise<void>
   persistPublishTransaction?: (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown>; finalizeTicketInTransaction: (client: SqlClient) => Promise<void> }) => Promise<void>
   persistTrustedScanPromotion?: (input: TrustedScanPromotionPersistenceInput) => Promise<AssetPromotionCleanupTask>
   ensureWorkspace?: (workspaceId: string) => Promise<void>
@@ -898,7 +903,11 @@ memoryBrandUnits.setConsistencyProjections({
 const memoryObjectOrphans = new MemoryObjectOrphanRepository()
 const memoryContextSnapshots = new MemoryContextSnapshotRepository()
 const memoryIdentities = new MemoryIdentityLifecycleRepository()
-const memoryPasswordAuth = new MemoryPasswordAuthRepository()
+const memoryPasswordAuth = new MemoryPasswordAuthRepository(undefined, workspaceId => (
+  knownWorkspaces.has(workspaceId)
+    ? memoryWorkspaceStatuses.get(workspaceId) ?? 'active'
+    : undefined
+))
 let passwordAuthRepository: PasswordAuthRepository = memoryPasswordAuth
 let workspaceBootstrapRepositoryOverride: WorkspaceBootstrapRepository | undefined
 const memoryLocalPluginConnections = new MemoryLocalPluginConnectionRepository()
@@ -3281,7 +3290,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
       || bridgeSchemaMode === 'prefix_256_or_257' && (bridgeSchemaVersion === 256 || bridgeSchemaVersion === 257)
     const outbox = new PostgresOutboxRepository(sqlPool)
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true, commercialEntitlement: isProduction() })
-    const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
+    const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event), fixturePaymentAllowed())
     const commercial = new PostgresCommercialRepository(sqlPool)
     const creativePoints = new PostgresCreativePointRepository(sqlPool)
     const creativeActionClaims = new PostgresCreativeActionClaimRepository(sqlPool)
@@ -3306,7 +3315,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const actionLedger = new PostgresActionLedgerRepository(sqlPool)
     const entitlements = new PostgresEntitlementRepository(sqlPool)
     const operations = new PostgresOperationsRepository(sqlPool)
-    const subscriptions = new PostgresSubscriptionRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
+    const subscriptions = new PostgresSubscriptionRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event), fixturePaymentAllowed())
     // The second pool is what makes the platform user directory a single query:
     // `workspace_members` is only visible across workspaces to the operations
     // role (migration 091), so the platform read of `ops.users.list`/`export`/
@@ -3459,6 +3468,17 @@ async function initializePersistence(): Promise<ApiPersistence> {
         await outbox.appendInTransaction(client, { workspaceId: input.workspaceId, aggregateId: input.aggregateId, eventType: input.eventType, sequence: input.sequence, payload: input.eventPayload })
       })
     }
+    const persistTaskGroup: NonNullable<ApiPersistence['persistTaskGroup']> = async input => {
+      return persistTaskGroupTransaction({
+        pool: sqlPool,
+        ...input,
+        ensureWorkspace,
+        saveSnapshot: (client, snapshot) => business.saveInTransaction(client, { workspaceId: input.workspaceId, ...snapshot }),
+        appendEvent: (client, event) => outbox.appendInTransaction(client, event),
+        mapVersionConflict: error => new DomainError(error.code, '业务状态已被其他实例以相同版本更新，请刷新后重试', 409, { entity_type: error.entityType, entity_id: error.entityId, expected_version: error.entityVersion }),
+        mapStaleSnapshot: (snapshot, currentVersion) => new DomainError('BUSINESS_SNAPSHOT_VERSION_CONFLICT', '业务状态已被其他实例更新，请刷新后重试', 409, { entity_type: snapshot.entityType, entity_id: snapshot.entityId, expected_version: snapshot.entityVersion, current_version: currentVersion }),
+      })
+    }
     const persistPublishTransaction = async (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown>; finalizeTicketInTransaction: (client: SqlClient) => Promise<void> }) => {
       await ensureWorkspace(input.workspaceId)
       await withWorkspaceTransaction(sqlPool, input.workspaceId, async client => {
@@ -3501,8 +3521,11 @@ async function initializePersistence(): Promise<ApiPersistence> {
       return readWorkspaceStatusInTransaction(sqlPool, workspaceId)
     }
     const setWorkspaceStatus = async (workspaceId: string, status: 'active' | 'disabled'): Promise<void> => {
-      await ensureWorkspace(workspaceId)
       await withWorkspaceTransaction(sqlPool, workspaceId, async client => {
+        // Share the auth repository's transaction lock before creating or
+        // changing status, so approval cannot validate a stale active state.
+        await acquireWorkspaceStatusLocks(client, [workspaceId])
+        await client.query("INSERT INTO workspaces (id, status) VALUES ($1, 'active') ON CONFLICT (id) DO NOTHING", [workspaceId])
         await client.query('UPDATE workspaces SET status = $2 WHERE id = $1', [workspaceId, status])
       })
     }
@@ -3543,7 +3566,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', catalogBatchImportIdempotency, creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', catalogBatchImportIdempotency, creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistTaskGroup, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -5150,7 +5173,7 @@ async function sweepOperationalAlerts() {
     console.error(JSON.stringify({ event: 'operational_alert_sweep_failed', error_message: redactInlineCredentials(error instanceof Error ? error.message : String(error)) }))
   }
 }
-async function persistSnapshot(workspaceId: string, entityType: 'product' | 'task' | 'content_version' | 'publish_job' | 'manual_publish_record' | 'publish_batch' | 'platform_account' | 'generation_job' | 'image_generation_job' | 'brand_profile' | 'asset' | 'feedback' | 'sync_job' | 'automation_policy', entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
+async function persistSnapshot(workspaceId: string, entityType: PersistableSnapshotEntityType, entity: { id: string; version?: number; revision?: number }, value: Record<string, unknown>) {
   await persistenceReady
   const entityVersion = entity.version ?? entity.revision ?? 1
   try {
@@ -5290,6 +5313,35 @@ async function persistSnapshotsAndEvent(input: { workspaceId: string; snapshots:
     else await persistSnapshot(input.workspaceId, snapshot.entityType, { id: snapshot.entityId, revision: snapshot.entityVersion }, snapshot.payload)
   }
   await persistEvent(input.workspaceId, input.aggregateId, input.eventType, input.sequence, guardedInput.eventPayload)
+  invalidateWorkspaceHydration(input.workspaceId)
+}
+
+async function persistTaskGroup(input: { workspaceId: string; snapshots: TaskSnapshotInput[]; events: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) {
+  await persistenceReady
+  if (persistence.persistTaskGroup) {
+    const events = await Promise.all(input.events.map(async event => ({ ...event, payload: await withCommercialWorkerSnapshot(input.workspaceId, event.eventType, event.payload) })))
+    await persistence.persistTaskGroup({ ...input, events })
+    invalidateWorkspaceHydration(input.workspaceId)
+    return
+  }
+  if (isProduction()) throw new DomainError('TASK_GROUP_PERSISTENCE_UNAVAILABLE', '任务组事务持久化未配置，已阻断任务创建', 503)
+  // Non-PostgreSQL fixtures have no durable transaction surface. Keep their
+  // established local behavior; production persistence must provide the
+  // transaction method above.
+  for (const snapshot of input.snapshots) {
+    await persistSnapshot(input.workspaceId, snapshot.entityType, { id: snapshot.entityId, version: snapshot.entityVersion }, snapshot.payload)
+  }
+  for (const event of input.events) {
+    const existing = inMemoryTimelineEvents.get(input.workspaceId) ?? []
+    if (event.eventType === 'task.created' && existing.some(item => item.aggregateId === event.aggregateId && item.eventType === event.eventType)) continue
+    if (event.eventType === 'task.sku_split') {
+      if (existing.some(item => item.aggregateId === event.aggregateId && item.eventType === event.eventType && item.payload.task_group_id === event.payload.task_group_id)) continue
+      const sequence = Math.max(0, ...existing.filter(item => item.aggregateId === event.aggregateId && item.eventType === event.eventType).map(item => item.sequence)) + 1
+      await persistEvent(input.workspaceId, event.aggregateId, event.eventType, sequence, event.payload)
+      continue
+    }
+    await persistEvent(input.workspaceId, event.aggregateId, event.eventType, event.sequence, event.payload)
+  }
   invalidateWorkspaceHydration(input.workspaceId)
 }
 
@@ -10589,6 +10641,9 @@ function verifyExportedBundle(workspaceId: string, contentVersionId: string, bin
 
 function opsDomainError(error: unknown): never {
   if (error instanceof DomainError) throw error
+  if (error instanceof IncidentServiceError && error.code === 'INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE') {
+    throw new DomainError(error.code, '权威工作区目录不可用，事故影响范围未保存', 503)
+  }
   if (error instanceof CustomerDeliveryError) {
     const status = error.code === 'NOT_FOUND' ? 404
       : ['REVISION_CONFLICT', 'DUPLICATE_COMPANY', 'PAYMENT_REQUIRED', 'EVIDENCE_REQUIRED', 'ACCOUNT_ALREADY_BOUND', 'ACCOUNT_NOT_BINDABLE'].includes(error.code) ? 409
@@ -11091,7 +11146,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     workspaceId: workspaceId || undefined,
     actorId: trustedRequestObservationActor(req),
   })
-  if (isPlatformWideUserGovernance && typeof params.workspace_id === 'string' && params.workspace_id.trim()) knownWorkspaces.add(params.workspace_id.trim())
   const id = request.id ?? null
   const result = (value: unknown) => transport === 'native'
     ? sendNativeMcp(res, 200, { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value } }, req)
@@ -12228,7 +12282,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.commercial.order.refund.list': {
       if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
-      return result({ items: await persistence.commercialRefunds.list(required(params, 'target_workspace_id'), params.limit === undefined ? 100 : Number(params.limit)) })
+      const page = await persistence.commercialRefunds.list(required(params, 'target_workspace_id'), { limit: params.limit === undefined ? 100 : Number(params.limit), ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}) })
+      return result({ items: page.items, total: page.total, next_cursor: page.nextCursor, truncated: page.truncated })
     }
     case 'ops.commercial.order.refund.request': {
       if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
@@ -13946,6 +14001,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         resolveCanonicalTaskScope,
         persistSnapshot,
         persistEvent,
+        persistTaskGroup,
         workspaceStoreDirectory,
         scopeTask,
         persistTaskAnswerFactConfirmation,
@@ -15257,7 +15313,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     service, body, resolveWorkspace, send, required, header, supportedPlatforms: SUPPORTED_PLATFORMS,
     resolveProductTaskAccount, requireProductionTaskStore, isProduction, fixtureMode,
     resolveTaskWriteBrands, requireEnabledPlatform, resolveCanonicalTaskEntries, assignTaskWriteBrands,
-    persistSnapshot, persistEvent, enforceTaskRequestCandidates, taskUnderstandingProductIds,
+    persistSnapshot, persistEvent, persistTaskGroup, enforceTaskRequestCandidates, taskUnderstandingProductIds,
     requireProductionRequestStores, scopeTask, taskCreationBrand, enforceProductBrandAccess,
     resolveCanonicalTaskScope, persistTaskAnswerFactConfirmation, paginationRequest, taskTimeline,
     requestActor, taskFeedbackEventPayload, projectCanonicalTaskForRead,

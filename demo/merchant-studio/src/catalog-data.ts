@@ -179,6 +179,8 @@ export type CatalogProduct = {
   addedAt: string
   /** The specifications the server published; empty when it published none. */
   skus: CatalogProductSku[]
+  /** HTTPS image URLs returned by the product API; no inferred slots. */
+  images: string[]
   tone: string
   series: string
 }
@@ -260,9 +262,25 @@ export function catalogProductsForStore(
         price: finiteServerNumber(sku.price),
         stock: finiteServerNumber(sku.stock),
       })),
+      images: catalogProductImageUrls(product.images),
       tone: catalogProductTone(index),
       series,
     }))
+}
+
+/** Keep only absolute HTTPS image URLs without credentials; never infer categories or slots. */
+export function catalogProductImageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const urls = value.flatMap((entry) => {
+    if (typeof entry !== 'string') return []
+    try {
+      const url = new URL(entry.trim())
+      return url.protocol === 'https:' && !url.username && !url.password ? [url.href] : []
+    } catch {
+      return []
+    }
+  })
+  return [...new Set(urls)]
 }
 
 /** Workspace drafts have no store identity; never manufacture an account for navigation. */

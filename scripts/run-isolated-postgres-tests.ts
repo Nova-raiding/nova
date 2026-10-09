@@ -112,11 +112,17 @@ export interface IsolatedPostgresRuntime {
 
 function assertOwnDatabaseBinding(fixture: IsolatedPostgresFixture) {
   const database = new URL(fixture.adminDatabaseUrl)
+  const redis = new URL(fixture.redisUrl)
   const postgres = fixture.containerEvidence.filter(container => container.kind === 'postgres')
+  const redisContainers = fixture.containerEvidence.filter(container => container.kind === 'redis')
   if (!/^[a-f0-9-]{36}$/u.test(fixture.runId) || postgres.length !== 1 || postgres[0]!.runId !== fixture.runId
     || !/^postgres(?:ql)?:$/u.test(database.protocol) || database.hostname !== '127.0.0.1' || database.username !== 'merchant'
     || !database.password || database.pathname !== '/merchant' || Number(database.port) !== postgres[0]!.hostPort
-    || postgres[0]!.hostPort < 1 || postgres[0]!.hostPort > 65535 || database.search || database.hash) {
+    || postgres[0]!.hostPort < 1 || postgres[0]!.hostPort > 65535 || database.search || database.hash
+    || redisContainers.length !== 1 || redisContainers[0]!.runId !== fixture.runId
+    || redis.protocol !== 'redis:' || redis.hostname !== '127.0.0.1' || !redis.password || redis.pathname !== '/0'
+    || Number(redis.port) !== redisContainers[0]!.hostPort || redisContainers[0]!.hostPort < 1 || redisContainers[0]!.hostPort > 65535
+    || redis.search || redis.hash) {
     throw new Error('ISOLATED_POSTGRES_FIXTURE_BINDING_MISMATCH')
   }
 }

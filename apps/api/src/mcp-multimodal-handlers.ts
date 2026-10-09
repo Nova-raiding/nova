@@ -128,7 +128,14 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         const archived = await archiveGeneratedImages(workspaceId, editJob.id, images)
         await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
         await persistEvent(workspaceId, archived.id, 'product.image_edit_candidate_generated', archived.revision, { job_id: archived.id, product_id: contextProduct.id, source_asset_id: sourceAsset.id, visual_refs: archived.outputs?.map(output => output.visualRef) ?? [], artifact_role: 'candidate', product_protection: productProtection })
-        return result({ ...candidate.value, product_protection: productProtection, images, rendering: 'candidate', platformPublished: false, execution: executionContract('image_edit', true), job: publicImageJob(archived) })
+        // The relay payload is not a user-facing artifact until its archived
+        // asset has passed the scanner. This keeps image editing aligned with
+        // catalog.image.generate and prevents quarantine outputs from being
+        // surfaced in the ChatGPT response before the scan completes.
+        const deliverableImages = imageJobOutputsAreClean(archived)
+          ? await readArchivedGeneratedImages(workspaceId, archived)
+          : []
+        return result({ ...candidate.value, product_protection: productProtection, images: deliverableImages, rendering: 'candidate', platformPublished: false, execution: executionContract('image_edit', true), job: publicImageJob(archived) })
       } catch (error) {
         if (!providerSucceededButSettlementPending(error)) {
           await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片编辑失败', creativeReservation)

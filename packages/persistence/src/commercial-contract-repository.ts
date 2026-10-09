@@ -4,6 +4,7 @@ import { CommercialSchemaCompatibilityError, hasCommercialFunctionForVerifiedPre
 import type { CommercialPurchaseKindV3, CommercialGrantStatusV3 } from './commercial-transaction-policy.js'
 import type { CommercialCatalogSkuSnapshot } from './commercial-catalog-repository.js'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
+import { assertValidPaymentCheckoutUri } from '@merchant-marketing/contracts'
 
 export type CommercialContractErrorCode =
   | 'COMMERCIAL_CATALOG_UNAVAILABLE'
@@ -663,7 +664,7 @@ export class PostgresCommercialContractRepository {
   }): Promise<CommercialCheckoutResource> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     required(input.orderId, 'orderId'); required(input.idempotencyKey, 'idempotencyKey')
-    if (!/^(?:https:\/\/|weixin:\/\/|alipays:\/\/)/u.test(input.paymentUrl)) throw new TypeError('paymentUrl must be a supported provider checkout URI')
+    assertValidPaymentCheckoutUri(input.paymentUrl, input.channel)
     let expiresAt = input.expiresAt == null ? null : instant(input.expiresAt, 'expiresAt')
     const providerOrderId = input.providerOrderId == null ? null : required(input.providerOrderId, 'providerOrderId')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {

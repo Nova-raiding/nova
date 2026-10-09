@@ -47,6 +47,23 @@ export interface SqlPool {
   connect(): Promise<SqlClient>
 }
 
+/**
+ * Serializes workspace lifecycle changes with decisions that bind identities
+ * to currently active workspaces. The advisory transaction lock needs no
+ * table UPDATE grant, so both the merchant_ops auth pool and tenant pool can
+ * participate. Every multi-workspace caller acquires these locks in sorted
+ * order to avoid lock-order deadlocks.
+ */
+export async function acquireWorkspaceStatusLocks(client: SqlClient, workspaceIds: readonly string[]): Promise<void> {
+  const sortedIds = [...new Set(workspaceIds.filter(id => id.trim().length > 0))].sort()
+  for (const workspaceId of sortedIds) {
+    await client.query(
+      "SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('merchant_workspace_status_v1'), pg_catalog.hashtext($1))",
+      [workspaceId],
+    )
+  }
+}
+
 export interface CompletedImageUnknownAck {
   workspaceId: string; eventId: string; jobId: string; providerRequestId: string;
   intentHash: string; expectedUnknownAt: string; expectedAttempt: number;

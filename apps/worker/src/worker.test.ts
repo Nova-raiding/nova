@@ -462,6 +462,30 @@ describe('worker production entry', () => {
     expect(projection.tasks.get('task_1')).toEqual(task.payload)
   })
 
+  it('safely acknowledges a validated task.sku_split audit projection without side effects', async () => {
+    const projection = createWorkerProjection()
+    const onTaskCreated = vi.fn()
+    const handler = createOutboxHandler({ projection, onTaskCreated })
+    const event: DurableOutboxEvent = {
+      id: 'evt_task_sku_split', workspaceId: 'ws_a', aggregateId: 'task_source', eventType: 'task.sku_split', sequence: 1,
+      payload: { source_task_id: 'task_source', task_group_id: 'task-group-1', sku_ids: ['sku-a', 'sku-b'], replayed: false }, createdAt: new Date().toISOString(),
+    }
+
+    await expect(handler({ event, attempt: 1, now: Date.now() })).resolves.toBeDefined()
+    expect(projection.tasks.size).toBe(0)
+    expect(projection.snapshots.size).toBe(0)
+    expect(onTaskCreated).not.toHaveBeenCalled()
+  })
+
+  it('fails closed on malformed task.sku_split scope or SKU data', async () => {
+    const handler = createOutboxHandler()
+    const event: DurableOutboxEvent = {
+      id: 'evt_task_sku_split_invalid', workspaceId: 'ws_a', aggregateId: 'task_source', eventType: 'task.sku_split', sequence: 1,
+      payload: { source_task_id: 'task_other', task_group_id: 'task-group-1', sku_ids: ['sku-a', 'sku-a'] }, createdAt: new Date().toISOString(),
+    }
+    await expect(handler({ event, attempt: 1, now: Date.now() })).rejects.toMatchObject({ error: { code: 'MALFORMED_TASK_SKU_SPLIT', unknown: true } })
+  })
+
   it('fails closed when a durable state snapshot crosses aggregate or workspace scope', async () => {
     const projection = createWorkerProjection()
     const onStateSnapshot = vi.fn()
@@ -1176,7 +1200,7 @@ describe('worker production entry', () => {
     let scannerReady = false
     const claimFor = () => scannerReady ? undefined : { eventTypes: NON_SCAN_EVENT_TYPES }
     await pollOnce(repository, dispatchers, { workspaces: ['ws_a'], batchSize: 1, leaseMs: 30_000, role: 'all', claimFor }, () => new InMemoryQueue())
-    expect(claimCalls.at(-1)?.eventTypes).toEqual(expect.arrayContaining(['publish.requested', 'publish.reconcile_requested', 'sync.requested', 'generation.requested', 'state.snapshot']))
+    expect(claimCalls.at(-1)?.eventTypes).toEqual(expect.arrayContaining(['publish.requested', 'publish.reconcile_requested', 'sync.requested', 'generation.requested', 'task.sku_split', 'state.snapshot']))
     for (const scanEventType of ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested']) {
       expect(claimCalls.at(-1)?.eventTypes).not.toContain(scanEventType)
     }

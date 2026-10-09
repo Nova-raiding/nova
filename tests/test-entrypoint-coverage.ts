@@ -63,6 +63,7 @@ const VITEST_TEST_FILE = new RegExp(`\\.test\\.(?:${TEST_EXTENSIONS})$`, 'u')
 const BROWSER_SPEC_FILE = new RegExp(`\\.spec\\.(?:${TEST_EXTENSIONS})$`, 'u')
 /** The same shapes where they are named inside a command or a document. */
 const TEST_PATH_IN_COMMAND = new RegExp(`([A-Za-z0-9_./-]*\\.test\\.(?:${TEST_EXTENSIONS}))(?=[\\s"']|$)`, 'gu')
+const BROWSER_SPEC_PATH_IN_COMMAND = new RegExp(`([A-Za-z0-9_./-]*\\.spec\\.(?:${TEST_EXTENSIONS}))(?=[\\s"']|$)`, 'gu')
 const SPEC_PATH_IN_SCRIPT = new RegExp(`['"\`]([A-Za-z0-9_][A-Za-z0-9_./-]*\\.spec\\.(?:${TEST_EXTENSIONS}))['"\`]`, 'gu')
 const TEST_LINK_IN_DOCUMENT = new RegExp(`\\]\\(<?([^)\\s>]+\\.(?:test|spec)\\.(?:${TEST_EXTENSIONS}))>?\\)`, 'gu')
 
@@ -108,6 +109,21 @@ export function packageScriptTestFiles(root: string): Set<string> {
     for (const match of command.matchAll(TEST_PATH_IN_COMMAND)) files.add(match[1]!)
   }
   return files
+}
+
+/** Browser specs passed directly by named npm browser scripts. */
+export function browserSpecsFromPackageScripts(scripts: Record<string, string>): Set<string> {
+  const files = new Set<string>()
+  for (const [name, command] of Object.entries(scripts)) {
+    if (name !== 'test:browser' && !name.startsWith('test:browser:')) continue
+    for (const match of command.matchAll(BROWSER_SPEC_PATH_IN_COMMAND)) files.add(match[1]!)
+  }
+  return files
+}
+
+export function packageScriptBrowserSpecs(root: string): Set<string> {
+  const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+  return browserSpecsFromPackageScripts(scripts)
 }
 
 /** Test paths owned by a dedicated launcher manifest. */
@@ -157,18 +173,8 @@ export const UNCOLLECTED_VITEST_TEST_FILES: readonly UncollectedTestFile[] = [
 
 /** Browser specs no Playwright project or runner argument schedules. */
 export const UNSCHEDULED_BROWSER_SPECS: readonly UncollectedTestFile[] = [
-  {
-    file: 'demo/merchant-studio/canonical-product-desktop.spec.js',
-    reason: 'Playwright spec with no owning project: demo/merchant-studio has no playwright config and no npm script names this file. doc/todo/quality/test-strategy-2026-09-07.md already asks for an explicit entrypoint for it; until then it is a known unscheduled spec, not silently collected coverage.',
-  },
-  {
-    file: 'demo/merchant-studio/image-generation-desktop-responsive.spec.js',
-    reason: 'Playwright spec with no owning project; documents cite its desktop-width coverage as evidence, so it must become scheduled or those citations must stop counting it.',
-  },
-  {
-    file: 'demo/merchant-studio/image-generation-desktop.spec.js',
-    reason: 'Playwright spec with no owning project; same gap as canonical-product-desktop.spec.js. The responsive sibling is also unscheduled.',
-  },
+  // Keep only actual unscheduled specs here. Browser scripts declared in the
+  // root package.json are reconciled by packageScriptBrowserSpecs.
 ]
 
 /** `**`/`*`/`?` glob matching, path separators normalized to `/`. */
@@ -220,11 +226,9 @@ export function playwrightCollectedSpecs(root: string, specs = browserSpecFilesO
   return collected
 }
 
-/**
- * Browser specs named by a runner argument, e.g. `npm run test:browser:ops`.
- * Only `scripts/**` is scanned: a launcher that names a spec is an entrypoint,
- * while a path mentioned inside a test file (including this module's own
- * register) is not — a self-match would silently certify itself.
+/** Browser specs named by a launcher source file. Package script command
+ * arguments are collected separately; paths inside tests or this module's
+ * register are intentionally not treated as runner arguments.
  */
 export function runnerArgumentSpecs(root: string): Set<string> {
   const files = new Set<string>()
@@ -243,7 +247,11 @@ export function findUncollectedVitestTests(root: string): string[] {
 }
 
 export function findUnscheduledBrowserSpecs(root: string): string[] {
-  const scheduled = new Set<string>([...playwrightCollectedSpecs(root), ...runnerArgumentSpecs(root)])
+  const scheduled = new Set<string>([
+    ...playwrightCollectedSpecs(root),
+    ...packageScriptBrowserSpecs(root),
+    ...runnerArgumentSpecs(root),
+  ])
   return browserSpecFilesOnDisk(root).filter(file => !scheduled.has(file))
 }
 

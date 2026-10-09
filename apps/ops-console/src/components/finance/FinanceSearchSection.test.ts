@@ -164,6 +164,15 @@ describe("FinanceSearchSection", () => {
     expect(html).toContain("正在加载财务记录");
   });
 
+  it("retries the last submitted filters and reflects successful query state in the form", () => {
+    const source = readFileSync(new URL("./FinanceSearchSection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("submittedQueryRef.current = submittedQuery");
+    expect(source).toContain("controller.search(submittedQueryRef.current ?? {})");
+    expect(source).toContain("form.setFieldsValue({");
+    expect(source).toContain('workspaceIds: controller.query.workspaceIds?.join(", ")');
+    expect(source).toContain("onClick={retrySearch}");
+  });
+
   it("offers an explicit retry when finance detail loading fails", () => {
     const source = readFileSync(new URL("./FinanceDetailDrawer.tsx", import.meta.url), "utf8");
     expect(source).toContain("详情加载失败");

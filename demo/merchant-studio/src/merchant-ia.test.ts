@@ -63,7 +63,7 @@ describe('merchant IA contracts', () => {
       task({ id: 'blocked', state: 'failed_recoverable', createdAt: '2026-08-30T09:00:00Z' }),
     ])
     expect(result.map(item => item.task.id)).toEqual(['blocked', 'ready', 'done'])
-    expect(result.map(item => item.actionLabel)).toEqual(['恢复任务', '恢复任务', '恢复任务'])
+    expect(result.map(item => item.actionLabel)).toEqual(['恢复任务', '恢复任务', '仅查看'])
   })
 
   it('keeps recovery grouping renderable when an older task has no createdAt', () => {

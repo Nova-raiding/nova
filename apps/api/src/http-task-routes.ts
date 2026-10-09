@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Task, type TaskFeedback } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import { contextEnvelopeHash, type OperationAudit } from '../../../packages/persistence/src/index.js'
+import { validateExpectedTaskRequestScopes } from './task-request-scopes.js'
+import { persistTaskGroupOrRollback } from './task-group-persistence.js'
 
 type JsonObject = Record<string, unknown>
 type Page = { limit: number; offset: number }
@@ -28,6 +30,7 @@ export interface HttpTaskRouteDependencies {
   assignTaskWriteBrands: (tasks: Array<{ productId: string; brandId?: string }>, resolved: ReadonlyMap<string, string | undefined>) => void
   persistSnapshot: (workspaceId: string, entityType: 'task' | 'feedback', entity: Task | TaskFeedback, value: Record<string, unknown>) => Promise<unknown>
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<unknown>
+  persistTaskGroup?: (input: { workspaceId: string; snapshots: Array<{ entityType: 'task'; entityId: string; entityVersion: number; payload: Record<string, unknown> }>; events: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) => Promise<void>
   enforceTaskRequestCandidates: (request: IncomingMessage, workspaceId: string, understanding: TaskUnderstanding) => Promise<TaskUnderstanding>
   taskUnderstandingProductIds: (understanding: TaskUnderstanding) => string[]
   requireProductionRequestStores: (workspaceId: string, understanding: TaskUnderstanding) => void
@@ -50,7 +53,20 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResponse, path: string, url: URL, dependencies: HttpTaskRouteDependencies): Promise<boolean> {
-  const { service, body, resolveWorkspace, required, header, supportedPlatforms: SUPPORTED_PLATFORMS, resolveProductTaskAccount, requireProductionTaskStore, isProduction, fixtureMode, resolveTaskWriteBrands, requireEnabledPlatform, resolveCanonicalTaskEntries, assignTaskWriteBrands, persistSnapshot, persistEvent, enforceTaskRequestCandidates, taskUnderstandingProductIds, requireProductionRequestStores, scopeTask, taskCreationBrand, enforceProductBrandAccess, resolveCanonicalTaskScope, persistTaskAnswerFactConfirmation, paginationRequest, taskTimeline, requestActor, taskFeedbackEventPayload, projectCanonicalTaskForRead, assertCanonicalTaskScopeForAction, recordOperationAudit } = dependencies
+  const { service, body, resolveWorkspace, required, header, supportedPlatforms: SUPPORTED_PLATFORMS, resolveProductTaskAccount, requireProductionTaskStore, isProduction, fixtureMode, resolveTaskWriteBrands, requireEnabledPlatform, resolveCanonicalTaskEntries, assignTaskWriteBrands, persistSnapshot, persistEvent, persistTaskGroup, enforceTaskRequestCandidates, taskUnderstandingProductIds, requireProductionRequestStores, scopeTask, taskCreationBrand, enforceProductBrandAccess, resolveCanonicalTaskScope, persistTaskAnswerFactConfirmation, paginationRequest, taskTimeline, requestActor, taskFeedbackEventPayload, projectCanonicalTaskForRead, assertCanonicalTaskScopeForAction, recordOperationAudit } = dependencies
+  const persistGroup = async (input: { workspaceId: string; tasks: Task[]; groupId?: string; replayed?: boolean; events?: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) => {
+    const snapshots = input.tasks.map(task => ({ entityType: 'task' as const, entityId: task.id, entityVersion: task.version, payload: task as unknown as Record<string, unknown> }))
+    let fallbackWriteStarted = false
+    await persistTaskGroupOrRollback({ taskIds: input.tasks.map(task => task.id), groupId: input.groupId, replayed: input.replayed, rollbackOnFailure: () => Boolean(persistTaskGroup) || !fallbackWriteStarted, rollback: (taskIds, groupId) => service.rollbackUnpersistedTaskCreation(input.workspaceId, taskIds, groupId), persist: async () => {
+      if (persistTaskGroup) {
+        await persistTaskGroup({ workspaceId: input.workspaceId, snapshots, events: input.events ?? input.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: task as unknown as Record<string, unknown> })) })
+        return
+      }
+      if (isProduction()) throw new DomainError('TASK_GROUP_PERSISTENCE_UNAVAILABLE', 'HTTP 任务组事务持久化未配置，已阻断任务创建', 503)
+      for (const task of input.tasks) { fallbackWriteStarted = true; await persistSnapshot(input.workspaceId, 'task', task, task as unknown as Record<string, unknown>) }
+      for (const event of input.events ?? input.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: task as unknown as Record<string, unknown> }))) { fallbackWriteStarted = true; await persistEvent(input.workspaceId, event.aggregateId, event.eventType, event.sequence, event.payload) }
+    } })
+  }
   const send = (response: ServerResponse, status: number, workspaceId: string, data: unknown, error: null, request: IncomingMessage) => {
     dependencies.send(response, status, workspaceId, data, error, request)
     return true
@@ -80,10 +96,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const canonicalEntries = await resolveCanonicalTaskEntries(workspaceId, entries)
     const group = service.createTaskGroup({ workspaceId, entries: canonicalEntries, ...(typeof input.request_text === 'string' ? { requestText: input.request_text } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) })
     assignTaskWriteBrands(group.tasks, entryBrandIds)
-    if (!group.replayed) for (const task of group.tasks) {
-      await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, task_group_id: group.id })
-    }
+    await persistGroup({ workspaceId, tasks: group.tasks, groupId: group.id, replayed: group.replayed, events: group.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, task_group_id: group.id } })) })
     return send(res, 201, workspaceId, group, null, req)
   }
   if (req.method === 'POST' && path === '/v1/task-requests') {
@@ -91,6 +104,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const workspaceId = resolveWorkspace(req, input.workspace_id)
     const requestText = required(input, 'request_text')
     const understanding = await enforceTaskRequestCandidates(req, workspaceId, service.understandTaskRequest(workspaceId, requestText))
+    const expectedScopes = validateExpectedTaskRequestScopes(input.expected_scopes, understanding)
     const taskBrandIds = await resolveTaskWriteBrands(req, workspaceId, taskUnderstandingProductIds(understanding))
     requireProductionRequestStores(workspaceId, understanding)
     for (const platform of understanding.platformCandidates) await requireEnabledPlatform(workspaceId, platform)
@@ -100,12 +114,9 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
       const product = productId ? service.products.get(productId) : undefined
       return product ? [{ productId: product.id, platform: child.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }] : []
     }))
-    const created = service.createTaskFromRequest({ workspaceId, requestText, canonicalScopes, ...(idempotencyKey ? { idempotencyKey } : {}) })
+    const created = service.createTaskFromRequest({ workspaceId, requestText, canonicalScopes, ...(expectedScopes ? { expectedScopes } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) })
     assignTaskWriteBrands(created.tasks, taskBrandIds)
-    if (!created.replayed) for (const task of created.tasks) {
-      await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, ...(created.taskGroupId ? { task_group_id: created.taskGroupId } : {}), source: 'natural_language_request' })
-    }
+    await persistGroup({ workspaceId, tasks: created.tasks, ...(created.taskGroupId ? { groupId: created.taskGroupId } : {}), replayed: created.replayed, events: created.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, ...(created.taskGroupId ? { task_group_id: created.taskGroupId } : {}), source: 'natural_language_request' } })) })
     return send(res, 201, workspaceId, created, null, req)
   }
   const skuSplitMatch = path.match(/^\/v1\/tasks\/([^/]+)\/sku-split$/)
@@ -114,11 +125,10 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const input = await body(req)
     const idempotencyKey = header(req, 'idempotency-key')?.trim() || (typeof input.idempotency_key === 'string' ? input.idempotency_key.trim() : '')
     const split = service.splitTaskBySku({ workspaceId: source.workspaceId, taskId: source.id, ...(idempotencyKey ? { idempotencyKey } : {}) })
-    if (!split.replayed) for (const task of split.tasks) {
-      await persistSnapshot(source.workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-      await persistEvent(source.workspaceId, task.id, 'task.created', task.version, { ...task, task_group_id: split.taskGroupId, source: 'sku_split' })
-    }
-    await persistEvent(source.workspaceId, split.sourceTaskId, 'task.sku_split', source.version, { source_task_id: split.sourceTaskId, task_group_id: split.taskGroupId, sku_ids: split.skuIds, replayed: split.replayed })
+    await persistGroup({ workspaceId: source.workspaceId, tasks: split.tasks, groupId: split.taskGroupId, replayed: split.replayed, events: [
+      ...split.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, task_group_id: split.taskGroupId, source: 'sku_split' } })),
+      { aggregateId: split.sourceTaskId, eventType: 'task.sku_split', sequence: source.version, payload: { source_task_id: split.sourceTaskId, task_group_id: split.taskGroupId, sku_ids: split.skuIds, replayed: split.replayed } },
+    ] })
     return send(res, 201, source.workspaceId, split, null, req)
   }
   if (req.method === 'POST' && path === '/v1/tasks') {
@@ -140,6 +150,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const replayedTask = taskId ? service.tasks.get(taskId) : undefined
     if (replayedTask) {
       if (replayedTask.taskRequestKeyHash !== keyHash || replayedTask.taskRequestIntentHash !== intentHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', '相同幂等键已用于不同的任务创建意图', 409)
+      await persistGroup({ workspaceId, tasks: [replayedTask], replayed: true, events: [{ aggregateId: replayedTask.id, eventType: 'task.created', sequence: replayedTask.version, payload: replayedTask as unknown as Record<string, unknown> }] })
       return send(res, 200, workspaceId, replayedTask, null, req)
     }
     const canonicalScope = await resolveCanonicalTaskScope({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(brandId ? { brandId } : {}), requireListing: true })
@@ -153,8 +164,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const task = taskAnswers
       ? service.answerTask(workspaceId, createdTask.id, taskAnswers, createdTask.version)
       : createdTask
-    await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-    await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)
+    await persistGroup({ workspaceId, tasks: [task], replayed: false, events: [{ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: task as unknown as Record<string, unknown> }] })
     await persistTaskAnswerFactConfirmation({ workspaceId, productId: task.productId, factsConfirmedBefore, confirmationRequested: taskAnswers?.confirm_facts === true })
     return send(res, 201, workspaceId, task, null, req)
   }

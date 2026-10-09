@@ -14,9 +14,10 @@ export function summarizePlatforms(stores: StoreDirectory[]): PlatformSummary[] 
   const summaries = new Map<string, PlatformSummary>();
   for (const store of stores) {
     const current = summaries.get(store.platform) ?? { platform: store.platform, storeCount: 0, officialApiCount: 0, attentionCount: 0 };
-    current.storeCount += 1;
-    if (store.dataMode === "official_api") current.officialApiCount += 1;
-    if (store.state !== "connected" || store.authorization?.reauthorizationRequired) current.attentionCount += 1;
+    const representedStoreCount = store.aggregate === true && Number.isSafeInteger(store.count) && (store.count ?? 0) >= 0 ? store.count! : 1;
+    current.storeCount += representedStoreCount;
+    if (store.dataMode === "official_api") current.officialApiCount += representedStoreCount;
+    if (store.state !== "connected" || store.authorization?.reauthorizationRequired) current.attentionCount += representedStoreCount;
     summaries.set(store.platform, current);
   }
   return [...summaries.values()].sort((left, right) => left.platform.localeCompare(right.platform));

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ApartmentOutlined, ShopOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Input, Select, Space, Tag, Typography } from "antd";
 import type { BrandNavigationItem, StoreDirectory } from "../../types/ops.js";
@@ -23,9 +23,9 @@ export function BrandTreeSection({ brands = [], canRead = true, canCreate = fals
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [selectedStores, setSelectedStores] = useState<Record<string, string>>({});
-  const [bindingBrandId, setBindingBrandId] = useState<string>();
-  const [bindingErrorBrandId, setBindingErrorBrandId] = useState<string>();
-  const [bindingError, setBindingError] = useState("");
+  const [bindingBrandIds, setBindingBrandIds] = useState<Set<string>>(() => new Set());
+  const bindingInFlight = useRef(new Set<string>());
+  const [bindingErrors, setBindingErrors] = useState<Record<string, string>>({});
   const submitCreate = async () => {
     const name = brandName.trim();
     if (!onCreateBrand || !name) {
@@ -45,28 +45,27 @@ export function BrandTreeSection({ brands = [], canRead = true, canCreate = fals
     }
   };
   const bindStore = async (brand: BrandNavigationItem) => {
+    if (bindingInFlight.current.has(brand.id)) return;
     const selected = selectedStores[brand.id];
     const [platform, accountId] = selected?.split(":", 2) ?? [];
     if (!onBindStore || !platform || !accountId) {
-      setBindingErrorBrandId(brand.id);
-      setBindingError("请选择一个真实可用的店铺");
+      setBindingErrors((current) => ({ ...current, [brand.id]: "请选择一个真实可用的店铺" }));
       return;
     }
-    setBindingBrandId(brand.id);
-    setBindingErrorBrandId(undefined);
-    setBindingError("");
+    bindingInFlight.current.add(brand.id);
+    setBindingBrandIds((current) => new Set(current).add(brand.id));
+    setBindingErrors((current) => { const next = { ...current }; delete next[brand.id]; return next; });
     try {
       const completed = await onBindStore({ brandId: brand.id, platform, accountId, ...(brand.revision !== undefined ? { expectedRevision: brand.revision } : {}) });
       if (completed) setSelectedStores((current) => ({ ...current, [brand.id]: "" }));
       else {
-        setBindingErrorBrandId(brand.id);
-        setBindingError("请求未完成，店铺尚未绑定；请检查权限、店铺状态或版本后重试");
+        setBindingErrors((current) => ({ ...current, [brand.id]: "请求未完成，店铺尚未绑定；请检查权限、店铺状态或版本后重试" }));
       }
     } catch (cause) {
-      setBindingErrorBrandId(brand.id);
-      setBindingError(cause instanceof Error ? cause.message : "绑定店铺失败");
+      setBindingErrors((current) => ({ ...current, [brand.id]: cause instanceof Error ? cause.message : "绑定店铺失败" }));
     } finally {
-      setBindingBrandId(undefined);
+      bindingInFlight.current.delete(brand.id);
+      setBindingBrandIds((current) => { const next = new Set(current); next.delete(brand.id); return next; });
     }
   };
   return (
@@ -113,10 +112,10 @@ export function BrandTreeSection({ brands = [], canRead = true, canCreate = fals
               {canBind && onBindStore && <Space orientation="vertical" size={8} style={{ width: "100%", marginTop: 12 }}>
                 <Typography.Text type="secondary">绑定已授权店铺</Typography.Text>
                 <Space.Compact style={{ width: "100%" }}>
-                  <Select aria-label={`${brand.title}待绑定店铺`} value={selectedStores[brand.id] || undefined} placeholder="选择平台店铺" style={{ flex: 1 }} options={stores.filter(store => store.readable && store.state !== "revoked" && !brand.platforms.some(platform => platform.platform === store.platform && platform.stores.some(bound => bound.accountId === store.accountId))).map(store => ({ value: `${store.platform}:${store.accountId}`, label: `${store.label}（${store.accountId}）` }))} onChange={(value) => setSelectedStores((current) => ({ ...current, [brand.id]: value }))} />
-                  <Button type="primary" loading={bindingBrandId === brand.id} onClick={() => void bindStore(brand)}>绑定店铺</Button>
+                  <Select aria-label={`${brand.title}待绑定店铺`} value={selectedStores[brand.id] || undefined} disabled={bindingBrandIds.has(brand.id)} placeholder="选择平台店铺" style={{ flex: 1 }} options={stores.filter(store => store.readable && store.state !== "revoked" && !brand.platforms.some(platform => platform.platform === store.platform && platform.stores.some(bound => bound.accountId === store.accountId))).map(store => ({ value: `${store.platform}:${store.accountId}`, label: `${store.label}（${store.accountId}）` }))} onChange={(value) => setSelectedStores((current) => ({ ...current, [brand.id]: value }))} />
+                  <Button type="primary" loading={bindingBrandIds.has(brand.id)} disabled={bindingBrandIds.has(brand.id)} onClick={() => void bindStore(brand)}>绑定店铺</Button>
                 </Space.Compact>
-                {bindingError && bindingErrorBrandId === brand.id && <Alert role="alert" type="error" showIcon title="绑定店铺失败" description={bindingError} />}
+                {bindingErrors[brand.id] && <Alert role="alert" type="error" showIcon title="绑定店铺失败" description={bindingErrors[brand.id]} />}
               </Space>}
             </section>
           ))}

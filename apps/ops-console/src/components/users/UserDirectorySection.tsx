@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Descriptions, Dropdown, Drawer, Empty, Form, Input, Modal, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import type { TableProps } from "antd";
@@ -6,6 +6,7 @@ import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { opsRestPost, describeOpsError } from "../../api/opsClient.js";
+import { canExportUserDirectory } from "../../api/userDirectoryPermission.js";
 
 type MerchantInvitationView = {
   account: { id: string; login: string; workspaceIds: string[]; status: string };
@@ -15,11 +16,8 @@ type MerchantInvitationView = {
 };
 type MerchantInvitationForm = { login: string; enterpriseName: string; contactName: string; workspaceId?: string; workspaceMode: "new" | "existing"; reason: string };
 type UserFilters = { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform" };
-export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
-type DirectoryUser = PlatformUser & { createdAt?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
-const memberStatusOrder: Record<string, number> = { active: 0, invited: 1, suspended: 2 };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
 const lifecycleEventLabels: Record<string, string> = {
   "identity.observed": "身份首次识别",
@@ -34,29 +32,15 @@ function formatKnownDateTime(value?: string | null) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "未提供" : dateTimeFormatter.format(date);
 }
-const userNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
-
-export function compareUserDirectoryRows(left: PlatformUser, right: PlatformUser, field: UserDirectorySort["field"]) {
-  const leftRow = left as DirectoryUser;
-  const rightRow = right as DirectoryUser;
-  let result = 0;
-  if (field === "displayName") result = userNameCollator.compare(left.displayName || left.externalSubject, right.displayName || right.externalSubject);
-  if (field === "status") result = (memberStatusOrder[left.status] ?? Number.MAX_SAFE_INTEGER) - (memberStatusOrder[right.status] ?? Number.MAX_SAFE_INTEGER);
-  if (field === "createdAt") result = (Date.parse(leftRow.createdAt ?? "") || 0) - (Date.parse(rightRow.createdAt ?? "") || 0);
-  return result || userNameCollator.compare(`${left.workspaceId}:${left.externalSubject}`, `${right.workspaceId}:${right.externalSubject}`);
-}
-
-export function sortUserDirectoryRows(items: PlatformUser[], sort?: UserDirectorySort) {
-  const direction = sort?.order === "ascend" ? 1 : -1;
-  return [...items].sort((left, right) => {
-    const suspendedOrder = Number(left.status === "suspended") - Number(right.status === "suspended");
-    if (suspendedOrder) return suspendedOrder;
-    return sort ? direction * compareUserDirectoryRows(left, right, sort.field) : 0;
-  });
-}
-
 export function userDirectoryPageRequest(filters: UserFilters, current?: number, pageSize?: number) {
-  return { ...filters, page: current ?? 1, pageSize: pageSize ?? 10 };
+  return {
+    ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.workspaceId?.trim() ? { workspaceId: filters.workspaceId.trim() } : {}),
+    ...(filters.accountType ? { accountType: filters.accountType } : {}),
+    page: current ?? 1,
+    pageSize: pageSize ?? 10,
+  };
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {
@@ -65,6 +49,36 @@ export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGove
 
 export function legacyCommercialSnapshotRows(memberships: readonly PlatformUser[]) {
   return memberships.filter((row) => Boolean(row.commercial));
+}
+
+export function membershipAccessActionContext(row: PlatformUser) {
+  const action = row.status === "suspended" ? "启用" : "停用";
+  const target = `${row.displayName || row.externalSubject} · ${row.enterpriseName || "未命名企业"}（${row.workspaceId}）`;
+  return {
+    action,
+    status: memberStatusLabels[row.status] ?? "状态待确认",
+    target,
+    buttonLabel: `${action} ${target} 的成员访问`,
+  };
+}
+
+export function userDirectoryRowKey(row: PlatformUser) {
+  return `${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`;
+}
+
+export function failedUserDirectorySelectionKeys(
+  targets: readonly { workspaceId: string; externalSubject: string }[],
+  failedTargets: readonly { workspaceId: string; externalSubject: string }[],
+  currentActionableTargets: readonly { workspaceId: string; externalSubject: string }[],
+) {
+  const failed = new Set(failedTargets.map((target) => `${target.workspaceId}:${target.externalSubject}`));
+  const actionable = new Set(currentActionableTargets.map((target) => `${target.workspaceId}:${target.externalSubject}`));
+  return targets
+    .filter((target) => {
+      const key = `${target.workspaceId}:${target.externalSubject}`;
+      return failed.has(key) && actionable.has(key);
+    })
+    .map((target) => `merchant:${target.workspaceId}:${target.externalSubject}`);
 }
 
 export function UserDirectorySection({ model, governanceSections = [], onSelectGovernanceSection }: {
@@ -96,14 +110,15 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   const provisionIntentRef = useRef<Record<string, unknown> | undefined>(undefined);
   const [provisionForm] = Form.useForm<MerchantInvitationForm>();
   const provisionWorkspaceMode = Form.useWatch("workspaceMode", provisionForm) ?? "new";
+  const [provisionWorkspaceQuery, setProvisionWorkspaceQuery] = useState("");
+  const [provisionWorkspaceQueryApplied, setProvisionWorkspaceQueryApplied] = useState<string>();
+  const provisionWorkspaceRequestRef = useRef(0);
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
-  const [userSort, setUserSort] = useState<UserDirectorySort>();
   const [detailAccountType, setDetailAccountType] = useState<"merchant" | "platform">("merchant");
-  const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
+  const detailTriggerRowKeyRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
-  const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
   const initialDirectoryLoadFailed = Boolean(model.userDirectoryError && !model.userDirectoryLoading && model.userDirectory.items.length === 0);
   const directoryResultUnread = model.userDirectory.items.length === 0 && Boolean(model.userDirectoryLoading || model.userDirectoryError);
@@ -142,14 +157,14 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     model.setUserDetail(undefined);
   };
   const restoreUserDetailFocus = () => {
-    const triggerSubject = detailTriggerSubjectRef.current;
-    detailTriggerSubjectRef.current = undefined;
-    if (triggerSubject) {
+    const triggerRowKey = detailTriggerRowKeyRef.current;
+    detailTriggerRowKeyRef.current = undefined;
+    if (triggerRowKey) {
       const focusTrigger = () => {
-        const trigger = detailButtonRefs.current.get(triggerSubject);
+        const trigger = detailButtonRefs.current.get(triggerRowKey);
         if (!trigger) return;
         trigger.focus({ preventScroll: true });
-        if (document.activeElement === trigger) detailTriggerSubjectRef.current = undefined;
+        if (document.activeElement === trigger) detailTriggerRowKeyRef.current = undefined;
       };
       window.requestAnimationFrame(() => window.setTimeout(focusTrigger, 120));
     }
@@ -158,7 +173,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     // With destroyOnHidden, Drawer may finish its close transition before the
     // table row has been committed again. Retry from the post-state commit so
     // keyboard users reliably return to the control that opened the drawer.
-    if (detailSubject !== undefined || !detailTriggerSubjectRef.current) return;
+    if (detailSubject !== undefined || !detailTriggerRowKeyRef.current) return;
     restoreUserDetailFocus();
   }, [detailSubject]);
   const selectedUsers = model.userDirectory.items
@@ -167,7 +182,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   const governanceMenuItems: NonNullable<MenuProps["items"]> = [
     ...(governanceSections.map(({ key, label }) => ({ key, label }))),
     { key: "accountType", label: accountType === "platform" ? "返回全部账号" : "查看运营平台账号", disabled: !canReadUserDirectory },
-    { key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !model.canUserGovernance || model.userExporting },
+    { key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !canExportUserDirectory(model.authorization) || model.userExporting },
     { key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps },
   ];
   const handleGovernanceMenuClick: MenuProps["onClick"] = ({ key }) => {
@@ -179,8 +194,12 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     } else if (key === "export") {
       void model.exportUsers(form.getFieldsValue());
     } else if (key === "provision") {
+      // Invalidate any lookup started by a previous opening before exposing
+      // this dialog. A late response must not make an old search selectable.
+      provisionWorkspaceRequestRef.current += 1;
       if (!provisionUnknown && provisionResult) { setProvisionResult(undefined); provisionForm.resetFields(); provisionIntentRef.current = undefined; }
-      void model.loadWorkspaceDirectory({ status: "active", page: 1, pageSize: 100 });
+      setProvisionWorkspaceQuery("");
+      setProvisionWorkspaceQueryApplied(undefined);
       setProvisionOpen(true);
     } else {
       onSelectGovernanceSection?.(key);
@@ -199,20 +218,17 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       setSelectedUserKeys([]);
       setBulkSuspendOpen(false);
       setBulkSuspendReason("");
-    } else setActionError(`已完成 ${selectedUsers.length - result.failed} 个，${result.failed} 个未完成。请保留当前选择并逐条重试失败项。`);
-  };
-  const handleDirectoryChange: TableProps<PlatformUser>["onChange"] = (pagination, _filters, sorter, extra) => {
-    if (extra.action === "sort") {
-      const activeSorter = Array.isArray(sorter) ? sorter[0] : sorter;
-      const field = activeSorter?.field;
-      const order = activeSorter?.order;
-      if ((field === "displayName" || field === "status" || field === "createdAt") && (order === "ascend" || order === "descend")) {
-        setUserSort({ field, order });
-      } else {
-        setUserSort(undefined);
-      }
-      return;
+    } else {
+      const actionableTargets = model.userDirectory.items
+        .filter((row) => row.accountType !== "platform" && row.status !== "suspended" && row.externalSubject !== model.opsSession?.actor_id)
+        .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject }));
+      setSelectedUserKeys(failedUserDirectorySelectionKeys(selectedUsers, result.failedTargets, actionableTargets));
+      setActionError(`已成功停用 ${result.succeeded} 个成员关系；${result.failed} 个未完成。刷新后只保留仍可操作的失败成员，成功或已停用成员不会重试。请复核失败原因后再操作。`);
     }
+  };
+  const handleDirectoryChange: TableProps<PlatformUser>["onChange"] = (pagination, _filters, _sorter, extra) => {
+    if (extra.action !== "paginate") return;
+    setSelectedUserKeys([]);
     void model.loadUsers(userDirectoryPageRequest(form.getFieldsValue(), pagination.current, pagination.pageSize));
   };
 
@@ -221,11 +237,11 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
     <h2 id="user-directory-heading" className="sr-only">{displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"}</h2>
       <Card className="ops-user-directory-card" title={displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"} extra={<Dropdown menu={{ items: governanceMenuItems, onClick: handleGovernanceMenuClick }}><Button type="text" aria-label={`更多用户治理操作${governanceSections.length ? `：${governanceSections.map(({ label }) => label).join("、")}` : ""}`} className="ops-user-directory-total">{directoryResultUnread ? unreadDirectoryLabel : displayedAccountType === "platform" ? `共 ${model.userDirectory.total} 个运营平台账号` : `共 ${model.userDirectory.workspaceCount} 家商家工作区`}</Button></Dropdown>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "merchant" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "merchant" }} onFinish={(values) => { setSelectedUserKeys([]); void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
         <Form.Item name="query" label="搜索"><Input allowClear disabled={!canReadUserDirectory} maxLength={64} aria-label="按关键词筛选用户目录" style={{ width: 200 }} /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select aria-label="按激活状态筛选用户目录" disabled={!canReadUserDirectory} style={{ width: 140 }} options={[
-            { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
+            { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
         <Form.Item name="accountType" label="属性">
@@ -235,6 +251,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         </Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" disabled={!canReadUserDirectory} loading={model.userDirectoryLoading}>查询</Button>
+          <Button htmlType="button" disabled={!canReadUserDirectory || model.userDirectoryLoading} onClick={() => { setSelectedUserKeys([]); form.resetFields(); void model.loadUsers({ accountType: "merchant", page: 1 }); }}>清空筛选</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -260,9 +277,9 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       />}
       <Table<PlatformUser>
         aria-label="用户目录数据表"
-        rowKey={(row) => `${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`}
+        rowKey={userDirectoryRowKey}
         loading={model.userDirectoryLoading}
-        dataSource={sortedUsers}
+        dataSource={model.userDirectory.items}
         rowClassName={(row) => row.status === "suspended" ? "ops-user-row-suspended" : ""}
         locale={{ emptyText: directoryResultUnread ? model.userDirectoryLoading ? unreadDirectoryLabel : "用户目录未读取，请刷新后重试" : displayedAccountType === "platform" ? "没有符合条件的运营平台账号" : "没有符合条件的用户成员关系" }}
         rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
@@ -272,9 +289,9 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         columns={[
           { title: "用户名", dataIndex: "externalSubject", width: 405, render: (value: string) => <Typography.Text className="ops-token ops-token-single-line" copyable>{value}</Typography.Text> },
           { title: "店铺名", dataIndex: "displayName", width: 213, render: (value: string, row: PlatformUser) => value || row.externalSubject },
-          { title: "激活状态", dataIndex: "status", width: 130, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
+          { title: "激活状态", dataIndex: "status", width: 130, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
           { title: "用户属性", dataIndex: "accountType", width: 177, render: (value: PlatformUser["accountType"]) => value === "platform" ? "运营平台账号" : "商家账号" },
-          { title: "操作", key: "actions", width: 179, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "启用" : "停用"}</Button>}</Space> },
+          { title: "操作", key: "actions", width: 179, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { const key = userDirectoryRowKey(row); if (node) detailButtonRefs.current.set(key, node); else detailButtonRefs.current.delete(key); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerRowKeyRef.current = userDirectoryRowKey(row); setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "启用" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
@@ -286,7 +303,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       confirmLoading={provisionSubmitting}
       okButtonProps={{ disabled: Boolean(provisionResult) || !model.canPlatformOps }}
       destroyOnHidden
-      onCancel={() => { if (!provisionSubmitting) setProvisionOpen(false); }}
+      onCancel={() => { if (!provisionSubmitting) { provisionWorkspaceRequestRef.current += 1; setProvisionWorkspaceQueryApplied(undefined); setProvisionOpen(false); } }}
       onOk={() => void provisionForm.submit()}
     >
       <Alert className="ops-inline-alert" showIcon type="info" title="账号激活与付费开通分别处理" description="客户通过一次性邀请自行设置密码；运营不录入或交付临时密码。本操作不建收款、不授予套餐。代购及真实到账核验请到财务中心“商业订单”。" />
@@ -335,13 +352,31 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}><Input maxLength={200} /></Form.Item>
         <Form.Item label="联系人" name="contactName" rules={[{ required: true, whitespace: true, message: "请输入联系人" }]}><Input maxLength={100} /></Form.Item>
         <Form.Item label="企业工作区" name="workspaceMode"><Select options={[{ value: "new", label: "创建新的企业工作区" }, { value: "existing", label: "绑定一个已存在的企业" }]} /></Form.Item>
-        {provisionWorkspaceMode === "existing" && <Form.Item label="目标企业" name="workspaceId" rules={[{ required: true, message: "请选择要绑定的企业" }]}>
-          <Select showSearch optionFilterProp="label" loading={model.workspaceDirectoryLoading} options={(model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName || item.workspaceId} · ${item.workspaceId}` }))} placeholder="选择已核实企业，服务端会再次验证" />
-        </Form.Item>}
+        {provisionWorkspaceMode === "existing" && <>
+          <Form.Item label="搜索企业工作区">
+            <Space.Compact style={{ width: "100%" }}>
+              <Input aria-label="搜索要绑定的企业工作区" maxLength={200} value={provisionWorkspaceQuery} disabled={model.workspaceDirectoryLoading || provisionSubmitting} placeholder="输入企业名称或 Workspace ID" onChange={event => { setProvisionWorkspaceQuery(event.target.value); setProvisionWorkspaceQueryApplied(undefined); provisionForm.setFieldValue("workspaceId", undefined); }} onPressEnter={event => { event.preventDefault(); const requestId = ++provisionWorkspaceRequestRef.current; setProvisionWorkspaceQueryApplied(undefined); void model.loadWorkspaceDirectory({ query: provisionWorkspaceQuery.trim() || undefined, status: "active", merchantOnly: true, page: 1, pageSize: 100 }).then(ok => { if (requestId === provisionWorkspaceRequestRef.current && ok) setProvisionWorkspaceQueryApplied(provisionWorkspaceQuery.trim()); }); }} />
+              <Button aria-label="查询企业工作区" loading={model.workspaceDirectoryLoading} disabled={provisionSubmitting} onClick={() => { const query = provisionWorkspaceQuery.trim(); const requestId = ++provisionWorkspaceRequestRef.current; setProvisionWorkspaceQueryApplied(undefined); provisionForm.setFieldValue("workspaceId", undefined); void model.loadWorkspaceDirectory({ query: query || undefined, status: "active", merchantOnly: true, page: 1, pageSize: 100 }).then(ok => { if (requestId === provisionWorkspaceRequestRef.current && ok) setProvisionWorkspaceQueryApplied(query); }); }}>查询</Button>
+            </Space.Compact>
+          </Form.Item>
+          {model.workspaceDirectoryError && <Alert role="alert" type="error" showIcon title="企业工作区查询失败" description={model.workspaceDirectoryError} />}
+          <Form.Item label="目标企业" name="workspaceId" rules={[{ required: true, message: "请选择要绑定的企业" }]}>
+            <Select disabled={provisionWorkspaceQueryApplied === undefined || model.workspaceDirectoryLoading} loading={model.workspaceDirectoryLoading} options={provisionWorkspaceQueryApplied === undefined ? [] : (model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName || item.workspaceId} · ${item.workspaceId}` }))} placeholder={provisionWorkspaceQueryApplied === undefined ? "先搜索企业名称或 Workspace ID" : "选择已核实企业，服务端会再次验证"} />
+          </Form.Item>
+          {provisionWorkspaceQueryApplied !== undefined && !model.workspaceDirectoryLoading && !model.workspaceDirectoryError && (model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").length === 0 && <Typography.Text role="status">没有找到匹配的正常企业工作区</Typography.Text>}
+          {provisionWorkspaceQueryApplied !== undefined && model.workspaceDirectory?.hasMore && <Button disabled={model.workspaceDirectoryLoading || provisionSubmitting} loading={model.workspaceDirectoryLoading} onClick={() => { const requestId = ++provisionWorkspaceRequestRef.current; setProvisionWorkspaceQueryApplied(undefined); provisionForm.setFieldValue("workspaceId", undefined); void model.loadWorkspaceDirectory({ query: provisionWorkspaceQueryApplied || undefined, status: "active", merchantOnly: true, page: Math.floor(model.workspaceDirectory.offset / model.workspaceDirectory.limit) + 2, pageSize: 100 }).then(ok => { if (requestId === provisionWorkspaceRequestRef.current && ok) setProvisionWorkspaceQueryApplied(provisionWorkspaceQueryApplied); }); }}>下一页企业</Button>}
+        </>}
         <Form.Item label="开户或邀请原因" name="reason" rules={[{ required: true, min: 4, message: "请填写不少于4个字符的原因" }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={500} /></Form.Item>
       </Form>
     </Modal>
-    <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台用户详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : <div style={{ textAlign: "right" }}><Button danger disabled={!model.canUserGovernance || !model.userDetail?.memberships.length} onClick={() => { const row = model.userDetail?.memberships[0]; if (row) { setActionError(""); setAccessTarget(row); } }}>停用</Button></div>}>
+    <Drawer className="ops-user-detail-drawer" title={detailAccountType === "platform" ? "运营平台用户详情" : "商户用户详情"} aria-label="用户目录详情抽屉" size="min(920px, calc(100vw - 32px))" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden footer={detailAccountType === "platform" ? null : (() => {
+      const firstMembership = model.userDetail?.memberships[0];
+      const actionContext = firstMembership ? membershipAccessActionContext(firstMembership) : undefined;
+      return <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <Typography.Text type="secondary">{actionContext ? `目标：${actionContext.target}；当前成员状态：${actionContext.status}` : "没有可操作的工作区成员关系"}</Typography.Text>
+        <Button danger={actionContext?.action === "停用"} disabled={!model.canUserGovernance || !firstMembership} aria-label={actionContext?.buttonLabel ?? "没有可操作的工作区成员关系"} onClick={() => { if (firstMembership) { setActionError(""); setAccessTarget(firstMembership); } }}>{actionContext ? `${actionContext.action}成员访问` : "无可操作成员"}</Button>
+      </div>;
+    })()}>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
@@ -356,7 +391,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
             { title: "序号", key: "index", align: "center", width: 60, render: (_: unknown, _row: PlatformUser, index: number) => index + 1 },
             { title: "企业主体", key: "name", align: "center", width: 220, render: (_: unknown, row: PlatformUser) => row.enterpriseName || row.workspaceId },
             { title: "工作区状态", key: "status", align: "center", width: 120, render: (_: unknown, row: PlatformUser) => <Tag color={row.workspaceStatus === "active" ? "green" : "default"}>{workspaceStatusLabels[row.workspaceStatus] ?? row.workspaceStatus}</Tag> },
-            { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime((row as DirectoryUser).createdAt) },
+            { title: "成员创建时间", key: "createdAt", align: "center", width: 170, render: (_: unknown, row: PlatformUser) => formatKnownDateTime(row.createdAt) },
             { title: "成员更新时间", dataIndex: "updatedAt", align: "center", width: 170, render: (value: string) => formatKnownDateTime(value) },
           ]} /></section>
           <section className="ops-user-detail-section"><Typography.Title level={5}>旧版套餐与任务额度快照</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial-snapshot`} pagination={false} dataSource={legacyCommercialSnapshotRows(model.userDetail.memberships)} locale={{ emptyText: "暂无旧版套餐与用量数据" }} columns={[

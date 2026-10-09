@@ -2,15 +2,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { CanonicalProductConsistencySection, CanonicalRelationChain } from "./CanonicalProductConsistencySection.js";
+import { CanonicalProductConsistencySection, CanonicalRelationChain, canonicalActionIsCurrent, filterConsistencyFindings, findingHasCurrentEvidence, findingHasCurrentVerifiedEvidence, findingStatusPresentation } from "./CanonicalProductConsistencySection.js";
 import type { CanonicalProductConsistencyReport } from "../../types/ops.js";
 
 const report: CanonicalProductConsistencyReport = {
-  workspaceId: "ws-1", status: "attention_required",
+  workspaceId: "ws-1", status: "attention_required", generatedAt: "2026-08-31T00:00:00.000Z", revision: "rev-1",
   counts: { verified: 1, legacy_only: 1, conflict: 1, blocked: 0 },
   findings: [
     { legacyProductId: "product-legacy", productId: "product-legacy", status: "legacy_only", codes: ["CANONICAL_MAPPING_MISSING"], listingIds: [], campaignItemIds: [], taskIds: [], publishJobIds: [], scope: { brandId: "brand-1", platform: "taobao", accountId: "store-1", listingId: null }, evidence: { codes: ["CANONICAL_MAPPING_MISSING"], generatedAt: "2026-08-31T00:00:00.000Z", revision: "rev-1" }, blocking: { code: "CANONICAL_MAPPING_MISSING", message: "映射缺失", impact: "不能继续发布", objectType: "product", objectId: "product-legacy", retryable: true }, nextAction: { id: "map", method: "canonical.product.consistency", label: "补齐规范商品映射", reason: "关系缺失", permission: { allowed: false, requiredRole: "platform_ops" }, requiredInputs: [], confirmation: "none" } },
-    { legacyProductId: "product-ok", status: "verified", codes: [], canonicalProductId: "canonical-1", listingIds: ["listing-1"], campaignItemIds: [], taskIds: ["task-1"], publishJobIds: [] },
+    { legacyProductId: "product-ok", status: "verified", codes: [], evidence: { codes: [], generatedAt: "2026-08-31T00:00:00.000Z", revision: "rev-1" }, canonicalProductId: "canonical-1", listingIds: ["listing-1"], campaignItemIds: [], taskIds: ["task-1"], publishJobIds: [] },
     { legacyProductId: "product-conflict", status: "conflict", codes: ["CANONICAL_MAPPING_AMBIGUOUS"], listingIds: [], campaignItemIds: [], taskIds: [], publishJobIds: [] },
   ], orphanFindings: [],
 };
@@ -123,8 +123,85 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).not.toContain("关系链已验证");
   });
 
+  it.each([
+    ["missing freshness", { availability: "available" as const, contractStatus: "clean" as const }],
+    ["missing availability", { freshness: "fresh" as const, contractStatus: "clean" as const }],
+    ["missing contract status", { freshness: "fresh" as const, availability: "available" as const }],
+    ["unknown availability", { availability: "unknown" as const }],
+    ["unavailable availability", { availability: "unavailable" as const }],
+    ["unknown contract status", { contractStatus: "unknown" as const }],
+    ["unavailable contract status", { contractStatus: "unavailable" as const }],
+    ["attention required contract status", { contractStatus: "attention_required" as const, availability: "available" as const, freshness: "fresh" as const }],
+  ])("does not show a clean empty report as verified when it has %s", (_label, uncertainty) => {
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{
+      ...report,
+      status: "clean",
+      ...uncertainty,
+      findings: [],
+      orphanFindings: [],
+      counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 },
+    }} />);
+
+    expect(markup).toContain("需处理");
+    expect(markup).toMatch(/一致性数据暂不可读取|一致性数据尚未确认|当前读取结果尚不确定/u);
+    expect(markup).not.toContain('ant-tag-success">已验证</span>');
+    expect(markup).not.toContain("当前没有关系问题");
+  });
+
+  it("downgrades verified findings and their detail evidence when the report is unavailable", () => {
+    const verifiedFinding = { ...report.findings[1]!, evidence: { codes: [], generatedAt: "2026-08-31T00:00:00.000Z", revision: "rev-1" } };
+    const unavailableReport = {
+      ...report,
+      status: "clean" as const,
+      freshness: "fresh" as const,
+      availability: "unavailable" as const,
+      contractStatus: "clean" as const,
+      findings: [verifiedFinding],
+      orphanFindings: [],
+      counts: { verified: 1, legacy_only: 0, conflict: 0, blocked: 0 },
+    };
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={unavailableReport} />);
+
+    expect(markup).toContain("当前未核验");
+    expect(markup).toContain("历史报告曾验证；当前状态未核验");
+    expect(markup).not.toContain('ant-tag-success">已验证</span>');
+    expect(findingStatusPresentation("verified", false)).toEqual({ label: "当前未核验", color: "default" });
+    expect(findingHasCurrentVerifiedEvidence(verifiedFinding, false)).toBe(false);
+    expect(findingHasCurrentVerifiedEvidence(verifiedFinding, true, report)).toBe(true);
+  });
+
+  it("allows action submission only for a still-current report and unchanged authorized finding", () => {
+    const actionableFinding = {
+      ...report.findings[0]!,
+      nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null } },
+    };
+    expect(canonicalActionIsCurrent(true, actionableFinding, actionableFinding, report)).toBe(true);
+    expect(canonicalActionIsCurrent(false, actionableFinding, actionableFinding, report)).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, { ...actionableFinding, status: "blocked" }, report)).toBe(false);
+    expect(canonicalActionIsCurrent(true, { ...actionableFinding, evidence: undefined }, { ...actionableFinding, evidence: undefined }, report)).toBe(false);
+
+    const unsubstantiatedVerified = { ...actionableFinding, status: "verified" as const, evidence: undefined };
+    expect(canonicalActionIsCurrent(true, unsubstantiatedVerified, unsubstantiatedVerified, report)).toBe(false);
+    expect(findingHasCurrentEvidence(actionableFinding, true, report)).toBe(true);
+    expect(findingHasCurrentEvidence({ ...actionableFinding, evidence: undefined }, true, report)).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, actionableFinding, { ...report, generatedAt: undefined })).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, actionableFinding, { ...report, generatedAt: "not-a-date" })).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, actionableFinding, { ...report, revision: "rev-2" })).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, { ...actionableFinding, evidence: { ...actionableFinding.evidence!, revision: "rev-2" } }, report)).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, { ...actionableFinding, evidence: { ...actionableFinding.evidence!, generatedAt: "not-a-date" } }, report)).toBe(false);
+    expect(canonicalActionIsCurrent(true, actionableFinding, { ...actionableFinding, evidence: { ...actionableFinding.evidence!, generatedAt: "2026-08-30T00:00:00.000Z" } }, report)).toBe(false);
+  });
+
+  it("filters verified rows by current matching evidence instead of the stored status label", () => {
+    const verified = report.findings[1]!;
+    const staleEvidence = { ...verified, evidence: { ...verified.evidence!, revision: "old-rev" } };
+    const missingTimestamp = { ...verified, evidence: { ...verified.evidence!, generatedAt: "invalid" } };
+    expect(filterConsistencyFindings([verified, staleEvidence, missingTimestamp], "verified", true, report).map(row => row.legacyProductId)).toEqual(["product-ok"]);
+    expect(filterConsistencyFindings([verified], "verified", false, report)).toEqual([]);
+  });
+
   it("renders the server next_action contract without inventing a repair action", () => {
-    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null }, requiredInputs: ["canonical_product_id"], confirmation: "interactive_confirmation" } }] }} />);
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, freshness: "fresh", availability: "available", contractStatus: "clean", findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null }, requiredInputs: ["canonical_product_id"], confirmation: "interactive_confirmation" } }] }} />);
     expect(markup).toContain("canonical.product.consistency");
     expect(markup).toContain("关系缺失");
     expect(markup).toContain("输入：canonical_product_id");
@@ -134,13 +211,13 @@ describe("CanonicalProductConsistencySection", () => {
   });
 
   it("exposes an authorized server action when the Stores page wires an executor", () => {
-    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null } } }] }} onNextAction={vi.fn()} />);
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, freshness: "fresh", availability: "available", contractStatus: "clean", findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null } } }] }} onNextAction={vi.fn()} />);
     expect(markup).toContain('aria-label="执行：补齐规范商品映射"');
     expect(markup).not.toContain("补齐规范商品映射（待接入）");
   });
 
   it("distinguishes a server-confirmed empty result from a filtered empty result", () => {
-    const emptyReport = { ...report, status: "clean" as const, counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 }, findings: [], orphanFindings: [], freshness: "fresh" as const };
+    const emptyReport = { ...report, status: "clean" as const, counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 }, findings: [], orphanFindings: [], freshness: "fresh" as const, availability: "available" as const, contractStatus: "clean" as const };
     const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={emptyReport} />);
     expect(markup).toContain("当前没有关系问题");
     expect(markup).toContain("这不是客户端未加载");

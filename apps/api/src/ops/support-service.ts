@@ -10,7 +10,7 @@ import type {
   SupportTicketStatus,
   TransitionSupportTicketCommand,
 } from '../../../../packages/contracts/src/ops/support.js'
-import { supportRolePermissions } from '../../../../packages/contracts/src/ops/support.js'
+import { supportRolePermissions, supportTicketTransitions } from '../../../../packages/contracts/src/ops/support.js'
 import {
   SupportTicketNotFoundError,
   type SupportRepository,
@@ -37,17 +37,10 @@ export class SupportValidationError extends Error {
   constructor(readonly field: string, message: string) { super(message); this.name = 'SupportValidationError' }
 }
 
-const transitions: Readonly<Record<SupportTicketStatus, readonly SupportTicketStatus[]>> = {
-  open: ['in_progress', 'closed'],
-  in_progress: ['open', 'waiting_customer', 'resolved'],
-  waiting_customer: ['in_progress', 'resolved'],
-  resolved: ['in_progress', 'closed'],
-  closed: ['in_progress'],
-}
-
 const priorities = new Set<SupportTicketPriority>(['low', 'normal', 'high', 'urgent'])
 const statuses = new Set<SupportTicketStatus>(['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'])
 const slaStates = new Set<SupportSlaState>(['on_track', 'at_risk', 'breached', 'met'])
+const transitions: Readonly<Record<SupportTicketStatus, readonly SupportTicketStatus[]>> = supportTicketTransitions
 
 function required(value: string, field: string, max: number, min = 1): string {
   const normalized = value.trim()
@@ -184,7 +177,8 @@ export class SupportService {
     })
     // A retried request carries the previous expected revision. Let the
     // repository inspect its idempotency event before treating it as stale.
-    if (current.revision === command.expectedRevision && !transitions[current.status].includes(command.status)) throw new SupportValidationError('status', `transition ${current.status} -> ${command.status} is not allowed`)
+    const allowedStatuses = transitions[current.status]
+    if (current.revision === command.expectedRevision && !allowedStatuses.includes(command.status)) throw new SupportValidationError('status', `transition ${current.status} -> ${command.status} is not allowed`)
     return this.repository.transition({
       workspaceId: command.workspaceId,
       ticketId: id,

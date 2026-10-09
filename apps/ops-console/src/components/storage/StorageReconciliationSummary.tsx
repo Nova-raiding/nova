@@ -16,12 +16,15 @@ function bytes(value?: number | null) {
 }
 
 const knownStorageFreshness = ["fresh", "stale", "expired"];
+const knownStorageRunStatuses = ["succeeded", "failed"];
 
 export function StorageReconciliationSummary({ summary, onOpen }: StorageReconciliationSummaryProps) {
   const statusKnown = summary !== undefined
-    && ["clean", "attention_required", "failed", "unavailable"].includes(String(summary.status));
-  const unavailable = !summary || !statusKnown || summary.status === "unavailable" || !summary.lastRunAt || !knownStorageFreshness.includes(String(summary.freshness));
+    && ["clean", "attention_required", "failed", "unavailable"].includes(String(summary.status))
+    && (summary.status === "unavailable" || knownStorageRunStatuses.includes(String(summary.runStatus)));
   const failed = summary?.runStatus === "failed" || summary?.status === "failed";
+  const unavailable = !summary || !statusKnown || summary.status === "unavailable"
+    || (!failed && (!summary.lastRunAt || !knownStorageFreshness.includes(String(summary.freshness))));
   const expired = summary?.freshness === "expired";
   const stale = summary?.freshness === "stale";
   const attention = summary?.status === "attention_required";

@@ -104,7 +104,7 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('await fetchTask(baseUrl, target.taskId)')
     expect(app).toMatch(/const current = target\.taskId\s*\?\s*\(target\.resolvedTask \?\? \(await fetchTask\(baseUrl, target\.taskId\)\)\)\s*:\s*null/u)
     expect(app).toContain('createTaskFromIntent')
-    expect(app).toContain('createTaskOnce(baseUrl, resolvedTarget, requestText)')
+    expect(app).toContain('createTaskOnce(baseUrl, { ...resolvedTarget, taskIntentKey: intentKey }, requestText)')
     expect(app).toContain('idempotency_key: intentKey')
     expect(app).toContain('taskCreationRequests.get(lockKey)')
     expect(app).toContain('taskId: item.id')

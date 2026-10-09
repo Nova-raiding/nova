@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { debitKeyOrderIds, effectiveDebitFensOf, reversalOrderId, settlementOrderId } from './debit-key.js'
 import { withWorkspaceTransaction, requireWorkspaceScope, type OutboxEventInput, type SqlClient, type SqlPool } from './repository.js'
+import { assertValidPaymentCheckoutUri, isValidFixturePaymentCheckoutUri } from '@merchant-marketing/contracts'
 
 export type BillingChannel = 'alipay' | 'wechat'
 export type BillingOrderState = 'pending' | 'paid' | 'closed' | 'failed'
@@ -75,7 +76,7 @@ type BillingOrderIntent = Pick<BillingOrder, 'channel' | 'amountFen' | 'paymentM
 const sameOrderIntent = (row: OrderRow, input: BillingOrderIntent) => row.channel === input.channel && billingAmountFen(row.amount_fen) === input.amountFen && row.payment_mode === input.paymentMode && (row.created_by_actor_id ?? undefined) === input.createdByActorId
 
 export class PostgresBillingRepository {
-  constructor(private readonly pool: SqlPool, private readonly appendEvent?: (client: SqlClient, event: OutboxEventInput) => Promise<unknown>) {}
+  constructor(private readonly pool: SqlPool, private readonly appendEvent?: (client: SqlClient, event: OutboxEventInput) => Promise<unknown>, private readonly allowFixturePayments = false) {}
 
   private withReconciliationTransaction<T>(input: { workspaceId: string; assertReconciliationLease?: () => Promise<void> }, work: (client: SqlClient) => Promise<T>): Promise<T> {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
@@ -94,6 +95,15 @@ export class PostgresBillingRepository {
 
   async createOrder(input: Omit<BillingOrder, 'createdAt' | 'updatedAt'> & { idempotencyKey: string }) {
     billingAmountFen(input.amountFen)
+    if (input.paymentMode === 'fixture' && !this.allowFixturePayments) throw new TypeError('fixture payment mode is disabled for this repository')
+    if (input.paymentUrl !== undefined) {
+      if (input.paymentMode === 'fixture') {
+        if (!this.allowFixturePayments) throw new TypeError('fixture payment mode is disabled for this repository')
+        if (!isValidFixturePaymentCheckoutUri(input.paymentUrl)) throw new TypeError('fixture paymentUrl must use a valid fixture:// URI')
+      } else {
+        assertValidPaymentCheckoutUri(input.paymentUrl, input.channel)
+      }
+    }
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const inserted = await client.query<OrderRow>(`INSERT INTO billing_orders (id, workspace_id, channel, amount_fen, state, payment_mode, payment_url, provider_trade_id, idempotency_key, created_by_actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at`, [input.id, workspaceId, input.channel, input.amountFen, input.state, input.paymentMode, input.paymentUrl ?? null, input.providerTradeId ?? null, input.idempotencyKey, input.createdByActorId ?? null])

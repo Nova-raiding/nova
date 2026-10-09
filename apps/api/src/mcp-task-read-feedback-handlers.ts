@@ -25,6 +25,7 @@ export async function handleMcpTaskReadFeedback(method: string, params: JsonObje
   const { service, business, required, mcpPagination, filterByTaskBrandAccess, accessibleTaskBrandIds, scopeTask, taskWorkflowProjections, taskTimeline, requestActor, persistSnapshot, persistEvent, taskFeedbackEventPayload } = deps
   switch (method) {
     case 'deliverable.list': {
+      const accessibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
       const deliverables = service.listDeliverables(workspaceId, {
       ...(typeof params.query === 'string' ? { query: params.query } : {}),
       ...(typeof params.platform === 'string' ? { platform: params.platform as Platform } : {}),
@@ -34,12 +35,11 @@ export async function handleMcpTaskReadFeedback(method: string, params: JsonObje
       ...(typeof params.state === 'string' ? { state: params.state as import('../../../packages/application/src/service.js').ContentVersion['state'] } : {}),
       ...(typeof params.date_from === 'string' ? { dateFrom: params.date_from } : {}),
       ...(typeof params.date_to === 'string' ? { dateTo: params.date_to } : {}),
+      ...(accessibleBrandIds !== undefined ? { accessibleBrandIds } : {}),
       ...(typeof params.limit === 'string' ? { limit: Number(params.limit) } : {}),
       ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}),
       })
-      const visibleTasks = await filterByTaskBrandAccess(req, workspaceId, service.listTasks(workspaceId))
-      const visibleTaskIds = new Set(visibleTasks.map(task => task.id))
-      const items = deliverables.items.filter(item => visibleTaskIds.has(item.task.id))
+      const items = deliverables.items
       return ({
         ...deliverables,
         items,

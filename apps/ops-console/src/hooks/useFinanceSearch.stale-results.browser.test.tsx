@@ -64,7 +64,7 @@ describe("finance search stale snapshot protection", () => {
               return React.createElement(App, null, React.createElement(React.Fragment, null,
                 React.createElement('button', { onClick: () => void controller.search({ text: 'old-filter', workspaceIds: ['ws-old'] }) }, '读取旧筛选'),
                 React.createElement('button', { onClick: () => void controller.search({ text: 'new-filter', workspaceIds: ['ws-new'] }) }, '读取新筛选'),
-                React.createElement(FinanceSearchSection, { controller })
+                React.createElement(FinanceSearchSection, { controller, canExport: true })
               ));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Harness));

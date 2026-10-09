@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
 import { IncidentRequestGate, incidentNextStatus, mergeIncidentPage, mergeTimelinePage, type IncidentTimelineEntry, type OpsIncident } from './useIncidents.js'
 
 const incident = (id: string, updatedAt: string): OpsIncident => ({ id, workspaceId: 'ws_1', title: id, summary: 'summary', severity: 'sev2', status: 'investigating', affectedComponents: [], affectedWorkspaceIds: [], revision: 1, createdBy: 'ops_1', createdAt: updatedAt, updatedAt })
@@ -25,5 +26,25 @@ describe('incident hook helpers', () => {
     expect(gate.isCurrent(second)).toBe(true)
     gate.invalidate()
     expect(gate.isCurrent(second)).toBe(false)
+  })
+
+  it('keeps failed detail and timeline reads unverified and guards mutations', async () => {
+    const source = await readFile(new URL('./useIncidents.ts', import.meta.url), 'utf8')
+    expect(source).toContain('const [detailVerified, setDetailVerified] = useState(false)')
+    expect(source).toContain('const [timelineVerified, setTimelineVerified] = useState(false)')
+    expect(source).toContain('const [detailResult, timelineResult] = await Promise.allSettled([')
+    expect(source).toContain('setDetailError(errorMessage(detailResult.reason))')
+    expect(source).toContain('setTimelineError(errorMessage(timelineResult.reason))')
+    expect(source).toContain("if (!detailVerified || !selected) throw new Error('事故详情尚未验证，无法执行操作。')")
+  })
+
+  it('keeps late mutation results in the list without replacing a different selection', async () => {
+    const source = await readFile(new URL('./useIncidents.ts', import.meta.url), 'utf8')
+    expect(source).toContain('const selectedIncidentId = useRef<string | undefined>(undefined)')
+    expect(source).toContain('const acceptMutation = useCallback((result: IncidentMutationResult, selectResult = true) => {')
+    expect(source).toContain('setIncidents((current) => mergeIncidentPage(current, [result.incident]))')
+    expect(source).toContain('if (selectResult) {')
+    expect(source).toContain('selectedIncidentId.current === requestedIncidentId && result.incident.id === requestedIncidentId')
+    expect(source).toContain('selectedIncidentId.current = undefined')
   })
 })

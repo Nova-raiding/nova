@@ -38,7 +38,7 @@ describe("manual store registration failure recovery", () => {
             };
             const workspaces = [{ workspaceId: 'ws_test', enterpriseName: '隔离测试企业', status: 'active' }];
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [], canPlatformOps: true, workspaces, onRegisterManualStore: register,
+              storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canPlatformOps: true, workspaces, onRegisterManualStore: register,
               onSaveAlias: async () => false, onRevoke: async () => undefined,
             })));
           `;
@@ -98,6 +98,27 @@ describe("manual store registration failure recovery", () => {
       await dialog.waitFor({ state: "detached" });
       expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(2);
       expect(pageErrors).toEqual([]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("keeps manual registration and alias edit limits aligned with the 40-character server rule", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
+      const registrationDialog = page.getByRole("dialog", { name: "登记人工店铺" });
+      await registrationDialog.waitFor();
+      const manualAlias = registrationDialog.getByLabel("店铺别名（可选）", { exact: true });
+      expect(await manualAlias.getAttribute("maxlength")).toBe("40");
+      expect(await registrationDialog.getByText("最多 40 个可见字符，与平台店铺别名规则一致。", { exact: true }).count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await registrationDialog.waitFor({ state: "detached" });
+
+      await page.getByRole("button", { name: "改别名", exact: true }).click();
+      const editedAlias = page.locator("#store-display-alias");
+      await editedAlias.waitFor({ state: "visible" });
+      expect(await editedAlias.getAttribute("maxlength")).toBe("40");
+      expect(await page.locator("#store-display-alias-limit").textContent()).toBe("最多 40 个可见字符，与平台店铺别名规则一致。");
     } finally { await page.close(); }
   }, 45_000);
 });

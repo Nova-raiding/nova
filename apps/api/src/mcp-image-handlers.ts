@@ -3,6 +3,7 @@ import { DomainError, isUsableAssetWithoutScan, type Platform } from '../../../p
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { imageMcpRuntime } from './server.js'
 import { promoteLegacyDemoGeneratedAsset } from './image-archive-helpers.js'
+import { imageGenerationIdempotencyKey } from './image-generation-idempotency.js'
 
 type ImageMcpRuntime = ReturnType<typeof imageMcpRuntime>
 export const MCP_IMAGE_METHODS = new Set(['catalog.image.generate', 'catalog.image.retry', 'catalog.image.get', 'catalog.image.select', 'catalog.image.review', 'content.visual.select'])
@@ -184,7 +185,32 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       if (durableImageGeneration && (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions)) {
         throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '普通图片 Durable Worker 尚未完成生产配置', 503)
       }
-      const idempotencyKey = (typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim() || `image-${workspaceId}-${productId}-${typeof params.direction === 'string' ? params.direction : 'default'}`
+      const explicitIdempotencyKey = typeof params.idempotency_key === 'string' ? params.idempotency_key.trim() : ''
+      const headerIdempotencyKey = header(req, 'idempotency-key')?.trim() ?? ''
+      const direction = typeof params.direction === 'string' ? params.direction.trim() || '商品详情页运营图：核心卖点、SKU 规格与转化信息层级' : '商品详情页运营图：核心卖点、SKU 规格与转化信息层级'
+      const requestedCount = typeof params.count === 'string' && /^\d+$/u.test(params.count) ? Number(params.count) : 3
+      const count = Math.min(6, Math.max(1, Math.floor(requestedCount)))
+      const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
+      const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
+      const defaultSkuIds = imageTask?.inputSnapshot?.skuIds ?? imageTask?.productionPlan?.skuIds ?? (product.skus ?? []).map(sku => sku.id)
+      const effectiveSkuIds = skuIds ?? [...new Set(defaultSkuIds.map(skuId => skuId.trim()).filter(Boolean))]
+      const effectiveImageCount = count
+      const effectiveDirection = direction
+      const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
+      const idempotencyKey = explicitIdempotencyKey || headerIdempotencyKey || imageGenerationIdempotencyKey({
+        workspaceId,
+        productId,
+        direction: effectiveDirection,
+        ...(typeof params.size === 'string' ? { size: params.size } : {}),
+        ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}),
+        count: effectiveImageCount,
+        imageMode,
+        ...(taskId ? { taskId, ...(imageTask?.version !== undefined ? { taskVersion: imageTask.version } : {}) } : {}),
+        ...(contentVersionId ? { contentVersionId, ...(contentVersion?.version !== undefined ? { contentVersionVersion: contentVersion.version } : {}) } : {}),
+        ...(effectiveSkuIds.length ? { skuIds: effectiveSkuIds } : {}),
+        ...(product.version !== undefined ? { productVersion: product.version } : {}),
+        ...(marketingBrief ? { marketingBrief } : {}),
+      })
       const existingImageJob = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === idempotencyKey)
       const walletDebitKey = `image:${idempotencyKey}`
       let creativePoints: Awaited<ReturnType<typeof imageCreativePointsEvidence>> | undefined
@@ -225,7 +251,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let job: ReturnType<typeof service.enqueueImageGeneration>
       try {
-        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(typeof params.task_id === 'string' && params.task_id.trim() ? { taskId: params.task_id.trim() } : {}), ...(typeof params.content_version_id === 'string' && params.content_version_id.trim() ? { contentVersionId: params.content_version_id.trim() } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
+        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(taskId ? { taskId } : {}), ...(contentVersionId ? { contentVersionId } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
       } catch (error) {
         await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务创建失败', creativeReservation)
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片任务创建失败' })

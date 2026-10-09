@@ -35,6 +35,51 @@ describe('HTTP catalog search query contract', () => {
     expect(deps.service.listProducts).not.toHaveBeenCalled()
   })
 
+  it.each([
+    'not-a-date',
+    '2026-02-30T00:00:00Z',
+    '2026-10-01T12:00:00',
+  ])('rejects invalid date_from=%s before resolving workspace or querying data', async dateFrom => {
+    const deps = dependencies()
+    await expect(handleHttpCatalogReadRoute(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      '/v1/products',
+      new URL(`http://localhost/v1/products?date_from=${encodeURIComponent(dateFrom)}`),
+      deps,
+    )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_REQUEST, status: 400 })
+
+    expect(deps.resolveWorkspace).not.toHaveBeenCalled()
+    expect(deps.business.listProductsPage).not.toHaveBeenCalled()
+    expect(deps.service.listProducts).not.toHaveBeenCalled()
+  })
+
+  it('rejects reversed date ranges before resolving workspace or querying data', async () => {
+    const deps = dependencies()
+    await expect(handleHttpCatalogReadRoute(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      '/v1/products',
+      new URL('http://localhost/v1/products?date_from=2026-10-02T00%3A00%3A00Z&date_to=2026-10-01T00%3A00%3A00Z'),
+      deps,
+    )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_REQUEST, status: 400 })
+
+    expect(deps.resolveWorkspace).not.toHaveBeenCalled()
+    expect(deps.business.listProductsPage).not.toHaveBeenCalled()
+  })
+
+  it('normalizes timezone offsets and forwards equivalent timestamps to repository filters', async () => {
+    const deps = dependencies()
+    await handleHttpCatalogReadRoute(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      '/v1/products',
+      new URL('http://localhost/v1/products?date_from=2026-10-01T08%3A00%3A00%2B08%3A00&date_to=2026-10-02T00%3A00%3A00Z'),
+      deps,
+    )
+    expect(deps.business.listProductsPage).toHaveBeenCalledWith('workspace-a', expect.objectContaining({ dateFrom: '2026-10-01T00:00:00.000Z', dateTo: '2026-10-02T00:00:00.000Z' }))
+  })
+
   it('rejects malformed facts_confirmed before resolving workspace or querying data', async () => {
     const deps = dependencies()
     await expect(handleHttpCatalogReadRoute(

@@ -6,19 +6,52 @@ import { MarketingQueueFiltersSection } from "../components/tasks/MarketingQueue
 import { OperationalGovernanceSection } from "../components/tasks/OperationalGovernanceSection";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button, Card, Col, Row, Statistic } from "antd";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { platforms, type Platform, type StoreDirectory } from "../types/ops.js";
 interface TasksPageProps {
   model: OpsConsoleModel;
 }
 
 export function TasksPage({ model }: TasksPageProps) {
+  const appliedQueryKey = useRef("");
   useEffect(() => {
-    const taskId = new URLSearchParams(window.location.search).get("task_id")?.trim();
-    if (!taskId) return;
-    const queueFilters = { ...model.queueFilters, taskId };
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get("task_id")?.trim();
+    const requestedPlatform = params.get("platform")?.trim();
+    const requestedAccountId = params.get("accountId")?.trim();
+    const hasStoreQuery = params.has("platform") || params.has("accountId");
+    const scope = model.authorization.scope;
+    const scopeKey = `${scope.kind}:${scope.id ?? ""}:${model.opsSession?.workspace_id ?? ""}`;
+    const queryKey = `${scopeKey}|${window.location.search}`;
+    if (!taskId && !hasStoreQuery) return;
+    if (appliedQueryKey.current === queryKey) return;
+    // The initial bootstrap load also hydrates the authorized store directory.
+    // Wait for it before resolving an account deep link so an arbitrary query
+    // value can never become the active account filter.
+    if (hasStoreQuery && model.loading) return;
+
+    let storeFilters: Pick<typeof model.queueFilters, "platform" | "accountId"> = {};
+    if (hasStoreQuery && requestedPlatform && requestedAccountId &&
+      platforms.includes(requestedPlatform as Platform) && scope.kind === "workspace" &&
+      (!model.opsSession?.workspace_id || model.opsSession.workspace_id === scope.id)) {
+      const authorizedStore = model.storeDirectory.some((store: StoreDirectory) =>
+        store.platform === requestedPlatform && store.accountId === requestedAccountId &&
+        (!store.workspaceId || store.workspaceId === scope.id),
+      );
+      if (authorizedStore) storeFilters = { platform: requestedPlatform as Platform, accountId: requestedAccountId };
+    }
+    const baseFilters = hasStoreQuery
+      ? { ...model.queueFilters, platform: undefined, accountId: undefined }
+      : model.queueFilters;
+    const queueFilters = {
+      ...baseFilters,
+      ...storeFilters,
+      ...(taskId ? { taskId } : {}),
+    };
+    appliedQueryKey.current = queryKey;
     model.setQueueFilters(queueFilters);
     void model.load({ queueFilters });
-  }, []);
+  }, [model.authorization.scope, model.loading, model.opsSession?.workspace_id, model.queueFilters, model.setQueueFilters, model.load, model.storeDirectory]);
   const canReadPlatformTasks = model.authorization.can("workspace.directory.read");
   const canReadPlatformMarketing = model.authorization.can("marketing.summary.read");
   const canReadCustomerContent = model.authorization.canAny(["marketing.queue.read", "customer.content.read"]);

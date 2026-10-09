@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createHash, randomBytes } from 'node:crypto'
 import argon2 from 'argon2'
-import type { SqlClient, SqlPool } from './repository.js'
+import { acquireWorkspaceStatusLocks, type SqlClient, type SqlPool } from './repository.js'
 
 const newOpaqueToken = (bytes = 32) => randomBytes(bytes).toString('base64url')
 const tokenDigest = (token: string) => createHash('sha256').update(token).digest('hex')
@@ -74,6 +74,7 @@ export interface MemoryMcpOAuthState {
   workspaceStatus: 'active' | 'disabled' | 'pending'
 }
 export type MemoryMcpOAuthStateResolver = (input: { identityId: string; workspaceId: string }) => MemoryMcpOAuthState | undefined | Promise<MemoryMcpOAuthState | undefined>
+export type MemoryWorkspaceStatusResolver = (workspaceId: string) => 'active' | 'disabled' | undefined | Promise<'active' | 'disabled' | undefined>
 export interface McpOAuthTokenPair {
   accessToken: string
   refreshToken: string
@@ -176,7 +177,10 @@ function auditMemory(events: Array<Record<string, unknown>>, eventType: string, 
  * production uses `PostgresPasswordAuthRepository` and never this adapter.
  */
 export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
-  constructor(private readonly resolveMcpOAuthState?: MemoryMcpOAuthStateResolver) {}
+  constructor(
+    private readonly resolveMcpOAuthState?: MemoryMcpOAuthStateResolver,
+    private readonly resolveWorkspaceStatus?: MemoryWorkspaceStatusResolver,
+  ) {}
   private bootstrapAdminIdentityId?: string
   private readonly accounts = new Map<string, AccountRecord>()
   private readonly sessions = new Map<string, SessionRecord>()
@@ -211,8 +215,19 @@ export class MemoryPasswordAuthRepository implements PasswordAuthRepository {
     if (!account || account.accountType !== 'merchant') throw Object.assign(new Error('AUTH_ACCOUNT_NOT_FOUND'), { code: 'AUTH_ACCOUNT_NOT_FOUND' });
     if (account.status !== 'merchant_pending') throw Object.assign(new Error('AUTH_REGISTRATION_STATE_INVALID'), { code: 'AUTH_REGISTRATION_STATE_INVALID' });
     if (input.reason.trim().length < 4) throw Object.assign(new Error('AUTH_REGISTRATION_REVIEW_INVALID'), { code: 'AUTH_REGISTRATION_REVIEW_INVALID' });
+    const workspaceIds = [...new Set((input.workspaceIds ?? []).map(value => value.trim()).filter(Boolean))];
+    if (input.decision === 'approved') {
+      // Match the durable repository: never activate an account into a missing
+      // or disabled tenant. The memory adapter has no implicit tenant inventory,
+      // so absent resolver evidence fails closed rather than assuming active.
+      if (!this.resolveWorkspaceStatus) throw Object.assign(new Error('WORKSPACE_NOT_FOUND'), { code: 'AUTH_WORKSPACE_NOT_FOUND' });
+      for (const workspaceId of workspaceIds) {
+        const status = await this.resolveWorkspaceStatus(workspaceId);
+        if (status !== 'active') throw Object.assign(new Error('WORKSPACE_NOT_FOUND'), { code: 'AUTH_WORKSPACE_NOT_FOUND' });
+      }
+    }
     account.status = input.decision === 'approved' ? 'active' : 'rejected';
-    account.workspaceIds = input.decision === 'approved' ? [...new Set((input.workspaceIds ?? []).map(v => v.trim()).filter(Boolean))] : [];
+    account.workspaceIds = input.decision === 'approved' ? workspaceIds : [];
     account.revision += 1; account.updatedAt = new Date().toISOString();
     auditMemory(this.events, input.decision === 'approved' ? 'auth.merchant_activated' : 'auth.merchant_rejected', account.id, { actor_id: input.actorId ?? 'system', reason: input.reason.trim(), workspace_ids: account.workspaceIds });
     return accountPublic(account);
@@ -644,6 +659,7 @@ export class PostgresPasswordAuthRepository implements PasswordAuthRepository {
       // account transition so an approved account can never carry a stale,
       // disabled, or unknown workspace id into a later session projection.
       if (input.decision === 'approved') {
+        await acquireWorkspaceStatusLocks(client, workspaceIds)
         const workspaces = await client.query<{ id: string }>(
           `SELECT id FROM workspaces WHERE id = ANY($1::text[]) AND status = 'active'`,
           [workspaceIds],

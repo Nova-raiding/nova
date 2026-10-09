@@ -29,6 +29,27 @@ class RecordingPool implements SqlPool {
 }
 
 describe("PostgresSubscriptionRepository", () => {
+  it("rejects unsafe or channel-mismatched checkout URLs before SQL and gates fixture URLs", async () => {
+    const client = new RecordingClient();
+    const base = { workspaceId: "ws_subscription", planCode: "starter", planName: "Starter", billingCycle: "monthly" as const, priceCny: 99, includedStores: 2, includedTasks: 100, idempotencyKey: "checkout-url", paymentUrl: "alipays://platformapi/startapp?appId=123" };
+    const productionRepository = new PostgresSubscriptionRepository(new RecordingPool(client));
+
+    await expect(productionRepository.createOrder({ ...base, paymentProvider: "wechat" })).rejects.toThrow("safe supported provider checkout URI");
+    await expect(productionRepository.createOrder({ ...base, paymentProvider: "alipay", paymentUrl: "fixture://alipay/order" })).rejects.toThrow("safe supported provider checkout URI");
+    await expect(productionRepository.createOrder({ ...base, paymentProvider: "alipay", paymentUrl: "https://user:secret@pay.example/order" })).rejects.toThrow("safe supported provider checkout URI");
+    await expect(productionRepository.createOrder({ ...base, paymentProvider: "manual_transfer", paymentUrl: "https://pay.example/order" })).rejects.toThrow("supported payment channel");
+    expect(client.calls).toHaveLength(0);
+
+    const fixtureClient = new RecordingClient();
+    fixtureClient.enqueue();
+    fixtureClient.enqueue();
+    fixtureClient.enqueue([{ id: "sub-fixture", workspaceId: base.workspaceId, orderNo: "SO-fixture", planCode: base.planCode, planName: base.planName, billingCycle: base.billingCycle, priceCny: base.priceCny, paymentAmountCny: base.priceCny, includedStores: base.includedStores, includedTasks: base.includedTasks, addonCodes: [], status: "pending", paymentProvider: "alipay", paymentUrl: "fixture://alipay/order", idempotencyKey: base.idempotencyKey }]);
+    fixtureClient.enqueue();
+    fixtureClient.enqueue();
+    const localFixtureRepository = new PostgresSubscriptionRepository(new RecordingPool(fixtureClient), undefined, true);
+    await expect(localFixtureRepository.createOrder({ ...base, paymentProvider: "alipay", paymentUrl: "fixture://alipay/order" })).resolves.toMatchObject({ paymentUrl: "fixture://alipay/order" });
+  });
+
   const paidOrder = {
     id: "sub_1",
     workspaceId: "ws_subscription",

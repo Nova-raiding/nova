@@ -1,6 +1,8 @@
 import type { IncomingMessage } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Task } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { validateExpectedTaskRequestScopes } from './task-request-scopes.js'
+import { persistTaskGroupOrRollback } from './task-group-persistence.js'
 
 type JsonObject = Record<string, unknown>
 type Understanding = ReturnType<MerchantService['understandTaskRequest']>
@@ -21,6 +23,7 @@ export interface McpTaskWriteDependencies {
   resolveCanonicalTaskScope: (input: { workspaceId: string; productId: string; platform: Platform; accountId?: string; brandId?: string; requireListing?: boolean }) => Promise<CanonicalScope>
   persistSnapshot: (workspaceId: string, entityType: 'task', entity: Task, value: Record<string, unknown>) => Promise<void>
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<void>
+  persistTaskGroup?: (input: { workspaceId: string; snapshots: Array<{ entityType: 'task'; entityId: string; entityVersion: number; payload: Record<string, unknown> }>; events: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) => Promise<void>
   workspaceStoreDirectory: (workspaceId: string, platform?: Platform) => Array<{ accountId: string }>
   scopeTask: (req: IncomingMessage, taskId: string) => Task
   persistTaskAnswerFactConfirmation: (input: { workspaceId: string; productId: string; factsConfirmedBefore: boolean; confirmationRequested: boolean }) => Promise<void>
@@ -35,7 +38,20 @@ export interface McpTaskWriteDependencies {
 }
 
 export async function handleMcpTaskWrite(method: string, params: JsonObject, req: IncomingMessage, workspaceId: string, deps: McpTaskWriteDependencies): Promise<unknown> {
-  const { service, required, supportedPlatforms: SUPPORTED_PLATFORMS, fixtureMode, isProduction, requireEnabledPlatform, resolveTaskAccountId, taskCreationBrand, enforceProductBrandAccess, requireProductionTaskStore, resolveCanonicalTaskScope, persistSnapshot, persistEvent, workspaceStoreDirectory, scopeTask, persistTaskAnswerFactConfirmation, enforceTaskRequestCandidates, taskUnderstandingProductIds, resolveTaskWriteBrands, assignTaskWriteBrands, requireProductionRequestStores, header, resolveCanonicalTaskEntries, assertCanonicalTaskScopeForAction } = deps
+  const { service, required, supportedPlatforms: SUPPORTED_PLATFORMS, fixtureMode, isProduction, requireEnabledPlatform, resolveTaskAccountId, taskCreationBrand, enforceProductBrandAccess, requireProductionTaskStore, resolveCanonicalTaskScope, persistSnapshot, persistEvent, persistTaskGroup, workspaceStoreDirectory, scopeTask, persistTaskAnswerFactConfirmation, enforceTaskRequestCandidates, taskUnderstandingProductIds, resolveTaskWriteBrands, assignTaskWriteBrands, requireProductionRequestStores, header, resolveCanonicalTaskEntries, assertCanonicalTaskScopeForAction } = deps
+  const persistGroup = async (tasks: Task[], events: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }>, groupId?: string, replayed = false) => {
+    const snapshots = tasks.map(task => ({ entityType: 'task' as const, entityId: task.id, entityVersion: task.version, payload: task as unknown as Record<string, unknown> }))
+    let fallbackWriteStarted = false
+    await persistTaskGroupOrRollback({ taskIds: tasks.map(task => task.id), groupId, replayed, rollbackOnFailure: () => Boolean(persistTaskGroup) || !fallbackWriteStarted, rollback: (taskIds, id) => service.rollbackUnpersistedTaskCreation(workspaceId, taskIds, id), persist: async () => {
+      if (persistTaskGroup) {
+        await persistTaskGroup({ workspaceId, snapshots, events })
+        return
+      }
+      if (isProduction()) throw new DomainError('TASK_GROUP_PERSISTENCE_UNAVAILABLE', 'MCP 任务组事务持久化未配置，已阻断任务创建', 503)
+      for (const task of tasks) { fallbackWriteStarted = true; await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>) }
+      for (const event of events) { fallbackWriteStarted = true; await persistEvent(workspaceId, event.aggregateId, event.eventType, event.sequence, event.payload) }
+    } })
+  }
   switch (method) {
     case 'task.create.draft': {
       const taskPlatform = required(params, 'platform') as Platform
@@ -49,8 +65,7 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       // authorization. Candidate tasks remain unbound and cannot publish.
       if (product.accountId || product.brandId || (product.remoteId && product.source !== 'csv')) throw new DomainError('CANDIDATE_TASK_SCOPE_INVALID', '候选任务商品已绑定店铺、品牌或已同步远端商品，不能作为未绑定候选', 409, { product_id: productId })
       const task = service.createTask({ workspaceId, productId, platform: taskPlatform, candidateOnly: true, ...(typeof params.request_text === 'string' ? { requestText: params.request_text } : {}) })
-      await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)
+      await persistGroup([task], [{ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: task as unknown as Record<string, unknown> }])
       return { ...task, task_id: task.id, product_id: task.productId, candidate_only: true, storeContext: null }
     }
     case 'task.create': {
@@ -65,8 +80,7 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       if ((isProduction() || fixtureMode) && taskAccountId) service.getActionablePlatformAccount(workspaceId, taskAccountId, taskPlatform)
       const canonicalScope = await resolveCanonicalTaskScope({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(brandId ? { brandId } : {}), requireListing: true })
       const task = service.createTask({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(canonicalScope ?? (brandId ? { brandId } : {})), ...(typeof params.region === 'string' ? { region: params.region } : {}) })
-      await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)
+      await persistGroup([task], [{ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: task as unknown as Record<string, unknown> }])
       const storeContext = task.accountId ? workspaceStoreDirectory(workspaceId, taskPlatform).find(store => store.accountId === task.accountId) : undefined
       return ({ ...task, task_id: task.id, product_id: task.productId, storeContext: storeContext ?? null, selectionSource: product?.accountId ? 'product_binding' : task.accountId ? 'explicit_request' : 'unbound' })
     }
@@ -91,6 +105,12 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
     case 'task.request.create': {
       const requestText = required(params, 'request_text')
       const understanding = await enforceTaskRequestCandidates(req, workspaceId, service.understandTaskRequest(workspaceId, requestText))
+      let expectedScopeInput: unknown = params.expected_scopes
+      if (typeof expectedScopeInput === 'string') {
+        try { expectedScopeInput = JSON.parse(expectedScopeInput) }
+        catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_scopes 必须是有效的 JSON 数组', 400) }
+      }
+      const expectedScopes = validateExpectedTaskRequestScopes(expectedScopeInput, understanding)
       const taskBrandIds = await resolveTaskWriteBrands(req, workspaceId, taskUnderstandingProductIds(understanding))
       requireProductionRequestStores(workspaceId, understanding)
       for (const platform of understanding.platformCandidates) await requireEnabledPlatform(workspaceId, platform)
@@ -100,12 +120,9 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
         const product = productId ? service.products.get(productId) : undefined
         return product ? [{ productId: product.id, platform: child.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }] : []
       }))
-      const created = service.createTaskFromRequest({ workspaceId, requestText, canonicalScopes, ...(idempotencyKey ? { idempotencyKey } : {}) })
+      const created = service.createTaskFromRequest({ workspaceId, requestText, canonicalScopes, ...(expectedScopes ? { expectedScopes } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) })
       assignTaskWriteBrands(created.tasks, taskBrandIds)
-      if (!created.replayed) for (const task of created.tasks) {
-        await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-        await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, ...(created.taskGroupId ? { task_group_id: created.taskGroupId } : {}), source: 'natural_language_request' })
-      }
+      await persistGroup(created.tasks, created.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, ...(created.taskGroupId ? { task_group_id: created.taskGroupId } : {}), source: 'natural_language_request' } })), created.taskGroupId, created.replayed)
       return (created)
     }
     case 'task.sku.split': {
@@ -113,11 +130,10 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       await assertCanonicalTaskScopeForAction(source)
       const idempotencyKey = (typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim()
       const split = service.splitTaskBySku({ workspaceId, taskId: source.id, ...(idempotencyKey ? { idempotencyKey } : {}) })
-      if (!split.replayed) for (const task of split.tasks) {
-        await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-        await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, task_group_id: split.taskGroupId, source: 'sku_split' })
-      }
-      await persistEvent(workspaceId, split.sourceTaskId, 'task.sku_split', source.version, { source_task_id: split.sourceTaskId, task_group_id: split.taskGroupId, sku_ids: split.skuIds, replayed: split.replayed })
+      await persistGroup(split.tasks, [
+        ...split.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, task_group_id: split.taskGroupId, source: 'sku_split' } })),
+        { aggregateId: split.sourceTaskId, eventType: 'task.sku_split', sequence: source.version, payload: { source_task_id: split.sourceTaskId, task_group_id: split.taskGroupId, sku_ids: split.skuIds, replayed: split.replayed } },
+      ], split.taskGroupId, split.replayed)
       return (split)
     }
     case 'task.group.create': {
@@ -147,10 +163,7 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       const canonicalEntries = await resolveCanonicalTaskEntries(workspaceId, entries)
       const group = service.createTaskGroup({ workspaceId, entries: canonicalEntries, ...(typeof params.request_text === 'string' ? { requestText: params.request_text } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) })
       assignTaskWriteBrands(group.tasks, entryBrandIds)
-      if (!group.replayed) for (const task of group.tasks) {
-        await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-        await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, task_group_id: group.id })
-      }
+      await persistGroup(group.tasks, group.tasks.map(task => ({ aggregateId: task.id, eventType: 'task.created', sequence: task.version, payload: { ...task, task_group_id: group.id } })), group.id, group.replayed)
       return (group)
     }
     default: throw new DomainError(ERROR_CODES.INVALID_REQUEST, `未知任务写入 MCP 方法: ${method}`, 400)

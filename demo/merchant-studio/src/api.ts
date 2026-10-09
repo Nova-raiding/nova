@@ -623,7 +623,22 @@ export interface TaskUnderstanding {
   productCandidates: Array<{ id: string; title: string; platform: PlatformId; remoteId?: string }>
   extracted: Record<string, string>
   questions: TaskQuestion[]
-  executionPlan: { mode: 'single_task' | 'split_by_platform' | 'needs_clarification'; canCreate: boolean; reason: string; childTasks: Array<{ platform: PlatformId; candidateProductIds: string[]; bindingState: 'ready' | 'missing' | 'ambiguous' }> }
+  executionPlan: { mode: 'single_task' | 'split_by_platform' | 'split_by_sku' | 'needs_clarification'; canCreate: boolean; reason: string; splitBySku?: boolean; childTasks: Array<{ platform: PlatformId; candidateProductIds: string[]; bindingState: 'ready' | 'missing' | 'ambiguous'; skuIds?: string[] }> }
+}
+
+export interface TaskRequestCreation {
+  understanding: TaskUnderstanding
+  mode: 'single_task' | 'split_by_platform' | 'split_by_sku'
+  taskGroupId?: string
+  taskIds: string[]
+  tasks: Task[]
+  replayed: boolean
+}
+
+export interface TaskRequestScope {
+  platform: PlatformId
+  productId: string
+  skuIds?: string[]
 }
 
 export interface ContentVersion {
@@ -1061,6 +1076,46 @@ export interface ContentExportArtifact {
   verified?: boolean
 }
 
+const MAX_CONTENT_EXPORT_ERROR_BYTES = 64 * 1024
+
+function safeContentExportText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const safe = value
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060\ufeff]/gu, ' ')
+    .replace(/\bBearer\s+\S+/giu, 'Bearer [已隐藏]')
+    .replace(/\b(token|access[_-]?token|refresh[_-]?token|password|secret|authorization|cookie)\b\s*[:=]\s*[^\s,;]+/giu, '$1=[已隐藏]')
+    .replace(/https?:\/\/\S+/giu, '[链接已隐藏]')
+    .replace(/\b(?:workspace|ws|task|content[_-]?version|product|account|asset|request|trace|job)[_-][a-z0-9_-]{6,}\b/giu, '[相关记录]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return safe ? safe.slice(0, 300) : undefined
+}
+
+function contentExportHttpError(response: Response, message: string, code?: string, nextActions?: unknown): ApiError {
+  const safeCode = typeof code === 'string' && /^[A-Z0-9_-]{1,80}$/u.test(code) ? code : undefined
+  const safeNextActions = Array.isArray(nextActions)
+    ? nextActions.flatMap(action => {
+      const safe = safeContentExportText(action)
+      if (!safe || /\b[a-z][a-z0-9_-]*\.[a-z][a-z0-9_.-]*\b/iu.test(safe) || /[<>]/u.test(safe)) return []
+      return [safe]
+    }).slice(0, 3)
+    : []
+  const error = new Error(safeContentExportText(message) ?? `导出失败（HTTP ${response.status}）`) as ApiError
+  error.code = safeCode
+  error.status = response.status
+  error.nextActions = safeNextActions
+  return error
+}
+
+export function describeContentExportError(error: unknown): string {
+  const apiError = error as ApiError | undefined
+  const message = safeContentExportText(error instanceof Error ? error.message : undefined) ?? '导出失败，请查看服务端门禁提示后重试。'
+  const nextActions = Array.isArray(apiError?.nextActions)
+    ? apiError.nextActions.map(safeContentExportText).filter((value): value is string => Boolean(value)).slice(0, 3)
+    : []
+  return nextActions.length ? `${message} 下一步：${nextActions.join('；')}` : message
+}
+
 async function sha256Blob(blob: Blob): Promise<string> {
   const digest = await globalThis.crypto?.subtle.digest('SHA-256', await blob.arrayBuffer())
   if (!digest) throw Object.assign(new Error('当前环境不支持导出文件完整性校验'), { code: 'CONTENT_EXPORT_INTEGRITY_UNSUPPORTED', status: 500 })
@@ -1094,7 +1149,20 @@ export async function downloadContentExport(baseUrl: string, contentVersionId: s
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/export?format=${encodeURIComponent(format)}`), { credentials: 'include', headers })
   if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区导出')
-  if (!response.ok) throw new Error(`导出失败（HTTP ${response.status}）`)
+  if (!response.ok) {
+    let envelope: Partial<ApiEnvelope<unknown>> | null = null
+    try {
+      const raw = await readBoundedResponseText(response, MAX_CONTENT_EXPORT_ERROR_BYTES)
+      envelope = raw ? JSON.parse(raw) as Partial<ApiEnvelope<unknown>> : null
+    } catch { /* Use the HTTP fallback when the error body is absent or malformed. */ }
+    const apiError = envelope?.error
+    throw contentExportHttpError(
+      response,
+      typeof apiError?.message === 'string' ? apiError.message : `导出失败（HTTP ${response.status}）`,
+      typeof apiError?.code === 'string' ? apiError.code : undefined,
+      envelope?.next_actions,
+    )
+  }
   const blob = await response.blob()
   if (scope.revision !== merchantWorkspaceScopeRevision) throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已丢弃旧工作区导出')
   if (!blob.size) throw new Error('服务端返回了空的导出文件')
@@ -1786,6 +1854,7 @@ export const fetchTask = (baseUrl: string, taskId: string) => requestApi<Task>(b
 export const fetchTasks = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string } = {}) => { const params = new URLSearchParams(); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return fetchAllPages<Task>(baseUrl, `/v1/tasks${params.toString() ? `?${params.toString()}` : ''}`) }
 export const fetchTaskPage = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string; limit?: number; offset?: number } = {}) => { const limit = filters.limit ?? MERCHANT_TASK_PAGE_SIZE; const offset = filters.offset ?? 0; const params = new URLSearchParams({ limit: String(limit), offset: String(offset) }); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return requestApi<ApiPage<Task> | Task[]>(baseUrl, `/v1/tasks?${params.toString()}`).then(value => normalizeApiPage(value, limit, offset)) }
 export const understandTask = (baseUrl: string, requestText: string) => requestApi<TaskUnderstanding>(baseUrl, '/v1/tasks/understand', { method: 'POST', body: JSON.stringify({ request_text: requestText }) })
+export const createTaskRequest = (baseUrl: string, requestText: string, idempotencyKey: string, expectedScopes: TaskRequestScope[]) => requestApi<TaskRequestCreation>(baseUrl, '/v1/task-requests', { method: 'POST', headers: { 'idempotency-key': idempotencyKey }, body: JSON.stringify({ request_text: requestText, expected_scopes: expectedScopes.map(scope => ({ platform: scope.platform, product_id: scope.productId, ...(scope.skuIds ? { sku_ids: scope.skuIds } : {}) })) }) })
 export const answerTask = (baseUrl: string, taskId: string, answers: Record<string, string | number | boolean | string[]>, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/answers`, { method: 'POST', body: JSON.stringify({ answers, ...(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) }) })
 export const createTaskGroup = (baseUrl: string, entries: Array<{ product_id: string; platform: PlatformId; account_id?: string }>, requestText?: string) => requestApi<{ id: string; taskIds: string[]; tasks: Task[] }>(baseUrl, '/v1/task-groups', { method: 'POST', body: JSON.stringify({ entries, ...(requestText ? { request_text: requestText } : {}) }) })
 export interface CampaignBatchResult {

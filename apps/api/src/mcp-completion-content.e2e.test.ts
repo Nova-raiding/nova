@@ -304,12 +304,22 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
 
     const taskRequestText = `请为${productTitle}在淘宝制作详情页`
     const taskRequestKey = `task-request-${suffix}`
+    const tasksBeforeScopeConflict = [...service.tasks.values()].filter(task => task.workspaceId === workspaceA).map(task => task.id).sort()
+    const taskRequestScopeConflict = await callMcp(base, tokens.ownerA, workspaceA, 'task.request.create', {
+      request_text: taskRequestText,
+      expected_scopes: JSON.stringify([{ platform: 'taobao', product_id: 'different-product' }]),
+      idempotency_key: taskRequestKey,
+    })
+    expect(taskRequestScopeConflict.body.error?.code).toBe('TASK_REQUEST_SCOPE_CHANGED')
+    expect([...service.tasks.values()].filter(task => task.workspaceId === workspaceA).map(task => task.id).sort()).toEqual(tasksBeforeScopeConflict)
     const requestedTask = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'task.request.create', {
       request_text: taskRequestText,
+      expected_scopes: JSON.stringify([{ platform: 'taobao', product_id: product.id }]),
       idempotency_key: taskRequestKey,
     }))
     const requestedTaskReplay = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'task.request.create', {
       request_text: taskRequestText,
+      expected_scopes: JSON.stringify([{ platform: 'taobao', product_id: product.id }]),
       idempotency_key: taskRequestKey,
     }))
     expect(requestedTask).toMatchObject({ mode: 'single_task', replayed: false })

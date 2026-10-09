@@ -89,7 +89,7 @@ describe('isolated PostgreSQL entrypoint', () => {
 
   const fixture = () => {
     const handle = {
-      runId, adminDatabaseUrl: adminUrl, redisUrl: 'redis://127.0.0.1:45679/0',
+      runId, adminDatabaseUrl: adminUrl, redisUrl: 'redis://:generated-redis-secret@127.0.0.1:45679/0',
       containerEvidence: [{ kind: 'postgres', runId, hostPort: 45678 }, { kind: 'redis', runId, hostPort: 45679 }],
       dispose: vi.fn(async () => ({ stopped: ['owned-postgres', 'owned-redis'], leftRunning: [] })),
     }
@@ -112,10 +112,11 @@ describe('isolated PostgreSQL entrypoint', () => {
     expect(args).toContain('--config')
     expect(args).toContain('--reporter=json')
     expect(args).toContain('--passWithNoTests=false')
-    expect(environment).toEqual({ PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects', PERSISTENCE_RELEASE_DATABASE_URL: adminUrl, MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, MERCHANT_ISOLATED_REDIS_URL: 'redis://127.0.0.1:45679/0', MERCHANT_ISOLATED_REDIS_PORT: '45679' })
+    expect(environment).toEqual({ PATH: '/test/bin', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/owned/evidence/run-unique/local-objects', PERSISTENCE_RELEASE_DATABASE_URL: adminUrl, MERCHANT_ISOLATED_POSTGRES_RUN_ID: runId, MERCHANT_ISOLATED_REDIS_URL: 'redis://:generated-redis-secret@127.0.0.1:45679/0', MERCHANT_ISOLATED_REDIS_PORT: '45679' })
     expect(handle.dispose).toHaveBeenCalledOnce()
     const summary = JSON.stringify(vi.mocked(runtime.writeSummary).mock.calls)
     expect(summary).not.toContain('generated-fixture-secret')
+    expect(summary).not.toContain('generated-redis-secret')
     expect(summary).not.toContain('external-secret')
     expect(summary).not.toContain(adminUrl)
   })
@@ -139,6 +140,19 @@ describe('isolated PostgreSQL entrypoint', () => {
   it('rejects a fixture URL that does not match its generated local container before SQL or Vitest', async () => {
     const { handle, runtime } = fixture()
     handle.adminDatabaseUrl = 'postgres://merchant:secret@127.0.0.1:54329/merchant'
+    expect((await runIsolatedPostgresTests([], {}, runtime)).exitCode).toBe(1)
+    expect(runtime.prepareTestRoles).not.toHaveBeenCalled()
+    expect(runtime.runVitest).not.toHaveBeenCalled()
+    expect(handle.dispose).toHaveBeenCalledOnce()
+  })
+  it.each([
+    ['external Redis host', 'redis://:secret@redis.example:45679/0', undefined],
+    ['wrong Redis port', 'redis://:secret@127.0.0.1:45680/0', undefined],
+    ['Redis evidence from another run', undefined, '22222222-2222-4222-8222-222222222222'],
+  ])('rejects %s before SQL or Vitest', async (_label, redisUrl, redisRunId) => {
+    const { handle, runtime } = fixture()
+    if (redisUrl) handle.redisUrl = redisUrl
+    if (redisRunId) handle.containerEvidence[1]!.runId = redisRunId
     expect((await runIsolatedPostgresTests([], {}, runtime)).exitCode).toBe(1)
     expect(runtime.prepareTestRoles).not.toHaveBeenCalled()
     expect(runtime.runVitest).not.toHaveBeenCalled()

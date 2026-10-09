@@ -22,10 +22,55 @@ describe("CanonicalConsistencySummary", () => {
     expect(markup).toContain("补齐规范商品映射（需要 platform_ops 权限）");
   });
 
+  it("downgrades a verified row when its timestamp or revision does not match the report", () => {
+    const markup = renderToStaticMarkup(<CanonicalConsistencySummary report={{
+      workspaceId: "ws-1",
+      status: "clean",
+      generatedAt: "2026-08-31T01:02:03.000Z",
+      revision: "report-rev",
+      freshness: "fresh",
+      availability: "available",
+      contractStatus: "clean",
+      counts: { verified: 1, legacy_only: 0, conflict: 0, blocked: 0 },
+      findings: [{
+        ...finding,
+        status: "verified",
+        codes: [],
+        evidence: { codes: [], generatedAt: "2026-08-31T01:02:04.000Z", revision: "old-rev" },
+      }],
+      orphanFindings: [],
+    }} />);
+
+    expect(markup).toContain("当前未核验");
+    expect(markup).toContain("当前未核验；请重新检查");
+    expect(markup).not.toContain("已验证</span>");
+  });
+
   it("distinguishes unavailable data from a real empty result and never claims clean", () => {
     const markup = renderToStaticMarkup(<CanonicalConsistencySummary report={{ workspaceId: "ws-1", status: "clean", availability: "unavailable", contractStatus: "unavailable", counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 }, findings: [], orphanFindings: [] }} />);
     expect(markup).toContain("一致性数据暂不可读取");
     expect(markup).toContain("没有可验证的商品记录");
     expect(markup).not.toContain("链路正常");
+  });
+
+  it.each([
+    ["missing freshness", { availability: "available" as const, contractStatus: "clean" as const }],
+    ["missing availability", { freshness: "fresh" as const, contractStatus: "clean" as const }],
+    ["missing contract status", { freshness: "fresh" as const, availability: "available" as const }],
+    ["attention required contract status", { freshness: "fresh" as const, availability: "available" as const, contractStatus: "attention_required" as const }],
+  ])("does not call a clean report a healthy chain with %s", (_label, evidence) => {
+    const markup = renderToStaticMarkup(<CanonicalConsistencySummary report={{
+      workspaceId: "ws-1",
+      status: "clean",
+      counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 },
+      findings: [],
+      orphanFindings: [],
+      ...evidence,
+    }} />);
+
+    expect(markup).toContain("一致性结果尚未确认");
+    expect(markup).toContain("需要处理");
+    expect(markup).not.toContain("链路正常");
+    expect(markup).not.toContain("当前没有商品级一致性记录");
   });
 });

@@ -14,7 +14,7 @@ import {
   Space,
 } from "antd";
 import { SaveOutlined } from "@ant-design/icons";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Platform, PlatformSetting } from "../../types/ops";
 
@@ -33,13 +33,34 @@ export function ConfigurationCenterSection({
     orders,
     loading,
     saving,
-    canPlatformOps,
     saveCommercial,
     savePlatform,
     dataSetError,
   } = model;
+  const canUpdateCommercialSettings = model.authorization.can("workspace.settings.update");
+  const canUpdatePlatformSettings = model.authorization.can("platform.settings.update");
   const configurationError = dataSetError("workspace.commercial.get");
   const configurationErrorRef = useRef<HTMLDivElement>(null);
+  const platformSaveInFlight = useRef(new Set<Platform>());
+  const [savingPlatforms, setSavingPlatforms] = useState<Set<Platform>>(() => new Set());
+
+  const savePlatformRow = async (row: PlatformSetting) => {
+    if (platformSaveInFlight.current.has(row.platform)) return;
+    platformSaveInFlight.current.add(row.platform);
+    setSavingPlatforms((current) => new Set(current).add(row.platform));
+    try {
+      // The entire row is frozen while this captured revision is in flight.
+      // That prevents an older response from replacing newer local edits.
+      await savePlatform(row);
+    } finally {
+      platformSaveInFlight.current.delete(row.platform);
+      setSavingPlatforms((current) => {
+        const next = new Set(current);
+        next.delete(row.platform);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     if (configurationError) {
@@ -77,7 +98,7 @@ export function ConfigurationCenterSection({
                 layout="vertical"
                 onFinish={saveCommercial}
                 className="config-form"
-                disabled={!canPlatformOps || !settings}
+                disabled={!canUpdateCommercialSettings || !settings}
               >
                 <Row gutter={16}>
                   <Col xs={24} md={8}>
@@ -144,7 +165,7 @@ export function ConfigurationCenterSection({
                   </Col>
                 </Row>
                 <Button
-                  disabled={!canPlatformOps || !settings}
+                  disabled={!canUpdateCommercialSettings || !settings}
                   type="primary"
                   htmlType="submit"
                   icon={<SaveOutlined />}
@@ -194,7 +215,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "displayName",
                     render: (_: string, row: PlatformSetting) => (
                       <Input
-                        disabled={!canPlatformOps}
+                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 展示名称`}
                         value={row.displayName}
                         onChange={(event) =>
@@ -217,7 +238,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "storeAlias",
                     render: (_: string, row: PlatformSetting) => (
                       <Input
-                        disabled={!canPlatformOps}
+                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 店铺别名`}
                         value={row.storeAlias}
                         onChange={(event) =>
@@ -267,9 +288,9 @@ export function ConfigurationCenterSection({
                     title: "变更原因",
                     render: (_: unknown, row: PlatformSetting) => (
                       <Input
-                        disabled={!canPlatformOps}
+                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 变更原因`}
-                        placeholder="必填，写入审计"
+                        placeholder="原因可留空，系统使用默认审计说明"
                         value={row.changeReason}
                         onChange={(event) =>
                           setPlatformRows((current) =>
@@ -291,7 +312,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "enabled",
                     render: (_: boolean, row: PlatformSetting) => (
                       <Switch
-                        disabled={!canPlatformOps}
+                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
                         checked={row.enabled}
                         onChange={(checked) =>
                           setPlatformRows((current) =>
@@ -309,9 +330,10 @@ export function ConfigurationCenterSection({
                     title: "操作",
                     render: (_: unknown, row: PlatformSetting) => (
                       <Button
-                        disabled={!canPlatformOps}
+                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        loading={savingPlatforms.has(row.platform)}
                         type="link"
-                        onClick={() => void savePlatform(row)}
+                        onClick={() => void savePlatformRow(row)}
                       >
                         保存
                       </Button>

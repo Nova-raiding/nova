@@ -36,7 +36,10 @@ describe("support mutation refresh failure", () => {
             let failNextDetailRefresh = false;
             let failCorrectionOnce = true;
             const correctionKeys = [];
+            let failDecisionOnce = true;
+            const decisionKeys = [];
             window.__supportCorrectionKeys = correctionKeys;
+            window.__supportDecisionKeys = decisionKeys;
             function Harness() {
               const client = {
                 async list() { return { items: [ticket] }; },
@@ -57,17 +60,25 @@ describe("support mutation refresh failure", () => {
                 async report() { return { reportId: 'report-current', workspaceId: 'ws_test', periodStart: '2026-09-01', periodEnd: '2026-09-30', cutoffAt: '2026-10-01T00:00:00.000Z', policyVersions: [], calendarVersions: [], denominator: 0, met: 0, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: 'checksum', ticketResults: [] }; },
                 async createCorrection(input) {
                   correctionKeys.push(input.idempotencyKey);
-                  if (failCorrectionOnce) { failCorrectionOnce = false; throw new Error('correction 响应丢失'); }
+                  if (failCorrectionOnce && input.reason !== '审批测试') { failCorrectionOnce = false; throw new Error('correction 响应丢失'); }
+                  if (input.reason === '审批测试') return { correctionId: 'correction-pending', originalReportId: input.originalReportId, status: 'pending_review' };
                   return { status: 'no_change', originalReportId: input.originalReportId, checksum: 'checksum' };
-                }, async decideCorrection() {},
+                }, async decideCorrection(input) {
+                  decisionKeys.push(input.idempotencyKey);
+                  if (failDecisionOnce) { failDecisionOnce = false; await new Promise(resolve => setTimeout(resolve, 75)); throw new Error('审批响应丢失'); }
+                  return { correctionId: input.correctionId, decision: input.decision, state: 'completed' };
+                },
               };
               const model = useSupportDomain(client, 'ws_test');
               return React.createElement('main', null,
                 React.createElement('output', { 'data-testid': 'selection-state' }, JSON.stringify({ selected: model.selected?.ticket.id || null, detailLoading: model.detailLoading, error: model.error })),
                 React.createElement('output', { 'data-testid': 'correction-state' }, JSON.stringify({ report: model.report?.reportId || null, correction: model.correction?.status || null, error: model.error })),
                 React.createElement('output', { 'data-testid': 'correction-keys' }, correctionKeys.join(',')),
+                React.createElement('output', { 'data-testid': 'decision-keys' }, decisionKeys.join(',')),
                 React.createElement('button', { onClick: () => void model.loadReport({ periodStart: '2026-09-01', periodEnd: '2026-09-30', cutoffAt: '2026-10-01T00:00:00.000Z' }) }, '读取 SLA 月报'),
                 React.createElement('button', { onClick: () => void model.createCorrection?.('修正原因').catch(() => undefined) }, '创建 correction'),
+                React.createElement('button', { onClick: () => void model.createCorrection?.('审批测试').catch(() => undefined) }, '创建审批测试 correction'),
+                React.createElement('button', { onClick: () => void model.decideCorrection?.('approved', '审批理由', 'approval-token').catch(() => undefined) }, '提交 correction 决策'),
                 React.createElement('button', { onClick: () => { void model.loadReport({ periodStart: '2026-09-01', periodEnd: '2026-09-30', cutoffAt: '2026-10-01T00:00:00.000Z' }); void model.createCorrection?.('刷新期间不应创建').catch(() => undefined); } }, '刷新时立即创建 correction'),
                 React.createElement('button', { onClick: () => void model.selectTicket('ticket-good') }, '选择正常工单'),
                 React.createElement('button', { onClick: () => void model.selectTicket('ticket-broken') }, '选择读取失败工单'),
@@ -143,6 +154,27 @@ describe("support mutation refresh failure", () => {
       await page.getByRole("button", { name: "刷新时立即创建 correction" }).click();
       await expect.poll(() => page.getByTestId("correction-state").textContent()).toContain('"report":"report-current"');
       await expect.poll(() => page.getByTestId("correction-keys").textContent()).toBe(keys.join(","));
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("single-flights rapid duplicate decisions and reuses the idempotency key after a lost response", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__support-ticket-selection-test`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      page.setDefaultTimeout(5_000);
+      await page.getByRole("button", { name: "读取 SLA 月报" }).click();
+      await expect.poll(() => page.getByTestId("correction-state").textContent()).toContain('"report":"report-current"');
+      await page.getByRole("button", { name: "创建审批测试 correction" }).click();
+      await expect.poll(() => page.getByTestId("correction-state").textContent()).toContain('"correction":"pending_review"');
+      await page.getByRole("button", { name: "提交 correction 决策" }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+      await expect.poll(() => page.getByTestId("correction-state").textContent()).toContain("审批响应丢失");
+      const firstKeys = (await page.getByTestId("decision-keys").textContent())!.split(",");
+      expect(firstKeys).toHaveLength(1);
+      await page.getByRole("button", { name: "提交 correction 决策" }).click();
+      await expect.poll(() => page.getByTestId("decision-keys").textContent()).toContain(",");
+      const keys = (await page.getByTestId("decision-keys").textContent())!.split(",");
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).toBe(keys[0]);
     } finally { await page.close(); }
   }, 60_000);
 });

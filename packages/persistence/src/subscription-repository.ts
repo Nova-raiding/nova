@@ -7,6 +7,7 @@ import {
   withWorkspaceTransaction,
 } from "./repository.js";
 import { monthlyAnniversary } from "./commercial-contract-repository.js";
+import { assertValidPaymentCheckoutUri, isValidFixturePaymentCheckoutUri, type PaymentCheckoutChannel } from "@merchant-marketing/contracts";
 
 export type SubscriptionStatus =
   "trialing" | "active" | "past_due" | "canceled";
@@ -104,6 +105,15 @@ export class SubscriptionOrderIdempotencyConflictError extends Error {
 function requireOrderIdempotencyKey(value: string) {
   if (!value.trim())
     throw new Error("SUBSCRIPTION_ORDER_IDEMPOTENCY_KEY_REQUIRED");
+}
+
+function validateSubscriptionCheckoutUrl(input: { paymentUrl?: string; paymentProvider: string }, allowFixture: boolean) {
+  if (input.paymentUrl === undefined) return;
+  if (allowFixture && isValidFixturePaymentCheckoutUri(input.paymentUrl)) return;
+  if (input.paymentProvider !== "alipay" && input.paymentProvider !== "wechat") {
+    throw new TypeError("paymentUrl requires a supported payment channel");
+  }
+  assertValidPaymentCheckoutUri(input.paymentUrl, input.paymentProvider as PaymentCheckoutChannel);
 }
 
 function orderIntent(input: {
@@ -220,6 +230,7 @@ export class MemorySubscriptionRepository implements SubscriptionRepository {
     idempotencyKey: string;
   }) {
     requireOrderIdempotencyKey(input.idempotencyKey);
+    validateSubscriptionCheckoutUrl(input, true);
     const existing = [...this.orders.values()].find(
       (item) =>
         item.workspaceId === input.workspaceId &&
@@ -313,6 +324,7 @@ export class PostgresSubscriptionRepository implements SubscriptionRepository {
       client: SqlClient,
       event: OutboxEventInput,
     ) => Promise<unknown>,
+    private readonly allowFixturePaymentUrls = false,
   ) {}
   async get(workspaceId: string) {
     requireWorkspaceScope(workspaceId);
@@ -347,6 +359,7 @@ export class PostgresSubscriptionRepository implements SubscriptionRepository {
     idempotencyKey: string;
   }) {
     requireOrderIdempotencyKey(input.idempotencyKey);
+    validateSubscriptionCheckoutUrl(input, this.allowFixturePaymentUrls);
     requireWorkspaceScope(input.workspaceId);
     return withWorkspaceTransaction(
       this.pool,

@@ -17,7 +17,7 @@ export const MCP_OPS_INCIDENTS_FLAGS_METHODS = new Set([
 ])
 
 export interface McpOpsIncidentsFlagsDependencies {
-  persistence: { incidents?: IncidentRepository; featureFlags?: FeatureFlagsRepository; listWorkspaceIds?: () => Promise<string[]> }
+  persistence: { mode?: 'memory' | 'postgres'; incidents?: IncidentRepository; featureFlags?: FeatureFlagsRepository; listWorkspaceIds?: () => Promise<string[]> }
   knownWorkspaces: Set<string>
   incidentActor: (req: IncomingMessage, workspaceId: string) => IncidentActor
   featureFlagActor: (req: IncomingMessage, allowed: readonly string[]) => FeatureFlagActor
@@ -41,7 +41,9 @@ export async function handleMcpOpsIncidentsFlags(method: string, params: Record<
     case 'ops.incident.scope.update': {
       const repository = persistence.incidents
       if (!repository) throw new DomainError('INCIDENT_REPOSITORY_UNAVAILABLE', '事故仓储未配置', 503)
-      const incidents = new IncidentsService(repository)
+      const listWorkspaceIds = persistence.listWorkspaceIds
+        ?? (persistence.mode === 'memory' ? async () => [...knownWorkspaces] : undefined)
+      const incidents = new IncidentsService(repository, listWorkspaceIds)
       const actor = incidentActor(req, workspaceId)
       const platformScope = optionalStringValue(params, 'platformScope', 'platform_scope')
       if (platformScope && platformScope !== 'platform') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform_scope 只能是 platform', 400)
@@ -67,10 +69,23 @@ export async function handleMcpOpsIncidentsFlags(method: string, params: Record<
           if (!isPlatformOperations(req)) throw new DomainError(ERROR_CODES.FORBIDDEN, '平台聚合视图需要已绑定的 platform workbench', 403)
           requirePlatformReadRole(req)
           const limit = Math.min(100, Math.max(1, optionalNumberValue(params, 'limit') ?? 50))
-          const workspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
+          // A platform aggregate must enumerate the authoritative tenant directory.
+          // knownWorkspaces is only an in-memory fixture and can be incomplete in
+          // production, which would silently present partial data as complete.
+          if (!persistence.listWorkspaceIds && persistence.mode !== 'memory') {
+            throw new DomainError('INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE', '权威工作区目录不可用，无法生成完整的平台事故聚合视图', 503)
+          }
+          let workspaceIds: string[]
+          try {
+            workspaceIds = persistence.listWorkspaceIds
+              ? await persistence.listWorkspaceIds()
+              : [...knownWorkspaces]
+          } catch {
+            throw new DomainError('INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE', '权威工作区目录不可用，无法生成完整的平台事故聚合视图', 503)
+          }
           const items = [] as Awaited<ReturnType<IncidentsService['list']>>['items']
           for (let offset = 0; offset < workspaceIds.length; offset += 8) {
-            const batch = await Promise.all(workspaceIds.slice(offset, offset + 8).map(targetWorkspaceId => new IncidentsService(repository).list(incidentActor(req, targetWorkspaceId), { ...raw, limit })))
+            const batch = await Promise.all(workspaceIds.slice(offset, offset + 8).map(targetWorkspaceId => new IncidentsService(repository, listWorkspaceIds).list(incidentActor(req, targetWorkspaceId), { ...raw, limit })))
             for (const page of batch) items.push(...page.items)
           }
           const groups = new Map<string, { severity: IncidentSeverity; status: IncidentStatus; count: number; latestUpdatedAt: string }>()

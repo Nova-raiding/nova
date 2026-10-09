@@ -288,7 +288,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
           <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
           <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则（Markdown/ZIP）</Button>
           <Tag color={unverifiedRules.length ? "orange" : rules.length ? "green" : "orange"}>
-            {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不展示）` : `${verifiedRules.length} 条可信规则`}
+            {unverifiedRules.length ? `${unverifiedRules.length} 条未验证（不进入商家插件）` : `${verifiedRules.length} 条可信规则`}
           </Tag>
         </Space>
       }

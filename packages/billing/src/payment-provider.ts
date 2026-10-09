@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
+import { isValidPaymentCheckoutUri } from '../../contracts/src/payment-checkout-uri.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { paymentCallbackCanonical } from './callback-envelope.mjs'
 
@@ -346,7 +347,7 @@ export class HttpPaymentProvider implements PaymentProvider {
       if (!response.ok) throw new Error(`payment provider returned HTTP ${response.status}`)
       const payload = JSON.parse(await readBoundedResponseText(response, MAX_PAYMENT_PROVIDER_RESPONSE_BYTES, 'payment provider response')) as unknown
       const paymentUrl = isRecord(payload) && typeof payload.payment_url === 'string' ? payload.payment_url : isRecord(payload) && typeof payload.code_url === 'string' ? payload.code_url : undefined
-      if (!paymentUrl || !/^(?:https:\/\/|weixin:\/\/|alipays:\/\/)/u.test(paymentUrl)) throw new Error('payment provider returned no supported checkout URI')
+      if (!paymentUrl || !isValidPaymentCheckoutUri(paymentUrl, input.channel)) throw new Error('payment provider returned no safe supported checkout URI for the selected channel')
       if (!isRecord(payload) || payload.order_id !== input.orderId || payload.workspace_id !== input.workspaceId || payload.amount_fen !== input.amountFen) throw new Error('payment provider checkout response did not match the request')
       return { paymentUrl, ...(isRecord(payload) && typeof payload.provider_order_id === 'string' ? { providerOrderId: payload.provider_order_id } : {}), ...(isRecord(payload) && typeof payload.expires_at === 'string' ? { expiresAt: payload.expires_at } : {}) }
     } finally { clearTimeout(timeout) }

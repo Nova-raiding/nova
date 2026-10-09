@@ -302,7 +302,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
         <Space wrap className="ops-authorization-target-fields">
           <div className="ops-authorization-target-field"><label htmlFor="jit-subject-identity">目标持久身份 ID</label><Input id="jit-subject-identity" value={subjectIdentityId} onChange={(event) => changeSubjectIdentity(event.target.value)} placeholder="输入目标身份" aria-label="JIT 目标身份 ID" style={{ width: 300 }} /></div>
           <div className="ops-authorization-target-field"><label htmlFor="jit-workspace">商家主体 ID</label><Input id="jit-workspace" value={targetWorkspaceId} onChange={(event) => changeTargetWorkspace(event.target.value)} placeholder="输入精确商家主体" aria-label="JIT 目标商家主体 ID" style={{ width: 260 }} /></div>
-          <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={grantLoading} aria-busy={grantLoading} disabled={!currentSubject || !currentWorkspace}>读取有效 JIT</Button>
+          <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={grantLoading} aria-label="读取有效 JIT" aria-busy={grantLoading} disabled={!currentSubject || !currentWorkspace}>读取有效 JIT</Button>
         </Space>
         <OpsPageError error={grantLoadError} onRetry={() => void loadGrants()} />
         {locallyExpiredGrantCount ? <div role="status" aria-live="polite" aria-atomic="true">
@@ -403,7 +403,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
       <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap>
           <Input value={subjectIdentityId} onChange={(event) => changeSubjectIdentity(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
-          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={roleLoading} aria-busy={roleLoading} disabled={!currentSubject}>读取当前分配</Button>
+          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={roleLoading} aria-label="读取当前分配" aria-busy={roleLoading} disabled={!currentSubject}>读取当前分配</Button>
         </Space>
         <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
         <Table<RoleAssignment> size="small" rowKey="id" loading={roleLoading} dataSource={currentRoles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[

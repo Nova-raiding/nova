@@ -2,6 +2,19 @@ import type { PlatformId } from './api.js'
 
 export type RuleContext = { platform: PlatformId | 'all'; label: string }
 
+export type CategorySelection = { code: string }
+
+/** Keep field details tied to the category list currently visible to the user. */
+export function shouldShowSelectedCategory(
+  tab: 'rules' | 'categories',
+  selected: CategorySelection | null,
+  filteredCategories: readonly CategorySelection[],
+): boolean {
+  return tab === 'categories' && Boolean(
+    selected && filteredCategories.some((category) => category.code === selected.code),
+  )
+}
+
 export type RuleExecutionState = 'executable' | 'unverified' | 'blocked'
 
 /**

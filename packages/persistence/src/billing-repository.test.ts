@@ -26,6 +26,24 @@ const refund = { id: 'refund_1', workspace_id: 'ws_wallet', type: 'refund', amou
 describe('PostgresBillingRepository PostgreSQL bigint decoding', () => {
   const pending = { id: 'recharge_bigint', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: '1000', state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
 
+  it('validates checkout URLs at the durable billing order boundary by payment mode and channel', async () => {
+    const client = new RecordingClient()
+    const repository = new PostgresBillingRepository(new RecordingPool(client))
+    const base = { id: 'url-check', workspaceId: 'ws_wallet', amountFen: 1000, state: 'pending' as const, idempotencyKey: 'url-check' }
+
+    await expect(repository.createOrder({ ...base, channel: 'wechat', paymentMode: 'provider', paymentUrl: 'alipays://platformapi/startapp?appId=123' })).rejects.toThrow('safe supported provider checkout URI')
+    await expect(repository.createOrder({ ...base, channel: 'alipay', paymentMode: 'provider', paymentUrl: 'fixture://alipay/order' })).rejects.toThrow('safe supported provider checkout URI')
+    await expect(repository.createOrder({ ...base, channel: 'alipay', paymentMode: 'fixture', paymentUrl: 'https://pay.example/order' })).rejects.toThrow('fixture payment mode is disabled')
+    expect(client.calls).toHaveLength(0)
+
+    const fixtureClient = new RecordingClient()
+    fixtureClient.enqueue()
+    fixtureClient.enqueue()
+    fixtureClient.enqueue({ id: 'fixture-order', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'fixture', payment_url: 'fixture://alipay/order', provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' })
+    fixtureClient.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(fixtureClient), undefined, true).createOrder({ ...base, id: 'fixture-order', channel: 'alipay', paymentMode: 'fixture', paymentUrl: 'fixture://alipay/order' })).resolves.toMatchObject({ paymentUrl: 'fixture://alipay/order' })
+  })
+
   it('replays the same recharge intent when PostgreSQL returns bigint as text', async () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue()

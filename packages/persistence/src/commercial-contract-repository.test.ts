@@ -109,10 +109,33 @@ describe('PostgresCommercialContractRepository', () => {
     expect(client.calls.some(call => call.sql.includes("'commercial.checkout.created'"))).toBe(true)
   })
 
-  it('rejects unsupported checkout URI before opening a transaction', async () => {
+  it.each([
+    'javascript:alert(1)',
+    'https://user:pass@pay.example/orders/1',
+    'https://@pay.example/orders/1',
+    'https://pay.example/orders/1#fragment',
+    'https://127.0.0.1/orders/1',
+    'https://[::1]/orders/1',
+    'https://pay.local/orders/1',
+    'http://pay.example/orders/1',
+    'weixin://other/bizpayurl?pr=x',
+    'weixin://wxpay/other?pr=x',
+    'weixin://wxpay/bizpayurl?pr=',
+    'alipays://platformapi/startapp?appId=x',
+    'alipays://other/startapp?appId=x',
+    'alipays://platformapi/other?appId=x',
+    'alipays://platformapi/startapp?appId=',
+  ])('rejects unsafe checkout URI %s before opening a transaction', async paymentUrl => {
     const client = new ScriptedClient(() => ({ rows: [] }))
     const repository = new PostgresCommercialContractRepository(pool(client))
-    await expect(repository.attachCheckout({ workspaceId: 'ws-1', orderId: 'order-1', channel: 'wechat', idempotencyKey: 'checkout-1', paymentUrl: 'javascript:alert(1)' })).rejects.toThrow('supported provider checkout URI')
+    await expect(repository.attachCheckout({ workspaceId: 'ws-1', orderId: 'order-1', channel: 'wechat', idempotencyKey: 'checkout-1', paymentUrl })).rejects.toThrow('supported provider checkout URI')
+    expect(client.calls).toHaveLength(0)
+  })
+
+  it('rejects a wallet URI that does not match the persisted checkout channel', async () => {
+    const client = new ScriptedClient(() => ({ rows: [] }))
+    const repository = new PostgresCommercialContractRepository(pool(client))
+    await expect(repository.attachCheckout({ workspaceId: 'ws-1', orderId: 'order-1', channel: 'alipay', idempotencyKey: 'checkout-1', paymentUrl: 'weixin://wxpay/bizpayurl?pr=x' })).rejects.toThrow('supported provider checkout URI')
     expect(client.calls).toHaveLength(0)
   })
 

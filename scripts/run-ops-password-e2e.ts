@@ -76,6 +76,19 @@ export function validateMerchantWorkspaceSwitchMode(source: NodeJS.ProcessEnv, a
   return true
 }
 
+/** Restrict browser account provisioning to one fixture-owned workspace and its seed hook. */
+export function validateMerchantProvisionMode(source: NodeJS.ProcessEnv, args: readonly string[], hasBeforeRun: boolean): boolean {
+  const requested = source.OPS_E2E_MERCHANT_PROVISION
+  const spec = 'dogfood/chatgpt-all-functions/ops-merchant-provision-live.spec.js'
+  if (requested === undefined) return false
+  const specs = args.filter(argument => argument.endsWith('.spec.js'))
+  if (requested !== 'true' || source.OPS_E2E_MERCHANT_UI !== 'true' || !hasBeforeRun
+    || specs.length !== 1 || specs[0] !== spec || source.OPS_E2E_MERCHANT_WORKSPACE_SWITCH !== undefined) {
+    throw new Error('OPS_E2E_MERCHANT_PROVISION_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  }
+  return true
+}
+
 export function isolatedManualOperationsMode(source: NodeJS.ProcessEnv): boolean {
   const value = source.OPS_E2E_MANUAL_OPERATIONS
   if (value !== undefined && value !== 'true') throw new Error('OPS_E2E_MANUAL_OPERATIONS_INVALID')
@@ -299,7 +312,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   // Validate before creating directories, containers, connections or processes.
   const args = validateOpsE2eArguments(requested, source)
   const afterRunOnly = validateOpsE2eAfterRunOnly(source, args, Boolean(afterRun))
-  const merchantWorkspaceSwitchMode = validateMerchantWorkspaceSwitchMode(source, args, Boolean(beforeRun))
+  const merchantProvisionMode = validateMerchantProvisionMode(source, args, Boolean(beforeRun))
+  const merchantWorkspaceSwitchMode = validateMerchantWorkspaceSwitchMode(source, args, Boolean(beforeRun && !merchantProvisionMode))
   const commercialSalesMode = isolatedCommercialSalesMode(args, source)
   const unmatchedReadonlyMode = args.includes('dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js')
   const scannerStartupTimeoutMs = validateOpsE2eScannerStartupTimeout(source)
@@ -573,7 +587,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       ...(merchantBaseUrl ? { MERCHANT_STUDIO_URL: merchantBaseUrl } : {}),
       ...(scanner ? { OPS_E2E_REAL_DELIVERY_SCAN: 'true' } : {}),
     })
-    if (merchantWorkspaceSwitchMode) {
+    if (merchantWorkspaceSwitchMode || merchantProvisionMode) {
       throwSite = 'fixture_setup'
       await guardRuntime(beforeRun!({ fixture, baseUrl, username, password, evidenceDir, environment }))
     }

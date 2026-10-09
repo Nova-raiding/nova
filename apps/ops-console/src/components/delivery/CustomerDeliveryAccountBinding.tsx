@@ -114,6 +114,11 @@ export function CustomerDeliveryAccountBinding({ record, disabled = false, readO
           <label htmlFor="delivery-account-search">查找商家登录账号</label>
           <Input.Search id="delivery-account-search" value={query} disabled={busy === "bind"} aria-describedby={error && errorAction === "search" ? "delivery-account-error" : undefined} aria-invalid={Boolean(error && errorAction === "search")} placeholder="输入登录账号，或留空查询当前企业账号" enterButton="查询账号" onChange={(event) => {
             if (active.current?.kind === "search") { active.current.controller.abort(); active.current = undefined; setBusy(undefined); }
+            // Results, selection, and cursor are scoped to the submitted query.
+            // Once the text changes, keeping those controls visible can make an
+            // old account look like a match for the new query (and still bindable).
+            setAccounts([]); setSelection(undefined); setNextCursor(undefined);
+            setLoadedQuery(""); setSearched(false); setError("");
             setQuery(event.target.value); setConfirmed(false);
           }} onSearch={() => void search()} loading={busy === "search"} />
         </div>

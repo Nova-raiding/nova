@@ -4,11 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PlatformUser } from "../../types/ops";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
-import { UserDirectorySection, canWriteLoadedIdentity, legacyCommercialSnapshotRows, sortUserDirectoryRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
+import { UserDirectorySection, canWriteLoadedIdentity, legacyCommercialSnapshotRows, userDirectoryPageRequest } from "./UserDirectorySection.js";
 
-type DirectoryUser = PlatformUser & { createdAt: string };
-
-function user(overrides: Partial<DirectoryUser>): DirectoryUser {
+function user(overrides: Partial<PlatformUser>): PlatformUser {
   return {
     id: "member-1",
     externalSubject: "subject-1",
@@ -16,34 +14,19 @@ function user(overrides: Partial<DirectoryUser>): DirectoryUser {
     role: "operator",
     status: "active",
     updatedAt: "2026-08-20T00:00:00.000Z",
-    createdAt: "2026-08-10T00:00:00.000Z",
     workspaceId: "workspace-1",
     workspaceStatus: "active",
     ...overrides,
   };
 }
 
-describe("UserDirectorySection sorting", () => {
-  const rows = [
-    user({ id: "member-3", externalSubject: "subject-3", displayName: "Charlie", status: "suspended", createdAt: "2026-08-03T00:00:00.000Z" }),
-    user({ id: "member-1", externalSubject: "subject-1", displayName: "alice", status: "active", createdAt: "2026-08-01T00:00:00.000Z" }),
-    user({ id: "member-2", externalSubject: "subject-2", displayName: "Bob", status: "invited", createdAt: "2026-08-02T00:00:00.000Z" }),
-  ];
-
-  it("sorts names, member status and creation time without mutating the loaded page", () => {
-    expect(sortUserDirectoryRows(rows, { field: "displayName", order: "ascend" }).map((row) => row.displayName)).toEqual(["alice", "Bob", "Charlie"]);
-    expect(sortUserDirectoryRows(rows, { field: "status", order: "ascend" }).map((row) => row.status)).toEqual(["active", "invited", "suspended"]);
-    expect(sortUserDirectoryRows(rows, { field: "createdAt", order: "descend" }).map((row) => (row as DirectoryUser).createdAt)).toEqual([
-      "2026-08-02T00:00:00.000Z",
-      "2026-08-01T00:00:00.000Z",
-      "2026-08-03T00:00:00.000Z",
-    ]);
-    expect(rows.map((row) => row.externalSubject)).toEqual(["subject-3", "subject-1", "subject-2"]);
-  });
-
-  it("always moves suspended users behind enabled users while preserving the loaded order otherwise", () => {
-    expect(sortUserDirectoryRows(rows).map((row) => row.status)).toEqual(["active", "invited", "suspended"]);
-    expect(sortUserDirectoryRows(rows, { field: "createdAt", order: "descend" }).map((row) => row.status)).toEqual(["invited", "active", "suspended"]);
+describe("UserDirectorySection directory behavior", () => {
+  it("preserves server order and does not advertise current-page status sorting as directory sorting", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("dataSource={model.userDirectory.items}");
+    expect(source).toContain('{ title: "激活状态", dataIndex: "status", width: 130, render:');
+    expect(source).not.toContain("sortUserDirectoryRows");
+    expect(source).not.toContain('dataIndex: "status", width: 130, sorter:');
   });
 
   it("retains active filters when pagination changes", () => {
@@ -57,6 +40,24 @@ describe("UserDirectorySection sorting", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain("total: model.userDirectory.total");
     expect(source).not.toContain("total: attributeFilter ? sortedUsers.length");
+  });
+
+  it("supports invited users and clears every directory filter back to page one", () => {
+    expect(userDirectoryPageRequest({ query: " Alice ", status: "invited", workspaceId: " ws-1 ", accountType: "all" }, 2, 10)).toEqual({
+      query: "Alice", status: "invited", workspaceId: "ws-1", accountType: "all", page: 2, pageSize: 10,
+    });
+    expect(userDirectoryPageRequest({ query: "  ", status: "", accountType: "merchant" })).toEqual({
+      accountType: "merchant", page: 1, pageSize: 10,
+    });
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('{ value: "invited", label: "待激活" }');
+    expect(source).toContain('form.resetFields(); void model.loadUsers({ accountType: "merchant", page: 1 });');
+  });
+
+  it("clears bulk selections when filters or pagination change", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('onFinish={(values) => { setSelectedUserKeys([]); void model.loadUsers');
+    expect(source).toContain('if (extra.action !== "paginate") return;\n    setSelectedUserKeys([]);');
   });
 
   it("shows the actual number of access-ready merchant workspaces in the directory header", () => {
@@ -210,7 +211,7 @@ describe("UserDirectorySection sorting", () => {
   it("retains account provisioning and authorized directory export actions in the secondary menu", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps }');
-    expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !model.canUserGovernance || model.userExporting }');
+    expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !canExportUserDirectory(model.authorization) || model.userExporting }');
     expect(source).toContain('initialValues={{ status: "", accountType: "merchant" }}');
     expect(source).toContain('disabled: !canReadUserDirectory');
     expect(source).toContain('disabled={!canReadUserDirectory} maxLength={64}');

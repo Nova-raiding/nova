@@ -189,22 +189,29 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       // The repository caps the export in SQL and already returns the rows in
       // the order below, but the sort stays: it is the shared definition of the
       // order, and the fallback path needs it anyway.
-      const selectedMembers = memberRepository.searchWindow
-        ? (await memberRepository.searchWindow({
+      let matchedCount: number
+      let selectedMembers: WorkspaceMember[]
+      if (memberRepository.searchWindow) {
+        const found = await memberRepository.searchWindow({
             workspaceIds,
             ...(status ? { status: status as MemberStatus } : {}),
             ...(query ? { query } : {}),
             offset: 0,
             limit: requestedLimit,
             ...(searchNames ? { enterpriseNames: searchNames } : {}),
-          })).items.sort(compareMembersByRecency).slice(0, requestedLimit)
-        : (await (memberRepository.listMany
+          })
+        matchedCount = found.total
+        selectedMembers = found.items.sort(compareMembersByRecency).slice(0, requestedLimit)
+      } else {
+        const matchingMembers = (await (memberRepository.listMany
             ? memberRepository.listMany(workspaceIds)
             : Promise.all(workspaceIds.map(id => memberRepository.list(id))).then(rows => rows.flat())))
           .map(member => ({ ...member, enterpriseName: enterpriseNameOf(member.workspaceId, searchNames) }))
           .filter(member => (!status || member.status === status) && (!query || memberMatchesQuery(member, query)))
           .sort(compareMembersByRecency)
-          .slice(0, requestedLimit)
+        matchedCount = matchingMembers.length
+        selectedMembers = matchingMembers.slice(0, requestedLimit)
+      }
       const selectedWorkspaceIds = [...new Set(selectedMembers.map(member => member.workspaceId))]
       const selectedNames = searchNames ?? await loadPlatformWorkspaceEnterpriseNames(selectedWorkspaceIds)
       const namedMembers = selectedMembers.map(member => ({ ...member, enterpriseName: enterpriseNameOf(member.workspaceId, selectedNames) }))
@@ -212,10 +219,10 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       const commercialSummaries = await loadPlatformUserCommercialSummaries(selectedWorkspaceIds)
       const filtered = namedMembers.map(member => ({ ...member, workspaceStatus: workspaceStatuses.get(member.workspaceId) ?? 'active', commercial: commercialSummaries.get(member.workspaceId) }))
       const rows = filtered.map(member => ({ member_id: member.id, external_subject: member.externalSubject, display_name: member.displayName, enterprise_name: member.enterpriseName, workspace_id: member.workspaceId, role: member.role, status: member.status, workspace_status: member.workspaceStatus, plan_code: member.commercial?.planCode ?? null, plan_name: member.commercial?.planName ?? null, subscription_status: member.commercial?.subscriptionStatus ?? null, used_tasks: member.commercial?.usedTasks ?? null, included_tasks: member.commercial?.includedTasks ?? null, remaining_tasks: member.commercial?.remainingTasks ?? null, wallet_balance_cny: member.commercial?.walletBalanceCny ?? null, invited_by: member.invitedBy ?? null, created_at: member.createdAt, updated_at: member.updatedAt }))
-      if (format === 'json') return ({ filename: `ops-users-${new Date().toISOString().slice(0, 10)}.json`, content: JSON.stringify(rows, null, 2), count: rows.length, truncated: rows.length === requestedLimit })
+      if (format === 'json') return ({ filename: `ops-users-${new Date().toISOString().slice(0, 10)}.json`, content: JSON.stringify(rows, null, 2), count: rows.length, truncated: matchedCount > rows.length })
       const headers = ['external_subject', 'display_name', 'workspace_id', 'enterprise_name', 'role', 'status', 'workspace_status', 'plan_code', 'plan_name', 'subscription_status', 'used_tasks', 'included_tasks', 'remaining_tasks', 'wallet_balance_cny', 'invited_by', 'created_at', 'updated_at']
       const content = [headers.join(','), ...rows.map(row => headers.map(header => csvCell(String(row[header as keyof typeof row] ?? ''))).join(','))].join('\n')
-      return ({ filename: `ops-users-${new Date().toISOString().slice(0, 10)}.csv`, content, count: rows.length, truncated: rows.length === requestedLimit })
+      return ({ filename: `ops-users-${new Date().toISOString().slice(0, 10)}.csv`, content, count: rows.length, truncated: matchedCount > rows.length })
     }
   if (method === 'ops.user.detail') {
       requirePlatformReadRole(req)

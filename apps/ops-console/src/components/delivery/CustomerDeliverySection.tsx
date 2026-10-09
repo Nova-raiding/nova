@@ -616,7 +616,7 @@ export function CustomerDeliverySection({
         width: 48,
         align: "center" as const,
         render: (_: unknown, __: CustomerDeliveryRecord, index: number) =>
-          String(index + 1).padStart(2, "0"),
+          String((page - 1) * pageSize + index + 1).padStart(2, "0"),
       },
       {
         title: "公司名",
@@ -692,7 +692,7 @@ export function CustomerDeliverySection({
         ),
       },
     ],
-    [onTrainingSave, openDetails, disabled],
+    [onTrainingSave, openDetails, disabled, page, pageSize],
   );
   const contractUploadRequest = detailRequest.current;
   const contractUploadScope = selected ? `${selected.id}:profile:${contractUploadRequest}` : "";

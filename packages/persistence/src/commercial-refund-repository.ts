@@ -23,6 +23,13 @@ export interface CommercialRefundEvent {
   createdAt: string
 }
 
+export interface CommercialRefundPage {
+  items: CommercialRefundEvent[]
+  total: number
+  nextCursor: string | null
+  truncated: boolean
+}
+
 export class CommercialRefundRepositoryError extends Error {
   constructor(readonly code: 'COMMERCIAL_REFUND_ORDER_NOT_FOUND' | 'COMMERCIAL_REFUND_REQUEST_CONFLICT' | 'COMMERCIAL_REFUND_STATE_INVALID' | 'COMMERCIAL_REFUND_INPUT_INVALID', message: string) {
     super(message)
@@ -38,7 +45,7 @@ export interface CommercialRefundRepository {
   completeWithPointRevoke(input: Parameters<CommercialRefundRepository['complete']>[0], lifecycle: PostgresCreativePointLifecycleRepository): Promise<CommercialRefundEvent>
   latest(workspaceId: string, requestId: string): Promise<CommercialRefundEvent | null>
   history(workspaceId: string, requestId: string): Promise<CommercialRefundEvent[]>
-  list(workspaceId: string, limit?: number): Promise<CommercialRefundEvent[]>
+  list(workspaceId: string, options?: { limit?: number; cursor?: string }): Promise<CommercialRefundPage>
 }
 
 type EventRow = Omit<CommercialRefundEvent, 'amountFen' | 'pointsToRevoke' | 'createdAt'> & { amountFen: string | number; pointsToRevoke: string | number; createdAt: string | Date }
@@ -185,7 +192,30 @@ export class PostgresCommercialRefundRepository implements CommercialRefundRepos
 
   async latest(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent | null> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, client => this.latestIn(client, workspaceId, requestId)) }
   async history(workspaceIdInput: string, requestIdInput: string): Promise<CommercialRefundEvent[]> { const workspaceId = requireWorkspaceScope(workspaceIdInput); const requestId = text(requestIdInput, 'requestId'); return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND request_id=$2 ORDER BY revision ASC`, [workspaceId, requestId])).rows.map(map)) }
-  async list(workspaceIdInput: string, limit = 100): Promise<CommercialRefundEvent[]> { const workspaceId = requireWorkspaceScope(workspaceIdInput); if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200'); return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2`, [workspaceId, limit])).rows.map(map)) }
+  async list(workspaceIdInput: string, options: { limit?: number; cursor?: string } = {}): Promise<CommercialRefundPage> {
+    const workspaceId = requireWorkspaceScope(workspaceIdInput)
+    const limit = options.limit ?? 100
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new RangeError('limit must be between 1 and 100')
+    let cursor: { createdAt: string; id: string } | undefined
+    if (options.cursor) {
+      try {
+        if (typeof options.cursor !== 'string' || options.cursor.length > 4_096) throw new Error('invalid cursor')
+        const decoded = JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { workspaceId?: unknown; createdAt?: unknown; id?: unknown }
+        if (decoded.workspaceId !== workspaceId || typeof decoded.createdAt !== 'string' || !Number.isFinite(Date.parse(decoded.createdAt)) || typeof decoded.id !== 'string' || !decoded.id.trim()) throw new Error('invalid cursor')
+        cursor = { createdAt: new Date(decoded.createdAt).toISOString(), id: decoded.id }
+      } catch { throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', '退款事件分页游标无效或与当前工作区不匹配') }
+    }
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const [rows, count] = await Promise.all([
+        client.query<EventRow>(`SELECT ${projection} FROM commercial_refund_events_v2 WHERE workspace_id=$1 AND ($2::timestamptz IS NULL OR (created_at,id)<($2::timestamptz,$3::text)) ORDER BY created_at DESC,id DESC LIMIT $4`, [workspaceId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1]),
+        client.query<{ total: number | string }>('SELECT count(*)::int AS total FROM commercial_refund_events_v2 WHERE workspace_id=$1', [workspaceId]),
+      ])
+      const hasMore = rows.rows.length > limit
+      const items = rows.rows.slice(0, limit).map(map)
+      const last = items.at(-1)
+      return { items, total: Number(count.rows[0]?.total ?? 0), truncated: hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ workspaceId, createdAt: last.createdAt, id: last.id })).toString('base64url') : null }
+    })
+  }
 
   /** Money already committed against one order. Each request contributes the
    * largest amount it was ever approved or completed for, so an

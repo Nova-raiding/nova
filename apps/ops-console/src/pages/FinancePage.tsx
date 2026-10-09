@@ -34,6 +34,7 @@ export function FinancePage({ model }: FinancePageProps) {
   const selectedWorkspace = model.workspaceRows.find(row => row.workspaceId === workspaceDraft);
   const canRefresh = model.authorization.can("commercial.access.read") && model.authorization.can(commercialViewCapability[commercial.view]);
   const canSearchFinance = model.authorization.can("billing.platform.read");
+  const canExportFinance = model.authorization.can("billing.export");
   const isWorkspaceWorkbench = !isPlatformWorkbench;
   const financeSearch = useFinanceSearch(financeSearchClient, { limit: 20 }, canSearchFinance);
   const [showCommercialReadiness, setShowCommercialReadiness] = useState(false);
@@ -67,7 +68,7 @@ export function FinancePage({ model }: FinancePageProps) {
       <div className="ops-finance-page">
         {workspaceDraft ? <Alert type="info" showIcon title={`当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}`} description={`财务和商业操作范围：${workspaceDraft}`} style={{ marginBottom: 16 }} /> : null}
         {isPlatformWorkbench ? <>
-          {canSearchFinance ? <FinanceSearchSection controller={financeSearch} showProviderStatementStatus={false} compactSummary /> : (
+          {canSearchFinance ? <FinanceSearchSection controller={financeSearch} canExport={canExportFinance} showProviderStatementStatus={false} compactSummary /> : (
             <Alert
               type="info"
               showIcon
@@ -75,6 +76,7 @@ export function FinancePage({ model }: FinancePageProps) {
               description="当前会话未获得服务端投影的 billing.platform.read 能力，因此没有发起跨企业主体财务查询。请由平台管理员更新权限后重新登录。"
             />
           )}
+          {model.authorization.can("billing.refund.execute") ? <RefundSection model={model} /> : null}
           {model.authorization.can("commercial.payment.reconcile") && model.authorization.can("commercial.order.read") ? <AssistedPurchaseOperationsPanel controller={commercial} /> : null}
           {model.authorization.can("commercial.order.read") ? <UnmatchedCashOperationsPanel controller={commercial} /> : null}
           {model.authorization.can("commercial.receipt.record") || model.authorization.can("commercial.receipt.allocate") ? <CashReceiptOperationsPanel controller={commercial} /> : null}

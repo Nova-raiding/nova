@@ -2,6 +2,20 @@ import { Button, Form, Input, Select, Space, Table, Tag } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../../types/ops";
 
+export function knowledgeRuleScopeValueError(scope: string | undefined, value: unknown) {
+  if (scope === "global") return undefined;
+  return typeof value === "string" && value.trim()
+    ? undefined
+    : "限定作用域必须填写作用域值";
+}
+
+export function clearKnowledgeRuleScopeValueForGlobal(
+  scope: string,
+  setFieldValue: (field: "scopeValue", value: undefined) => void,
+) {
+  if (scope === "global") setFieldValue("scopeValue", undefined);
+}
+
 interface KnowledgeRulesPanelProps {
   model: OpsConsoleModel;
 }
@@ -47,6 +61,9 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         >
           <Select
             style={{ width: 130 }}
+            onChange={(scope: string) => {
+              clearKnowledgeRuleScopeValueForGlobal(scope, (field, value) => knowledgeRuleForm.setFieldValue(field, value));
+            }}
             options={[
               "global",
               "platform",
@@ -57,8 +74,18 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
             ].map((value) => ({ value, label: ({ global: "全局", platform: "平台", category: "品类", brand: "品牌", store: "店铺", campaign: "活动" } as Record<string, string>)[value] }))}
           />
         </Form.Item>
-        <Form.Item name="scopeValue" label="作用域值">
-          <Input placeholder="作用域值（可选）" />
+        <Form.Item
+          name="scopeValue"
+          label="作用域值"
+          dependencies={["scope"]}
+          rules={[{
+            validator: async (_rule, value) => {
+              const error = knowledgeRuleScopeValueError(knowledgeRuleForm.getFieldValue("scope"), value);
+              if (error) throw new Error(error);
+            },
+          }]}
+        >
+          <Input placeholder="限定作用域必填；全局作用域留空" />
         </Form.Item>
         <Form.Item name="sourceReference" label="来源" rules={[{ required: true, message: "请输入来源链接或工单号" }]}>
           <Input placeholder="来源链接/工单" />

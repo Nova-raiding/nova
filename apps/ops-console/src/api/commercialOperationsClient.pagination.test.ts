@@ -63,4 +63,22 @@ describe("commercial operations pagination contract", () => {
       code: "benefit-core", version_id: "benefit-v1", limit: "2", cursor: "references-first",
     }, { signal: undefined });
   });
+
+  it("requests commercial timeline pages using the supported limit and preserves continuation metadata", async () => {
+    rpc.mockResolvedValue({ items: [], total: 101, next_cursor: "timeline-next", truncated: true, source_truncated: true });
+    await expect(commercialOperationsClient.timeline("ws-1", { limit: 100, cursor: "timeline-first" })).resolves.toMatchObject({
+      items: [], total: 101, nextCursor: "timeline-next", truncated: true, sourceTruncated: true,
+    });
+    await commercialOperationsClient.timeline("ws-1");
+    expect(rpc).toHaveBeenCalledWith("ops.commercial.timeline.list", {
+      target_workspace_id: "ws-1", limit: "100", cursor: "timeline-first",
+    }, { signal: undefined });
+    expect(rpc).toHaveBeenLastCalledWith("ops.commercial.timeline.list", { target_workspace_id: "ws-1", limit: "100" }, { signal: undefined });
+  });
+
+  it("requests refund event cursor pages and preserves the total and continuation", async () => {
+    rpc.mockResolvedValue({ items: [], total: 101, next_cursor: "refund-next", truncated: true });
+    await expect(commercialOperationsClient.listCommercialRefunds("ws-1", { limit: 100, cursor: "refund-first" })).resolves.toMatchObject({ total: 101, nextCursor: "refund-next", truncated: true });
+    expect(rpc).toHaveBeenCalledWith("ops.commercial.order.refund.list", { target_workspace_id: "ws-1", limit: "100", cursor: "refund-first" }, { signal: undefined });
+  });
 });

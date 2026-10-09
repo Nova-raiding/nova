@@ -4,6 +4,7 @@ import type { BrandUnitRepository } from '../../../packages/persistence/src/bran
 import type { PostgresBusinessRepository } from '../../../packages/persistence/src/business-repository.js'
 import type { KnowledgeRepository, KnowledgeSearchResult } from '../../../packages/persistence/src/knowledge.js'
 import type { KnowledgeModule, RuleEntry, AssetEntry, LearningSuggestion } from '../../../packages/knowledge/src/index.js'
+import { normalizeCatalogDateRange } from './catalog-search-dates.js'
 
 type Params = Record<string, unknown>
 type Store = { platform: Platform; accountId: string; label: string }
@@ -27,6 +28,7 @@ export async function handleCatalogSearch(params: Params, workspaceId: string, d
   knowledgeForWorkspace: () => KnowledgeModule
   buildKnowledgeContext: (input: KnowledgeContextInput) => KnowledgeGenerationContext
 }) {
+    const dateRange = normalizeCatalogDateRange(params.date_from, params.date_to)
     const scope = params.scope === 'workspace' ? 'workspace' : params.scope === 'store' ? 'store' : undefined
     const platform = typeof params.platform === 'string' ? params.platform as Platform : undefined
     const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
@@ -49,8 +51,7 @@ export async function handleCatalogSearch(params: Params, workspaceId: string, d
       ...(typeof params.listing_status === 'string' ? { listingStatus: params.listing_status as Product['listingStatus'] } : {}),
       ...(typeof params.product_state === 'string' ? { productState: params.product_state as 'active' | 'disabled' } : {}),
       ...(typeof params.sync_status === 'string' ? { syncStatus: params.sync_status as import('../../../packages/application/src/service.js').SyncJobState } : {}),
-      ...(typeof params.date_from === 'string' ? { dateFrom: params.date_from } : {}),
-      ...(typeof params.date_to === 'string' ? { dateTo: params.date_to } : {}),
+      ...dateRange,
     }
     const page = deps.business
       ? await deps.business.listProductsPage(workspaceId, { ...pageRequest, ...filters, ...(accessibleBrandIds !== undefined ? { accessibleBrandIds } : {}) })

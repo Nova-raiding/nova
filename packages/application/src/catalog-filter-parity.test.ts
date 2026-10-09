@@ -29,4 +29,13 @@ describe('in-memory catalog filter parity', () => {
     expect(service.listProducts('ws_brand_parity', { brandName: '云朵' })).toEqual([product])
     expect(service.listTasks('ws_brand_parity', { brandName: '云朵' })).toEqual([task])
   })
+
+  it('matches tasks by the associated product store name', () => {
+    const service = new MerchantService()
+    const product = service.importProduct({ workspaceId: 'ws_task_store_search', platform: 'jd', title: '商品', storeName: '杭州旗舰店' })
+    const task = service.createTask({ workspaceId: 'ws_task_store_search', productId: product.id, platform: 'jd' })
+
+    expect(service.listTasks('ws_task_store_search', { query: '杭州旗舰' })).toEqual([task])
+    expect(service.listTasks('ws_task_store_search', { query: '不存在的店铺' })).toEqual([])
+  })
 })

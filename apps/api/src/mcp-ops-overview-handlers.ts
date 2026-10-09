@@ -38,6 +38,19 @@ export interface OpsOverviewDependencies {
   importManualProducts: (workspaceId: string, productsJson: string, source: { reference: string; sha256: string; reason: string }, req: IncomingMessage, idempotencyKey?: string) => Promise<unknown>
 }
 
+/** Platform summaries use the durable workspace directory when it exists.
+ * The process-local registry is only a fallback for adapters without an
+ * authoritative directory; it must never be merged with durable IDs. */
+export function platformOverviewWorkspaceIds(input: {
+  isPlatformOperations: boolean
+  authoritativeWorkspaceIds?: readonly string[]
+  knownWorkspaceIds: readonly string[]
+}): string[] {
+  if (!input.isPlatformOperations) return []
+  const source = input.authoritativeWorkspaceIds ?? input.knownWorkspaceIds
+  return [...new Set(source.map(value => value.trim()).filter(Boolean))]
+}
+
 export async function handleOpsOverviewMcpMethod(method: string, params: Record<string, unknown>, workspaceId: string, req: IncomingMessage, dependencies: OpsOverviewDependencies): Promise<unknown> {
   const {
     service, knownWorkspaces, principalWorkspaces, requiresStrictAuth, isPlatformOperations,
@@ -75,9 +88,15 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       if (isPlatformOperations(req) && persistence.listWorkspaceSummaries && !hasDirectoryParams) return (await persistence.listWorkspaceSummaries())
       const principal = { workspaces: principalWorkspaces(req) }
       const granted = requiresStrictAuth() ? principal.workspaces : knownWorkspaces()
-      const platformWorkspaceIds = isPlatformOperations(req) && persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : []
-      const platformScopeIds = isPlatformOperations(req) ? [...new Set([...platformWorkspaceIds, ...knownWorkspaces()])] : []
-      const workspaceIds = platformScopeIds.length ? platformScopeIds : granted.length ? [...new Set(granted)] : [workspaceId]
+      const platformWorkspaceIds = isPlatformOperations(req) && persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : undefined
+      const platformScopeIds = platformOverviewWorkspaceIds({
+        isPlatformOperations: isPlatformOperations(req),
+        ...(platformWorkspaceIds ? { authoritativeWorkspaceIds: platformWorkspaceIds } : {}),
+        knownWorkspaceIds: knownWorkspaces(),
+      })
+      const workspaceIds = isPlatformOperations(req)
+        ? platformScopeIds
+        : granted.length ? [...new Set(granted)] : [workspaceId]
       // Each summary performs five repository reads. Keep only two summaries in
       // flight so a platform-wide directory cannot exhaust the shared SQL pool
       // while the rest of the Ops page is loading.
@@ -87,7 +106,8 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
       const merchantWorkspaceIds = merchantOnly
         ? await activeMerchantWorkspaceIds()
         : undefined
-      const filtered = summaries.filter(item => (!merchantOnly || merchantWorkspaceIds?.has(item.workspaceId)) && (!query || [item.workspaceId, item.planName].some(value => value.toLocaleLowerCase().includes(query.toLocaleLowerCase()))) && (!status || item.status === status) && (!subscriptionStatus || item.subscriptionStatus === subscriptionStatus))
+      const normalizedQuery = query.toLocaleLowerCase()
+      const filtered = summaries.filter(item => (!merchantOnly || merchantWorkspaceIds?.has(item.workspaceId)) && (!query || [item.enterpriseName, item.workspaceId, item.planName].some(value => value.toLocaleLowerCase().includes(normalizedQuery))) && (!status || item.status === status) && (!subscriptionStatus || item.subscriptionStatus === subscriptionStatus))
       return ({ items: filtered.slice(offset, offset + requestedLimit), total: filtered.length, offset, limit: requestedLimit, hasMore: offset + requestedLimit < filtered.length })
     }
     case 'ops.stores.list': {
@@ -102,7 +122,7 @@ export async function handleOpsOverviewMcpMethod(method: string, params: Record<
         if (current) current.count += 1
         else groups.set(key, { platform: store.platform, state: store.state, dataMode: store.dataMode, readable: store.readable, writeEnabled: store.writeEnabled, count: 1 })
       }
-      const items = [...groups.values()].map(group => ({ platform: group.platform, accountId: `platform-aggregate:${group.platform}:${group.state}:${group.dataMode}`, label: `${group.count} 个${PLATFORM_LABELS[group.platform]}店铺`, state: group.state, dataMode: group.dataMode, readable: group.readable, writeEnabled: group.writeEnabled, revision: 0, aggregate: true }))
+      const items = [...groups.values()].map(group => ({ platform: group.platform, accountId: `platform-aggregate:${group.platform}:${group.state}:${group.dataMode}`, label: `${group.count} 个${PLATFORM_LABELS[group.platform]}店铺`, state: group.state, dataMode: group.dataMode, readable: group.readable, writeEnabled: group.writeEnabled, revision: 0, aggregate: true, count: group.count }))
       return ({ items, total: items.length, aggregate: true })
     }
     case 'ops.platform.store.record.create': {

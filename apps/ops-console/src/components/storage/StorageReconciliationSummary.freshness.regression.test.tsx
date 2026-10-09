@@ -8,7 +8,7 @@ describe("StorageReconciliationSummary freshness regression", () => {
     ["stale" as const, "需要刷新"],
     ["expired" as const, "对账已过期"],
   ])("does not mark a %s report as normal", (freshness, label) => {
-    const html = renderToStaticMarkup(<StorageReconciliationSummary onOpen={vi.fn()} summary={{ status: "clean", freshness, lastRunAt: "2026-08-29T10:00:00Z" }} />);
+    const html = renderToStaticMarkup(<StorageReconciliationSummary onOpen={vi.fn()} summary={{ status: "clean", runStatus: "succeeded", freshness, lastRunAt: "2026-08-29T10:00:00Z" }} />);
     expect(html).toContain(label);
     expect(html).not.toContain("对账正常");
   });

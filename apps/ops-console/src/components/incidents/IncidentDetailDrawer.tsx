@@ -10,6 +10,12 @@ interface IncidentDetailDrawerProps {
   timeline: IncidentTimelineEntry[]
   timelineNextCursor?: string
   loading: boolean
+  detailVerified: boolean
+  detailError?: string
+  onRetryDetail: () => void
+  timelineVerified: boolean
+  timelineError?: string
+  onRetryTimeline: () => void
   mutating: boolean
   error?: string
   canMutate: boolean
@@ -21,8 +27,8 @@ interface IncidentDetailDrawerProps {
   onUpdateScope: (components: string[], workspaceIds: string[], note: string) => Promise<unknown>
 }
 
-export function incidentDetailCapabilities(canMutate: boolean) {
-  return { canRead: true, canComment: true, canTransition: canMutate, canAssignCommander: canMutate, canUpdateScope: canMutate }
+export function incidentDetailCapabilities(canMutate: boolean, detailVerified = true) {
+  return { canRead: true, canComment: detailVerified, canTransition: canMutate && detailVerified, canAssignCommander: canMutate && detailVerified, canUpdateScope: canMutate && detailVerified }
 }
 
 export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
@@ -47,24 +53,35 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
     setCommanderId(incident?.commanderId ?? '')
     setComponents(incident?.affectedComponents.join(', ') ?? '')
     setWorkspaces(incident?.affectedWorkspaceIds.join(', ') ?? '')
-  }, [incident?.id])
+  // Selection first carries an unverified list snapshot. Rehydrate these
+  // editable fields after the authoritative detail fetch, even when its ID is
+  // unchanged, and after accepted mutations advance the incident revision.
+  }, [incident?.id, incident?.revision, incident?.commanderId, incident?.affectedComponents, incident?.affectedWorkspaceIds, props.detailVerified])
   if (!incident) return null
-  const capabilities = incidentDetailCapabilities(props.canMutate)
+  const capabilities = incidentDetailCapabilities(props.canMutate, props.detailVerified)
   const nextStatus = incidentNextStatus[incident.status]
   const settle = async (operation: () => Promise<unknown>, clear: () => void) => {
     try { await operation(); clear() } catch { /* The page-level role=alert owns error presentation. */ }
   }
 
   return (
-    <Drawer open title={`事故详情 · ${incident.title}`} size={720} onClose={props.onClose} destroyOnHidden aria-label="事故详情" afterOpenChange={(open) => {
+    <Drawer open title={`${props.detailVerified ? '事故详情' : '事故详情待验证'} · ${incident.title}`} size={720} onClose={props.onClose} destroyOnHidden aria-label="事故详情" afterOpenChange={(open) => {
       if (!open && triggerRef.current?.isConnected) window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
     }}>
       <section aria-label="事故详情内容" aria-busy={props.loading}>
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-          {props.loading ? '正在加载事故详情，已有内容会保留。' : '事故详情已加载。'}
+          {props.loading ? '正在加载事故详情和时间线。' : props.detailVerified ? '事故详情已验证。' : props.detailError ? '事故详情加载失败。' : '事故详情尚未验证。'}
         </div>
         <Spin spinning={props.loading}>
         {props.error ? <div ref={errorRef} tabIndex={-1} aria-label="事故详情错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={props.error} style={{ marginBottom: 16 }} /></div> : null}
+        {!props.detailVerified ? <Alert
+          type={props.detailError ? 'error' : 'info'}
+          showIcon
+          title={props.detailError ? '事故详情加载失败' : '正在验证事故详情'}
+          description={props.detailError || '列表摘要仅用于定位记录，详情加载完成前不会显示为已验证信息，也不能执行详情操作。'}
+          action={props.detailError ? <Button htmlType="button" onClick={props.onRetryDetail} disabled={props.loading}>重试详情</Button> : undefined}
+          style={{ marginBottom: 16 }}
+        /> : <>
         <Descriptions bordered size="small" column={screens.md ? 2 : 1}>
           <Descriptions.Item label="严重度"><IncidentSeverityBadge severity={incident.severity} /></Descriptions.Item>
           <Descriptions.Item label="状态"><IncidentStatusBadge status={incident.status} /></Descriptions.Item>
@@ -78,15 +95,16 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
         <Divider>不可变时间线</Divider>
         {props.timeline.length ? (
           <div aria-live="polite"><Timeline items={props.timeline.map((entry) => ({ content: <div><Typography.Text strong>{entry.kind}</Typography.Text><Typography.Paragraph style={{ marginBottom: 2 }}>{entry.body}</Typography.Paragraph><Typography.Text type="secondary">{entry.actorId} · revision {entry.incidentRevision} · {new Date(entry.createdAt).toLocaleString()}</Typography.Text></div> }))} /></div>
-        ) : <Typography.Paragraph type="secondary">暂无时间线记录。</Typography.Paragraph>}
+        ) : props.timelineError ? <Alert type="error" showIcon title="时间线加载失败" description={props.timelineError} action={<Button htmlType="button" onClick={props.onRetryTimeline} disabled={props.loading}>重试时间线</Button>} /> : props.timelineVerified ? <Typography.Paragraph type="secondary">暂无时间线记录。</Typography.Paragraph> : <Typography.Paragraph type="secondary">正在验证时间线…</Typography.Paragraph>}
         {props.timelineNextCursor ? <Button block loading={props.loading} onClick={() => void props.onLoadMoreTimeline()} style={{ minHeight: 44, marginBottom: 16 }}>加载更多时间线</Button> : null}
+        {props.timelineError && props.timeline.length > 0 ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="更多时间线加载失败" description={props.timelineError} action={<Button htmlType="button" onClick={props.onRetryTimeline} disabled={props.loading}>重试时间线</Button>} /> : null}
 
         <Divider>追加评论</Divider>
         <Form layout="vertical" onFinish={() => settle(() => props.onComment(comment), () => setComment(''))}>
           <Form.Item label="评论" required validateStatus={!comment.trim() ? undefined : 'success'}>
             <Input.TextArea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={4000} showCount rows={3} aria-label="事故评论" />
           </Form.Item>
-          <Button htmlType="submit" type="primary" loading={props.mutating} disabled={!comment.trim()} style={{ minHeight: 44 }}>追加评论</Button>
+          <Button htmlType="submit" type="primary" loading={props.mutating} disabled={!capabilities.canComment || !comment.trim()} style={{ minHeight: 44 }}>追加评论</Button>
         </Form>
 
         {capabilities.canTransition ? <>
@@ -113,6 +131,7 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
             <Button htmlType="submit" loading={props.mutating} disabled={scopeNote.trim().length < 3} style={{ minHeight: 44 }}>更新影响范围</Button>
           </Form>
         </> : <Alert style={{ marginTop: 20 }} type="info" showIcon title="当前范围只读" description="缺少 incident.update / incident.administer；状态、指挥官和影响范围不可修改。" />}
+        </>}
         </Spin>
       </section>
     </Drawer>

@@ -21,7 +21,7 @@ async function search(products: Product[], options: { canonical?: boolean; param
     knowledgeForWorkspace: vi.fn(() => { throw new Error('knowledge not requested') }), buildKnowledgeContext: vi.fn(),
   }
   const result = await handleCatalogSearch({ scope: 'workspace', query: 'QA资料', limit: '1', ...options.params }, workspaceId, deps as any)
-  return { result, page, listCanonicalProducts }
+  return { result, page, listCanonicalProducts, listProducts }
 }
 
 describe('catalog search trusted context and candidate actions', () => {
@@ -68,5 +68,22 @@ describe('catalog search trusted context and candidate actions', () => {
   })
   it('does not turn incomplete store scope into an unbound candidate search', async () => {
     await expect(search([product()], { params: { scope: 'store' } })).rejects.toMatchObject({ code: 'STORE_SELECTION_REQUIRED' })
+  })
+  it('normalizes catalog date filters before both durable and memory repositories', async () => {
+    const from = '2026-10-01T08:00:00+08:00'
+    const to = '2026-10-02T00:00:00Z'
+    const durable = await search([product()], { params: { date_from: from, date_to: to } })
+    expect(durable.page).toHaveBeenCalledWith(workspaceId, expect.objectContaining({ dateFrom: '2026-10-01T00:00:00.000Z', dateTo: to.replace('Z', '.000Z') }))
+
+    const memory = await search([product()], { memory: true, params: { date_from: from, date_to: to } })
+    expect(memory.listProducts).toHaveBeenCalledWith(workspaceId, expect.objectContaining({ dateFrom: '2026-10-01T00:00:00.000Z', dateTo: to.replace('Z', '.000Z') }))
+  })
+  it.each([
+    { date_from: '2026-02-30T00:00:00Z' },
+    { date_from: '2026-10-01T00:00:00.0001Z' },
+    { date_to: '2026-10-01T00:00:00' },
+    { date_from: '2026-10-02T00:00:00Z', date_to: '2026-10-01T00:00:00Z' },
+  ])('rejects malformed or reversed date filters', async params => {
+    await expect(search([product()], { params })).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
   })
 })

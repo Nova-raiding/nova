@@ -150,10 +150,26 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
       : undefined
     return { page: 'products', searchQuery: params.get('q') ?? '', entry, ...(catalogContext ? { catalogContext } : {}) }
   }
-  // The legacy rules URL resolves to the dedicated rules page. Publish
-  // remains a broad legacy destination. Concrete task deep-links remain
-  // supported below so old bookmarks still recover work.
-  if (segment === 'rules') return { page: 'rules', searchQuery: '' }
+  // The legacy rules URL resolves to the dedicated rules page. Preserve
+  // product/store context in the URL so direct loads and refreshes keep the
+  // same scoped rule workflow as programmatic navigation.
+  if (segment === 'rules') {
+    const productId = params.get('product_id')?.trim()
+    const platform = platformFromQuery(params.get('platform'))
+    const accountId = params.get('account_id')?.trim()
+    return {
+      page: 'rules',
+      searchQuery: '',
+      ...(productId ? {
+        target: {
+          kind: 'product' as const,
+          productId,
+          ...(platform ? { platform } : {}),
+          ...(accountId ? { accountId } : {}),
+        },
+      } : {}),
+    }
+  }
   if (segment === 'publish') return { page: 'products', searchQuery: '' }
   if (segment === 'tasks') {
     const imageJobId = params.get('image_job')?.trim()
@@ -220,4 +236,65 @@ export function urlForMerchantRoute(
   if (route.page === 'task' && !route.target && route.publishJobId?.trim()) params.set('publish_job_id', route.publishJobId.trim())
   const query = params.toString()
   return `${path}${query ? `?${query}` : ''}`
+}
+
+/** Update the durable product search without creating a history entry per keystroke. */
+export function urlForMerchantCatalogSearch(
+  location: Pick<Location, 'hash' | 'pathname' | 'search'>,
+  query: string,
+): string {
+  const route = merchantRouteFromLocation(location)
+  return urlForMerchantRoute(location, {
+    ...route,
+    page: 'products',
+    searchQuery: query,
+    entry: route.page === 'products' ? route.entry : 'products',
+  })
+}
+
+/** Open a store as a durable catalog deep link and discard stale product/search scope. */
+export function urlForMerchantCatalogStore(
+  location: Pick<Location, 'hash' | 'pathname' | 'search'>,
+  store: { platform: MerchantPlatformId; accountId: string },
+): string {
+  const route = merchantRouteFromLocation(location)
+  return urlForMerchantRoute(location, {
+    page: 'products',
+    entry: route.page === 'products' ? route.entry : 'products',
+    catalogContext: { platform: store.platform, accountId: store.accountId },
+  })
+}
+
+/** Return to store selection, retaining the platform filter but dropping store/product/search scope. */
+export function urlForMerchantCatalogStoreSelection(
+  location: Pick<Location, 'hash' | 'pathname' | 'search'>,
+): string {
+  const route = merchantRouteFromLocation(location)
+  return urlForMerchantRoute(location, {
+    page: 'products',
+    entry: route.page === 'products' ? route.entry : 'products',
+    catalogContext: route.page === 'products' && route.catalogContext?.platform
+      ? { platform: route.catalogContext.platform }
+      : undefined,
+  })
+}
+
+/** Return from a product detail to its store list without losing the active search or store scope. */
+export function urlForMerchantCatalogProductList(
+  location: Pick<Location, 'hash' | 'pathname' | 'search'>,
+): string {
+  const route = merchantRouteFromLocation(location)
+  const storeContext = route.catalogContext && (route.catalogContext.platform || route.catalogContext.accountId || route.catalogContext.intent)
+    ? {
+        ...(route.catalogContext.platform ? { platform: route.catalogContext.platform } : {}),
+        ...(route.catalogContext.accountId ? { accountId: route.catalogContext.accountId } : {}),
+        ...(route.catalogContext.intent ? { intent: route.catalogContext.intent } : {}),
+      }
+    : undefined
+  return urlForMerchantRoute(location, {
+    page: 'products',
+    entry: route.page === 'products' ? route.entry : 'products',
+    searchQuery: route.searchQuery,
+    ...(storeContext ? { catalogContext: storeContext } : {}),
+  })
 }

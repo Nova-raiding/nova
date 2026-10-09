@@ -20,13 +20,14 @@
  *      Those sets are pinned below.
  *   3. The entrypoint ledger's browser half is satisfied by
  *      `dogfood/chatgpt-all-functions/playwright.config.mjs`, whose
- *      `testMatch` is `**\/*.spec.js` over its own directory. No runner ever
- *      loads it: both invoke the Playwright CLI with explicit paths and without
- *      `--config`, and Playwright's config auto-discovery looks only in the
- *      process working directory (the repository root), where no
- *      `playwright.config.*` exists. So the config schedules a superset of the
- *      specs any browser entrypoint actually runs — the specs in that
- *      difference are pinned in `CONFIG_ONLY_BROWSER_SPECS`.
+ *      `testMatch` is `**\/*.spec.js` over its own directory. Most browser
+ *      runners invoke Playwright with explicit paths and without `--config`,
+ *      so Playwright's config auto-discovery looks only in the process working
+ *      directory (the repository root), where no `playwright.config.*`
+ *      exists. The task-queue fixture is the exception: its dedicated package
+ *      script explicitly loads the dogfood config. The config-only specs are
+ *      the matched set minus every spec named by an actual browser entrypoint,
+ *      pinned in `CONFIG_ONLY_BROWSER_SPECS`.
  *
  * When the wiring changes, this file fails and must be updated in the same
  * change. That is the point: the update is the review.
@@ -100,6 +101,7 @@ const OPS_COMMERCIAL_SPECS = [
 const OPS_BENEFIT_BUNDLE_SPECS = [spec('ops-commercial-benefit-bundles-isolated.spec.js')]
 const OPS_REFUND_SPECS = [spec('ops-refund-isolated.spec.js')]
 const LOCAL_MOCKED_STATE_SPECS = [spec('canonical-product-desktop.spec.js')]
+const MERCHANT_TASK_QUEUE_SPECS = [spec('task-queue-split-flow.spec.js')]
 const MERCHANT_IMAGE_GENERATION_SPECS = [spec('image-generation-desktop.spec.js')]
 const MERCHANT_WORKSPACE_SWITCH_SPECS = ['demo/merchant-studio/merchant-workspace-switch.browser.spec.js']
 
@@ -112,6 +114,13 @@ const OPS_RULE_UPLOAD_SPECS = [spec('ops-rule-upload-isolated.spec.js')]
 const OPS_PUBLIC_RULE_UPLOAD_SPECS = [spec('ops-public-rule-upload-isolated.spec.js')]
 const OPS_PRODUCT_IMPORT_SPECS = [spec('ops-product-import-scan-isolated.spec.js')]
 const OPS_UNMATCHED_READONLY_SPECS = [spec('ops-unmatched-receipt-readonly-isolated.spec.js')]
+const OPS_DELIVERY_READONLY_SPECS = [spec('ops-delivery-readonly-isolated.spec.js')]
+const OPS_MANUAL_IMPORT_SPECS = [spec('ops-manual-import-isolated.spec.js')]
+const OPS_MCP_REQUEST_MATRIX_SPECS = [spec('ops-mcp-request-matrix.spec.js')]
+const OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS = [spec('ops-merchant-matrix-bootstrap.spec.js')]
+const OPS_MERCHANT_PROVISION_SPECS = [spec('ops-merchant-provision-live.spec.js')]
+const OPS_DELIVERY_CONTRACT_LINK_SPECS = [spec('ops-delivery-contract-link.spec.js')]
+const OPS_DELIVERY_ACCOUNT_ACCESS_SPECS = [spec('ops-delivery-account-access.spec.js')]
 
 /**
  * `package.json` entrypoints that declare browser coverage but that `npm run
@@ -131,23 +140,22 @@ const DECLARED_BROWSER_ENTRYPOINTS_UNINVOKED_BY_CHECK = [
  * Specs that `dogfood/chatgpt-all-functions/playwright.config.mjs` matches and
  * that no `test:browser:*` script runs. The ledger counts these as "scheduled",
  * because it credits a `playwright.config.*` `testMatch` — but nothing loads
- * that config, so no browser entrypoint executes them. Pin the list so the
- * ledger's over-claim stays visible and a change to either side is deliberate.
+ * that config for these specs, so no browser entrypoint executes them. The
+ * task-queue fixture is excluded because its dedicated script loads the config
+ * with an explicit spec path. Pin this list so the ledger's over-claim stays
+ * visible and a change to either side is deliberate.
  */
 const CONFIG_ONLY_BROWSER_SPECS = [
   spec('merchant-production-readonly.spec.js'),
   spec('merchant-workspace-roles.spec.js'),
-  spec('ops-delivery-account-access.spec.js'),
+  // These Ops workspace-denial probes import openWorkspaceConsole, which the
+  // current platform-only Ops auth helper does not export. Keep them visible
+  // as blocked until a supported workspace auth surface and isolated identity
+  // exist; never claim them as local browser coverage.
   spec('ops-delivery-auth-boundary.spec.js'),
-  spec('ops-delivery-contract-link.spec.js'),
   spec('ops-delivery-isolated.spec.js'),
   spec('ops-delivery-owner-acceptance.spec.js'),
-  spec('ops-delivery-readonly-isolated.spec.js'),
-  spec('ops-manual-import-isolated.spec.js'),
-  spec('ops-mcp-request-matrix.spec.js'),
-  spec('ops-merchant-matrix-bootstrap.spec.js'),
   spec('knowledge-lexical-upload-isolated.spec.js'),
-  spec('ops-merchant-provision-live.spec.js'),
 ].sort()
 
 const PLAYWRIGHT_CONFIG = `${DOGFOOD_DIR}/playwright.config.mjs`
@@ -201,6 +209,14 @@ describe('browser gate entrypoints', () => {
     expect(specPathsIn(command)).toEqual(MERCHANT_IMAGE_GENERATION_SPECS)
     const runner = readFileSync(resolve(root, 'scripts/run-ops-password-e2e.ts'), 'utf8')
     expect(runner).toContain("argument === 'dogfood/chatgpt-all-functions/image-generation-desktop.spec.js' && source.OPS_E2E_MERCHANT_UI === 'true'")
+  })
+
+  it('runs the task queue and split-group browser fixture with the dogfood Playwright config', () => {
+    const command = script('test:browser:merchant:task-queue')
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(specPathsIn(command)).toEqual(MERCHANT_TASK_QUEUE_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).toContain('TASK_QUEUE_BROWSER_FIXTURE=1')
   })
 
   it('runs global merchant workspace switching through a dedicated dual-workspace isolated fixture', () => {
@@ -304,6 +320,79 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
+  it('keeps the workspace-denial probes blocked until their missing Ops auth helper exists', () => {
+    const auth = readFileSync(resolve(root, `${DOGFOOD_DIR}/ops-auth.js`), 'utf8')
+    expect(auth).toContain('Ops Console is platform-only')
+    expect(auth).not.toContain('export async function openWorkspaceConsole')
+    expect(packageJson.scripts['test:browser:ops:delivery-isolated']).toBeUndefined()
+    expect(packageJson.scripts['test:browser:ops:delivery-owner']).toBeUndefined()
+    expect(script('test:browser:all')).not.toContain('test:browser:ops:delivery-isolated')
+    expect(script('test:browser:all')).not.toContain('test:browser:ops:delivery-owner')
+    for (const name of ['ops-delivery-auth-boundary.spec.js', 'ops-delivery-isolated.spec.js', 'ops-delivery-owner-acceptance.spec.js']) {
+      expect(CONFIG_ONLY_BROWSER_SPECS).toContain(spec(name))
+      expect(readFileSync(resolve(root, `${DOGFOOD_DIR}/${name}`), 'utf8')).toContain('openWorkspaceConsole')
+    }
+  })
+
+  it('runs read-only delivery through its dedicated disposable Ops fixture', () => {
+    const readonly = script('test:browser:ops:delivery-readonly')
+    expect(readonly).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(readonly)).toEqual(OPS_DELIVERY_READONLY_SPECS)
+    expect(readonly).toContain('--workers=1')
+    expect(readonly).not.toContain('OPS_E2E_DELIVERY_SCAN=true')
+  })
+
+  it('runs manual import alone with the dedicated isolated manual-operations mode', () => {
+    const command = script('test:browser:ops:manual-import')
+    expect(command).toContain('OPS_E2E_MANUAL_OPERATIONS=true')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_MANUAL_IMPORT_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs the MCP request matrix through the disposable Ops password-session fixture', () => {
+    const command = script('test:browser:ops:mcp-request-matrix')
+    expect(command).toContain('scripts/run-ops-password-e2e.ts')
+    expect(specPathsIn(command)).toEqual(OPS_MCP_REQUEST_MATRIX_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).not.toContain('--config')
+  })
+
+  it('runs merchant desktop matrix only through its isolated Ops plus Merchant fixture', () => {
+    expect(script('test:browser:merchant:desktop-matrix')).toBe('node --import tsx scripts/merchant-isolated-screenshot-matrix.ts')
+    const runner = readFileSync(resolve(root, 'scripts/merchant-isolated-screenshot-matrix.ts'), 'utf8')
+    expect(specPathsIn(runner)).toEqual(OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS)
+    expect(runner).toContain('OPS_E2E_MERCHANT_UI')
+    expect(runner).toContain('runOpsE2e(')
+    expect(runner).toContain('productionBrowser: false')
+  })
+
+  it('binds merchant provisioning only to the exact workspace from its disposable fixture', () => {
+    const command = script('test:browser:ops:merchant-provision-isolated')
+    expect(command).toBe('node --import tsx scripts/verify-ops-merchant-provision-isolated.ts')
+    const runner = readFileSync(resolve(root, 'scripts/verify-ops-merchant-provision-isolated.ts'), 'utf8')
+    expect(specPathsIn(runner)).toEqual(OPS_MERCHANT_PROVISION_SPECS)
+    expect(runner).toContain('OPS_E2E_MERCHANT_PROVISION = \'true\'')
+    expect(runner).toContain('fixture.workspaceId !== expectedWorkspaceId')
+    expect(runner).toContain('environment.OPS_PROVISION_QA_WORKSPACE_CONFIRMED = fixture.workspaceId')
+    expect(runner).toContain('environment.OPS_PROVISION_QA_WORKSPACE_ID = fixture.workspaceId')
+    expect(runner).toContain('url.hostname !== \'127.0.0.1\'')
+    expect(runner).toContain('OPS_PROVISION_OUTPUT_DIR = resolve(evidenceDir')
+  })
+
+  it.each([
+    ['test:browser:ops:delivery-contract-link', 'scripts/verify-customer-delivery-contract-link.ts', OPS_DELIVERY_CONTRACT_LINK_SPECS],
+    ['test:browser:ops:delivery-account-access', 'scripts/verify-customer-delivery-account-access.ts', OPS_DELIVERY_ACCOUNT_ACCESS_SPECS],
+  ])('keeps %s on its owner-run isolated verifier', (scriptName, verifier, expectedSpecs) => {
+    expect(script(scriptName)).toBe(`node --import tsx ${verifier}`)
+    const runner = readFileSync(resolve(root, verifier), 'utf8')
+    expect(specPathsIn(runner)).toEqual(expectedSpecs)
+    expect(runner).toContain('runOpsE2e(')
+    expect(runner).toContain('fixture')
+    expect(runner).not.toContain('https://yxsona.com')
+  })
+
   it('gives test:browser:ops:jit no spec, so it runs the runner fallback spec', () => {
     const command = script('test:browser:ops:jit')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
@@ -319,7 +408,7 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:merchant:members && npm run test:browser:merchant:workspace-switch && npm run test:browser:canonical-desktop && npm run test:browser:image-generation-desktop && npm run test:browser:merchant:image-generation-isolated && npm run test:browser:material-assets && npm run test:browser:merchant:publish-history && npm run test:browser:local-mocked-states && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:benefit-bundles && npm run test:browser:ops:refund && npm run test:browser:ops:matrix && npm run test:browser:ops:desktop-state && npm run test:browser:ops:account-label && npm run test:browser:ops:account-ownership && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:public-rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import')
+    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:merchant:members && npm run test:browser:merchant:workspace-switch && npm run test:browser:canonical-desktop && npm run test:browser:merchant:task-queue && npm run test:browser:merchant:brand-scope-upload-race && npm run test:browser:merchant:catalog-scope-future-date && npm run test:browser:merchant:global-catalog-search && npm run test:browser:image-generation-desktop && npm run test:browser:merchant:image-generation-isolated && npm run test:browser:material-assets && npm run test:browser:merchant:publish-history && npm run test:browser:local-mocked-states && npm run test:browser:merchant:desktop-matrix && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:benefit-bundles && npm run test:browser:ops:refund && npm run test:browser:ops:matrix && npm run test:browser:ops:desktop-state && npm run test:browser:ops:account-label && npm run test:browser:ops:account-ownership && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:public-rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import && npm run test:browser:ops:mcp-request-matrix && npm run test:browser:ops:delivery-readonly && npm run test:browser:ops:manual-import && npm run test:browser:ops:delivery-contract-link && npm run test:browser:ops:delivery-account-access && npm run test:browser:ops:merchant-provision-isolated')
     expect(all).not.toContain('test:browser:ops:jit')
   })
 
@@ -341,13 +430,14 @@ describe('browser gate entrypoints', () => {
     }
   })
 
-  it('keeps the only playwright config off the runners: no --config, no root config', () => {
+  it('keeps browser config resolution explicit and prevents accidental root config discovery', () => {
     const configs = filesOnDisk(root, name => /^playwright\.config\.[cm]?[jt]s$/u.test(name))
     expect(configs).toEqual([PLAYWRIGHT_CONFIG])
     // Playwright resolves a config directory-only from the process working
     // directory and does not walk upward. The runners inherit the repository
-    // root as cwd, which holds no config, so the dogfood config is never
-    // selected unless a caller passes it with --config — and none does.
+    // root as cwd, which holds no config. Most runners intentionally omit
+    // `--config`; the task-queue entrypoint is pinned above as the one explicit
+    // dogfood-config consumer.
     expect(configs.some(file => !file.includes('/')), 'a root-level playwright.config.* would change browser config resolution').toBe(false)
   })
 
@@ -356,7 +446,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_TASK_QUEUE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, ...OPS_DELIVERY_READONLY_SPECS, ...OPS_MANUAL_IMPORT_SPECS, ...OPS_MCP_REQUEST_MATRIX_SPECS, ...OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS, ...OPS_DELIVERY_CONTRACT_LINK_SPECS, ...OPS_DELIVERY_ACCOUNT_ACCESS_SPECS, ...OPS_MERCHANT_PROVISION_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

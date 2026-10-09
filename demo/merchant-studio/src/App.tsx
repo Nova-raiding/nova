@@ -129,8 +129,10 @@ import {
   createRechargeOrder,
   createCampaignBatch,
   createTask,
+  createTaskRequest,
   decideReviewFinding,
   describeApiError,
+  describeContentExportError,
   clearMerchantWorkspaceScope,
   configureMerchantWorkspaceScope,
   diffContentVersions,
@@ -239,6 +241,7 @@ import {
   type StorageQuotaProjection,
   type SyncJob,
   type Task,
+  type TaskRequestScope,
   type TaskFeedback,
   type TaskQuestion,
   type TaskTimelineEvent,
@@ -292,8 +295,13 @@ import {
   merchantNavigationPage,
   merchantRiskDestination,
   merchantRouteFromLocation,
+  urlForMerchantCatalogSearch,
+  urlForMerchantCatalogProductList,
+  urlForMerchantCatalogStore,
+  urlForMerchantCatalogStoreSelection,
   urlForMerchantRoute,
   type MerchantPage,
+  type MerchantPlatformId,
   type MerchantCatalogContext,
   type MerchantRoute,
   type MerchantRouteTarget,
@@ -309,7 +317,7 @@ import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
 import { PublishHistoryPanel } from './PublishHistoryPanel.js'
 import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBatchTarget } from './batch-target.js'
 import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
-import { resolveRuleContext, resolveRuleExecutionState } from './rule-context.js'
+import { resolveRuleContext, resolveRuleExecutionState, shouldShowSelectedCategory } from './rule-context.js'
 import { resolveDataConsistency } from './data-consistency.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
 import { resolveProductAssetRelation } from './product-assets.js'
@@ -3298,6 +3306,24 @@ type Target = {
 }
 
 const taskCreationRequests = new Map<string, Promise<Task>>()
+const isTaskRequestScopeChanged = (cause: unknown) => (cause as { code?: unknown } | null)?.code === 'TASK_REQUEST_SCOPE_CHANGED'
+
+function taskRequestScopesForPlan(plan: TaskUnderstanding['executionPlan']): TaskRequestScope[] {
+  return plan.childTasks.map((child) => {
+    const productId = child.candidateProductIds[0]
+    if (!productId) throw new Error(`平台 ${platformNames[child.platform]} 尚未绑定唯一商品，不能创建任务。`)
+    const skuIds = plan.mode === 'split_by_sku' || plan.splitBySku ? child.skuIds : undefined
+    return { platform: child.platform, productId, ...(skuIds?.length ? { skuIds } : {}) }
+  })
+}
+
+function taskRequestResultMatchesPlan(plan: TaskUnderstanding['executionPlan'], tasks: Task[]): boolean {
+  const expected = taskRequestScopesForPlan(plan).flatMap(scope => scope.skuIds?.length
+    ? scope.skuIds.map(skuId => `${scope.platform}:${scope.productId}:${skuId}`)
+    : [`${scope.platform}:${scope.productId}:`]).sort()
+  const actual = tasks.map(task => `${task.platform}:${task.productId}:${typeof task.answers?.sku_id === 'string' ? task.answers.sku_id : ''}`).sort()
+  return expected.length === actual.length && expected.every((scope, index) => scope === actual[index])
+}
 
 function createTaskOnce(
   baseUrl: string,
@@ -5325,17 +5351,13 @@ const defaultCatalogSeriesNames = ['未分类']
  * Exported for `reviewed-surface-data.test.ts`, which pins the default against
  * the names this function used to invent.
  */
-function CatalogProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
-  return (
-    <div className={`catalog-product-visual ${product.tone} ${large ? 'large' : ''}`} aria-hidden="true">
-      <span className="catalog-visual-shadow" />
-      <span className="catalog-visual-object"><ShoppingBag size={large ? 58 : 34} strokeWidth={1.35} /></span>
-      <em>STORE NOVA</em>
-    </div>
-  )
-}
-
 type CatalogFilterOption = { value: string; label: string }
+
+function CatalogProductMediaImage({ src, alt, className = '' }: { src: string; alt: string; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <span className={`catalog-media-unavailable ${className}`} role="img" aria-label={alt ? `${alt}暂不可用` : '商品图片暂不可用'}>图片暂不可用</span>
+  return <img className={className} src={src} alt={alt} referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+}
 
 function CatalogFilterMenu({
   label,
@@ -5442,13 +5464,12 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, onCatalogQueryChange, onCatalogStoreOpen, onCatalogStoreSelection, onCatalogProductList, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; onCatalogQueryChange: (query: string) => void; onCatalogStoreOpen: (store: { platform: MerchantPlatformId; accountId: string }) => void; onCatalogStoreSelection: () => void; onCatalogProductList: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(initialCatalogContext?.platform ?? null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(initialCatalogContext?.accountId ?? null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
-  const [selectedMediaIndex, setSelectedMediaIndex] = useState(1)
-  const [videoPlaying, setVideoPlaying] = useState(false)
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
   const [selectedSkuIndex, setSelectedSkuIndex] = useState(0)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [catalogQuery, setCatalogQuery] = useState(initialQuery)
@@ -5606,13 +5627,13 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     const now = Date.now()
     const filtered = storeProducts.filter((product) => {
       const matchesQuery = !normalizedQuery || `${product.title} ${product.subtitle}`.toLocaleLowerCase().includes(normalizedQuery)
-      // "Added in the last N days" is measured from today. A product whose
-      // server date was not returned is unknown, not recent.
+      // "Added in the last N days" excludes dates in the future. A product
+      // whose server date was not returned is unknown, not recent.
       const ageInDays = product.addedAt ? Math.floor((now - new Date(`${product.addedAt}T00:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY
       const matchesAddedTime = catalogAddedTime === 'all'
-        || (catalogAddedTime === '7-days' && ageInDays <= 7)
-        || (catalogAddedTime === '30-days' && ageInDays <= 30)
-        || (catalogAddedTime === '90-days' && ageInDays <= 90)
+        || (ageInDays >= 0 && catalogAddedTime === '7-days' && ageInDays <= 7)
+        || (ageInDays >= 0 && catalogAddedTime === '30-days' && ageInDays <= 30)
+        || (ageInDays >= 0 && catalogAddedTime === '90-days' && ageInDays <= 90)
       return matchesQuery && matchesAddedTime
     })
     if (catalogSort === 'added-asc') return [...filtered].sort((left, right) => left.addedAt.localeCompare(right.addedAt))
@@ -5634,19 +5655,29 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
 
 
 
-  const openStore = (storeId: string) => {
-    setSelectedStoreId(storeId)
+  const openStore = (platformId: string, accountId: string) => {
+    const store = catalogStores.find((item) => item.platformId === platformId && item.id === accountId)
+    if (!store || !platforms?.some((platform) => platform.id === store.platformId)) return
+    setSelectedPlatform(store.platformId)
+    setSelectedStoreId(store.id)
     setSelectedProductId(null)
     setCatalogQuery('')
+    onCatalogStoreOpen({ platform: store.platformId as MerchantPlatformId, accountId: store.id })
     setCatalogAddedTime('all')
     setCatalogSort('default')
     setCatalogSelectedIds([])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const returnToStoreSelection = () => {
+    setSelectedStoreId(null)
+    setSelectedProductId(null)
+    setCatalogQuery('')
+    setCatalogSelectedIds([])
+    onCatalogStoreSelection()
+  }
   const openProduct = (productId: string) => {
     setSelectedProductId(productId)
-    setSelectedMediaIndex(1)
-    setVideoPlaying(false)
+    setSelectedMediaIndex(0)
     setSelectedSkuIndex(0)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -5706,14 +5737,14 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   if (selectedStore && !selectedStore.catalogAccessible) {
     return (
       <div className="store-catalog-page catalog-connection-page">
-        <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺选择</button>
+        <button className="catalog-back" onClick={returnToStoreSelection}><ArrowLeft size={17} />返回店铺选择</button>
         {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权状态待核实</strong><span>当前店铺状态为“{selectedStore.connectionLabel}”。此页面不会发起授权或读取、同步平台数据；请联系客户经理确认平台接入方式。</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
         <section className="catalog-connection-required">
           <span className="catalog-disconnected-state"><i />未连接</span>
           <AlertCircle size={32} aria-hidden="true" />
           <h1>店铺尚未连接</h1>
           <p>请联系平台运营确认店铺登记和资料导入状态。</p>
-          <button onClick={() => setSelectedStoreId(null)}>返回店铺选择</button>
+          <button onClick={returnToStoreSelection}>返回店铺选择</button>
         </section>
       </div>
     )
@@ -5723,46 +5754,25 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     // Only the specifications the server published: this list used to be four
     // invented SKUs whose prices were derived from the product price.
     const skus = selectedProduct.skus
-    // The 「商品素材」 dialog that used to open from here listed four fabricated
-    // groups — 2 invented videos, 12 商品主图 slots, 2 images per SKU and 16
-    // 详情页图 slots — with invented 尺寸/文件大小, and every row's 「下载」 was a
-    // `data:text/plain` URL (the same broken pattern the material library's
-    // download was fixed for). Nothing ever opened it: `setActiveAssetGroupId`
-    // was only ever called with `null`, so the table was unreachable dead code
-    // carrying fabricated data. `GET /v1/assets` publishes no per-product
-    // material slots, so there was no server read to put in its place; the
-    // fabricated table is deleted rather than left for a future mount.
-    const galleryMedia = [
-      { label: '商品视频', video: true },
-      { label: '商品主图' },
-      { label: '使用场景' },
-      { label: '材质细节' },
-      { label: '尺寸说明' },
-    ]
+    const galleryMedia = selectedProduct.images
     const selectedSku = skus[selectedSkuIndex] ?? null
     return (
       <div className="store-catalog-page catalog-detail-page">
-        <button className="catalog-back" onClick={() => setSelectedProductId(null)}><ArrowLeft size={17} />返回商品列表</button>
+        <button className="catalog-back" onClick={() => { setSelectedProductId(null); onCatalogProductList() }}><ArrowLeft size={17} />返回商品列表</button>
         {!selectedStore.readable && <div className="info-notice" role="status">当前商品属于人工登记、未授权的店铺，只能读取工作区导入资料；这不代表平台同步或授权。</div>}
         <section className="catalog-commerce-detail">
           <div className="catalog-detail-gallery">
-            <div className={`catalog-detail-media media-${selectedMediaIndex} ${videoPlaying ? 'playing' : ''}`}>
-              <CatalogProductVisual product={selectedProduct} large />
-              <span className="catalog-media-label">{galleryMedia[selectedMediaIndex].label}</span>
-              {galleryMedia[selectedMediaIndex].video && (
-                <button className="catalog-video-play" type="button" aria-pressed={videoPlaying} onClick={() => setVideoPlaying((current) => !current)}>
-                  <Play size={22} fill="currentColor" />{videoPlaying ? '视频播放中' : '播放商品视频'}
-                </button>
-              )}
+            <div className="catalog-detail-media">
+              {galleryMedia.length ? <CatalogProductMediaImage key={galleryMedia[Math.min(selectedMediaIndex, galleryMedia.length - 1)]} src={galleryMedia[Math.min(selectedMediaIndex, galleryMedia.length - 1)]!} alt={`${selectedProduct.title}商品图片`} /> : <p role="status">暂无商品媒体</p>}
             </div>
-            <div className="catalog-detail-thumbs" aria-label="商品图片预览">
-              {galleryMedia.map((media, index) => (
-                <button type="button" className={selectedMediaIndex === index ? 'active' : ''} aria-label={`查看${media.label}`} aria-pressed={selectedMediaIndex === index} key={media.label} onClick={() => { setSelectedMediaIndex(index); setVideoPlaying(false) }}>
-                  {media.video ? <Play size={17} fill="currentColor" /> : <ImageIcon size={17} />}
-                  <small>{media.label}</small>
+            {!!galleryMedia.length && <div className="catalog-detail-thumbs" aria-label="商品图片预览">
+              {galleryMedia.map((image, index) => (
+                <button type="button" className={selectedMediaIndex === index ? 'active' : ''} aria-label={`查看商品图片 ${index + 1}`} aria-pressed={selectedMediaIndex === index} key={image} onClick={() => setSelectedMediaIndex(index)}>
+                  <CatalogProductMediaImage key={image} src={image} alt="" />
+                  <small>图片 {index + 1}</small>
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
           <div className="catalog-detail-info">
             <div className="catalog-detail-source"><span>{selectedStore.platform}</span><small>{selectedStore.name}</small></div>
@@ -5869,7 +5879,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
           <div className="catalog-products-toolbar">
             <div className="catalog-search-field">
               <Search size={16} aria-hidden="true" />
-              <input aria-label="搜索商品名称或关键词" placeholder="搜索商品名称或关键词" value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} />
+              <input aria-label="搜索商品名称或关键词" placeholder="搜索商品名称或关键词" value={catalogQuery} onChange={(event) => { setCatalogQuery(event.target.value); onCatalogQueryChange(event.target.value) }} />
             </div>
             <CatalogFilterMenu label="按添加时间筛选" value={catalogAddedTime} onChange={setCatalogAddedTime} options={[{ value: 'all', label: '全部添加时间' }, { value: '7-days', label: '近 7 天添加' }, { value: '30-days', label: '近 30 天添加' }, { value: '90-days', label: '近 90 天添加' }]} />
             <CatalogFilterMenu label="商品排序方式" value={catalogSort} onChange={setCatalogSort} options={[{ value: 'default', label: '添加时间从新到旧' }, { value: 'added-asc', label: '添加时间从旧到新' }]} />
@@ -5878,13 +5888,17 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
               <button className={viewMode === 'list' ? 'active' : ''} aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}><Rows3 size={16} />列表</button>
             </div>
           </div>
-          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
+          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={returnToStoreSelection}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
           {viewMode === 'list' && <div className="catalog-list-header"><span>商品图片</span><span>添加时间</span><span>商品名称</span><span>系列</span><span>商品卖点</span><span>价格</span></div>}
           <div className={`catalog-product-collection ${viewMode}`}>
             {pagedStoreItems.map((product) => (
               <article className={`catalog-product-card${catalogSelectedIds.includes(product.id) ? ' selected' : ''}`} key={product.id} role="button" tabIndex={0} onClick={() => openProduct(product.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openProduct(product.id) }}>
                 <label className="catalog-product-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择${product.title}`} checked={catalogSelectedIds.includes(product.id)} onChange={() => toggleCatalogProduct(product.id)} /><span><Check size={13} /></span></label>
-                <CatalogProductVisual product={product} />
+                <div className="catalog-product-card-media">
+                  {product.images[0]
+                    ? <CatalogProductMediaImage key={product.images[0]} src={product.images[0]} alt={`${product.title}商品图片`} />
+                    : <span role="status">暂无商品图片</span>}
+                </div>
                 <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt || '未读取'}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p><div className="catalog-product-price"><strong>{product.price === null ? '价格未读取' : `¥ ${product.price.toFixed(2)}`}</strong></div></div>
                 <ArrowRight className="catalog-product-arrow" size={18} />
               </article>
@@ -5941,7 +5955,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                   <article className={`catalog-store-card ${store.tone} ${store.readable ? 'connected' : 'disconnected'}`} key={store.id}>
                     <header className="catalog-store-identity"><span className="catalog-store-mark" aria-hidden="true">{store.mark}</span><div><h3>{store.name}</h3><small>{store.dataModeLabel}</small></div><span className={`catalog-live-state ${store.realConnected ? '' : 'disconnected'}`}><i />{store.connectionLabel}</span></header>
                     <div className="catalog-store-summary">{store.readable ? <><strong>{store.products === null ? '商品数量未读取' : <><b>{store.products}</b> 件商品</>}</strong><span>{store.syncLabel ? `最近同步：${store.syncLabel}` : '尚无同步记录'}</span></> : store.connectionLabel === '人工登记（未授权）' ? <><strong>{store.products === null ? '商品数量未读取' : store.products > 0 ? <><b>{store.products}</b> 件工作区导入商品</> : '店铺资料已登记'}</strong><span>平台未授权；商品资料由工作区人工导入，不代表平台同步</span></> : <><strong>店铺尚不可读取</strong><span>商品数据暂不可读</span></>}</div>
-                    <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.id)}>{store.catalogAccessible ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
+                <footer className="catalog-store-action"><button type="button" onClick={() => openStore(store.platformId, store.id)}>{store.catalogAccessible ? '进入商品库' : '查看状态'} <ArrowRight size={15} /></button></footer>
                   </article>
                 ))}
               </div>
@@ -6023,13 +6037,22 @@ const materialBrandFromScope = (value?: { color?: string; persona?: string; sell
   logoAssetId: value?.logoAssetId, documentAssetId: value?.documentAssetId,
 })
 
-export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void }) {
+export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded, scopeKey = 'unscoped' }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void; scopeKey?: string }) {
   const logoInputId = useId()
   const assetInputId = useId()
   // Upload responses may arrive after the merchant edits another field. Keep
   // the latest draft so applying the uploaded asset cannot restore stale text.
   const latestValueRef = useRef(value)
   latestValueRef.current = value
+  // The store/series card stays mounted while its scope changes. Track scope
+  // transitions synchronously during render so a late response cannot apply
+  // through an old onChange closure after switching away and back.
+  const draftTrackerRef = useRef({ scopeKey, value, generation: 0, revision: 0 })
+  if (draftTrackerRef.current.scopeKey !== scopeKey) {
+    draftTrackerRef.current = { scopeKey, value, generation: draftTrackerRef.current.generation + 1, revision: draftTrackerRef.current.revision + 1 }
+  } else if (draftTrackerRef.current.value !== value) {
+    draftTrackerRef.current = { ...draftTrackerRef.current, value, revision: draftTrackerRef.current.revision + 1 }
+  }
   const [draftColor, setDraftColor] = useState(value.color)
   const [assetUploadStatus, setAssetUploadStatus] = useState('')
   const [assetUploadError, setAssetUploadError] = useState('')
@@ -6047,10 +6070,20 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
     setAssetUploading(kind)
     setAssetUploadError('')
     setAssetUploadStatus('')
+    const requestScope = { ...draftTrackerRef.current }
     try {
       const uploaded = await uploadAsset(baseUrl, file)
       onAssetUploaded?.(uploaded, kind, file)
       const ready = isUsableBrandAsset(uploaded)
+      const currentScope = draftTrackerRef.current
+      if (currentScope.scopeKey !== requestScope.scopeKey || currentScope.generation !== requestScope.generation) {
+        setAssetUploadStatus(`${uploaded.name} 已上传到素材库；配置范围已切换，本次未写入品牌配置。请在目标范围重新选择该素材。`)
+        return
+      }
+      // Merge into the latest draft for this same scope. The captured revision
+      // lets us distinguish an intervening edit from an unchanged draft; using
+      // latestValueRef preserves those edits instead of restoring stale fields.
+      const draftChangedDuringUpload = currentScope.revision !== requestScope.revision
       const latestValue = latestValueRef.current
       if (kind === 'logo') {
         onChange({ ...latestValue, logoAssetId: uploaded.id, logoUrl: '', logoFileName: uploaded.name })
@@ -6058,8 +6091,8 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
         onChange({ ...latestValue, documentAssetId: uploaded.id, assetFileName: uploaded.name })
       }
       setAssetUploadStatus(ready
-        ? `${uploaded.name} 已上传并通过素材检查；保存后写入品牌配置。`
-        : `${uploaded.name} 已上传，素材 ID ${uploaded.id}；完成扫描、权益确认、解析和事实确认后才能保存引用。`)
+        ? `${uploaded.name} 已上传并通过素材检查；${draftChangedDuringUpload ? '已保留上传期间的编辑，' : ''}保存后写入品牌配置。`
+        : `${uploaded.name} 已上传，素材 ID ${uploaded.id}；${draftChangedDuringUpload ? '已保留上传期间的编辑；' : ''}完成扫描、权益确认、解析和事实确认后才能保存引用。`)
     } catch (cause) {
       setAssetUploadError(`品牌素材上传失败：${describeApiError(cause)}`)
     } finally {
@@ -6845,6 +6878,7 @@ export function MaterialLibraryWorkspace({
   const [imageBrandContexts, setImageBrandContexts] = useState<Record<string, { accountId: string; seriesName: string }>>({})
   const [scopedBrandRead, setScopedBrandRead] = useState<ScopedBrandRead | null>(null)
   const [scopedBrandBusy, setScopedBrandBusy] = useState(false)
+  const [scopedBrandLoading, setScopedBrandLoading] = useState(false)
   const [scopedBrandError, setScopedBrandError] = useState('')
   const [scopedBrandSaved, setScopedBrandSaved] = useState('')
   const [scopedBrandDraftDirty, setScopedBrandDraftDirty] = useState(false)
@@ -6879,8 +6913,9 @@ export function MaterialLibraryWorkspace({
   }
 
   useEffect(() => {
-    if (!baseUrl) { setScopedBrandRead(null); return }
+    if (!baseUrl) { setScopedBrandRead(null); setScopedBrandLoading(false); return }
     let active = true
+    setScopedBrandLoading(true)
     setScopedBrandError('')
     fetchScopedBrandSettings(baseUrl).then((read) => {
       if (!active) return
@@ -6902,7 +6937,8 @@ export function MaterialLibraryWorkspace({
       setImageBrands(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, materialBrandFromScope(entry.values)])))
       setImageBrandEnabled(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, entry.enabled])))
       setActiveBrandSeries((current) => read.series.some((entry) => entry.accountId === activeStoreId && entry.name === current) ? current : '未分类')
-    }).catch((cause) => { if (active) setScopedBrandError(`品牌配置读取失败：${describeApiError(cause)}`) })
+      setScopedBrandLoading(false)
+    }).catch((cause) => { if (active) { setScopedBrandError(`品牌配置读取失败：${describeApiError(cause)}`); setScopedBrandLoading(false) } })
     return () => { active = false }
   }, [baseUrl, activeStoreId])
 
@@ -7095,7 +7131,7 @@ export function MaterialLibraryWorkspace({
   const batchDownloadUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(selectedMaterials.map((item) => `${item.name} · ${item.category} · ${item.series} · ${item.fileSizeLabel}`).join('\n'))}`
 
   const saveMaterialBrandScopes = async () => {
-    if (!baseUrl || !scopedBrandRead || scopedBrandBusy) return
+    if (!baseUrl || !scopedBrandRead || scopedBrandBusy || scopedBrandLoading) return
     if (remoteAssets === null || assetsError) {
       setScopedBrandError(assetsError ? `素材列表读取失败，已阻止保存以保护现有品牌素材引用：${assetsError}` : '素材列表仍在读取，完成后才能安全保存品牌素材引用。')
       return
@@ -7167,10 +7203,12 @@ export function MaterialLibraryWorkspace({
   }
 
   const switchBrandStore = (storeId: string) => {
-    if (storeId === activeStoreId) return
+    if (storeId === activeStoreId || scopedBrandBusy) return
     const nextStore = stores.find((store) => store.id === storeId)
     if (!nextStore) return
     const commitSwitch = () => {
+      setScopedBrandDraftDirty(false)
+      setScopedBrandLoading(true)
       if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
       setStoreBrandTransition(`切换至 ${nextStore.name}`)
       setStoreChosenByMerchant(true)
@@ -7470,9 +7508,9 @@ export function MaterialLibraryWorkspace({
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
-        {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>}
+        {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy || scopedBrandLoading} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandLoading ? '正在读取品牌配置…' : scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandLoading ? '切换范围时暂不可保存，正在读取最新服务端配置…' : scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>}
         <article className="material-brand-row material-image-brand-row">
-          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" scopeKey={`image:${currentStorageScopeKey}:${detailMaterial.id}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
         <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
@@ -7489,8 +7527,8 @@ export function MaterialLibraryWorkspace({
             <h1>品牌资产</h1>
             <p>维护全局、系列与单图品牌信息。</p>
           </div>
-          {scopedBrandRead && (scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-library-brand-save">
-            {scopedBrandDraftDirty && <button type="button" className="material-upload-button" disabled={scopedBrandBusy || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button>}
+          {scopedBrandRead && (scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-library-brand-save">
+            {(scopedBrandDraftDirty || scopedBrandLoading) && <button type="button" className="material-upload-button" disabled={scopedBrandBusy || scopedBrandLoading || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandLoading ? '正在读取品牌配置…' : scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button>}
             {(scopedBrandError || scopedBrandSaved) && <span role="status">{scopedBrandError || scopedBrandSaved}</span>}
           </div>}
         </div>
@@ -7504,16 +7542,16 @@ export function MaterialLibraryWorkspace({
         {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
         <div className="material-brand-stack">
           {scopedBrandRead && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setGlobalBrand(next); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" scopeKey={`global:${currentStorageScopeKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setGlobalBrand(next); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
             <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={(enabled) => { setGlobalBrandEnabled(enabled); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setStoreBrands((current) => ({ ...current, [activeStoreId]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" scopeKey={`store:${currentStorageScopeKey}:${activeStoreId}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setStoreBrands((current) => ({ ...current, [activeStoreId]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} disabled={scopedBrandBusy} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
             <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => { setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="02" label="店铺配置" description="覆盖全局配置并应用到当前店铺" status={noReadableStoreReason} />}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card"><div className="material-brand-series-current"><span>当前系列</span><MaterialCategoryDropdown ariaLabel="选择品牌配置系列" value={activeBrandSeries} options={availableSeries.map((name) => ({ value: name, label: name }))} onChange={setActiveBrandSeries} /></div><button type="button" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)} disabled={!scopedBrandRead || activeStoreId === 'unclassified'}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>系列保存到当前店铺</strong></div><label><span>新系列名称</span><div><input value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={() => void createBrandSeries()} disabled={!newSeriesName.trim() || !scopedBrandRead}>创建</button></div></label></div>}</div>} /></div>
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} scopeKey={`series:${currentStorageScopeKey}:${activeSeriesKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card"><div className="material-brand-series-current"><span>当前系列</span><MaterialCategoryDropdown ariaLabel="选择品牌配置系列" value={activeBrandSeries} options={availableSeries.map((name) => ({ value: name, label: name }))} onChange={setActiveBrandSeries} /></div><button type="button" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)} disabled={!scopedBrandRead || activeStoreId === 'unclassified'}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>系列保存到当前店铺</strong></div><label><span>新系列名称</span><div><input value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={() => void createBrandSeries()} disabled={!newSeriesName.trim() || !scopedBrandRead}>创建</button></div></label></div>}</div>} /></div>
             <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
@@ -9966,6 +10004,8 @@ function TaskWorkspace({
   const [taskTotal, setTaskTotal] = useState(0)
   const [taskProducts, setTaskProducts] = useState<ApiProduct[]>([])
   const [taskPage, setTaskPage] = useState(0)
+  const [taskSearchDraft, setTaskSearchDraft] = useState('')
+  const [taskSearchQuery, setTaskSearchQuery] = useState('')
   const [product, setProduct] = useState<ApiProduct | null>(null)
   const [taskListError, setTaskListError] = useState('')
   const [taskListLoading, setTaskListLoading] = useState(Boolean(baseUrl))
@@ -9981,14 +10021,32 @@ function TaskWorkspace({
   const [directionsError, setDirectionsError] = useState('')
   const [directionsReloadKey, setDirectionsReloadKey] = useState(0)
   const [loading, setLoading] = useState(Boolean(baseUrl))
+  const [taskComposerInitializing, setTaskComposerInitializing] = useState(
+    Boolean(baseUrl && target?.productId),
+  )
+  const [taskComposerReadyScope, setTaskComposerReadyScope] = useState('')
+  const [taskContextReloadKey, setTaskContextReloadKey] = useState(0)
+  const [taskErrorRecovery, setTaskErrorRecovery] = useState<
+    'context' | 'understanding' | 'creation' | null
+  >(null)
   const [operation, setOperation] = useState('')
   const [error, setError] = useState('')
   const [taskCreationAttempted, setTaskCreationAttempted] = useState(false)
+  const [createdTaskGroup, setCreatedTaskGroup] = useState<{ mode: 'split_by_platform' | 'split_by_sku'; taskGroupId?: string; tasks: Task[]; matchesPlan: boolean } | null>(null)
+  const taskCreationIntentKey = useRef<{ scope: string; key: string } | null>(null)
+  const taskIntentOverride = useRef<{ targetScope: string; key: string } | null>(null)
+  const [taskCreationScopeChanged, setTaskCreationScopeChanged] = useState(false)
   const [titleEditOpen, setTitleEditOpen] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [titleEditError, setTitleEditError] = useState('')
   const targetProductId = target?.productId
   const targetPlatform = target?.platform ?? 'taobao'
+  const taskComposerScope = target
+    ? JSON.stringify([target.productId, target.platform, target.accountId ?? '', target.taskId ?? ''])
+    : ''
+  const isTaskComposerInitializing = taskComposerInitializing || Boolean(
+    baseUrl && targetProductId && taskComposerReadyScope !== taskComposerScope,
+  )
   const targetTitle = target?.title ?? '轻云防晒外套 2026'
   const topLevelDraft = evidenceSafeTopLevelContent(content?.body)
   const directionsData = resolveTaskDirections({
@@ -10033,17 +10091,41 @@ function TaskWorkspace({
       })),
     )
   }
+  const taskIntentTargetScope = (intentTarget: Target) => JSON.stringify([
+      getMerchantWorkspaceScope().activeWorkspaceId ?? 'unselected',
+      baseUrl ?? '',
+      intentTarget.productId,
+      intentTarget.platform,
+      intentTarget.accountId ?? '',
+    ])
+  const stableTaskIntentKey = (intentTarget: Target, text: string) => {
+    const targetScope = taskIntentTargetScope(intentTarget)
+    const overriddenKey = taskIntentOverride.current?.targetScope === targetScope ? taskIntentOverride.current.key : undefined
+    const scope = JSON.stringify([targetScope, overriddenKey ?? intentTarget.taskIntentKey ?? '', text.trim()])
+    if (taskCreationIntentKey.current?.scope === scope) return taskCreationIntentKey.current.key
+    const key = overriddenKey ?? intentTarget.taskIntentKey ?? crypto.randomUUID()
+    taskCreationIntentKey.current = { scope, key }
+    return key
+  }
   useEffect(() => {
     if (!baseUrl || !targetProductId || !target) {
       setLoading(false)
-      if (baseUrl) setError('请先从商品列表选择一个真实商品，再创建营销任务。')
+      setTaskComposerInitializing(false)
+      setTaskComposerReadyScope('')
+      if (baseUrl) {
+        setTaskErrorRecovery('context')
+        setError('请先从商品列表选择一个真实商品，再创建营销任务。')
+      }
       return
     }
     let cancelled = false
     setLoading(true)
+    setTaskComposerInitializing(true)
     setError('')
+    setTaskErrorRecovery(null)
     setOperation(target.taskId ? '恢复原任务…' : '读取商品事实…')
     setTaskCreationAttempted(false)
+    setCreatedTaskGroup(null)
     setTask(null)
     setProduct(null)
     setRemoteDirections(null)
@@ -10205,11 +10287,16 @@ function TaskWorkspace({
         }
       })
       .catch((cause) => {
-        if (!cancelled) setError(describeApiError(cause))
+        if (!cancelled) {
+          setTaskErrorRecovery('context')
+          setError(describeApiError(cause))
+        }
       })
       .finally(() => {
         if (!cancelled) {
           setLoading(false)
+          setTaskComposerInitializing(false)
+          setTaskComposerReadyScope(taskComposerScope)
           setOperation('')
         }
       })
@@ -10217,7 +10304,7 @@ function TaskWorkspace({
       cancelled = true
       contentReviewRequests.current.invalidate()
     }
-  }, [baseUrl, targetProductId, targetPlatform, target])
+  }, [baseUrl, targetProductId, targetPlatform, target, taskComposerScope, taskContextReloadKey])
   useEffect(() => {
     const requestId = ++taskDirectionsRequestId.current
     if (!baseUrl || !task) {
@@ -10267,6 +10354,7 @@ function TaskWorkspace({
     fetchTaskPage(baseUrl, {
       limit: MERCHANT_TASK_PAGE_SIZE,
       offset: taskPage * MERCHANT_TASK_PAGE_SIZE,
+      ...(taskSearchQuery ? { query: taskSearchQuery } : {}),
     })
       .then((result) => {
         if (requestId === taskListRequestId.current) {
@@ -10312,7 +10400,7 @@ function TaskWorkspace({
   }
   useEffect(() => {
     loadTaskList()
-  }, [baseUrl, target, taskPage])
+  }, [baseUrl, target, taskPage, taskSearchQuery])
   useEffect(() => {
     loadTaskProducts()
   }, [baseUrl, target, taskList])
@@ -10452,7 +10540,7 @@ function TaskWorkspace({
       window.setTimeout(() => URL.revokeObjectURL(url), 0)
       setExportMessage(artifact.verified === false ? '导出已生成，但服务端未提供有效性确认，请勿直接交付。' : `导出已生成：${artifact.filename}${artifact.sha256 ? `（SHA-256 ${artifact.sha256.slice(0, 12)}…）` : ''}`)
     } catch (error) {
-      setExportMessage(error instanceof Error ? error.message : '导出失败，请查看服务端门禁提示后重试')
+      setExportMessage(describeContentExportError(error))
     } finally {
       setOperation('')
     }
@@ -10566,15 +10654,19 @@ function TaskWorkspace({
       .finally(() => setFindingDecisionSubmitting(false))
   }
   const understand = () => {
-    if (!baseUrl || !requestText.trim()) return
+    if (!baseUrl || !requestText.trim() || isTaskComposerInitializing || operation) return
     setOperation('分析任务需求中…')
     setError('')
+    setTaskErrorRecovery(null)
     understandTask(baseUrl, requestText.trim())
       .then((next) => {
         setUnderstanding(next)
         window.requestAnimationFrame(() => requestInputRef.current?.focus())
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => {
+        setTaskErrorRecovery('understanding')
+        setError(describeApiError(cause))
+      })
       .finally(() => setOperation(''))
   }
   const createTaskFromIntent = async () => {
@@ -10588,8 +10680,10 @@ function TaskWorkspace({
     )
       return
     setTaskCreationAttempted(true)
+    setTaskCreationScopeChanged(false)
     setOperation('创建任务中…')
     setError('')
+    setTaskErrorRecovery(null)
     const selected = understanding.productCandidates.find(
       (candidate) => candidate.id === selectedCandidateId,
     )
@@ -10599,17 +10693,27 @@ function TaskWorkspace({
             ...target,
             productId: candidateProduct.id,
             title: candidateProduct.title,
-            platform: candidateProduct.platform,
             remoteId: candidateProduct.remoteId,
             accountId: candidateProduct.accountId,
             storeName: candidateProduct.storeName,
+            platform: candidateProduct.platform,
           }))
         : Promise.resolve(target)
-    taskTarget
-      .then((resolvedTarget) =>
-        createTaskOnce(baseUrl, resolvedTarget, requestText),
-      )
-      .then((current) => {
+    const intentKey = stableTaskIntentKey(target, requestText)
+    const creation = ['split_by_platform', 'split_by_sku'].includes(understanding.executionPlan.mode)
+      ? createTaskRequest(baseUrl, requestText.trim(), intentKey, taskRequestScopesForPlan(understanding.executionPlan))
+      : taskTarget.then((resolvedTarget) => createTaskOnce(baseUrl, { ...resolvedTarget, taskIntentKey: intentKey }, requestText))
+    Promise.resolve(creation)
+      .then((result) => {
+        const createdTasks = 'tasks' in result ? result.tasks : [result]
+        const current = createdTasks[0]
+        if (!current) throw new Error('服务端没有返回已创建的任务，请从任务列表核对结果。')
+        if ('tasks' in result && (result.mode === 'split_by_platform' || result.mode === 'split_by_sku')) {
+          const matchesPlan = taskRequestResultMatchesPlan(understanding.executionPlan, result.tasks)
+          setCreatedTaskGroup({ mode: result.mode, taskGroupId: result.taskGroupId, tasks: result.tasks, matchesPlan })
+          onContext(null)
+          return
+        }
         const nextQuestions =
           current.missingQuestions ?? understanding.questions
         setTask(current)
@@ -10633,7 +10737,11 @@ function TaskWorkspace({
         )
         onContext(null)
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => {
+        setTaskCreationScopeChanged(isTaskRequestScopeChanged(cause))
+        setTaskErrorRecovery('creation')
+        setError(describeApiError(cause))
+      })
       .finally(() => setOperation(''))
   }
   const retryTaskCreation = () => {
@@ -10643,10 +10751,25 @@ function TaskWorkspace({
     }
     if (!baseUrl || !target || !requestText.trim() || operation) return
     setTaskCreationAttempted(true)
+    setTaskCreationScopeChanged(false)
     setOperation('重新提交同一任务请求…')
     setError('')
-    createTaskOnce(baseUrl, target, requestText)
-      .then((current) => {
+    setTaskErrorRecovery(null)
+    const intentKey = stableTaskIntentKey(target, requestText)
+    const retry = understanding && ['split_by_platform', 'split_by_sku'].includes(understanding.executionPlan.mode)
+      ? createTaskRequest(baseUrl, requestText.trim(), intentKey, taskRequestScopesForPlan(understanding.executionPlan))
+      : createTaskOnce(baseUrl, { ...target, taskIntentKey: intentKey }, requestText)
+    Promise.resolve(retry)
+      .then((result) => {
+        const createdTasks = 'tasks' in result ? result.tasks : [result]
+        const current = createdTasks[0]
+        if (!current) throw new Error('服务端没有返回已创建的任务，请从任务列表核对结果。')
+        if ('tasks' in result && (result.mode === 'split_by_platform' || result.mode === 'split_by_sku')) {
+          const matchesPlan = understanding ? taskRequestResultMatchesPlan(understanding.executionPlan, result.tasks) : false
+          setCreatedTaskGroup({ mode: result.mode, taskGroupId: result.taskGroupId, tasks: result.tasks, matchesPlan })
+          onContext(null)
+          return
+        }
         setTask(current)
         onTaskResolved(current.id)
         setUnderstanding((currentUnderstanding) =>
@@ -10660,8 +10783,50 @@ function TaskWorkspace({
         )
         onContext(null)
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => {
+        setTaskCreationScopeChanged(isTaskRequestScopeChanged(cause))
+        setTaskErrorRecovery('creation')
+        setError(describeApiError(cause))
+      })
       .finally(() => setOperation(''))
+  }
+  const recoverTaskError = () => {
+    if (task) {
+      reloadExistingTask()
+      return
+    }
+    if (taskCreationScopeChanged) {
+      reanalyzeTaskRequest()
+      return
+    }
+    if (taskErrorRecovery === 'understanding') {
+      understand()
+      return
+    }
+    if (taskErrorRecovery === 'creation') {
+      retryTaskCreation()
+      return
+    }
+    setTaskContextReloadKey((current) => current + 1)
+  }
+  const reanalyzeTaskRequest = () => {
+    if (!baseUrl || operation || !requestText.trim()) return
+    if (!target || target.taskId) return
+    const newIntentKey = crypto.randomUUID()
+    taskIntentOverride.current = { targetScope: taskIntentTargetScope(target), key: newIntentKey }
+    taskCreationIntentKey.current = null
+    window.history.replaceState(null, '', urlForMerchantRoute(window.location, {
+      page: 'task',
+      target: { kind: 'product', productId: target.productId, platform: target.platform, accountId: target.accountId, intentKey: newIntentKey },
+    }))
+    setCreatedTaskGroup(null)
+    setTaskCreationAttempted(false)
+    setTaskCreationScopeChanged(false)
+    setUnderstanding(null)
+    setSelectedCandidateId('')
+    setQuestionAnswers({})
+    setError('')
+    understand()
   }
   const submitAnswer = (question: TaskQuestion) => {
     const answerValue = questionAnswers[question.id]?.trim() ?? ''
@@ -10826,7 +10991,7 @@ function TaskWorkspace({
   // A failed create response is not proof that no task was persisted. Keep this
   // state explicit so the UI never presents an empty, failed create as a saved task.
   const taskCreationUnconfirmed = Boolean(
-    target && !target.taskId && !task && taskCreationAttempted && error,
+    target && !target.taskId && !task && taskCreationAttempted && error && !taskCreationScopeChanged,
   )
   const taskStateBlocked = Boolean(task && !isKnownMerchantTaskState(task.state))
   // Keep the conversation mounted while a recoverable request error is shown.
@@ -10895,9 +11060,42 @@ function TaskWorkspace({
               ? '读取中…'
               : taskListError
                 ? '读取失败'
-                : `${taskTotal} 个任务`}
+                : `${taskTotal} 个${taskSearchQuery ? '匹配任务' : '任务'}`}
           </StatusChip>
         </section>
+        <form
+          className="task-queue-search"
+          role="search"
+          aria-label="搜索任务队列"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setTaskPage(0)
+            setTaskSearchQuery(taskSearchDraft.trim())
+          }}
+        >
+          <label htmlFor="task-queue-search-query">搜索任务 ID、商品名称或店铺名称</label>
+          <input
+            id="task-queue-search-query"
+            type="search"
+            value={taskSearchDraft}
+            onChange={(event) => setTaskSearchDraft(event.target.value)}
+            placeholder="输入任务 ID、商品名称或店铺名称"
+          />
+          <button type="submit" disabled={taskListLoading}>搜索</button>
+          {taskSearchQuery && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setTaskSearchDraft('')
+                setTaskSearchQuery('')
+                setTaskPage(0)
+              }}
+            >
+              清除搜索
+            </button>
+          )}
+        </form>
         <CampaignLifecyclePanel baseUrl={baseUrl} />
         <PublishHistoryPanel baseUrl={baseUrl} />
         {taskListLoading && <LoadingState label="正在读取营销任务…" />}
@@ -11038,12 +11236,38 @@ function TaskWorkspace({
           taskTotal === 0 && (
             <div className="empty-state">
               <Sparkles size={22} />
-              <b>暂无营销任务</b>
-              <span>从知识库选择商品即可创建营销任务。</span>
+              <b>{taskSearchQuery ? '没有匹配的营销任务' : '暂无营销任务'}</b>
+              <span>{taskSearchQuery ? '请调整关键词，或清除搜索查看全部任务。' : '从知识库选择商品即可创建营销任务。'}</span>
+              {taskSearchQuery && <button type="button" className="secondary" onClick={() => { setTaskSearchDraft(''); setTaskSearchQuery(''); setTaskPage(0) }}>清除搜索</button>}
             </div>
           )}
       </div>
     )
+  if (createdTaskGroup) return (
+    <div className="page-stack task-group-created-page">
+      <section className="panel" data-testid="task-group-created">
+        <div className="panel-heading">
+          <div>
+            <span className="section-kicker">跨平台任务组</span>
+            <h2>{createdTaskGroup.matchesPlan ? `已创建 ${createdTaskGroup.tasks.length} 个${createdTaskGroup.mode === 'split_by_platform' ? '独立平台' : '独立 SKU'}任务` : '任务组已创建，请核对返回范围'}</h2>
+          </div>
+          <StatusChip tone={createdTaskGroup.matchesPlan ? 'green' : 'amber'}>{createdTaskGroup.matchesPlan ? '创建回执已核对' : '需要核对'}</StatusChip>
+        </div>
+        <p>{createdTaskGroup.matchesPlan ? `每个${createdTaskGroup.mode === 'split_by_platform' ? '平台' : 'SKU'}任务分别保存，可逐项回答问题、生成和审核。` : '服务端返回范围与确认计划不同。下方链接指向实际创建的任务，请逐项核对后继续。'}</p>
+        {createdTaskGroup.taskGroupId && <p>任务组：{createdTaskGroup.taskGroupId}</p>}
+        <ul>
+          {createdTaskGroup.tasks.map((groupTask) => (
+            <li key={groupTask.id}>
+              <a href={urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: groupTask.id } })}>
+                {platformNames[groupTask.platform]} · 商品 {groupTask.productId} · 任务 {groupTask.id}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="secondary" onClick={onBack}>返回任务列表</button>
+      </section>
+    </div>
+  )
   return (
     <div className="task-shell">
       {timelineOpen && (
@@ -11281,7 +11505,25 @@ function TaskWorkspace({
         </div>
       </div>
       {loading && <LoadingState label={operation || '正在创建任务…'} />}
-      {taskCreationUnconfirmed ? (
+      {taskCreationScopeChanged && !task ? (
+        <section className="panel context-recovery-card" role="alert" aria-labelledby="task-scope-changed-title" data-testid="task-scope-changed-recovery">
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker">任务范围已变化</span>
+              <h3 id="task-scope-changed-title">原确认计划已失效</h3>
+            </div>
+            <span className="status-chip amber">需要重新确认</span>
+          </div>
+          <p>{error || '商品或 SKU 范围与已确认的执行计划不一致。服务端未创建任务，请重新分析并确认范围。'}</p>
+          <p>请重新分析当前需求后再创建；系统不会重试已失效的范围请求。</p>
+          <div className="button-row">
+            <button className="primary" onClick={reanalyzeTaskRequest} disabled={Boolean(operation)}>
+              {operation === '分析任务需求中…' ? '重新分析中…' : '重新分析当前需求'}
+            </button>
+            <button className="secondary" onClick={onBack}>查看任务列表</button>
+          </div>
+        </section>
+      ) : taskCreationUnconfirmed ? (
         <section
           className="panel context-recovery-card"
           role="alert"
@@ -11307,13 +11549,13 @@ function TaskWorkspace({
             <button className="primary" onClick={onBack}>
               查看任务列表
             </button>
-            <button
+            {!taskCreationScopeChanged && <button
               className="secondary"
               onClick={retryTaskCreation}
               disabled={Boolean(operation)}
             >
               使用同一请求重试
-            </button>
+            </button>}
           </div>
         </section>
       ) : (
@@ -11326,7 +11568,7 @@ function TaskWorkspace({
               storeName={target.storeName}
               onBackToProducts={onBackToProducts}
               onBackToTasks={onBack}
-              onReload={retryTaskCreation}
+              onReload={recoverTaskError}
             />
           </div>
         )
@@ -11550,7 +11792,7 @@ function TaskWorkspace({
               className="understanding-form"
               onSubmit={(event) => {
                 event.preventDefault()
-                if (!task) understand()
+                if (!task && !isTaskComposerInitializing && !operation) understand()
               }}
             >
               <div className="composer-field">
@@ -11563,23 +11805,27 @@ function TaskWorkspace({
                   value={requestText}
                   onChange={(event) => setRequestText(event.target.value)}
                   onKeyDown={(event) => {
-                    if (!task && event.key === 'Enter' && !event.shiftKey) {
+                    if (!task && !isTaskComposerInitializing && !operation && event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault()
                       understand()
                     }
                   }}
                   placeholder="例如：把这件商品同步到淘宝和拼多多，主推防晒卖点"
-                  readOnly={Boolean(task)}
+                  readOnly={Boolean(task) || isTaskComposerInitializing}
                   title={
                     task
                       ? '任务已创建；如需更换商品或平台，请返回商品列表重新选择'
-                      : undefined
+                      : isTaskComposerInitializing
+                        ? '正在读取商品身份，完成前无法编辑'
+                        : undefined
                   }
                 />
                 <small id="task-composer-help">
                   {task
                     ? '任务已创建；当前请求已锁定。请在下方回答待补充问题。'
-                    : '按 Enter 分析需求，Shift+Enter 换行'}
+                    : isTaskComposerInitializing
+                      ? '正在核对商品身份，完成后即可编辑任务描述。'
+                      : '按 Enter 分析需求，Shift+Enter 换行'}
                 </small>
               </div>
               <button
@@ -11588,6 +11834,7 @@ function TaskWorkspace({
                 disabled={
                   !baseUrl ||
                   !requestText.trim() ||
+                  isTaskComposerInitializing ||
                   Boolean(operation) ||
                   Boolean(task)
                 }
@@ -11612,6 +11859,8 @@ function TaskWorkspace({
                     <b>
                       {understanding.executionPlan.mode === 'split_by_platform'
                         ? `将拆成 ${understanding.executionPlan.childTasks.length} 个独立平台子任务`
+                        : understanding.executionPlan.mode === 'split_by_sku'
+                          ? `将拆成 ${understanding.executionPlan.childTasks.reduce((total, child) => total + (child.skuIds?.length ?? 0), 0)} 个独立 SKU 子任务`
                         : understanding.executionPlan.mode === 'single_task'
                           ? '单平台独立任务'
                           : '等待明确平台'}
@@ -11637,14 +11886,14 @@ function TaskWorkspace({
                         </b>
                         <small>
                           {child.bindingState === 'ready'
-                            ? '商品事实已读取'
+                            ? `商品事实已读取：${understanding.productCandidates.find(candidate => candidate.id === child.candidateProductIds[0])?.title ?? child.candidateProductIds[0] ?? '商品身份待确认'}`
                             : '不会复用其他平台商品'}
                         </small>
                       </article>
                     ))}
                   </div>
                 </div>
-                {understanding.productCandidates.length > 0 && (
+                {understanding.productCandidates.length > 0 && !['split_by_platform', 'split_by_sku'].includes(understanding.executionPlan.mode) && (
                   <div
                     className="understanding-candidates"
                     aria-label="商品候选"
@@ -12669,6 +12918,9 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
     (platform === 'all' || row.platforms.includes(platform)) &&
     matchesSearchText(`${row.name}${row.code}${row.fields.join('')}`, query),
   )
+  useEffect(() => {
+    setSelectedCategory(null)
+  }, [platform, query, tab])
   const attributeTemplateCount = new Set(
     categories.flatMap((category) => category.fields),
   ).size
@@ -12978,7 +13230,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
           </section>
         </section>
       )}
-      {selectedCategory && categoriesData.mode !== 'api_error' && (
+      {shouldShowSelectedCategory(tab, selectedCategory, filteredCategories) && selectedCategory && categoriesData.mode !== 'api_error' && (
         <section
           className="panel category-mapping-detail"
           data-testid="category-mapping-detail"
@@ -13581,7 +13833,10 @@ export default function App() {
     setMobileNav(false)
     setPublishModal(false)
     setUtilityPanel(null)
-    if (effectivePage === 'task') setTarget(resolvedTarget)
+    // Targets are route-scoped. Clear the previous product/task target when
+    // navigating to an unscoped page (especially Rules from the sidebar),
+    // while preserving an explicitly supplied target for programmatic routes.
+    setTarget(resolvedTarget)
     if (options.clearContext) {
       setTarget(resolvedTarget)
       setTaskContext(null)
@@ -13977,6 +14232,28 @@ export default function App() {
                       onRefreshModelStatus={refreshEnvironmentStatus}
                       onOpenKnowledge={() => navigateTo('products', { entry: 'knowledge' })}
                       onOpenSupport={() => openUtility('support')}
+                      onCatalogQueryChange={(query) => {
+                        setGlobalSearch(query)
+                        window.history.replaceState(null, '', urlForMerchantCatalogSearch(window.location, query))
+                      }}
+                      onCatalogStoreOpen={(store) => {
+                        setGlobalSearch('')
+                        setCatalogContext(store)
+                        window.history.replaceState(null, '', urlForMerchantCatalogStore(window.location, store))
+                      }}
+                      onCatalogStoreSelection={() => {
+                        setGlobalSearch('')
+                        setCatalogContext((current) => current?.platform ? { platform: current.platform } : undefined)
+                        window.history.replaceState(null, '', urlForMerchantCatalogStoreSelection(window.location))
+                      }}
+                      onCatalogProductList={() => {
+                        setCatalogContext((current) => current ? {
+                          ...(current.platform ? { platform: current.platform } : {}),
+                          ...(current.accountId ? { accountId: current.accountId } : {}),
+                          ...(current.intent ? { intent: current.intent } : {}),
+                        } : undefined)
+                        window.history.replaceState(null, '', urlForMerchantCatalogProductList(window.location))
+                      }}
                       initialQuery={globalSearch}
                       initialCatalogContext={catalogContext}
                     />
@@ -14026,7 +14303,7 @@ export default function App() {
                     }
                   />
                 )}
-                {page === 'rules' && <Rules baseUrl={apiBaseUrl} />}
+                {page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} />}
               </>
             )}
             </div>

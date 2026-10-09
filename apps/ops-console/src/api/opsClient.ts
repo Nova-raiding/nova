@@ -436,6 +436,53 @@ export function opsApiBase(): string {
   return resolved;
 }
 
+export type PaymentRuntimeMode = "provider" | "manual_transfer" | "fixture" | "unknown";
+export interface PaymentRuntimeReadiness {
+  mode: PaymentRuntimeMode;
+  ready: boolean;
+  reasons: string[];
+}
+
+/** Read payment readiness from the public health contract. A provider mode by
+ * itself does not authorize refunds: the effective production gate must be
+ * enabled and the server must report no blocking reasons. */
+export async function readPaymentRuntimeReadiness(): Promise<PaymentRuntimeReadiness> {
+  const unknown: PaymentRuntimeReadiness = { mode: "unknown", ready: false, reasons: [] };
+  const apiBase = opsApiBase();
+  if (!apiBase) return unknown;
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(`${apiBase}/healthz`, {
+      method: "GET",
+      credentials: shouldUseCookieCredentials() ? "include" : "same-origin",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) return unknown;
+    const body = await response.json().catch(() => null) as { data?: { payment?: { mode?: unknown; provider_configured?: unknown; effective?: unknown; state?: unknown; reasons?: unknown } } } | null;
+    const payment = body?.data?.payment;
+    const mode = payment?.mode;
+    if (!payment || mode !== "provider" && mode !== "manual_transfer" && mode !== "fixture") return unknown;
+    if (mode !== "provider") return { mode, ready: false, reasons: [] };
+    if (typeof payment.provider_configured !== "boolean"
+      || typeof payment.effective !== "boolean"
+      || payment.state !== "enabled" && payment.state !== "configured_but_blocked" && payment.state !== "not_configured"
+      || !Array.isArray(payment.reasons)
+      || !payment.reasons.every((reason): reason is string => typeof reason === "string")) return unknown;
+    const reasons = payment.reasons;
+    return {
+      mode,
+      ready: payment.provider_configured && payment.effective && payment.state === "enabled" && reasons.length === 0,
+      reasons,
+    };
+  } catch {
+    return unknown;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
 /**
  * The console must never manufacture a workspace or operator identity. In
  * local development the token is intentionally entered by the operator and

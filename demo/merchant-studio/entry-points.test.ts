@@ -28,17 +28,21 @@ describe('merchant new-session entry points', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=products', hash: '' }).entry).toBe('products')
   })
 
-  it('keeps the bare product route and broad task destinations on the screenshot-backed materials page', () => {
+  it('keeps the bare product route on materials and routes rules to its dedicated page', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '', hash: '' })).toMatchObject({ page: 'products', entry: 'knowledge' })
     expect(merchantRouteFromLocation({ pathname: '/merchant/tasks', search: '', hash: '' })).toEqual({ page: 'task', searchQuery: '' })
     expect(merchantRouteFromLocation({ pathname: '/merchant/publish', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
-    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '', hash: '' })).toEqual({ page: 'rules', searchQuery: '' })
   })
 
   it('keeps the legacy rules workflow scoped to the selected product catalog entry', () => {
     const url = urlForMerchantRoute({ pathname: '/', search: '' }, { page: 'rules', target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' } })
     expect(url).toBe('/merchant/rules?product_id=product-a&platform=taobao&account_id=store-a')
-    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toEqual({
+      page: 'rules',
+      searchQuery: '',
+      target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' },
+    })
   })
 
   it('does not trust malformed or cross-route deep-link identifiers as a local page state', () => {

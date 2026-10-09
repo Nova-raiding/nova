@@ -2,9 +2,32 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, domainHydrationPermissions, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
+import { createAuthorizationProjection } from "../authz/authorization.js";
+
+describe("domain hydration permissions", () => {
+  const authorization = (capabilities: string[]) => createAuthorizationProjection({
+    actor_id: "operator-1",
+    workspace_id: "platform",
+    roles: [],
+    workspace_granted: true,
+    capabilities,
+  }, true);
+
+  it("recomputes rule and knowledge loading gates when refreshed read grants arrive", () => {
+    const noGrants = authorization([]);
+    const rulesGranted = authorization(["rule.read"]);
+    const knowledgeGranted = authorization(["customer.content.read"]);
+
+    expect(domainHydrationPermissions("rules", "platform", noGrants).rules).toBe(false);
+    expect(domainHydrationPermissions("rules", "platform", rulesGranted).rules).toBe(true);
+    expect(domainHydrationPermissions("knowledge", "workspace", noGrants).knowledge).toBe(false);
+    expect(domainHydrationPermissions("knowledge", "workspace", knowledgeGranted).knowledge).toBe(true);
+    expect(domainHydrationPermissions("rules", "workspace", rulesGranted).rules).toBe(false);
+  });
+});
 
 describe("selectStoreScope", () => {
   it("updates the selected store and loads its automation scope", async () => {
@@ -132,19 +155,18 @@ describe("access denied evidence", () => {
 });
 
 describe("openBrandStore", () => {
-  it("sets the exact store queue scope, navigates to tasks, and refreshes", async () => {
+  it("sets the exact store queue scope and carries it in the task route", async () => {
     const setQueueFilters = vi.fn();
-    const load = vi.fn(async () => undefined);
     const onNavigate = vi.fn();
+    const onNavigateWithQuery = vi.fn();
 
-    await expect(openBrandStore({ setQueueFilters, load }, onNavigate, "taobao", "store-1")).resolves.toBe(true);
+    await expect(openBrandStore({ setQueueFilters }, onNavigate, "taobao", "store-1", onNavigateWithQuery)).resolves.toBe(true);
 
     expect(setQueueFilters).toHaveBeenCalledWith({ platform: "taobao", accountId: "store-1" });
-    expect(onNavigate).toHaveBeenCalledWith("tasks");
-    expect(load).toHaveBeenCalledWith({ queueFilters: { platform: "taobao", accountId: "store-1" } });
-    await expect(openBrandStore({ setQueueFilters, load }, onNavigate, "unknown", "store-1")).resolves.toBe(false);
+    expect(onNavigateWithQuery).toHaveBeenCalledWith("tasks", { platform: "taobao", accountId: "store-1" });
+    expect(onNavigate).not.toHaveBeenCalled();
+    await expect(openBrandStore({ setQueueFilters }, onNavigate, "unknown", "store-1", onNavigateWithQuery)).resolves.toBe(false);
     expect(setQueueFilters).toHaveBeenCalledTimes(1);
-    expect(onNavigate).toHaveBeenCalledTimes(1);
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(onNavigateWithQuery).toHaveBeenCalledTimes(1);
   });
 });

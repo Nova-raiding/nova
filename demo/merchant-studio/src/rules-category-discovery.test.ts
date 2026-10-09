@@ -15,7 +15,7 @@ describe('merchant rule and category discovery', () => {
       page: 'rules',
       searchQuery: '',
     })
-    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} />}")
+    expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} />}")
   })
 
   it('filters category cards by selected platform and reports filtered results', () => {

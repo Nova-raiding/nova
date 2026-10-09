@@ -63,12 +63,17 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
   const [selected, setSelected] = useState<OpsIncident>()
   const [timeline, setTimeline] = useState<IncidentTimelineEntry[]>([])
   const [timelineNextCursor, setTimelineNextCursor] = useState<string>()
+  const [detailVerified, setDetailVerified] = useState(false)
+  const [timelineVerified, setTimelineVerified] = useState(false)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
+  const [timelineError, setTimelineError] = useState('')
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState('')
   const listRequests = useRef(new IncidentRequestGate())
   const detailRequests = useRef(new IncidentRequestGate())
+  const selectedIncidentId = useRef<string | undefined>(undefined)
 
   const load = useCallback(async (options: { append?: boolean; filters?: IncidentFilters } = {}) => {
     const request = listRequests.current.begin()
@@ -93,53 +98,95 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
 
   const select = useCallback(async (incident: OpsIncident) => {
     const request = detailRequests.current.begin()
+    selectedIncidentId.current = incident.id
     setSelected(incident)
+    setDetailVerified(false)
     setTimeline([])
+    setTimelineVerified(false)
     setTimelineNextCursor(undefined)
-    setDetailLoading(true)
+    setDetailError('')
+    setTimelineError('')
     setError('')
+    setDetailLoading(true)
+    const [detailResult, timelineResult] = await Promise.allSettled([
+      client.get(incident.id),
+      client.timeline({ incidentId: incident.id, limit: 200 }),
+    ])
+    if (!detailRequests.current.isCurrent(request)) return
+    if (detailResult.status === 'fulfilled') {
+      setSelected(detailResult.value)
+      setDetailVerified(true)
+    } else {
+      setDetailError(errorMessage(detailResult.reason))
+    }
+    if (timelineResult.status === 'fulfilled') {
+      setTimeline(timelineResult.value.items)
+      setTimelineNextCursor(timelineResult.value.nextCursor)
+      setTimelineVerified(true)
+    } else {
+      setTimelineError(errorMessage(timelineResult.reason))
+    }
+    setDetailLoading(false)
+  }, [client])
+
+  const retryDetail = useCallback(() => {
+    if (selected) void select(selected)
+  }, [select, selected])
+
+  const retryTimeline = useCallback(async () => {
+    if (!selected) return
+    const request = detailRequests.current.begin()
+    setDetailLoading(true)
+    setTimelineError('')
     try {
-      const [detail, page] = await Promise.all([client.get(incident.id), client.timeline({ incidentId: incident.id, limit: 200 })])
+      const page = await client.timeline({ incidentId: selected.id, limit: 200 })
       if (!detailRequests.current.isCurrent(request)) return
-      setSelected(detail)
       setTimeline(page.items)
       setTimelineNextCursor(page.nextCursor)
+      setTimelineVerified(true)
     } catch (cause) {
-      if (detailRequests.current.isCurrent(request)) setError(errorMessage(cause))
+      if (detailRequests.current.isCurrent(request)) setTimelineError(errorMessage(cause))
     } finally {
       if (detailRequests.current.isCurrent(request)) setDetailLoading(false)
     }
-  }, [client])
+  }, [client, selected])
 
   const loadMoreTimeline = useCallback(async () => {
     if (!selected || !timelineNextCursor) return
     const request = detailRequests.current.begin()
     setDetailLoading(true)
-    setError('')
+    setTimelineError('')
     try {
       const page = await client.timeline({ incidentId: selected.id, limit: 200, cursor: timelineNextCursor })
       if (!detailRequests.current.isCurrent(request)) return
       setTimeline((current) => mergeTimelinePage(current, page.items))
       setTimelineNextCursor(page.nextCursor)
+      setTimelineVerified(true)
     } catch (cause) {
-      if (detailRequests.current.isCurrent(request)) setError(errorMessage(cause))
+      if (detailRequests.current.isCurrent(request)) setTimelineError(errorMessage(cause))
     } finally {
       if (detailRequests.current.isCurrent(request)) setDetailLoading(false)
     }
   }, [client, selected, timelineNextCursor])
 
-  const acceptMutation = useCallback((result: IncidentMutationResult) => {
+  const acceptMutation = useCallback((result: IncidentMutationResult, selectResult = true) => {
     setIncidents((current) => mergeIncidentPage(current, [result.incident]))
-    setSelected(result.incident)
-    setTimeline((current) => mergeTimelinePage(current, [result.event]))
+    if (selectResult) {
+      selectedIncidentId.current = result.incident.id
+      setSelected(result.incident)
+      setDetailVerified(true)
+      setTimeline((current) => mergeTimelinePage(current, [result.event]))
+      setTimelineVerified(true)
+    }
     return result
   }, [])
 
-  const runMutation = useCallback(async (operation: () => Promise<IncidentMutationResult>) => {
+  const runMutation = useCallback(async (operation: () => Promise<IncidentMutationResult>, shouldSelectResult: (result: IncidentMutationResult) => boolean = () => true) => {
     setMutating(true)
     setError('')
     try {
-      return acceptMutation(await operation())
+      const result = await operation()
+      return acceptMutation(result, shouldSelectResult(result))
     } catch (cause) {
       setError(errorMessage(cause))
       throw cause
@@ -149,18 +196,28 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
   }, [acceptMutation])
 
   const create = useCallback((input: Parameters<IncidentsClient['create']>[0]) => runMutation(() => client.create(input)), [client, runMutation])
-  const comment = useCallback((input: Parameters<IncidentsClient['comment']>[0]) => runMutation(() => client.comment(input)), [client, runMutation])
-  const transition = useCallback((input: Parameters<IncidentsClient['transition']>[0]) => runMutation(() => client.transition(input)), [client, runMutation])
-  const assignCommander = useCallback((input: Parameters<IncidentsClient['assignCommander']>[0]) => runMutation(() => client.assignCommander(input)), [client, runMutation])
-  const updateScope = useCallback((input: Parameters<IncidentsClient['updateScope']>[0]) => runMutation(() => client.updateScope(input)), [client, runMutation])
+  const runDetailMutation = useCallback((operation: () => Promise<IncidentMutationResult>) => {
+    if (!detailVerified || !selected) throw new Error('事故详情尚未验证，无法执行操作。')
+    const requestedIncidentId = selected.id
+    return runMutation(operation, (result) => selectedIncidentId.current === requestedIncidentId && result.incident.id === requestedIncidentId)
+  }, [detailVerified, runMutation, selected])
+  const comment = useCallback((input: Parameters<IncidentsClient['comment']>[0]) => runDetailMutation(() => client.comment(input)), [client, runDetailMutation])
+  const transition = useCallback((input: Parameters<IncidentsClient['transition']>[0]) => runDetailMutation(() => client.transition(input)), [client, runDetailMutation])
+  const assignCommander = useCallback((input: Parameters<IncidentsClient['assignCommander']>[0]) => runDetailMutation(() => client.assignCommander(input)), [client, runDetailMutation])
+  const updateScope = useCallback((input: Parameters<IncidentsClient['updateScope']>[0]) => runDetailMutation(() => client.updateScope(input)), [client, runDetailMutation])
 
   const close = useCallback(() => {
     detailRequests.current.invalidate()
+    selectedIncidentId.current = undefined
     setSelected(undefined)
+    setDetailVerified(false)
     setTimeline([])
+    setTimelineVerified(false)
     setTimelineNextCursor(undefined)
+    setDetailError('')
+    setTimelineError('')
     setDetailLoading(false)
   }, [])
 
-  return { filters, incidents, nextCursor, selected, timeline, timelineNextCursor, loading, detailLoading, mutating, error, setFilters, load, select, loadMoreTimeline, close, create, comment, transition, assignCommander, updateScope }
+  return { filters, incidents, nextCursor, selected, detailVerified, detailError, timelineVerified, timeline, timelineNextCursor, timelineError, loading, detailLoading, mutating, error, setFilters, load, select, retryDetail, retryTimeline, loadMoreTimeline, close, create, comment, transition, assignCommander, updateScope }
 }

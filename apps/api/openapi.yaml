@@ -6198,6 +6198,7 @@ components:
         from_at: { type: string, minLength: 1, maxLength: 64 }
         to_at: { type: string, minLength: 1, maxLength: 64 }
         status: { type: string, minLength: 1, maxLength: 64 }
+        cursor: { type: string, minLength: 1, maxLength: 4096 }
         limit: { type: string, maxLength: 3, pattern: '^(?:[1-9]|[1-9][0-9]|100)$' }
       additionalProperties: false
     McpParamsGenerated206:

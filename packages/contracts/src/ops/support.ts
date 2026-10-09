@@ -6,6 +6,16 @@ export const supportTicketStatuses = [
   'closed',
 ] as const
 
+/** Valid status targets for an existing ticket. Shared by API validation and
+ * operator controls so the UI never offers a transition the service rejects. */
+export const supportTicketTransitions = {
+  open: ['in_progress', 'closed'],
+  in_progress: ['open', 'waiting_customer', 'resolved'],
+  waiting_customer: ['in_progress', 'resolved'],
+  resolved: ['in_progress', 'closed'],
+  closed: ['in_progress'],
+} as const satisfies Readonly<Record<SupportTicketStatus, readonly SupportTicketStatus[]>>
+
 export const supportTicketPriorities = ['low', 'normal', 'high', 'urgent'] as const
 export const supportTicketEventTypes = ['created', 'assigned', 'status_changed', 'commented', 'sla_at_risk', 'sla_breached'] as const
 export const supportRoles = ['support', 'platform_ops'] as const

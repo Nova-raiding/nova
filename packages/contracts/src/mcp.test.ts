@@ -35,6 +35,7 @@ describe('MCP method contract', () => {
       'jsonrpc 必须为 2.0', 'id 必须是字符串、数字或 null', 'method 不在允许的 MCP 方法列表中',
     ])
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'catalog.search', params: [] }).errors).toEqual(['params 必须是对象'])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'workspace.health', params: null }).errors).toEqual(['params 必须是对象'])
     expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'delivery.bundle.verify', params: { manifest_json: '{broken' } }).errors).toContain('params.manifest_json 必须是有效的 JSON')
   })
 
@@ -135,6 +136,13 @@ describe('MCP method contract', () => {
     expect(request({}).valid).toBe(false)
     expect(request({ job_id: 'job_1', visual_ref: 'visual_1' }).valid).toBe(false)
     expect(request({ job_id: ' ' }).valid).toBe(false)
+  })
+
+  it('accepts a confirmed JSON expected scope on task.request.create', () => {
+    const request = (expected_scopes: string) => validateMcpRequest({ jsonrpc: '2.0', id: 'task-scope', method: 'task.request.create', params: { request_text: '请按确认范围创建任务', expected_scopes } })
+    expect(MCP_METHOD_SCHEMAS['task.request.create'].properties.expected_scopes).toMatchObject({ type: 'string', contentMediaType: 'application/json', jsonShape: 'array' })
+    expect(request('[{"platform":"taobao","product_id":"product-1","sku_ids":["sku-a"]}]').valid).toBe(true)
+    expect(request('{"platform":"taobao"}').valid).toBe(false)
   })
 
   it('requires a ticket, task, or order scope for customer-visible support replies', () => {
@@ -340,6 +348,8 @@ describe('MCP method contract', () => {
     ])
     expect(MCP_METHOD_SCHEMAS['catalog.sync'].required).toEqual(['platform'])
     expect(MCP_METHOD_SCHEMAS['catalog.import'].properties.skus_json?.type).toBe('string')
+    expect(MCP_METHOD_SCHEMAS['catalog.search'].properties.date_from).toMatchObject({ type: 'string', format: 'date-time' })
+    expect(MCP_METHOD_SCHEMAS['catalog.search'].properties.date_to).toMatchObject({ type: 'string', format: 'date-time' })
     expect(MCP_METHOD_SCHEMAS['ops.platform.product.import.batch'].properties.store_assignment_confirmed).toEqual({ type: 'string', enum: ['true'] })
     expect(MCP_METHOD_SCHEMAS['asset.facts.confirm'].required).toEqual(['asset_id', 'facts_json', 'reason'])
     expect(MCP_METHOD_SCHEMAS['asset.preference.update'].properties.verdict?.enum).toEqual(['excellent', 'disliked', 'unrated'])

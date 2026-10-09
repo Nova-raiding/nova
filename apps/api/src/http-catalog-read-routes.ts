@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Task, type TaskState } from '../../../packages/application/src/service.js'
 import type { PostgresBusinessRepository } from '../../../packages/persistence/src/business-repository.js'
 import { ERROR_CODES, PLATFORMS, TASK_STATES } from '../../../packages/contracts/src/index.js'
+import { normalizeCatalogDateRange } from './catalog-search-dates.js'
 
 export interface HttpCatalogReadRouteDependencies {
   service: Pick<MerchantService, 'listProducts' | 'listTasks'>
@@ -31,6 +32,7 @@ function paginatedResult<T>(url: URL, items: T[]) {
 export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: HttpCatalogReadRouteDependencies): Promise<boolean> {
   const { service, business, resolveWorkspace, accessibleTaskBrandIds, accessibleProductIds, filterByTaskBrandAccess, send } = deps
   if (req.method === 'GET' && path === '/v1/products') {
+    const dateRange = normalizeCatalogDateRange(url.searchParams.get('date_from') ?? undefined, url.searchParams.get('date_to') ?? undefined)
     const platform = url.searchParams.get('platform')
     if (platform !== null && !(PLATFORMS as readonly string[]).includes(platform)) {
       throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
@@ -51,6 +53,7 @@ export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: Serv
         ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
         ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
         ...(factsConfirmed !== null ? { factsConfirmed: factsConfirmed === 'true' } : {}),
+        ...dateRange,
       }), null, req)
       return true
     }
@@ -60,6 +63,7 @@ export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: Serv
       ...(platform ? { platform: platform as Platform } : {}),
       ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
       ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
+      ...dateRange,
     }).filter(product => accessibleIds === undefined || accessibleIds.has(product.id))
       .filter(product => factsConfirmed === null || product.factsConfirmed === (factsConfirmed === 'true'))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))

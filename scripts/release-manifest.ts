@@ -6,6 +6,7 @@ import { countMerchantBridgeTools } from './merchant-bridge-surface.js'
 import { releaseGitShaForRoot } from './release-identity.js'
 import { verifyPluginReleaseDescriptor } from './plugin-release-descriptor.mjs'
 import { verifyLocalPluginTestAttestation } from './local-plugin-test-attestation.mjs'
+import { pluginSkillMirrors } from './plugin-skill-mirrors.js'
 
 export interface ReleaseManifest {
   schemaVersion: 1
@@ -58,7 +59,6 @@ export function buildReleaseManifest(input: {
   const root = resolve(input.root ?? process.cwd())
   const pluginManifestPath = resolve(root, 'apps/plugin/.codex-plugin/plugin.json')
   const packagePath = resolve(root, 'apps/plugin/package.json')
-  const skillPath = resolve(root, 'apps/plugin/skills/merchant-marketing/SKILL.md')
   const bridgePath = resolve(root, 'apps/plugin/mcp/bridge.mjs')
   const pluginManifest = readJson(pluginManifestPath)
   const packageJson = readJson(packagePath)
@@ -107,9 +107,12 @@ export function buildReleaseManifest(input: {
     resolve(root, 'tests/demo-254-old-runtime-capsule.test.mjs'),
     pluginManifestPath,
     packagePath,
-    skillPath,
     bridgePath,
+    resolve(root, '.codex-marketplace/plugins/merchant-marketing/.codex-plugin/plugin.json'),
+    resolve(root, '.codex-marketplace/plugins/merchant-marketing/package.json'),
     resolve(root, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'),
+    resolve(root, 'scripts/plugin-skill-mirrors.ts'),
+    ...pluginSkillMirrors.flatMap(([sourcePath, marketplacePath]) => [resolve(root, sourcePath), resolve(root, marketplacePath)]),
     resolve(root, 'apps/api/openapi.yaml'),
     resolve(root, 'packages/contracts/src/mcp.ts'),
     resolve(root, 'services/payment-gateway/index.mjs'),

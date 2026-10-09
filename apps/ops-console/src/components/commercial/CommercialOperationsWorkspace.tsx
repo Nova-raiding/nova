@@ -230,6 +230,30 @@ function emptyForFilter(controller: CommercialOperationsController, label: strin
   </Empty>;
 }
 
+export function commercialTimelineDateBoundary(value: string, endOfDay = false): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
+  return date.getTime();
+}
+
+export function commercialTimelineMatchesDateRange(occurredAt: string, fromDate: string, toDate: string): boolean {
+  const at = Date.parse(occurredAt);
+  if (!Number.isFinite(at)) return false;
+  const start = fromDate ? commercialTimelineDateBoundary(fromDate) : undefined;
+  const end = toDate ? commercialTimelineDateBoundary(toDate, true) : undefined;
+  if ((fromDate && start === undefined) || (toDate && end === undefined)) return false;
+  return (start === undefined || at >= start) && (end === undefined || at <= end);
+}
+
+export function commercialTimelineHasFilters(query: { query: string; status: string }, fromDate: string, toDate: string): boolean {
+  return Boolean(query.query || query.status || fromDate || toDate);
+}
+
 function tablePagination(controller: CommercialOperationsController, total?: number) {
   return { current: controller.query.page, pageSize: 20, ...(total === undefined ? {} : { total }), showSizeChanger: false };
 }
@@ -436,15 +460,24 @@ function ServicesTable({ state, controller }: { state: CommercialOperationsContr
   {controller.permissions.canWriteService ? <Alert type="info" showIcon title="履约写入已接入" description="使用下方履约操作面板创建分配、排期、开始、完成或调整；每个动作都要求 revision、幂等键、原因和证据。" /> : null}</>}</DataBoundary>;
 }
 
-function TimelineTable({ state, controller }: { state: CommercialOperationsController["data"]["timeline"]; controller: CommercialOperationsController }) {
+export function TimelineTable({ state, controller }: { state: CommercialOperationsController["data"]["timeline"]; controller: CommercialOperationsController }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const items = useMemo(() => filteredRows(state.data?.items ?? [], controller).filter((item) => {
-    const at = Date.parse(item.occurredAt);
-    return (!fromDate || at >= Date.parse(`${fromDate}T00:00:00Z`)) && (!toDate || at <= Date.parse(`${toDate}T23:59:59.999Z`));
+    return commercialTimelineMatchesDateRange(item.occurredAt, fromDate, toDate);
   }).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [state.data?.items, controller.query.query, controller.query.status, fromDate, toDate]);
   const selection = useDeepLinkedSelection(items, controller);
-  return <DataBoundary state={state} capability={commercialViewCapability.timeline} onRetry={() => void controller.loadView("timeline")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("timeline")} showStatus /><Space wrap><Typography.Text type="secondary">时间范围</Typography.Text><Input type="date" aria-label="时间范围起始" value={fromDate} onChange={event => setFromDate(event.target.value)} /><Typography.Text type="secondary">至</Typography.Text><Input type="date" aria-label="时间范围结束" value={toDate} onChange={event => setToDate(event.target.value)} /><Typography.Text type="secondary">Workspace：{controller.targetWorkspaceId || "未选择"}</Typography.Text></Space><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} locale={{ emptyText: emptyForFilter(controller, "商业时间线事件") }} dataSource={items} scroll={{ x: 1540 }} columns={[
+  const hasFilters = commercialTimelineHasFilters(controller.query, fromDate, toDate);
+  const clearFilters = () => {
+    setFromDate(""); setToDate("");
+    controller.setQuery({ query: "", status: "", page: 1 }, "replace");
+  };
+  const emptyState = <Empty description={hasFilters ? "当前筛选没有商业时间线事件" : "服务端未返回商业时间线事件"}>{hasFilters ? <Button onClick={clearFilters}>清除筛选</Button> : null}</Empty>;
+  const setDate = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    controller.setQuery({ page: 1 }, "replace");
+  };
+  return <DataBoundary state={state} capability={commercialViewCapability.timeline} onRetry={() => void controller.loadView("timeline")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} truncated={state.data?.truncated === true} controller={controller} onRefresh={() => void controller.loadView("timeline")} showStatus />{state.data?.sourceTruncated ? <Alert type="warning" showIcon title="时间线来源达到单源读取上限，当前聚合可能不完整" description="加载更多只继续读取已聚合事件；部分更早的底层账本、履约或审计事件可能未进入本次聚合，请结合对应事实来源核验。" /> : null}<Space wrap><Typography.Text type="secondary">时间范围（本地日期）</Typography.Text><Input type="date" aria-label="时间范围起始" value={fromDate} onChange={event => setDate(setFromDate, event.target.value)} /><Typography.Text type="secondary">至</Typography.Text><Input type="date" aria-label="时间范围结束" value={toDate} onChange={event => setDate(setToDate, event.target.value)} /><Typography.Text type="secondary">Workspace：{controller.targetWorkspaceId || "未选择"}</Typography.Text></Space><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} locale={{ emptyText: emptyState }} dataSource={items} scroll={{ x: 1540 }} columns={[
     { title: "时间", dataIndex: "occurredAt", fixed: "left", width: 190, render: time },
     { title: "事件", dataIndex: "kind", width: 220, render: value => <StateTag value={value} /> },
     { title: "状态", dataIndex: "status", width: 140, render: value => <StateTag value={value} /> },
@@ -453,7 +486,7 @@ function TimelineTable({ state, controller }: { state: CommercialOperationsContr
     { title: "Trace", dataIndex: "traceId", width: 190, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
     { title: "操作者", dataIndex: "actorId", width: 150, render: dash },
     { title: "操作", fixed: "right", width: 90, render: (_, row) => <Button size="small" onClick={event => selection.open(row, event.currentTarget)} aria-label={`查看商业时间线事件 ${row.id}`}>详情</Button> },
-  ]} /><Drawer title="商业时间线证据" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
+  ]} />{state.data?.nextCursor ? <Button block style={{ minHeight: 44 }} loading={controller.timelineLoadingMore} disabled={controller.timelineLoadingMore || state.status === "loading"} onClick={() => void controller.loadMoreTimeline()}>加载更多商业时间线事件</Button> : null}<Drawer title="商业时间线证据" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
     { key: "id", label: "事件 ID", children: <Typography.Text code>{selection.selected.id}</Typography.Text> },
     { key: "correlation", label: "Operation / Trace / Request", children: <Typography.Text code>{dash(selection.selected.operationId)} / {dash(selection.selected.traceId)} / {dash(selection.selected.requestId)}</Typography.Text> },
     { key: "actor", label: "操作者", children: dash(selection.selected.actorId) }, { key: "reason", label: "原因", children: dash(selection.selected.reason) },
@@ -1024,7 +1057,7 @@ export function CommercialRefundOperationsPanel({ controller }: { controller: Co
     : refundState.status === "error" ? <Alert type="error" showIcon title="退款记录读取失败" description={refundState.error?.message ?? "服务端未返回退款记录"} action={<Button onClick={refreshRefunds}>重试</Button>} />
       : refundState.status === "loading" && !refundState.data ? <Skeleton active paragraph={{ rows: 3 }} />
         : <>
-          <Space><Typography.Text strong>服务端退款请求与状态</Typography.Text><Typography.Text type="secondary">{refundItems.length} 条事件（同一请求的申请、审批、完成均保留）</Typography.Text><Button size="small" icon={<ReloadOutlined />} onClick={refreshRefunds}>刷新记录</Button></Space>
+          <Space><Typography.Text strong>服务端退款请求与状态</Typography.Text><Typography.Text type="secondary">已加载 {refundItems.length} / {refundState.data?.total ?? refundItems.length} 条事件（同一请求的申请、审批、完成均保留）</Typography.Text><Button size="small" icon={<ReloadOutlined />} onClick={refreshRefunds}>刷新记录</Button></Space>
           <Table<CommercialRefundEvent> rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={refundItems} locale={{ emptyText: "服务端未返回退款记录" }} scroll={{ x: 1420 }} columns={[
             { title: "事件时间", dataIndex: "createdAt", width: 180, render: time },
             { title: "状态", dataIndex: "eventType", width: 120, render: (value: string) => <StateTag value={refundEventLabel(value)} semanticValue={value} /> },
@@ -1037,6 +1070,7 @@ export function CommercialRefundOperationsPanel({ controller }: { controller: Co
             { title: "外部退款凭证", dataIndex: "externalRefundId", width: 210, render: dash },
             { title: "操作", width: 100, render: (_, row) => <Button size="small" onClick={() => selectRefund(row)}>选择记录</Button> },
           ]} />
+          {refundState.data?.nextCursor ? <Button block style={{ minHeight: 44 }} loading={controller.refundsLoadingMore} disabled={controller.refundsLoadingMore} onClick={() => void controller.loadMoreRefunds()}>加载更多退款事件</Button> : null}
         </>;
   return <section aria-label="商业订单退款" className="commercial-manual-operations">
     <Typography.Title level={5}>商业订单退款 / 点数回滚</Typography.Title>

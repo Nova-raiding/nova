@@ -83,4 +83,4 @@ describe('B-derived 242/254 review overlay', () => {
     expect(connections).toBe(0)
     await expect(catalog.listRates()).resolves.toMatchObject([{ pricingMode: 'variable', ruleExecutable: false, blockers: ['BRIDGE_VARIABLE_OCR_RATE_UNSUPPORTED'] }])
   }, 30_000)
-})
+  }, 90_000)

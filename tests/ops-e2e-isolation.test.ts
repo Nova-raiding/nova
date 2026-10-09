@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
-import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eFailureReport, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateOpsE2eArguments, validateOpsE2eBrowserTimeout, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
+import { createOpsPasswordProxy, disposeOpsE2eResources, fetchOpsE2eHealth, isolatedManualOperationsMode, monitorOpsE2eScanner, opsChildEnvironment, opsE2eFailureReport, opsE2eScanPurpose, productImportPointGrantInput, productImportSyntheticSku, runOpsE2e, validateMerchantProvisionMode, validateOpsE2eArguments, validateOpsE2eBrowserTimeout, validateOpsE2eScannerStartupTimeout, validateOpsE2eSpecIsolation } from '../scripts/run-ops-password-e2e.js'
 
 const { forbidRuntimeResources } = vi.hoisted(() => ({
   forbidRuntimeResources: vi.fn(() => { throw new Error('OPS_E2E_RESOURCE_CREATION_ATTEMPTED') }),
@@ -114,6 +114,18 @@ describe('Ops browser acceptance isolation', () => {
     await expect(runOpsE2e([spec], {})).rejects.toThrow('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
     await expect(runOpsE2e([spec, other], { OPS_E2E_MANUAL_OPERATIONS: 'true' })).rejects.toThrow('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
     await expect(runOpsE2e(['dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js', other], {})).rejects.toThrow('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    expect(forbidRuntimeResources).not.toHaveBeenCalled()
+  })
+  it('requires merchant provisioning to bind one generated workspace in a disposable dual-UI fixture', async () => {
+    const spec = 'dogfood/chatgpt-all-functions/ops-merchant-provision-live.spec.js'
+    const other = 'dogfood/chatgpt-all-functions/ops-users.spec.js'
+    const mode = { OPS_E2E_MERCHANT_UI: 'true', OPS_E2E_MERCHANT_PROVISION: 'true' }
+    expect(validateOpsE2eArguments([spec, '--workers=1'], mode)).toEqual([spec, '--workers=1'])
+    expect(validateMerchantProvisionMode(mode, [spec, '--workers=1'], true)).toBe(true)
+    expect(validateMerchantProvisionMode({}, [spec], false)).toBe(false)
+    await expect(runOpsE2e([spec], mode)).rejects.toThrow('OPS_E2E_MERCHANT_PROVISION_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    await expect(runOpsE2e([spec, other], mode)).rejects.toThrow('OPS_E2E_MERCHANT_PROVISION_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    await expect(runOpsE2e([spec], { ...mode, OPS_E2E_MERCHANT_WORKSPACE_SWITCH: 'true' }, undefined, async () => {})).rejects.toThrow('OPS_E2E_MERCHANT_PROVISION_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
     expect(forbidRuntimeResources).not.toHaveBeenCalled()
   })
   it('requires public rule upload to use its dedicated isolated fixture and designated admin', async () => {

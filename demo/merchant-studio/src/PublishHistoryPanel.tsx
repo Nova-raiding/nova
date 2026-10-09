@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   describeApiError,
   fetchManualPublishRecordPage,
+  getPublishJob,
   fetchPublishJobPage,
   MERCHANT_PUBLISH_PAGE_SIZE,
   type ApiPage,
@@ -91,6 +92,7 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
   const [manualPage, setManualPage] = useState(0)
   const [reload, setReload] = useState(0)
   const [jobs, setJobs] = useState<ApiPage<PublishJob> | null>(null)
+  const [focusedJob, setFocusedJob] = useState<PublishJob | null>(null)
   const [manual, setManual] = useState<ApiPage<ManualPublishRecord> | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -101,6 +103,19 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
     setError('')
     if (!baseUrl) return
     setLoading(true)
+    if (kind === 'jobs' && focusJobId) {
+      setFocusedJob(null)
+      getPublishJob(baseUrl, focusJobId).then(job => {
+        if (currentId === requestId.current) setFocusedJob(job)
+      }).catch(cause => {
+        if (currentId === requestId.current)
+          setError(`无法读取指定发布任务 ${focusJobId}：${describeApiError(cause)}`)
+      }).finally(() => {
+        if (currentId === requestId.current) setLoading(false)
+      })
+      return () => { requestId.current++ }
+    }
+    setFocusedJob(null)
     const read = kind === 'jobs'
       ? fetchPublishJobPage(baseUrl, { limit: MERCHANT_PUBLISH_PAGE_SIZE, offset: jobPage * MERCHANT_PUBLISH_PAGE_SIZE })
       : fetchManualPublishRecordPage(baseUrl, { limit: MERCHANT_PUBLISH_PAGE_SIZE, offset: manualPage * MERCHANT_PUBLISH_PAGE_SIZE })
@@ -123,7 +138,7 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
       if (currentId === requestId.current) setLoading(false)
     })
     return () => { requestId.current++ }
-  }, [baseUrl, kind, jobPage, manualPage, reload])
+  }, [baseUrl, kind, jobPage, manualPage, reload, focusJobId])
 
   const page = kind === 'jobs' ? jobs : manual
   const index = kind === 'jobs' ? jobPage : manualPage
@@ -142,11 +157,12 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
       </div>
       {!baseUrl && <div className="info-notice" role="status">配置服务端后可读取真实发布记录。</div>}
       {baseUrl && loading && <div className="info-notice" role="status">正在读取发布记录…</div>}
-      {baseUrl && !loading && error && <div className="error-notice" role="alert">读取发布记录失败：{error} <button type="button" onClick={() => setReload(value => value + 1)}>重试</button></div>}
-      {baseUrl && !loading && !error && page?.total === 0 && <div className="empty-state">当前没有{kind === 'jobs' ? '发布任务' : '人工发布报告'}。</div>}
-      {baseUrl && !loading && !error && kind === 'jobs' && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} focusJobId={focusJobId} />)}
+      {baseUrl && !loading && error && <div className="error-notice" role="alert">{focusJobId && kind === 'jobs' ? error : `读取发布记录失败：${error}`} <button type="button" onClick={() => setReload(value => value + 1)}>重试</button>{focusJobId && kind === 'jobs' && <a className="text-button" href={urlForMerchantRoute(window.location, { page: 'task' })}>返回发布记录列表</a>}</div>}
+      {baseUrl && !loading && !error && !(kind === 'jobs' && focusJobId) && page?.total === 0 && <div className="empty-state">当前没有{kind === 'jobs' ? '发布任务' : '人工发布报告'}。</div>}
+      {baseUrl && !loading && !error && kind === 'jobs' && focusJobId && focusedJob && <PublishJobRecord job={focusedJob} taskHref={openTask(focusedJob.taskId)} focusJobId={focusJobId} />}
+      {baseUrl && !loading && !error && kind === 'jobs' && !focusJobId && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} />)}
       {baseUrl && !loading && !error && kind === 'manual' && manual?.items.map(record => <ManualPublishRecordRow key={record.id} record={record} taskHref={openTask(record.taskId)} />)}
-      {baseUrl && !loading && !error && page && page.total > 0 && <div className="task-list-pagination">
+      {baseUrl && !loading && !error && !(kind === 'jobs' && focusJobId) && page && page.total > 0 && <div className="task-list-pagination">
         <span>第 {index + 1} / {count} 页，共 {page.total} 条</span>
         <div>
           <button type="button" onClick={() => kind === 'jobs' ? setJobPage(value => value - 1) : setManualPage(value => value - 1)} disabled={index === 0}>上一页</button>

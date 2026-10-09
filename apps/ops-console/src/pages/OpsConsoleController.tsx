@@ -12,12 +12,25 @@ import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlFo
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
 import { AccessDeniedResult } from "../components/authz/AccessDeniedResult.js";
 import { domainReadCapabilities } from "../authz/authorization.js";
+import type { AuthorizationProjection } from "../authz/authorization.js";
 import type { OpsWorkbench } from "../types/ops.js";
 import { urlForWorkbench, workbenchIntentFromLocation } from "../navigation/opsWorkbenchLocation.js";
 import { UnsavedChangesProvider, useUnsavedChangesState } from "../components/authz/UnsavedChangesContext.js";
 import { normalizeDiagnosticTokens, opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 
 const { Content } = Layout;
+
+export function domainHydrationPermissions(
+  activeDomain: OpsDomain,
+  activeWorkbench: OpsWorkbench,
+  authorization: AuthorizationProjection,
+) {
+  return {
+    rules: activeDomain === "rules" && activeWorkbench === "platform" && canViewOpsDomain("rules", authorization),
+    knowledge: activeDomain === "knowledge" && activeWorkbench === "workspace" && canViewOpsDomain("knowledge", authorization),
+    users: activeDomain === "users" && canViewOpsDomain("users", authorization),
+  };
+}
 
 export function commitOpsWorkbenchTransition(
   next: OpsWorkbench,
@@ -303,27 +316,27 @@ function Dashboard({
     model.modelStatus?.state === "ready" &&
     model.modelStatus.relay?.configured === true &&
     readOpsConnectionConfig().workbench === "platform";
+  // Depend on the effective read permissions, not only the actor id or a
+  // write-capability flag. A session refresh can grant rule/knowledge read
+  // access without changing either of those values.
+  const hydrationPermissions = domainHydrationPermissions(activeDomain, activeWorkbench, model.authorization);
 
   useEffect(() => {
     // Keep domain-specific hydration behind the same client-side visibility
     // gate as navigation. The API remains authoritative, but an operator
     // should not generate predictable 403 noise for domains they cannot use
     // every time the overview or refresh action runs.
-    const canRead = (domain: Parameters<typeof canViewOpsDomain>[0]) =>
-      canViewOpsDomain(domain, model.authorization);
-    if (activeDomain === "rules" && activeWorkbench === "platform" && canRead("rules"))
-      void model.loadRules();
-    if (activeDomain === "knowledge" && activeWorkbench === "workspace" && canRead("knowledge"))
-      void model.load();
+    if (hydrationPermissions.rules) void model.loadRules();
+    if (hydrationPermissions.knowledge) void model.load();
     if (canAutoLoadModelMarkup) void model.loadModelMarkup();
-    if (activeDomain === "users" && canRead("users")) {
+    if (hydrationPermissions.users) {
       // loadUsers owns cancellation for its previous directory request. Do
       // not cancel here: this effect can rerun when the session projection
       // settles, and aborting the just-started request makes a healthy API
       // response look like a timeout in the directory.
       void model.loadUsers();
     }
-  }, [activeDomain, canAutoLoadModelMarkup, model.canUserGovernance, model.opsSession?.actor_id]);
+  }, [activeDomain, canAutoLoadModelMarkup, hydrationPermissions.knowledge, hydrationPermissions.rules, hydrationPermissions.users, model.canUserGovernance, model.opsSession?.actor_id]);
 
   if (!model.opsSession && (!hasOpsConnection() || expectedUnauthenticated || sessionError)) {
     return (

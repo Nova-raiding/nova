@@ -21,12 +21,13 @@ describe('MCP envelope validation', () => {
     { label: 'wrong JSON-RPC version', envelope: { jsonrpc: '1.0', id: 1 }, expected: 'jsonrpc must be 2.0' },
     { label: 'missing request id', envelope: { jsonrpc: '2.0' }, expected: 'id must be a string, number, or null' },
     { label: 'object request id', envelope: { jsonrpc: '2.0', id: { attacker: true } }, expected: 'id must be a string, number, or null' },
+    { label: 'explicit null params', envelope: { jsonrpc: '2.0', id: 1, params: null }, expected: 'MCP params 必须是 JSON 对象' },
   ])('rejects $label before dispatching schema-override methods', async ({ envelope, expected }) => {
     const base = await start()
     const response = await fetch(`${base}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
-      body: JSON.stringify({ ...envelope, method: 'catalog.image.review', params: {} }),
+      body: JSON.stringify({ params: {}, ...envelope, method: 'catalog.image.review' }),
     })
     const payload = await response.json() as { error?: { code?: string; message?: string } }
 

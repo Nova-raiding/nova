@@ -36,8 +36,8 @@ describe('PostgresBusinessRepository', () => {
     expect(client.calls[2]?.text).toContain("lower(coalesce(data->>'localProductKey','')) LIKE '%' || lower($5) || '%' ESCAPE '!'")
     expect(client.calls[2]?.text).toContain("lower(coalesce(category,'')) LIKE '%' || lower($6) || '%' ESCAPE '!'")
     expect(client.calls[2]?.text).toContain("lower(images::text) LIKE '%' || lower($7) || '%' ESCAPE '!'")
-    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(8).fill('STYLE-42')])
-    expect(client.calls[3]?.text).toContain('LIMIT $10 OFFSET $11')
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(10).fill('STYLE-42')])
+    expect(client.calls[3]?.text).toContain('LIMIT $12 OFFSET $13')
   })
 
   it('searches task account ids in the normalized SQL page', async () => {
@@ -48,8 +48,20 @@ describe('PostgresBusinessRepository', () => {
     client.enqueue({ data: { id: 'task_1', accountId: 'store-42' } })
     client.enqueue() // COMMIT
     await new PostgresBusinessRepository(new RecordingPool(client)).listTasksPage('ws_one', { limit: 10, offset: 0, query: 'store-42' })
-    expect(client.calls[2]?.text).toContain("lower(coalesce(platform_account_id,'')) LIKE '%' || lower($5) || '%' ESCAPE '!'")
-    expect(client.calls[2]?.values).toEqual(['ws_one', 'store-42', 'store-42', 'store-42', 'store-42'])
+    expect(client.calls[2]?.text).toContain("lower(coalesce(platform_account_id,'')) LIKE '%' || lower($6) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(5).fill('store-42')])
+  })
+
+  it('searches task list rows by the associated product store name', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // tenant scope
+    client.enqueue({ total: '1' })
+    client.enqueue({ data: { id: 'task_1' } })
+    client.enqueue() // COMMIT
+    await new PostgresBusinessRepository(new RecordingPool(client)).listTasksPage('ws_one', { limit: 10, offset: 0, query: '杭州旗舰店' })
+    expect(client.calls[2]?.text).toContain("lower(products.store_name) LIKE '%' || lower($5) || '%' ESCAPE '!'")
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(5).fill('杭州旗舰店')])
   })
 
   it.each([
@@ -70,9 +82,9 @@ describe('PostgresBusinessRepository', () => {
     const pageQuery = client.calls[3]!
     expect(page).toEqual({ items: [{ id: 'prod_literal' }], total: 1, limit: 10, offset: 0 })
     expect(countQuery.text).toContain("lower(title) LIKE '%' || lower($3) || '%' ESCAPE '!'")
-    expect(countQuery.values).toEqual(['ws_one', ...Array(8).fill(escaped)])
+    expect(countQuery.values).toEqual(['ws_one', ...Array(10).fill(escaped)])
     expect(pageQuery.text).toContain("lower(title) LIKE '%' || lower($3) || '%' ESCAPE '!'")
-    expect(pageQuery.values).toEqual(['ws_one', ...Array(8).fill(escaped), 10, 0])
+    expect(pageQuery.values).toEqual(['ws_one', ...Array(10).fill(escaped), 10, 0])
   })
 
   it.each([
@@ -113,7 +125,7 @@ describe('PostgresBusinessRepository', () => {
     expect(page).toEqual({ items: [{ id: 'prod_taobao', platform: 'taobao' }], total: 1, limit: 10, offset: 0 })
     expect(client.calls[2]?.text).toContain("lower(platform) LIKE '%' || lower($8) || '%' ESCAPE '!'")
     expect(client.calls[2]?.text).toContain("lower(CASE platform WHEN 'jd' THEN '京东' WHEN 'taobao' THEN '淘宝'")
-    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(8).fill('淘宝')])
+    expect(client.calls[2]?.values).toEqual(['ws_one', ...Array(10).fill('淘宝')])
   })
 
   it.each([
@@ -134,9 +146,9 @@ describe('PostgresBusinessRepository', () => {
     const pageQuery = client.calls[3]!
     expect(page).toEqual({ items: [{ id: 'task_literal' }], total: 1, limit: 10, offset: 0 })
     expect(countQuery.text).toContain("lower(products.title) LIKE '%' || lower($4) || '%' ESCAPE '!'")
-    expect(countQuery.values).toEqual(['ws_one', ...Array(4).fill(escaped)])
+    expect(countQuery.values).toEqual(['ws_one', ...Array(5).fill(escaped)])
     expect(pageQuery.text).toContain("lower(products.title) LIKE '%' || lower($4) || '%' ESCAPE '!'")
-    expect(pageQuery.values).toEqual(['ws_one', ...Array(4).fill(escaped), 10, 0])
+    expect(pageQuery.values).toEqual(['ws_one', ...Array(5).fill(escaped), 10, 0])
   })
 
   it('saves a versioned snapshot and rejects stale writes', async () => {

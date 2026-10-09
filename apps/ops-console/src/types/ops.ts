@@ -67,6 +67,7 @@ export type Member = {
   updatedAt: string;
 };
 export type PlatformUser = Member & {
+  createdAt?: string;
   workspaceId: string;
   enterpriseName?: string;
   accountType?: "merchant" | "platform";
@@ -712,6 +713,8 @@ export type PlatformOperation = {
 export type StoreDirectory = {
   workspaceId?: string;
   aggregate?: boolean;
+  /** Number of underlying stores represented by a redacted platform aggregate row. */
+  count?: number;
   platform: Platform;
   accountId: string;
   alias?: string;

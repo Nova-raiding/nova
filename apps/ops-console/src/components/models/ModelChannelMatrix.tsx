@@ -80,10 +80,10 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
             render: (value: boolean) => <Tag color={value ? "blue" : "red"}>{value ? "配置门禁通过" : "未通过"}</Tag>,
           },
           {
-            title: "最终状态",
+            title: "配置与额度门禁",
             dataIndex: "ready",
             width: 120,
-            render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? "可用" : "阻断"}</Tag>,
+            render: (value: boolean) => <Tag color={value ? "green" : "red"}>{value ? "门禁通过" : "阻断"}</Tag>,
           },
           {
             title: "阻断原因",
@@ -91,6 +91,12 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
             render: (value: string[], row: ModelChannelRow) => row.ready ? "—" : value.join("；") || (status?.state && status.state !== "ready" ? `平台模型最终状态为 ${modelStateLabel(status.state)}，尚未通过上线门禁` : "尚未通过模型、计费组或成本门禁"),
           },
         ]}
+      />
+      <Alert
+        type="info"
+        showIcon
+        title="真实生成尚未验证"
+        description="配置与额度门禁通过不代表模型已成功推理；本状态未执行真实生成 canary。"
       />
     </Card>
   );

@@ -13,7 +13,7 @@ import {
 import type { IncidentRepository } from '../../../../packages/persistence/src/incidents-repository.js'
 
 export class IncidentServiceError extends Error {
-  constructor(readonly code: 'INCIDENT_FORBIDDEN' | 'INCIDENT_NOT_FOUND' | 'INCIDENT_INVALID_TRANSITION', message: string) {
+  constructor(readonly code: 'INCIDENT_FORBIDDEN' | 'INCIDENT_NOT_FOUND' | 'INCIDENT_INVALID_TRANSITION' | 'INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE', message: string) {
     super(message)
     this.name = 'IncidentServiceError'
   }
@@ -62,7 +62,32 @@ function requireMutation(actor: IncidentActor): void {
 }
 
 export class IncidentsService {
-  constructor(private readonly repository: IncidentRepository) {}
+  constructor(
+    private readonly repository: IncidentRepository,
+    private readonly listWorkspaceIds?: () => Promise<string[]>,
+  ) {}
+
+  private async validateAffectedWorkspaces(actor: IncidentActor, affectedWorkspaceIds: readonly string[]): Promise<void> {
+    if (!this.listWorkspaceIds) {
+      throw new IncidentServiceError('INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE', 'authoritative workspace directory is unavailable')
+    }
+    let directory: string[]
+    try {
+      directory = await this.listWorkspaceIds()
+    } catch {
+      throw new IncidentServiceError('INCIDENT_WORKSPACE_DIRECTORY_UNAVAILABLE', 'authoritative workspace directory is unavailable')
+    }
+    const knownWorkspaceIds = new Set(directory)
+    const actorWorkspaceId = actor.workspaceId.trim()
+    if (!knownWorkspaceIds.has(actorWorkspaceId)) {
+      throw new IncidentServiceError('INCIDENT_FORBIDDEN', 'incident workspace is outside the authoritative workspace directory')
+    }
+    // All incident capabilities are workspace-scoped. Cross-workspace
+    // incident impact requires a separate platform authorization contract.
+    if (affectedWorkspaceIds.some(id => !knownWorkspaceIds.has(id) || id !== actorWorkspaceId)) {
+      throw new IncidentServiceError('INCIDENT_FORBIDDEN', 'affected workspaces must remain within the incident workspace')
+    }
+  }
 
   async list(actor: IncidentActor, raw: unknown = {}) {
     requireRead(actor)
@@ -86,6 +111,7 @@ export class IncidentsService {
   async create(actor: IncidentActor, raw: unknown) {
     requireMutation(actor)
     const input = parseCreateIncidentParams(raw)
+    await this.validateAffectedWorkspaces(actor, input.affectedWorkspaceIds)
     return this.repository.create({
       workspaceId: actor.workspaceId,
       actorId: actor.actorId,
@@ -146,6 +172,7 @@ export class IncidentsService {
   async updateScope(actor: IncidentActor, raw: unknown) {
     requireMutation(actor)
     const input = parseUpdateIncidentScopeParams(raw)
+    await this.validateAffectedWorkspaces(actor, input.affectedWorkspaceIds)
     return this.repository.mutate({
       workspaceId: actor.workspaceId,
       incidentId: input.incidentId,
