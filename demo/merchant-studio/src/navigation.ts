@@ -16,6 +16,28 @@ export interface MerchantRoute {
   imageJobId?: string
 }
 
+export interface MerchantRiskDestinationInput {
+  type: string
+  title?: string
+  entityType?: string
+  entityId?: string
+  evidence?: { taskId?: string; [key: string]: unknown }
+}
+
+export function merchantRiskDestination(issue: MerchantRiskDestinationInput) {
+  if (issue.entityType === 'content_version' || issue.entityType === 'publish_job') {
+    const taskId = typeof issue.evidence?.taskId === 'string' ? issue.evidence.taskId.trim() : ''
+    if (taskId) return { page: 'task' as const, target: { kind: 'task' as const, taskId } }
+  }
+  if (issue.entityType === 'product' && issue.title?.trim()) {
+    return { page: 'products' as const, entry: 'products' as const, searchQuery: issue.title.trim() }
+  }
+  if (issue.entityType === 'platform_account' || issue.entityType === 'sync_job') {
+    return { page: 'products' as const, entry: 'products' as const }
+  }
+  return { page: 'overview' as const }
+}
+
 type AnimationFrameScheduler = (callback: FrameRequestCallback) => number
 
 export function focusMainAfterMerchantNavigation(

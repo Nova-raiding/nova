@@ -260,6 +260,7 @@ import {
 } from './publish-safety'
 import {
   focusMainAfterMerchantNavigation,
+  merchantRiskDestination,
   merchantRouteFromLocation,
   urlForMerchantRoute,
   type MerchantPage,
@@ -989,7 +990,7 @@ function Topbar({
   onLogout: () => void
   onPasswordChanged: () => void
   onOpenUtility: (panel: UtilityPanel) => void
-  onOpenIssues: () => void
+  onOpenIssues: (issue: WorkspaceMetrics['riskItems'][number]) => void
   onOpenCommercialCatalog: (item: CommercialNotification) => void
   searchQuery: string
   onSearchQuery: (value: string) => void
@@ -1218,7 +1219,7 @@ function Topbar({
           </Form.Item>
         </Form>
       </Modal>
-      <Modal title="问题详情" open={Boolean(issueDetail)} onCancel={() => setIssueDetail(null)} footer={<Space><Button onClick={() => setIssueDetail(null)}>关闭</Button><Button type="primary" onClick={() => { setIssueDetail(null); onOpenIssues() }}>查看并处理</Button></Space>} destroyOnHidden>
+      <Modal title="问题详情" open={Boolean(issueDetail)} onCancel={() => setIssueDetail(null)} footer={<Space><Button onClick={() => setIssueDetail(null)}>关闭</Button><Button type="primary" onClick={() => { if (issueDetail) onOpenIssues(issueDetail); setIssueDetail(null) }}>查看并处理</Button></Space>} destroyOnHidden>
         {issueDetail ? <DescriptionsIssue item={issueDetail} /> : null}
       </Modal>
     </header>
@@ -2082,7 +2083,7 @@ export function TransactionDashboard({
   issues,
   read,
 }: {
-  onOpenIssues: () => void
+  onOpenIssues: (issue: WorkspaceMetrics['riskItems'][number]) => void
   issues: WorkspaceMetrics['riskItems']
   /**
    * The dashboard answers the same question as the topbar bell about the same
@@ -2112,7 +2113,7 @@ export function TransactionDashboard({
         ) : issues.length ? (
           <div className="account-issue-list">
             {issues.map((issue, index) => (
-              <button type="button" onClick={onOpenIssues} key={`${issue.type}-${issue.platform ?? ''}-${issue.accountId ?? ''}-${index}`}>
+              <button type="button" onClick={() => onOpenIssues(issue)} key={`${issue.type}-${issue.platform ?? ''}-${issue.accountId ?? ''}-${index}`}>
                 <span>{index + 1}</span>
                 <div><strong>{issue.title ?? issue.type}</strong><small>{issue.nextAction ?? '打开商品与任务查看处理方式'}</small></div>
                 <ChevronRight size={16} aria-hidden="true" />
@@ -2146,6 +2147,7 @@ export function Overview({
   apiMode,
   billing,
   onOpenUtility,
+  onOpenTransactionIssue,
 }: {
   goTask: () => void
   goProducts: (entry?: MerchantEntryPoint) => void
@@ -2154,6 +2156,7 @@ export function Overview({
   apiMode?: string | null
   billing: BillingStatus | null
   onOpenUtility: (panel: UtilityPanel) => void
+  onOpenTransactionIssue: (issue: WorkspaceMetrics['riskItems'][number]) => void
 }) {
   const accountsRequestId = useRef(0)
   const syncJobsRequestId = useRef(0)
@@ -2530,7 +2533,7 @@ export function Overview({
           // The dashboard button receives a React click event. Do not pass it
           // through as a MerchantEntryPoint, or URLSearchParams serializes the
           // event to `section=[object Object]` and opens the wrong workspace.
-          onOpenIssues={() => goProducts('products')}
+          onOpenIssues={onOpenTransactionIssue}
           issues={overviewIssues ?? []}
           read={overviewIssueRead}
         />
@@ -5298,7 +5301,7 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void }) {
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, initialQuery = '' }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; initialQuery?: string }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
@@ -5307,7 +5310,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [videoPlaying, setVideoPlaying] = useState(false)
   const [selectedSkuIndex, setSelectedSkuIndex] = useState(0)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogQuery, setCatalogQuery] = useState(initialQuery)
   const [catalogAddedTime, setCatalogAddedTime] = useState('all')
   const [catalogSort, setCatalogSort] = useState('default')
   const [catalogPage, setCatalogPage] = useState(1)
@@ -13434,6 +13437,24 @@ export default function App() {
       showToast(`退出登录失败：${describeApiError(cause)}`, 'error')
     }
   }
+  const openRiskIssue = (issue: WorkspaceMetrics['riskItems'][number]) => {
+    const destination = merchantRiskDestination(issue)
+    if (destination.page === 'task' && destination.target) {
+      const url = urlForMerchantRoute(window.location, {
+        page: 'task',
+        target: destination.target,
+      })
+      window.history.pushState(null, '', url)
+      applyLocation(window.location)
+      return
+    }
+    setGlobalSearch(destination.searchQuery ?? '')
+    navigateTo(destination.page, {
+      entry: destination.entry,
+      searchQuery: destination.searchQuery,
+      clearContext: true,
+    })
+  }
   if (apiBaseUrl && authState !== 'authenticated') {
     return (
       <MerchantLoginPage
@@ -13514,7 +13535,7 @@ export default function App() {
               setAuthError('密码已修改，请使用新密码重新登录。')
             }}
             onOpenUtility={openUtility}
-            onOpenIssues={() => navigateTo('products', { clearContext: true })}
+            onOpenIssues={openRiskIssue}
             onOpenCommercialCatalog={(item) => { setCommercialNotificationTarget(item); navigateTo('finance', { clearContext: true }) }}
             searchQuery={globalSearch}
             onSearchQuery={setGlobalSearch}
@@ -13572,6 +13593,7 @@ export default function App() {
                     apiMode={apiMode}
                     billing={accountBilling}
                     onOpenUtility={openUtility}
+                    onOpenTransactionIssue={openRiskIssue}
                   />
                 )}
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
@@ -13587,6 +13609,7 @@ export default function App() {
                       modelStatusRead={modelStatusRead}
                       onRefreshModelStatus={refreshEnvironmentStatus}
                       onOpenKnowledge={() => navigateTo('products', { entry: 'knowledge' })}
+                      initialQuery={globalSearch}
                     />
                   ) : (
                     <Products

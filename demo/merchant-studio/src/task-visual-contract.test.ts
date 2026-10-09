@@ -81,7 +81,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain("task ? '确认商品事实准确' : '先创建任务再确认事实'")
     expect(app).toContain("task ? '回答并继续' : '先创建任务'")
     expect(app).toContain('先点击下方“确认需求并创建任务”，创建任务后才能回答。')
-    expect(app).toContain("onOpenIssues={() => goProducts('products')}")
+    expect(app).toContain('onOpenIssues={onOpenTransactionIssue}')
     expect(app).not.toContain('<TransactionDashboard onOpenIssues={goProducts}')
     expect(app).not.toContain('conversation-confirm-card" data-testid')
     expect(app).not.toContain('conversation-result-card" data-testid')

@@ -436,7 +436,7 @@ export interface WorkspaceMetrics {
   stores: Array<{ platform: PlatformId; accountId: string; connection?: { state: string; readable: boolean; dataMode: string }; product?: { total: number } }>
   productSummary: { total: number; lowStock: number; missingImages: number }
   riskSummary: { total: number; returned: number; truncated: boolean }
-  riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; accountId?: string; storeName?: string; status?: string; nextAction?: string; evidence?: { unboundLocalData?: boolean; fixtureData?: boolean; [key: string]: unknown } }>
+  riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; accountId?: string; storeName?: string; status?: string; entityType?: string; entityId?: string; nextAction?: string; evidence?: { taskId?: string; unboundLocalData?: boolean; fixtureData?: boolean; [key: string]: unknown } }>
   taskFunnel: Record<string, number>
   /** Distinct tasks with a verified, real platform publish receipt in the requested activity window. */
   completedTaskCount?: number

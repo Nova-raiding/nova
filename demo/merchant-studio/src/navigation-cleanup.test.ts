@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Sidebar } from './App.js'
-import { merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
+import { merchantRiskDestination, merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
 
 const app = readFileSync(resolve(import.meta.dirname, 'App.tsx'), 'utf8')
 const css = readFileSync(resolve(import.meta.dirname, 'styles.css'), 'utf8')
@@ -39,11 +39,15 @@ describe('merchant navigation cleanup contract', () => {
     expect(app).toContain("products: activeEntry === 'products' ? '平台&店铺&商品' : activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'images' ? '知识库' : '素材库'")
   })
 
-  it('opens transaction-dashboard issues in the platform and product catalog route', () => {
-    expect(app).toContain("onOpenIssues={() => goProducts('products')}")
-    const href = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, { page: 'products', entry: 'products' })
-    expect(href).toBe('/merchant/products?section=products')
-    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=products', hash: '' }).entry).toBe('products')
+  it('routes transaction issues to the workspace that can handle their entity', () => {
+    expect(app).toContain('onOpenIssues={onOpenTransactionIssue}')
+    expect(merchantRiskDestination({ type: 'AUTH_RECONNECT', entityType: 'platform_account' })).toEqual({ page: 'products', entry: 'products' })
+    expect(merchantRiskDestination({ type: 'LOW_STOCK', entityType: 'product', title: '商品甲' })).toEqual({ page: 'products', entry: 'products', searchQuery: '商品甲' })
+    expect(merchantRiskDestination({ type: 'CONTENT_BLOCKING', entityType: 'content_version', evidence: { taskId: 'task-42' } })).toEqual({ page: 'task', target: { kind: 'task', taskId: 'task-42' } })
+    const productHref = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, { page: 'products', entry: 'products', searchQuery: '商品甲' })
+    expect(productHref).toBe('/merchant/products?q=%E5%95%86%E5%93%81%E7%94%B2&section=products')
+    const taskHref = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, { page: 'task', target: { kind: 'task', taskId: 'task-42' } })
+    expect(taskHref).toBe('/merchant/tasks/task-42')
   })
 
   it('keeps member governance out of the screenshot-matched primary rail while retaining its gated route', () => {

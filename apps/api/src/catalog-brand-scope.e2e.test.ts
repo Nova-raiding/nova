@@ -155,7 +155,21 @@ describe('catalog brand scope on the HTTP surface', () => {
 
     // The granted brand's publish job is still reported, so the assertions below
     // prove a filter rather than an empty response.
-    expect(data.riskItems, 'the metrics surface hides exactly the publish jobs the task scope hides').toContainEqual(expect.objectContaining({ type: 'PUBLISH_REJECTED', entityId: visible.jobId }))
+    expect(data.riskItems, 'visible publish risks must carry their exact task navigation identity').toContainEqual(expect.objectContaining({
+      type: 'PUBLISH_REJECTED',
+      entityType: 'publish_job',
+      entityId: visible.jobId,
+      evidence: expect.objectContaining({ taskId: visible.taskId }),
+    }))
+    for (const risk of data.riskItems) {
+      expect(risk.entityType).toEqual(expect.any(String))
+      expect(risk.entityId).toEqual(expect.any(String))
+      expect(risk.entityId.trim()).not.toBe('')
+      if (risk.entityType === 'publish_job' || risk.entityType === 'content_version') {
+        expect(risk.evidence.taskId).toEqual(expect.any(String))
+        expect(risk.evidence.taskId.trim()).not.toBe('')
+      }
+    }
     expect(data.jobs.publish, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
     expect(data.dataCoverage.publishJobs, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
     expect(data.platformMetrics.taobao.publish.total, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
