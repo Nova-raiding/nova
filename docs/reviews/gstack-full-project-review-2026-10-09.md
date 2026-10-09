@@ -1,26 +1,30 @@
 # Store Nova 项目全量评审
 
 日期：2026-10-09 至 2026-10-10（增量复核）
-范围：ChatGPT 本地 stdio 插件、MCP/API、商家工作台、桌面运营台、模型中转、租户权限、生产健康和可运行测试。按项目 `AGENTS.md` 未进行生产写操作、部署或真实付费模型调用。
+范围：ChatGPT 本地 stdio 插件、MCP/API、商家工作台、桌面运营台、模型中转、租户权限和测试证据。当前验收目标遵循最新 `AGENTS.md`，仅限 ECS `merchant-demo-85575f9c`；本轮没有验证该 demo 的运行状态，也没有执行部署或真实付费模型调用。
 
-本轮完成了大范围代码、隔离 API、MCP、本地浏览器 fixture 和 gstack dogfood/design 走查；本报告不声称每个生产页面和每条付费业务链路都已通过。production profile 已安装到本机 `merchant-marketing@personal`，并通过安装桥接验证器完成安装文件、stdio `initialize`/`tools/list` 和缺配置 fail-closed 验证；当前既有 ChatGPT 对话是否刷新未验证。生产运营身份及真实中转图片/视频输出仍未验证；不把公开市场、ChatGPT OAuth 或签名作为门槛。
+本轮完成了大范围代码、隔离 API/MCP、mock 浏览器和 gstack dogfood/design 走查；这不表示每个页面或真实业务链路都已通过。此前 personal 缓存版本 `0.1.0+codex.20261010011930` 已被本轮 `0.1.0+codex.20261009233435` 的 production local-stdio 候选替换，当前 ChatGPT 会话尚未刷新验证。报告后文提到的旧线上健康数据只作为 2026-10-09 历史收据，不是当前唯一 demo 的验收证据。
 
 ## 修改
 
 - 套餐权益与目录摘要改用统一中文单位格式，修复 `2business_hour`、`12500creative_points` 和重复拼接 `GB`。不改变服务端权益或账本数据。
 - 概览低库存/缺主图待办在旧指标缺少 `entityType` 时仍可将商品标题作为搜索词跳转到商品目录；标题不作为商品 ID。
 - 新增商品目录关键词、近 7 天添加筛选、无匹配反馈、重置与分页浏览器回归，并纳入 merchant candidate runner。修复同页 Ant Design `Space.direction` 弃用警告。
-- 商品目录新增回归后修复两个边界：店铺入口按 `(platform, accountId)` 查找并同步所选平台，最近 N 天筛选排除未来日期。新隔离浏览器回归 `catalog-scope-future-date.browser.spec.js` 的同 ID 跨平台点击与未来日期过滤分别通过 1/1；首次浏览器尝试因本地 Vite 未设置 `VITE_API_BASE_URL` 未到达目录断言，改用 `/api` 配置后完成验证。没有重跑原目录筛选/分页绿测。API 读取错误仍没有目录内重试控件，记录为后续 UX 缺口。
+- 商品目录新增回归后修复两个边界：店铺入口按 `(platform, accountId)` 查找并同步所选平台，最近 N 天筛选排除未来日期。新隔离浏览器回归 `catalog-scope-future-date.browser.spec.js` 的同 ID 跨平台点击与未来日期过滤分别通过 1/1；首次浏览器尝试因本地 Vite 未设置 `VITE_API_BASE_URL` 未到达目录断言，改用 `/api` 配置后完成验证。没有重跑原目录筛选/分页绿测。本轮新增商品/平台目录读取错误提示和页内重试；首个测试版本受 health `apiMode` 变化引发的请求取消竞态影响，调整 fixture 后单独浏览器回归通过 1/1（产品读取持续 503 直到点击重试，随后商品数据恢复）。
 - 修复 PostgreSQL RLS 攻击矩阵：事务固定在同一 `PoolClient`；预期拒绝的写入通过 savepoint 回滚。
 - 修复浏览器入口：将商品风险跳转 Playwright spec 纳入 merchant 隔离 runner；移除错误传入 Playwright 的 Vitest 文件，改用真正的浏览器 spec。
 - 新增隔离资产下载授权/对象读取 PostgreSQL 验收、运营公共规则 Markdown 上传浏览器验收，以及公共规则详情异常格式的 UI 边界回归测试。
 - 修正默认测试 suite 的 PostgreSQL pending 白名单：移除会在无数据库时直接失败的资产下载用例；创意点并发撤销用例保留精确 pending，并加入隔离 PostgreSQL runner 与 CI 验收清单。
-- 电商商品图参考增加商品身份锁定、买家决策顺序、渠道规则核对、真实性复核；视频策划增加跨镜头一致性、转场/动作衔接、声音方案合同。实际生成仍走 Store Nova MCP、中转鉴权、权限、成本/用量及扫描归档门禁；未引入第三方 provider/API/CLI 或本地生成脚本。插件内的本地商品图、视频策划、分镜和公开导入技能及参考文件存在于源包与 marketplace 镜像；商品图/视频增强是根据公开资料整理并适配本项目治理约束的流程指导，不是将外部仓库 Skill、CLI、provider 或 renderer 原样安装。逐文件 SHA-256 一致，打包清单包含这些本地资源。production profile `0.1.0+codex.20261010011930` 已安装并启用（本地 stdio 候选，不是 ECS release）；构建收据为 `ready_to_install=true`、`source_dirty=false`，commit `40f22acd`；verifier 报告 tar/source provenance `checked_files=85`，已安装 runtime inventory source/install `69/69`，stdio 工具 `134/134`，且无配置时 `workspace.health` fail-closed 为 `MCP_CONFIGURATION_REQUIRED`。`.agents/plugins/marketplace.json` 不在安装缓存中符合安装时排除 `.agents` 的规则。当前既有 ChatGPT 对话刷新和真实付费成片仍未验证。
-- 外部技能检索参考了 [Ecommerce Image Workflow](https://github.com/nexu-io/open-design/blob/main/skills/ecommerce-image-workflow/SKILL.md)、[ecommerce-image-skills](https://github.com/xianyu110/ecommerce-image-skills) 和 [AI video storyboard skill](https://github.com/aicontentskills/ai-video-storyboard-skill)；本地参考文件也标注 [ec-visual-skill](https://github.com/oldred-byte/ec-visual-skill)。采纳参考图保真、镜头/图片规划和交付复核要点，写入本地插件技能；未原样安装依赖 OpenDesign `OD_BIN` CLI/媒体调度器及其已配置图像 provider 的工作流（以上为上游技能文档中的执行要求，未独立运行），也未接入带强制营销导流的外部手册；根据本项目治理约束，接入前须评估是否符合 MCP、中转权限和审核门禁。
+- 电商商品图参考增加商品身份锁定、买家决策顺序、渠道规则核对、真实性复核；视频策划增加跨镜头一致性、转场/动作衔接、声音方案合同。实际生成仍走 Store Nova MCP、中转鉴权、权限、成本/用量及扫描归档门禁；未引入第三方 provider/API/CLI 或本地生成脚本。商品图/视频增强是根据公开资料整理并适配本项目治理约束的流程指导，不是将外部仓库 Skill、CLI、provider 或 renderer 原样安装。本轮新版 production profile `0.1.0+codex.20261009233435` 已构建并安装到 personal source/cache；旧版本 `0.1.0+codex.20261010011930` 的旧构建与安装收据仅作历史记录。新版 verifier 确认 tar/source provenance `checked_files=85`，已安装 runtime inventory source/install `69/69`，stdio 工具 `134/134`，且无配置时 `workspace.health` fail-closed 为 `MCP_CONFIGURATION_REQUIRED`。`.agents/plugins/marketplace.json` 不在安装缓存中符合安装规则。当前既有 ChatGPT 对话刷新和真实付费成片仍未验证。
+- 电商图/视频方法调研的外部来源以本节末尾核验清单为准：`ecommerce-image-skills`、`ec-visual-skill`、`ecommerce-video-skills`、`ai-commerce-video`。本地插件吸收了商品身份、画面规划、脚本分镜和交付复核要点；没有把上游 Skill、CLI、provider 或 renderer 原样安装，也没有据此接入新的生成引擎。此前版本的详情页规划参考曾自称借鉴名为 `ecommerce-detail-page-generator` 的开源项目，但仓库历史没有可核验的 URL、commit/tag 或许可证；本轮已移除该未核实归属，不能确认具体上游来源或授权。
 - 商家财务趋势把日期和周期改为草稿；点“查询”才应用，重置恢复默认区间。此前日期变动即时过滤而查询按钮没有行为。
 - 商家通知下拉和风险详情根据接入模式使用与概览一致的安全提示；手动接入时不再要求“重新发起官方授权”。规则与类目搜索统一去空格并忽略大小写。
 - 修复回收站提前彻底删除失败后的丢失确认状态：仅全部受理才关闭；部分成功时从选择中移除受理项并保留失败项、原因和确认词。另为成功空回收站添加 `role=status` 状态通知。新增状态回归 3/3、回收站服务端状态 3/3，扩展后的真实浏览器交互回归 1/1 通过。
 - Ops 新增权限过滤的“运营数据与审计”次级导航，接入财务、存储和审计；Models 仍按退役状态隐藏，工作区专属域仍按身份边界隔离。
+- 修复运营店铺页权限数据被误显示为空的问题：平台设置只读但无 `workspace.directory.read` 时，页面明确显示“目录未读取”并隐藏空店铺摘要；刷新失败保留可信旧数据并标记状态待确认。独立回归 1/1、Ops Console no-emit exit 0；测试覆盖 UI 呈现，不替代真实权限/API 角色验收。
+- 修复运营存储页无 `storage.reconciliation.read` 时平台列表重试入口仍出现的问题：对账错误和专用重试仅在有读取能力时显示；拥有 `workspace.summary.read` 的工作区用户仍可刷新自己有权看的存储摘要，按钮明确改称“刷新存储摘要”；无任何相关读取能力时不显示刷新操作。`StoragePage.test.tsx` 定向回归 3/3 通过，覆盖有/无能力下的提示和按钮。
+- 商品目录读取错误状态增加安全提示与重试入口。浏览器验收发现商品页只显示失败文案，错误通知和“重新读取”仅在店铺选择页；已在商品页增加重试，并避免空态重复显示错误详情。隔离回归 `catalog-read-retry.browser.spec.js` 最终 1/1 通过：持续注入 503，进入商品页后确认错误通知，点击重试后断言请求数相对点击前递增并显示商品。早期 fixture 曾受 health `apiMode` 更新的请求取消竞态影响，最终 fixture 保持故障至用户重试。该验收不证明生产 API 可用率。
+- Merchant Studio 任务队列当前只提供关键词搜索和分页；`/v1/tasks` 的 `state`/`platform` 筛选参数虽由 API 接受，但该商家界面没有对应控件。本报告另将 Ops Console 的 workspace TasksPage 与 Merchant Studio 区分；Ops Tasks 组件虽实现营销队列筛选，但当前 platform workbench 隐藏并阻止进入该 workspace 页面。
 - 运营客服工作区按 `support.ticket.update` 权限禁用新建、分配、状态变更和备注控件；无更新权限时默认 fail-closed。
 - 修复未绑定图片候选缺少商家确认标题时被默认名称掩盖的问题，现应在素材访问、预算预留和持久化前返回 400。视频技能完成条件与服务端交付契约对齐：以完成状态、扫描/归档和工作区资产引用为准，不依赖 provider 原始 URL。
 - MCP 新增商品知识读取/审批方法并补齐 OpenAPI、发布元数据及相关合同；测试目录存在独有和不同步文件，不视为镜像完全相同。审批使用 revision CAS、租户与角色校验、追加审计；回放只验证治理事件，不把商品事实错误投影到旧知识资产中。
@@ -28,7 +32,7 @@
 - 补上商品知识列表 handler 缺失的 `catch`，修复导致 19 个 API/MCP 测试套件无法加载的语法阻断；完整定点复验这些原失败套件。
 - Ops 侧栏按当前工作台可达性过滤 workspace-only capability；已验收 `/ops/users` 403 恢复到可达总览的场景，其它 workspace/platform 路由契约仍需逐条确认。
 - 商品搜索 SQL 路径补齐分类与图片文本，任务搜索补齐平台账号 ID，以匹配 service fallback；OpenAPI 为商品/任务列表补齐 401，MCP `task.history` 补上任务状态 enum。
-- 视频结果在同步完成和异步查询路径统一规范化顶层 `asset_id`、`archive_state`、`scan_status` 与归档下载路径；未扫描结果明确标记为演示/待处理。展示门禁依赖 `scanStatus=clean` 元数据，真实下载端点仍执行授权/生命周期校验；历史扫描元数据不一致时可能出现 UI 可下载提示与端点拒绝，列为低风险语义依赖。
+- 视频结果在 `multimodal.video.request/get` 同步完成、异步查询及通用 `multimodal.generate` 渲染路径统一规范化顶层 `asset_id`、`archive_state`、`scan_status` 与归档下载路径；未扫描结果明确标记为待处理并隐藏下载路径，中转原始 URL 不外泄。`apps/api/src/video-status-settlement.test.ts` handler-level clean/pending 回归及状态结算测试 12/12 通过（fixture/mock，不调用真实 provider）。展示门禁依赖 `scanStatus=clean` 元数据，真实下载端点仍执行授权/生命周期校验；历史扫描元数据不一致时可能出现 UI 可下载提示与端点拒绝，列为低风险语义依赖。
 - 素材回收站预览支持 Escape 关闭并将焦点返回触发控件；隔离 Ops spec 的权限范围文案更新为当前页面文本。
 - 默认 PostgreSQL 测试 pending 清单增加新合同租户 RLS 用例；CI 文件分母新增两个 RLS 回归文件。
 
@@ -40,12 +44,12 @@
 |---|---|---|---|
 | ChatGPT 本地插件入口 / MCP 工具 | stdio initialize、tools/list、调用桥接、身份绑定、权限拒绝；视觉生成和视频请求的拒绝路径 | 本地 production profile 已 personal 安装；安装桥接验证器 `ok=true`，核验 installed/source 文件 69/69、工具 134/134、缺配置 fail-closed | 当前既有 ChatGPT 会话是否刷新未验；缺少真实角色授权及付费 provider 成片证据 |
 | 商家概览 | 待办指标、低库存/缺主图跳转、通知/风险提示、导航 | 浏览器风险目的地测试；生产只读检查概览 | 生产只读不能证明每种角色/待办组合；无逐项生产按钮写入验证 |
-| 商家登录 / 首次工作区 | 登录错误/会话失效组件、首次建工作区合同、公开登录空提交 | 登录与建工作区的组件/API合同回归 | 多工作区选择仅显示 workspace ID；桌面切换、失败提示、会话重进和真实身份链路未验 |
+| 商家登录 / 首次工作区 | 登录错误/会话失效组件、首次建工作区合同、公开登录空提交、多工作区切换身份提示 | 登录与建工作区合同回归；工作区选择入口回归 2/2，无名称时明确说明只返回工作区 ID，要求按管理员给定 ID 选择 | 本轮未新增逐项桌面多工作区切换旅程；工作区名称接口尚不存在，未开放平台目录能力绕过租户权限；失败提示、会话重进和真实身份链路未验 |
 | 插件连接 / 授权回跳 | pairing workspace 与 installation key 一致性、同源校验、session 网络错误重试 | 定向连接合同与错误恢复测试 | ChatGPT 宿主真实授权回跳、会话刷新和宿主中的 stdio 调用未验 |
-| 商品目录 | 搜索框、关键词大小写/空格、添加日期筛选、无结果/空店、重置、排序、分页、店铺与商品深链、跨平台同账号切店 | fixture Playwright 搜索筛选 1/1；商品数据单测 21/21；新增同账号跨平台点击 1/1、未来日期过滤 1/1 | 商品详情所有编辑控件和生产搜索组合未逐项验证；目录 API 错误状态没有页内重试入口；完整商家浏览器矩阵仍有边界 |
+| 商品目录 | 搜索框、关键词大小写/空格、添加日期筛选、无结果/空店、重置、排序、分页、店铺与商品深链、跨平台同账号切店 | fixture Playwright 搜索筛选 1/1；商品数据单测 21/21；新增同账号跨平台点击 1/1、未来日期过滤 1/1 | 目录错误状态新增页内重试；修订 fixture 后专用浏览器回归 1/1 通过，覆盖 503 提示、点击重试及商品列表恢复；商品详情所有编辑控件、生产搜索组合仍未逐项验证 |
 | 商品详情 / 商品知识 | 商品与素材绑定、资料审核、revision CAS、租户/角色拒绝、审计、待索引状态 | 商品知识 e2e 1/1；模块单测 19/19；本地 MCP 工具合同 | 不能证明生产工作区实际数据或索引 worker 的端到端状态；高风险写操作未对生产执行 |
 | 商家成员 | 页面路由、工作区成员读写、邀请、角色调整、停用、并发签发 MCP token | 隔离浏览器实际登录后完成邀请、角色调整、停用；4 个并发 MCP token 签发均为 200，browserErrors=[] | 不覆盖跨工作区越权和邀请邮件交付；A→B→A 浏览器验证被登录/AntD selector harness 阻断，未验证 |
-| 商家任务 / 内容 | 任务列表、搜索、状态/平台筛选、任务详情和生成/审核路径 | `/v1/tasks` 非法筛选返回 400，OpenAPI 与定向 API 契约覆盖 | 商家 UI 每个状态的按钮、生成任务成功和付费模型链路未全部浏览器验收 |
+| 商家任务 / 内容 | Merchant Studio 任务队列关键词搜索与分页、任务详情/生成/审核路径；API 接受 state/platform 查询参数 | `/v1/tasks` 非法筛选返回 400，OpenAPI 与定向 API 契约覆盖 | Merchant Studio 队列未提供状态/平台筛选控件；逐状态 UI 操作、真实生成与审核及付费模型链路未全部浏览器验收 |
 | 商家内容编辑 / 审核 / 活动 | 草稿与内容版本合同、审核状态边界、campaign 发布清单 | 任务终态与恢复合同、内容编辑/审核组件合同 | 逐状态 UI 操作、真实生成与审核、campaign 后端发布闭环未验 |
 | 商家发布 | 发布页导航、渠道/任务状态显示与发布流程入口 | 路由登记与发布 API/OpenAPI 合同核对 | 真实渠道授权、发布确认、回调/线上状态及每个按钮未在生产验证 |
 | 商家发布历史 / 内容导出 | publish_job_id 深链与不可达提示、bundle/Markdown 导出桥接和内容卡片合同 | 隔离浏览器深链 2/2；导出/bridge 定向合同测试 | 真实租户授权下历史刷新、宿主附件下载和真实渠道发布回调未验 |
@@ -55,20 +59,21 @@
 | 商家规则 / 类目 | 搜索规范化、平台类目过滤、结果数量、`/merchant/rules` 路由与字段模板标题 | 原规则搜索 3/3、category discovery 4/4；路由及 `product_id/platform/account_id` 上下文新合同测试 11/11 | `/merchant/rules` 在 `merchant-all.spec.js` 的 sidebar walk 中不直达；`merchant-isolated-screenshot-matrix.ts` 只截图该路由并检查标题/加载状态，不驱动规则搜索或编辑交互。新路由合同是单测，不是浏览器直达/刷新/后退验收。所有规则编辑/发布按钮未在真实商家租户逐项覆盖 |
 | 商家全局搜索 | 从“全局搜索”旅程进入商品目录搜索框、填写关键词 | `merchant-all.spec.js` 检查搜索框存在并填入 `轻云`；独立商品目录浏览器回归另行验证目录搜索/筛选结果 | 该 `merchant-all.spec.js` “全局搜索”旅程仍未提交搜索或断言结果；独立 Chromium fixture 回归 `global-catalog-search.browser.spec.js` 已 1/1 验证目录匹配结果、空态及 `q` URL。它验证的是商品目录搜索，不替代旧 walk 的完整全局搜索旅程，也不证明生产 API 相关性 |
 | 运营总览、用户、商家、规则 | 实际导航按钮、路由授权、拒绝恢复、用户目录账号归属筛选 | Ops 桌面只读矩阵 1/1；导航单测 13/13；拒绝恢复 3 文件 15 项；用户目录组件 20/20 | `test:browser:ops` 的 `ops-all.spec.js` 主 section walk 只经过总览、用户中心、客户交付 3 页；另有独立 Ops 桌面矩阵检查总览、用户、店铺、规则、财务、客户交付、存储、审计、Models 等指定目的地，二者都不是逐控件矩阵。用户目录默认仅商家账号；缺少 `identity.read` 时请求 guard 生效，搜索、状态/归属筛选、查询、刷新控件均禁用。隔离浏览器已验证查询后表格出现平台账号；无权限 UI 状态尚未浏览器覆盖 |
-| 运营 Members / Tasks / Knowledge（workspace 域） | 页面与授权代码存在于 registry/domain，但当前 Ops Console 固定运行 platform workbench | 当前平台工作台无法进入这些 workspace 页面；页面/组件测试不构成用户可达证据。见后文“按用户当前可达页面”矩阵。 |
-| 运营店铺 / 品牌树 / 店铺目录 | 源码核对品牌创建、品牌店铺绑定、店铺任务深链、别名编辑、撤销确认、人工登记、目录刷新/错误状态、聚合计数；确认撤销仅由单一确认弹窗触发一次回调（不重复审已修双确认） | 已有 StoreDirectory 组件测试、人工登记边界结果浏览器回归 1/1、撤销确认浏览器回归，以及店铺深链浏览器回归 3/3；本次只读补查 StoreDirectorySection、BrandTreeSection、StoresPage 和 MCP 绑定处理器，没有新增可确认缺陷 | 店铺目录无独立关键词/状态筛选控件；品牌树全量呈现且没有搜索/分页控件，目前未证实为数据丢失或错误筛选。尚无覆盖所有品牌创建/绑定失败态、刷新失败时保留目录数据、别名 revision 冲突及撤销真实后端审计的端到端浏览器矩阵；聚合平台列表与租户店铺明细是不同呈现，不应互相套用数量语义 |
+| 运营 Members / Tasks / Knowledge（workspace 域） | 路由、页面和授权代码存在于 registry/domain；TasksPage 组件包含营销队列平台、店铺、商品 ID、任务 ID、状态筛选及应用/清除操作 | Ops Console 只激活 platform workbench，这三页要求 workspace workbench，因此主导航隐藏、直接 deep link 也不能进入；隔离组件/路由测试不构成真实工作台可达证据。平台角色看不到该营销队列筛选 UI。 |
+| 运营店铺 / 品牌树 / 店铺目录 | 源码核对品牌创建、品牌店铺绑定、店铺任务深链、别名编辑、撤销确认、人工登记、目录刷新/错误态、聚合计数；缺少 `workspace.directory.read` 时明确显示目录未读取，隐藏误导性空摘要 | 已有 StoreDirectory 组件测试、人工登记边界结果浏览器回归 1/1、撤销确认浏览器回归、店铺深链 3/3；新增 StoresPage 权限状态回归 1/1，Ops Console tsc exit 0 | 店铺目录无独立关键词/状态筛选控件；品牌树全量呈现且没有搜索/分页控件，目前未证实为数据丢失或错误筛选。尚无覆盖所有品牌创建/绑定失败态、刷新失败时保留目录数据、别名 revision 冲突及撤销真实后端审计的端到端浏览器矩阵；聚合平台列表与租户店铺明细是不同呈现，不应互相套用数量语义 |
 | 运营财务、交付、存储、审计 | 次级导航权限过滤、路由页面数据展示和 Models 退役状态 | 独立 Ops 桌面只读矩阵检查指定路由；导航 13/13 | `ops-all.spec.js` 主 walk 不覆盖这些页面；单独的桌面矩阵只验证其列出的目的地、页面标题/加载状态和少数明确断言，不代表每张表格每行操作均完整遍历。生产授权用户页面不可用 |
 | 运营客服工单 | 新建、分配、状态变更、添加备注写操作权限 | 权限定向组件测试 2 个文件 8/8 | 无独立浏览器/真实 API 角色矩阵；服务端仍是最终授权边界 |
 | 商家客服支持 | 新建工单空白校验、详情返回队列路径 | 返回队列组件测试 6/6；状态表单目标/原因取消重开重置浏览器回归 1/1；跨工单切换清理弹窗/表单浏览器回归 1/1 | 新建表单 fixture 未挂载；真实角色授权、持久化、幂等和队列筛选恢复未验 |
 | 运营模型矩阵 | 文本/图片/图片编辑等模型通道数据字段映射 | API 返回独立 `image_edit_model`；矩阵组件/契约测试已更新；Ops Console 全量 TypeScript 检查通过 | 真实中转鉴权、用量、成本和故障证据仍受生产证据阻断 |
 | 运营公共规则详情 | 异常内容边界、快速切换详情时的请求竞态 | 异常内容边界与详情竞态浏览器用例通过；Ops Console 全量 TypeScript 检查通过 | 未覆盖真实运营用户、多租户生产数据下的规则批准/发布 |
 | API / 搜索、任务筛选 | 商品搜索布尔参数、任务 `state`/`platform` 参数校验、OpenAPI 合同 | 更新后的商品/任务 HTTP 定向测试 12/12；repository 搜索测试 14/14；OpenAPI 合同 6/6；`/v1/products` 与 `/v1/tasks` 文档补充 401 | 其他 query 参数与所有 API 过滤组合未穷举；本矩阵不声称全 API 参数穷举 |
+| MCP / 商品搜索 | `catalog.search` 标题关键词及授权边界 | 隔离 PostgreSQL MCP 对照用例将 durable handler 与内存 fallback 比较：组合 query/platform/store/brand/SKU/remote product ID、`% _ !` 字面匹配、第二页排序与 total，以及以持久化 `updated_at` 前后 ±1 秒组成的日期窗口；用例 1/1 通过 | 尚未覆盖 listing/product/sync 状态过滤和更广泛的组合矩阵。精确日期边界（与持久化时间戳完全相等）的 inclusive 语义仍未验证；曾用内存时间值做精确边界时未命中，原因尚待确认。此用例不验证 HTTP `/v1/products` 与 MCP 字段级 parity，也不证明唯一 demo 或生产搜索行为；未确认具体 bug |
 | API / 商品筛选 | `facts_confirmed` 和 `platform` 参数白名单及早期拒绝 | API agent 报告商品列表定向文件 10/10 | 搜索全组合及真实生产数据分布未穷举 |
 | 图像/视频任务 | 商品图工作流参考、视频规划约束、stdio permission denial | 安装契约 1/1；新视觉权限拒绝 e2e 1/1（共享记录） | 权限拒绝测试证明 fixture 下 fail-closed，不证明授权成功生成；无 provider、扣费、任务轮询成功或归档证据 |
 
 ### 插件图像与视频技能调研结论
 
-插件源中增加了 `references/product-image-workflow.md`，并列入本地打包工具的 required 拷贝清单；它是根据公开仓库 README 撰写的本地适配参考，不是复制或安装上游 Skill/执行器。内容将商品身份锁定、买家决策顺序、渠道规则来源/版本、真实性检查写成工作流指导。主技能补充跨镜头一致性、镜头衔接和声音方案约束。现有 `ecommerce-video-marketing` 技能继续承接脚本/分镜方法。production profile `0.1.0+codex.20261010011930` 已安装启用；基于 commit `40f22acd` 的 bridge verifier 对 tar/source provenance 为 `checked_files=85`，已安装 runtime source/install 为 `69/69`，工具为 `134/134`，缺配置调用 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`。安装缓存排除 `.agents/plugins/marketplace.json` 是预期。当前 ChatGPT 会话刷新仍未验证。这里增强的是内容指导，不是增加图像/视频 renderer、模型或真实生成能力；provider 成功、用量/成本与成片归档仍未实测。
+插件源中增加了 `references/product-image-workflow.md`，并列入本地打包工具的 required 拷贝清单；它是根据公开仓库 README 撰写的本地适配参考，不是复制或安装上游 Skill/执行器。内容将商品身份锁定、买家决策顺序、渠道规则来源/版本、真实性检查写成工作流指导。主技能补充跨镜头一致性、镜头衔接和声音方案约束。现有 `ecommerce-video-marketing` 技能继续承接脚本/分镜方法。本轮 production profile `0.1.0+codex.20261009233435` 已安装启用；基于 commit `ba0d892c3b4471d065ec5ca69aa0d0786e991d8a` 的 bridge verifier 对 tar/source provenance 为 `checked_files=85`，已安装 runtime source/install 为 `69/69`，工具为 `134/134`，缺配置调用 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`。安装缓存排除 `.agents/plugins/marketplace.json` 是预期。当前 ChatGPT 会话刷新仍未验证。这里增强的是内容指导，不是增加图像/视频 renderer、模型或真实生成能力；provider 成功、用量/成本与成片归档仍未实测。
 
 这属于提示/工作流能力增强，并未新增图像或视频模型本身。没有把第三方 CLI/provider/API、密钥或绕过业务中转的生成链路装进插件；真实生成仍必须走 Store Nova MCP、鉴权、角色权限、成本/用量、扫描和归档链路。权限拒绝 e2e 1/1 只证明拒绝时没有回退调用，不能当作生成成功证据。
 
@@ -88,7 +93,7 @@
 | 中 | Incident 变更范围按 workspace-only 授权矩阵执行。 | workspace-only 授权要求创建/更新的受影响范围限定于 actor 当前 workspace；服务端已恢复拒绝跨 workspace ID，并校验 actor workspace ID 和受影响 ID 均存在于权威目录。平台 aggregate read 与单 workspace mutation 分离。新增 service/UI 回归尚待运行；Incident 页面代码仍未挂当前路由清单。 |
 | 中 | 全仓默认 `npm test` 尚无一次性通过证据。 | 8 分片全量调用中，分片 3/8、5/8 完整通过；1、2、4、7、8 触及每分片 300 秒上限；分片 6 被当时的 handler 语法错误和 stale OpenAPI/pending 清单阻断。修复后，18 个原加载失败文件 101/101 通过；仅重跑失败/超时分组的 16 分片中，7、8、12、16 完整通过，9/10/15 的确定性问题已修复并针对性复验，1/2/4 仍触及运行预算。多个 5 秒单测在资源竞争下超时，相关文件提高预算单独验证通过。 |
 | 中 | 仍有 6 个配置型 Playwright spec 未在命名 runner 中运行。 | 当前 `tests/browser-gate-entrypoints.test.ts` 的 `CONFIG_ONLY_BROWSER_SPECS` 清单为 6 个；历史 13 项记录已由当前入口覆盖账本更新。它们仍未运行，配置匹配不计作功能覆盖。 |
-| 中 | Ops 仍有路由闭环与测试身份契约缺口。 | 新增权限过滤的财务/存储/审计次级入口，OpsSidebar 13 项测试通过；Models 明确退役。Ops 现为 platform-only，members/tasks/knowledge workspace-only 页面仍留在注册表但不能由 OpsShell 激活；Incidents 页面代码未挂载且不属于当前 domain。未接 runner 的 MCP browser spec 引用 workspace 场景，与当前拒绝行为冲突。Stores 品牌店铺的“打开任务”回调只在非 platform 分支出现，目标 tasks 会被守卫拒绝，仍需正确 workspace 身份复现；客服详情的“回到任务队列”死链已改回可达 `/ops/support`，保留 URL 编码的 task_id，组件测试 6/6。 |
+| 中 | Ops 仍有路由闭环与测试身份契约缺口。 | 新增权限过滤的财务/存储/审计次级入口，OpsSidebar 13 项测试通过；Models 明确退役。Ops 现为 platform-only，members/tasks/knowledge workspace-only 页面仍留在注册表但不能由 OpsShell 激活；Incidents 页面代码未挂载且不属于当前 domain。未接 runner 的 MCP browser spec 引用 workspace 场景，与当前拒绝行为冲突。Stores 品牌店铺的“打开任务”回调只在非 platform 分支出现，目标 tasks 会被守卫拒绝，仍需正确 workspace 身份复现；客服详情的“回到客服队列”已改为可达 `/ops/support`，明确不携带当前不支持的任务筛选参数，组件测试 6/6。 |
 | 中 | Ops 403 恢复按钮可能把无用户权限的角色送回同一拒绝页。 | 支持角色没有 `users` 权限；从旧链接进入 `/ops/users` 后，原按钮固定返回用户中心，形成循环。已修复为按授权投影和当前工作台可达性选择恢复路由，无可达目标时隐藏按钮。3 个测试文件、15 项通过，包含实际点击从 `/ops/users` 回到总览。 |
 | 低 | `KnowledgeGovernanceSection.readState` 在全套高负载运行中有一项超过 5 秒。 | 独立复验文件 7/7 通过，目标用例耗时 551ms；当前没有产品回归证据。 |
 | 中 | 品牌 Logo/文档上传的延迟响应会覆盖上传期间编辑的用户画像或品牌卖点。 | `MaterialBrandFields.uploadBrandAsset` 曾在 `await uploadAsset` 后合并启动时捕获的 `value`；现改为合并最新 draft。延迟上传浏览器回归 1/1 通过：上传等待时编辑全局用户画像，响应后内容保留。待上传列表现以唯一 ID 管理，并在超限时拒绝整批新增、显示未加入数量；其目标测试 3/3 通过。 |
@@ -105,6 +110,8 @@
 - 商家隔离演示的商品关系、图片任务及响应式 Playwright 共 18 项覆盖：14 项通过；其余 4 项首轮因 Vite 缺少 `VITE_API_BASE_URL=/api` 而失败，补齐本地环境后只复跑这 4 项，全部通过。浏览器没有触发真实图片生成 API。
 - 新增商品目录搜索/筛选 Playwright 1/1 通过；实际验证 8 条 fixture 商品的关键词过滤、近 7 天条件、无结果与空店铺区分、重置及分页。商品列表数据总数缩小时页码 clamp 回归 2/2 通过。新增 runner 合同验证 `tests/browser-gate-entrypoints.test.ts` 历史批次 15/15、17/17；当前含发布历史入口的最终回归 20/20 通过。该验收使用隔离 PostgreSQL/Redis，未写业务数据或保存凭据，并确认伪造登录身份被忽略、刷新状态保持。
 - Ops 桌面全 mock Playwright 14 项通过：canonical 状态 8/8、权限矩阵 5/5、脏表单历史导航 1/1。为避免用旧访问令牌伪造登录，这些浏览器 fixture 增加当前 cookie/password-session 标记；过期与键盘退出断言已对应到当前受控会话控件。
+- 本轮新增存储页权限按钮回归 `StoragePage.test.tsx` 3/3 通过；Ops Console no-emit 检查在该页面修复后 exit 0。新回归覆盖无平台对账权限时隐藏专用重试、保留有 workspace summary 权限时的摘要刷新，以及两类权限都缺失时隐藏刷新按钮。
+- 多工作区身份提示回归 `merchant-workspace-bootstrap.test.ts` 2/2 通过；Merchant Studio no-emit 检查在工作区标签修正后 exit 0。它覆盖源合同/文案与首次工作区 bootstrap 组件，不是多租户桌面真实选择流程。
 - Ops 路由可达性更新：`OpsSidebar.test.tsx` 13/13；新次级组只显示授权路由，保留主侧栏和 Models 退役状态。浏览器矩阵已改为点击非 Models 的实际导航按钮；隔离 PostgreSQL 上的真实桌面浏览器矩阵 1/1 通过，覆盖总览、用户、商家、规则、财务、交付、存储和审计，并确认 Models 不可见且无失败 API 请求。
 - 商家财务趋势草稿/应用/重置状态测试 3/3 通过；商家风险通知与详情安全文案测试 14/14 通过；规则/类目搜索大小写和空格规范化测试 3/3 通过。
 - 商品知识治理 e2e 1/1、知识模块单测 19/19 通过。覆盖租户/角色拒绝、商品与资产绑定、revision CAS、仍待索引状态及唯一 before/after 审计。
@@ -128,9 +135,9 @@
 
 - 验收范围采用本地 stdio 插件链路；不要求公开/团队插件市场、ChatGPT OAuth 或签名。当前本地安装包在 ChatGPT 中的实际 stdio 调用仍缺验收记录。
 - 未发起真实付费中转图片/视频请求，没有声称生成成片、成本扣费或生产归档成功。
-- 2026-10-09 03:46Z 公网健康收据显示 relay/setup 与成本门禁 ready，但阶段记录仍无 formal Go；工作区当前改动未发布到生产（生产 release SHA `c337ae2e` 与当前 HEAD `891b55ac` 不同）。
+- 2026-10-09 03:46Z 公网健康收据显示 relay/setup 与成本门禁 ready，但阶段记录仍无 formal Go；工作区当前改动未发布到生产（生产 release SHA `c337ae2e` 与当前 HEAD `0dea0b08` 不同）。
 - 全仓默认 `npm test` 未在一次调用内完整验证。当前工作树没有完整 `test:release-gates` 通过收据；未纳入 browser runner 的其余配置型 Playwright spec 尚未逐项完整重跑/接入。需要独立角色账号或写入 fixture 的用例仍不能安全连生产。
-- 较早的工作树快照有过 `SAFE_TEST_TIMEOUT_MS=900000 npm run test:release-gates` 通过收据（runtime 前置 23/23、PG16 migration 1/1、181 个测试文件通过、7 个声明跳过文件、1532 项断言通过、16 项登记 pending、Node gates 168/168）。它不覆盖本轮之后的改动，不能作为当前最终工作树的完整 release gate 证明。测试全绿也不等于可以部署：本地工作区尚未冻结候选身份/manifest；101 报告中的运行 SHA `c337ae2e` 与本地 HEAD 不同，`release_approved=false`、`formal_production_approved=false`。能力/容量证据路径不可读，embedding 未就绪，五模态真实 provider 用量/成本回执缺失；因此当前候选尚未发布，未执行生产部署。本轮插件 candidate tar 仍需在提交并冻结候选后重新生成。
+- 较早的工作树快照有过 `SAFE_TEST_TIMEOUT_MS=900000 npm run test:release-gates` 通过收据（runtime 前置 23/23、PG16 migration 1/1、181 个测试文件通过、7 个声明跳过文件、1532 项断言通过、16 项登记 pending、Node gates 168/168）。它不覆盖本轮之后的改动，不能作为当前最终工作树的完整 release gate 证明。测试全绿也不等于可以部署：本地工作区尚未冻结候选身份/manifest；101 报告中的运行 SHA `c337ae2e` 与本地 HEAD 不同，`release_approved=false`、`formal_production_approved=false`。能力/容量证据路径不可读，embedding 未就绪，五模态真实 provider 用量/成本回执缺失；因此当前候选尚未发布，未执行生产部署。本地插件 stdio 候选已单独打包并安装；这不构成 ECS 部署候选。ECS 候选仍需按部署 runbook 从全仓干净、已审阅且证据齐全的 commit 重新生成。
 
 登录页截图位于 [`artifacts/qa-evidence/gstack-full-review-2026-10-09/`](../../artifacts/qa-evidence/gstack-full-review-2026-10-09/)。隔离 PostgreSQL 与运营浏览器结果在 `artifacts/isolated-postgres/`、`artifacts/ops-jit-isolation/`。四个临时 worktree 已审计：资产下载、规则上传、规则详情 UI 补丁已整合；只更新迁移尾断言至 269 的 worker 补丁已过时，因为当前迁移链已更后。临时 worktree 已移除，主工作目录为唯一 worktree。
 
@@ -175,7 +182,7 @@
 - Ops Commercial 退款事件列表静默截断修复：退款仓储现在以 `(created_at,id)` 稳定倒序 keyset 分页，按目标 workspace 校验 opaque cursor，并返回 `total`、`next_cursor`、`truncated`；MCP schema/API handler 和 Ops client/hook/UI 已贯通 cursor 与“加载更多”，显示已加载/总事件数。新增仓储分页回归与 Ops client cursor 回归定向运行 9/9 通过。尚未对真实 PostgreSQL 退款事件数据、真实平台角色授权、桌面运营会话或生产数据做端到端验证；分页契约测试不能代替这些证据。
 - Merchant Studio 创建任务后的 URL 与浏览器前进/后退同步旅程尚无浏览器收据。路由会保留未识别 query 参数，但未发现证据证明敏感一次性参数实际进入该路由；创建后短暂出现的 URL/query 状态也未被确认是否为产品预期或泄露。因此仅列为待验证的历史导航与临时状态确认项，不定性为漏洞或已确认 bug。
 - Ops Stores 平台聚合 API 原只返回分组行数，导致页面把一组多家真实店铺按一行计入平台汇总与卡片总数。现由 `ops.stores.list` 每行显式传 `count`，平台统计按底层店铺数计算；Stores 卡片总数也累加代表店数，表格分页则明确标注“平台汇总组”数量，行标签继续展示实际代表店数。API 仍要求 `platform_scope=platform` 并调用 `requirePlatformReadRole`，返回的平台聚合只含平台、连接状态、数据模式、能力位和数量，不含 workspace/account 身份。新增 API 与 UI 两个独立回归，分别覆盖 N 店铺聚合 count、summary 按 N 统计以及响应/页面不泄露实际身份。新文件已通过 safe runner 启动且进程退出；当前 agent 未保留该嵌套执行会话的 stdout/exit code，故暂不将其计为通过，也未重跑。
-- QA 插件 `merchant-marketing@merchant-local` 保持 disabled，身份仍为 `qa-broker` / `qa_only=true` / `release_eligible=false`。其后 production profile 升级为 `0.1.0+codex.20261010011930`；personal 插件路径 manifest 显示该版本且 CLI 显示启用。基于 commit `40f22acd` 的新版本 bridge verifier 通过，确认 provenance 85 项、source/install 69/69、tools/list 134 项及缺配置 fail-closed；当前既有 ChatGPT 会话刷新仍未验证，不声称宿主已加载新快照或新增 renderer。
+- QA 插件 `merchant-marketing@merchant-local` 保持 disabled，身份仍为 `qa-broker` / `qa_only=true` / `release_eligible=false`。此后 production profile 先升级到 `0.1.0+codex.20261010011930`，再由本轮安装的 `0.1.0+codex.20261009233435` 替代；personal 插件当前版本由 manifest 与 CLI 显示为启用。新版 bridge verifier 通过，确认 provenance 85 项、source/install 69/69、tools/list 134 项及缺配置 fail-closed；当前既有 ChatGPT 会话刷新仍未验证，不声称宿主已加载新快照或新增 renderer。
 - checkout provider 返回的 `payment_url` / `code_url` 已通过共享校验器验证 HTTPS authority、凭据、fragment、私有/本地地址及与所选渠道匹配的微信/支付宝 scheme、host、path；微信 `pr` 与支付宝 `appId` 必须非空。billing 与 commercial contract repository 的筛选定向回归通过；subscription repository 无效 URL 用例已改成带凭据 HTTPS，目标断言通过（1 passed、8 skipped）。选择性测试因 pending-assertion gate 非零退出，不算完整文件套件通过；生产支付写入未执行。
 - Ops canonical 商品一致性详情和摘要都有 fail-closed 状态判断；本轮时间戳、revision、有效状态一致性检查对应组件测试分别 27/27 与 10/10 通过。真实 API 的完整性、权限和数据仍须运行环境验收。
 - Storage 对账对未知或缺失 `runStatus` fail-closed，并明确标注 loading 时的旧快照；本轮对应组件回归 5/5 通过。
@@ -196,10 +203,19 @@
 - 视频渲染调用契约曾将 `idempotency_key` 描述为可选，但生产 API 要求传键；现更新 direct bridge 工具描述和商家技能，明确新渲染意图生成随机新键、同一请求重试复用原键、意图变更使用新键，并同步 marketplace 镜像。新增 `video-idempotency-contract.test.ts` 单文件 1/1 通过，检查 source/marketplace 描述与技能镜像及三项键语义。未将 schema 改为必填，因为 QA/test 环境允许省略；未调用真实视频 provider。
 - Ops 客服详情“回到客服队列”链接原来附带客服页面不读取的 `task_id`；现改到 `/ops/support`。对应完整组件测试文件 6/6 通过。Incident 页面仍未注册到 OpsDomain/registry；当前 authorization contract 是 workspace scope，而 OpsShell 只启用 platform workbench，不能未经产品授权将其挂入该工作台。
 - 平台客服聚合每个 workspace 原只读取首个有界页面并直接按状态/优先级汇总；当某 workspace 返回 `nextCursor`、但不属于 SLA 有界扫描时，先前没有设置 `scanTruncated`，会静默低报。现将任一 workspace 的 continuation cursor 纳入聚合 `scanTruncated`，既有队列告警将明确提示结果可能不完整、无法继续翻页时应缩小筛选；本修复没有声称精确总数，也没有将聚合分组伪装成可翻页工单。新增独立回归测试 1/1 通过，覆盖有后续页面时必须返回截断提示；真实 API/数据库跨页聚合仍未做端到端验证；此聚合能力属于 Ops UI/API：商家插件统一通过 `isMerchantTool` 拒绝 `ops.*` 工具，不能把 platform-only 工具加入商家插件面，也不能称插件 MCP 可请求。
+
+### 本轮增量验收（2026-10-10）
+
+- **电商图片/视频技能文档：**图片 prompt 参考现在只负责策划与复核，图像生成必须调用 Store Nova `catalog.image.generate` 与已配置服务端 relay；视频指南/模板改为证据驱动的脚本、分镜和时间线方法，视频技能入口已同步删除“6阶段”“8种商品模板”等失效索引。图片视觉合同 4/4、视频安全与插件 manifest 2 个文件共 9 项通过，源与 marketplace 镜像一致。只适配了流程方法，没有运行或原样安装第三方 provider/renderer；本轮新版插件包已重建并安装，真实生成未验证。
+- **Customer Delivery：**合同来源支持经过 HTTPS 校验的直链或本地文件；两者共用现有服务端安全下载、workspace 鉴权、隔离资产和扫描可用性门禁。扫描等待失败时，重试复用已返回的 `assetRef`，避免重复上传。对应窄回归覆盖源类型与 pending scan 重试；没有真实下载、客户创建或文件上传。待扫描缓存按文件/URL 来源复用，尚未覆盖 workspace 或 delivery 切换后恢复；服务端仍会执行授权检查，未发现绕过证据。
+- **Merchant Rules：**规则平台筛选与商品/店铺深链平台分别序列化为 `rules_platform` 与 `platform`。普通规则页浏览器 fixture 已验证直达、刷新、过滤、后退/前进、搜索空态、类目模板和错误重试 1/1；scoped URL 路由合同 6/6。商品深链浏览器尝试受登录 fixture 状态阻断，未计通过。两条新 browser spec 已加入专用 `test:browser:all` 入口和 entrypoint ledger。
+- **API 商品搜索：**隔离 PostgreSQL `catalog.search` 与内存 fallback 的复合筛选、`% _ !` 字面匹配、第二页顺序/total 和持久化时间窗口对照 1/1。用 Service 内存 `updatedAt` 取精确相同的日期上下界时曾出现 PostgreSQL 未命中；因为持久化时间与内存时间值可能不同，这个精确边界仍需另行确认。MCP-only 状态过滤未覆盖；HTTP 搜索契约目前较窄，不声称与 MCP 字段级完全一致。
+- **当前 demo 状态：**没有检查 ECS `merchant-demo-85575f9c` 或依据域名探测当前健康，也没有部署。personal 插件的新版构建/安装收据如下。
+- **插件构建与安装收据（本轮更新）：**版本 `0.1.0+codex.20261009233435` 从提交 `ba0d892c3b4471d065ec5ca69aa0d0786e991d8a` 构建，production profile 报告 `ready_to_install=true`、`source_dirty=false`。已先在临时隔离 home 安装验证，再用包内 `install.sh` 更新 personal source 与 `~/.codex/plugins/cache/personal/merchant-marketing/local`；安装 bridge verifier `ok=true`，source/install 运行时文件 69/69、MCP 工具 134/134 一致，缺配置时 `workspace.health` 阻断为 `MCP_CONFIGURATION_REQUIRED`。当前 ChatGPT 会话刷新仍未验证；安装器报告需重启并登录，未在本轮重启 ChatGPT 或创建登录凭据。
 - PlatformSupportWorkspace 平台工单翻页此前请求时清空当前列表/详情，失败后空白且没有返回按钮；状态列和详情状态显示英文原始 enum。现以成功页面缓存/cursor stack 保留页序，加载中继续展示当前页，失败显示错误并留在原页，支持上一页/下一页；列表及详情复用 `supportStatusLabels` 中文映射。独立 Chromium 回归覆盖第 1→2 页、失败时留在第 2 页、回退第 1 页并前进恢复第 2 页，以及列表/详情中文状态。第一次执行因 fixture 工单号与主题重复导致 locator strict-mode 失败；fixture 修正后一次执行因 10 秒导航等待预算未进入交互断言；将该 spec 导航超时调整为 60 秒后，仅重跑此新增文件一次，1/1 通过。未重跑已通过的 Support suites。该浏览器使用本地 stub API，不证明真实授权、API 或 PostgreSQL 行为。
 - 交付档案账号搜索词变化时，旧账号选项、已选项与分页 cursor 在新查询期间仍可保留。实现已在 query 改变时清空旧结果和确认状态；真实桌面 Chromium 回归 1/1 通过，查询 alpha 并选中后改成 beta，旧选择、加载更多和确认关联入口均不可继续使用。浏览器 API 使用 stub，不替代真实运营身份/目录分页端到端验收。
 - 页面覆盖复核确认没有统一逐控件浏览器矩阵：Merchant 顶层“规则与类目”未找到显式浏览器直达内容验收；`merchant-all.spec.js` 的全局搜索 walk 仍只填入/清空输入，不验证结果列表或空态。为补充该缺口，新增独立桌面浏览器回归 `demo/merchant-studio/global-catalog-search.browser.spec.js`，以 mock 登录、店铺与商品数据从店铺选择进入目录，验证匹配商品、无匹配空态和 `q` URL 状态；本地 Vite + Chromium 1/1 通过（命令：`MERCHANT_STUDIO_URL=http://127.0.0.1:18091 npm exec -- playwright test --config=demo/merchant-studio demo/merchant-studio/global-catalog-search.browser.spec.js --workers=1`）。该回归只覆盖目录搜索这条路径，不替代 `merchant-all.spec.js` 旧旅程，也不验证生产 API/商家身份。Ops `ops-all.spec.js` 主 walk 只覆盖总览、用户中心、客户交付 3 页；独立 Ops read-only matrix 点击 9 destinations，且不覆盖全部按钮/输入。`ops-mcp-request-matrix.spec.js` 的路由 scope/权限断言也不能替代页面控件验收。
-- 插件本地 personal 更新现为 production profile `0.1.0+codex.20261010011930`；安装路径 manifest 与 CLI 均显示启用，QA `merchant-local` namespace 仍 disabled。基于 commit `40f22acd` 的新版本 bridge verifier 通过，tar/source provenance `checked_files=85`、已安装 runtime inventory source/install `69/69`、stdio `initialize`/`tools/list` `134/134`，缺配置 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`；缓存不含 `.agents/plugins/marketplace.json` 是预期安装排除项。当前既有 ChatGPT 会话刷新尚未验证，不能声称宿主已加载新快照。
+- 插件本地 personal 更新现为 production profile `0.1.0+codex.20261009233435`；安装路径 manifest 与 CLI 均显示启用，QA `merchant-local` namespace 仍 disabled。基于 commit `ba0d892c3b4471d065ec5ca69aa0d0786e991d8a` 的新版 bridge verifier 通过，tar/source provenance `checked_files=85`、已安装 runtime inventory source/install `69/69`、stdio `initialize`/`tools/list` `134/134`，缺配置 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`；缓存不含 `.agents/plugins/marketplace.json` 是预期安装排除项。当前既有 ChatGPT 会话刷新尚未验证，不能声称宿主已加载新快照。
 - 独立 bridge 审计发现 `asset.upload` 缺少 `file_path` 与 `content_base64` 时，边界 schema（`oneOf`）未在本地拒绝，随后 `prepareToolArguments` 异常被通用捕获为 `MCP_GATEWAY_ERROR`。现将缺失输入的判断放到参数边界，保留已有文件读取/互斥行为，并同步 marketplace mirror。新增窄回归对 source 与 marketplace bridge 各验证 `TOOL_ARGUMENTS_INVALID` 且 API 请求列表为空，2/2 通过；未重跑 bridge 旧套件，也未覆盖真实上传/扫描。
 - 商品目录日期筛选原先在 MCP / HTTP、Postgres / 内存路径的校验和结果不一致：HTTP 未转发 date range，Postgres 会强转为 timestamptz，而 memory 使用字符串比较。现新增共享 RFC3339、必带时区、有效日历、毫秒精度及 from ≤ to 校验并统一转 UTC，HTTP 和 MCP 在查询前拒绝无效值并传给两种 repository；合同及两个 bridge schema 标 `date-time`。HTTP+MCP 两文件 35/35 通过，offset 边界新增用例 1/1 通过；不代表真实 Postgres 上的数据组合已穷举。
 - 发现一次非计划 safe-runner 命令尝试重复运行 Storage/用户目录/Incident/支付/任务等已有绿文件。该进程由主 agent 中断，未采信其部分结果；后续只运行新改行为的定向用例。未取得完整 `test:release-gates` 收据。
@@ -232,7 +248,7 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 - `ops.workspaces.list` 在 `listWorkspaceDirectory` adapter 不可用时走 summaries fallback；该分支原有搜索只匹配 workspace ID 与套餐名，漏掉已展示给用户的企业名称。现补上企业名称搜索，同时保留 ID/套餐匹配；新增独立 regression 2/2 通过，覆盖企业名称 query 命中与不命中。此修复及收据仅适用于无 `listWorkspaceDirectory` adapter 的 fallback，不替代目录 adapter 或完整 Workspace 页面验收。
 - Merchant Studio 任务队列原先把 `canceled` 归为“可以继续”、把 `failed_terminal` 归为“需要我处理”并显示“恢复任务”。现从 `packages/domain/src/task.ts` 的 `taskTransitions` 推导 terminal states（包括 `delivered`、`failed_terminal`、`canceled`），队列标为“已结束”，操作文案改为“仅查看”；`failed_recoverable` 仍显示“恢复任务”。新增独立回归 `demo/merchant-studio/src/merchant-ia-task-terminal.regression.test.ts` 2/2 通过，覆盖取消/不可恢复失败不可继续、可恢复失败仍可恢复，以及终态与领域状态图对齐；没有重跑已通过的 `merchant-ia.test.ts`。
 - 公共规则草稿审核/拒绝进行中曾允许切换平台筛选；mutation 完成后闭包 reload 可能按旧平台读回并覆盖当前过滤列表。现将平台 Select 在审核/拒绝及批量审批 mutation 期间禁用；新增独立桌面 Chromium 回归 `PublicRuleDraftReviewPanel.filter-mutation-race.regression.test.tsx` 1/1 通过（命令：`node --import tsx scripts/run-safe-tests.ts apps/ops-console/src/components/rules/PublicRuleDraftReviewPanel.filter-mutation-race.regression.test.tsx`），以延迟拒绝响应验证 mutation 未完成时筛选控件 disabled，结束后最后一次列表请求仍使用 `pinduoduo`。本轮只运行此新文件一次；没有重跑公共规则审核既有绿色套件。该测试使用 stub RPC，不替代真实运营 API/数据库验收。
-- 插件 production profile 当前版本为 `0.1.0+codex.20261010011930`：personal 插件路径 manifest 与 `codex plugin list --json` 均显示已启用，QA namespace 仍 disabled。基于 commit `40f22acd` 的 bridge verifier 核验 tar/source provenance `checked_files=85`、已安装 runtime source/install `69/69`、stdio 工具 `134/134`、无重复或越权 `ops.*`，并确认缺配置状态 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`；安装缓存排除 `.agents/plugins/marketplace.json` 符合规则。安装 smoke 29/29 收据属于此前的 `0.1.0+codex.20261009140000`，不外推为新版本 smoke。当前 ChatGPT 对话刷新仍未验证。生产配置/权限仅在本地 CLI registry 状态核对，没有打印配置值。中转真实鉴权请求、provider 实际用量/成本、图像/视频成片及扫描归档仍无真实调用收据；健康/setup 字段不补足这些证据。
+- 插件 production profile 当前版本为 `0.1.0+codex.20261009233435`：personal 插件路径 manifest 与 `codex plugin list --json` 均显示已启用，QA namespace 仍 disabled。基于 commit `ba0d892c3b4471d065ec5ca69aa0d0786e991d8a` 的新版 bridge verifier 核验 tar/source provenance `checked_files=85`、已安装 runtime source/install `69/69`、stdio 工具 `134/134`、无重复或越权 `ops.*`，并确认缺配置状态 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`；安装缓存排除 `.agents/plugins/marketplace.json` 符合规则。安装 smoke 29/29 收据属于此前版本，不外推为新版 smoke。当前 ChatGPT 对话刷新仍未验证。生产配置/权限仅在本地 CLI registry 状态核对，没有打印配置值。中转真实鉴权请求、provider 实际用量/成本、图像/视频成片及扫描归档仍无真实调用收据；健康/setup 字段不补足这些证据。
 - Ops Users 用户目录的详情抽屉曾仅按 `externalSubject` 保存焦点触发按钮；同一身份若有多个工作区成员关系，关闭抽屉可能把焦点送到另一行。现以表格同款 `accountType + workspaceId + externalSubject` row key 保存/查找触发按钮，并新增独立回归 `UserDirectorySection.focus-target.regression.test.ts` 验证同一主体跨 workspace 的 key 唯一。实现已落地；测试状态未确认、无通过收据，本轮不重跑。此项只修正键盘焦点返回目标，不改变成员授权或服务端写入。
 - 2026-10-10 Ops User Directory 补审发现导出 UI/hook 曾用 `identity.update` 控制，而 MCP `ops.users.export` 契约使用 `billing.export`。现在 UI 与 hook RPC 前置检查复用 `canExportUserDirectory(authorization)`，只检查 `billing.export`；新增 `userDirectoryPermission.regression.test.ts`，identity.update-only 被拒、billing.export 被允许，1 test passed（直接 Vitest，未经过 `.safe-tests.lock`，未重跑）。批量停用现在从逐条 RPC 返回失败 target 列表，部分失败后只把仍可操作的失败 workspace+subject 还原为选中项；已刷新后变为 suspended 的失败目标也会移出选择。提示成功/未完成数量并明确成功项不会重试；新增 `UserDirectorySection.bulk-partial-failure.regression.test.ts` 验证相同 subject 跨 workspace 也只保留仍可操作的失败目标，safe runner 1 test passed。真实平台角色矩阵、生产数据库/RLS和真实批量写入仍未验收，不能据此宣称后端实权验证完成。
 - Ops Finance 交易流水已有服务端 keyset cursor 和“加载更多”，但表格上方没有把当前累计展示数与筛选匹配总数并列，也没有明确说明是否还有未加载页，容易将当前页误读为完整流水。现增加覆盖说明：显示已展示数、匹配总数，以及由 `nextCursor` 决定的“还有未加载记录/已加载全部匹配记录”；未改分页、汇总、退款或商业退款行为。新增单文件 `FinanceSearchSection.coverage.regression.test.ts` 2/2 通过，覆盖有 cursor 与全部加载两个状态；未重跑 Finance 既有测试。该收据为组件渲染契约，不代替真实 API/数据库多页数据验收。
@@ -278,6 +294,8 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 
 - 登录失败/会话失效提示已由 `merchant-login-error.test.ts` 覆盖；本地插件授权登录回跳的同源校验由 `plugin-authorization-return.test.ts` 覆盖，API 有本地插件登录浏览器 e2e 与多工作区授权码绑定 e2e。首次无工作区商家创建工作区的无租户头请求、重新读取 session 与页面退出恢复由 `merchant-workspace-bootstrap.test.ts` 覆盖。注册页没有自助注册入口，登录页明确引导联系平台运营创建账号和分配工作区；这是既定开户边界，不认定为失效跳转。此次只读核对未读取凭据或触发注册、登录、绑定等写操作，也未重跑上述既有通过用例。
 - 多工作区登录后的选择页只将 `workspaceIds` 原样作为 option label（`demo/merchant-studio/src/App.tsx`）；用户无法在该选择页区分多个企业工作区。后续选择只接受当前 session 授权列表，并切换后清理旧租户导航与数据上下文；服务端另有多工作区 OAuth 授权码绑定测试。缺少该 Merchant Studio 登录后工作区选择页的真实桌面浏览器旅程，尤其尚无通过可读企业名称确认目标、切换失败提示及重进验证的浏览器证据。此处为只读发现，没有修改或运行测试。
+- **已修复规则页平台深链丢失：**访问 `/merchant/rules?platform=taobao` 后，应用 URL 规范化会丢弃无商品目标的单独 `platform` 参数，页面回退“全部平台”/默认 scope 并读取错误规则集合。`MerchantRoute` 现在保存独立规则平台，并在规则页 URL 规范化时保留。新增 `rules-page-interactions.browser.spec.js` 以 stub API 的桌面 Chromium 验收直达、刷新、平台/关键词过滤、无结果、类目字段模板开关、规则 API 失败提示与恢复；最终单次定向运行 **1/1 通过（20.5s）**，Merchant Studio `tsc --noEmit -p demo/merchant-studio/tsconfig.json` exit 0。调试期间的失败迭代暴露了测试本身两个问题（品类页签下尝试读隐藏重试按钮、错误态实际文案为“重新读取”），已修正后才取得上述通过收据。没有真实规则 API、商家写入或生产租户验证。
+- **已修复规则筛选 URL 与可恢复状态不一致：**从规则深链切换平台时，列表过滤状态变化但地址栏仍保留旧平台；复制链接或刷新会回到旧筛选，浏览器后退/前进也无法还原筛选历史。平台选择现同步写入 `/merchant/rules?platform=…` 历史条目；App 既有 `popstate` 路由恢复逻辑负责还原筛选。扩展同一桌面浏览器用例验证淘宝深链→京东筛选后 URL 更新、后退恢复淘宝、前进恢复京东，并保留搜索/空态/类目模板/规则读取失败重试检查；本次单次运行 **1/1 通过（39.6s）**。改动后 Merchant Studio `tsc --noEmit --pretty false -p demo/merchant-studio/tsconfig.json` 无错误输出并退出；`git diff --check` 通过。API 由 stub 提供，未进行真实规则写入或租户验收。
 - 六平台公开商品导入 skill 已明确要求先确认宿主网页读取能力、只读取无需登录的公开 HTTPS、不携带 Cookie/私有 token；读取失败须停下请求用户补充资料；`catalog.import` 必须显式 `draft_only=true`。插件侧已有解析器固定样例、价格异常值/零值测试，桌面导入权限、无障碍与批量导入 API/边界/幂等回归收据；这些分别覆盖本地合同，不证明六个平台真实页面可访问或抓取成功。
 - 已修复上述确定性解析缺口：meta 标签属性现在先独立解析再读取 `name`/`property` 与 `content`，不再依赖属性顺序；新建 `extract-product-meta-order.test.mjs`，只验证 content-first 的 OpenGraph 标题与 description。该新用例单独运行一次并通过（`node apps/plugin/skills/six-platform-public-import/scripts/extract-product-meta-order.test.mjs`）。按避免重复测试的要求，没有重跑既有 parser/import 测试；六平台实时页面仍未访问或验收。
 - 本次未读取任何账号/认证凭据、未向外部平台请求商品页、未调用 `catalog.import`，未重跑通过的 auth/import 测试。
@@ -305,11 +323,11 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 ### 随包图片局部编辑与充值 MCP App 控件合同复核（只读）
 
 - `ui/image-local-edit.html` 控件盘点：来源素材 ID、预览 URL、原图尺寸、修改说明、模型标识、区域名称、品牌/商品/规则快照、可编辑/不可修改区域 JSON；画布支持鼠标拖拽与键盘方向键/Shift 缩放；“创建候选”“重置区域”“复制请求 JSON”；结果候选 ID/模型/原图保留状态及 fallback JSON。提交契约调用 `multimodal.image.edit`，payload 字段与 MCP bridge/API handler 的 `request_json` 结构相符，服务端按当前 workspace 检查素材扫描/权益、产品范围、模型成本和候选归档。没有触发真实调用。
-- **明确 UI 缺陷：**成功提交路径在 `renderCandidate()` 前直接调用 `normalizeResult(response)`，但 `image-local-edit.html` 全文没有 `normalizeResult` 定义。因而宿主调用成功后仍会抛 `ReferenceError` 并进入失败提示，候选 ID、图片和待审核结果不会显示；这使“创建候选”按钮的结果呈现与服务端成功事实不一致。已报告 owner；本只读任务未改代码。
-- **区域几何/校验风险：**指针坐标按整个正方形 `stage` 归一化，但原图 `<img>` 使用 `object-fit:contain`；长宽比非 1:1 时画布有留白，选区会相对真实图像偏移。`editableJson` 为合法空数组时允许提交；JSON 解析失败时 `normalizedRegions()` 静默回退空数组，导致 `regionIssue()` 把编辑范围视为不受限（即使 `buildRequest()` 后续会拒绝 malformed JSON，用户仍会看到绿色编辑层缺失而有效状态/提交启用）。建议修复时令可编辑区域必须至少含一个有效矩形，坏数据/空数据 fail-closed，并以 object-fit 后的实际图像内容区域计算坐标。未验证它是否已由服务端全量拒绝，故列为客户端合同缺口风险，不声称已越过服务端权限。
+- **图片局部编辑结果显示缺陷（已修复）：**初审发现成功提交路径调用未定义的 `normalizeResult()`，会把宿主成功响应显示成失败。现已补响应规范化，接受 MCP `structuredContent`、常见 `result` wrapper 和 JSON text content；独立浏览器 stub 回归确认候选 ID、模型和审核状态能显示，1/1 通过。未调用真实 API/provider。
+- **区域几何与校验风险（已修复）：**初审发现长宽比非 1:1 时按整个正方形画布换算指针坐标会偏离 `object-fit:contain` 原图，且缺失/空/无效可编辑区存在界面误导风险。现按实际图像内容矩形计算坐标，并对编辑/保护区域缺失、空数组或格式错误 fail-closed。独立浏览器回归 1/1 通过：200×100 原图指针 y 映射为 0.300，空 `editableRegions` 禁止提交。此为客户端误操作防护，不代表服务端权限被绕过或真实 provider 已验收。
 - `ui/recharge.html` 控件盘点：我的/工作区 scope（工作区仅由 `billing.status.viewer.available_scopes` 开放）、概览/订单/套餐 tabs、刷新准入状态、各套餐打开商家后台；没有客户端金额输入、支付提交或账务写工具，目录限定为服务端批准且可执行 SKU，订单查询走 `billing.recharge.list` 与 `subscription.orders.list`，套餐走 `commercial.catalog.get`。与“插件不收款、等待 grant/access revision”的合同一致。tab 键盘导航、aria busy/status/error、未知余额保持待确认均由源码确认；这不等于真实宿主点击验收。
-- **异步交错风险：**`orders()`/`catalog()` 请求未按当前 `S.tab` 与 `S.scope` 绑定请求序号。用户快速改变 tab 或 scope 时，旧请求仍会更新隐藏列表、清除共享错误/写 live status；相同订单容器的旧 scope 响应也可能覆盖新 scope 请求的结果。建议增加请求代次或 abort/只接受仍匹配的 scope+tab 响应。没有触发这些调用或任何账务/商业 API。
-- 既有可核验收据：`apps/plugin/install-smoke.test.ts` 曾有 29/29 通过，覆盖充值页静态安全/渲染源码断言；`apps/plugin/mcp/bridge.test.ts` 历史 bridge 快照曾 157/159（2 项失败由后续窄回归覆盖），它只覆盖资源挂载/工具合同，不验证真实浏览器 UI。没有发现单独的 image-local-edit/recharge 页面交互浏览器测试收据；本轮不重跑任何已通过测试，也不将静态断言视作按钮或服务端旅程通过。
+- **异步交错风险（已修复）：**初审发现旧 `orders()`/`catalog()` 响应可覆盖新 tab/scope 状态。现增加请求代次及当前 tab/scope 保护；已有 deferred stub 浏览器回归 1/1 通过，证明迟到的工作区订单响应不会覆盖“我的”订单。没有触发账务/商业 API，真实商业数据仍未验收。
+- 既有收据包括 `apps/plugin/install-smoke.test.ts` 29/29（充值页静态安全/渲染源码断言）及 `apps/plugin/mcp/bridge.test.ts` 的历史 bridge 快照 157/159（2 项失败由后续窄回归覆盖；仅覆盖资源挂载/工具合同）。后续已有 image-local-edit 的响应显示 stub 浏览器回归 1/1、图像几何回归 1/1，以及 recharge 异步响应交错回归 1/1；它们各自的范围见本节前述条目，均不验证真实宿主、API/provider 或账务写入。本轮没有重跑已通过测试。
 
 ### API/MCP 多租户权限对抗复核与修复
 
@@ -320,11 +338,14 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 
 ### Ops Console capability 与 API endpoint 对照（只读）
 
-- **确定的新增不匹配：平台财务 CSV 导出按钮未按导出能力门禁。** `FinancePage` 只在 `billing.platform.read` 存在时挂载 `FinanceSearchSection`；该 section 的“导出当前筛选”按钮仅按记录非空、非加载/过期状态控制，没有消费 `billing.export`。但 `packages/contracts/src/authz.ts` 将 `ops.finance.export` 明确绑定到平台 `billing.export`，与读取/详情所需的 `billing.platform.read` 分离。因此具有财务检索能力但没有导出能力的账号仍能点击并发起请求，服务端拒绝后显示导出错误。建议将 `canExport` 能力投影传入组件并禁用/隐藏该按钮及重试入口，同时保持 API 拒绝作为最终边界。此处为源码合同对照，未执行导出、未运行测试。
+- **修复前发现的能力不匹配（已修复）：平台财务 CSV 导出按钮未按导出能力门禁。** `FinancePage` 只在 `billing.platform.read` 存在时挂载 `FinanceSearchSection`；该 section 的“导出当前筛选”按钮仅按记录非空、非加载/过期状态控制，没有消费 `billing.export`。但 `packages/contracts/src/authz.ts` 将 `ops.finance.export` 明确绑定到平台 `billing.export`，与读取/详情所需的 `billing.platform.read` 分离。因此仅有财务检索能力的账号此前仍能触发导出请求。后续修复将 `billing.export` 单独投影到组件，缺少该能力时不显示导出按钮；对应静态 UI 回归 3/3 通过，具体收据见本节末尾。未执行真实导出。
 - 本次核对的其他目标面未发现确定的不匹配：退款仅在平台 scope 展示且按 `billing.refund.execute` 投影，表单还要求运行态为 provider；Members 的变更控件由 `workspace.member.manage` 与目标成员约束控制，API 分别将 `ops.member.upsert/suspend` 绑定该能力；Platform Support 读取使用 `support.ticket.read`、回复使用 `support.ticket.update` 并绑定平台 scope endpoint；公共规则读取使用 `rule.read`，状态变更基于 `rule.update`，激活另受 `rule.publish.approve` 限制；审计导出仅对明确选定的 workspace 且有 `audit.export` 开放，和 workspace-scoped `ops.audit.export` policy 一致。
 - Stores 页有多个不同的工作区/平台 capability 与 API 方法；本次有限核对到的平台 canonical backfill 控件会同时验证 platform scope 和 `canonical.backfill.update` 的 platform scope 投影，品牌读取/绑定分别由 `customer.content.read/update` 控制。未确认新增 mismatch；不代表所有 Stores 子控件或真实运营 API 页面均已端到端覆盖。
-- 只读核对已有源码、权限注册表和测试，不触发业务写、不重跑既有绿测。当前只报告上面这一项确定 mismatch。
+- 上述条目记录的是后续已修复问题的发现经过；其余本次核对的目标面未发现确定的不匹配。只读核对未触发业务写，也未重跑既有绿测。
 - **已修复并作独立 UI 回归：**`FinancePage` 继续用 `billing.platform.read` 开放财务搜索，另行读取 `billing.export` 并传给 `FinanceSearchSection`；导出按钮仅在该能力为真时展示，因此单有读取能力的用户仍可检索但看不到导出入口。新增 `FinanceSearchSection.export-permission.regression.test.tsx`，单次运行 3/3 通过，覆盖缺少导出能力仍可检索且无导出按钮、具备能力时展示按钮，以及页面将两项能力分别接线。该 UI regression 使用静态渲染/mock，不证明真实服务端拒绝、真实角色投影或服务端到页面的端到端行为；没有重跑旧 Finance/权限 suites。
+- **已修复审计导航权限错配：**审计页面进入后始终加载列表，而 `ops.audit.list`/`ops.audit.platform.list` 要求 `audit.read`；此前页面可见能力还包含 `audit.export`，导致 export-only 会话可进入后请求必然 403。`domainReadCapabilities.audit` 现仅由 `audit.read` 开放。新增 `opsNavigation.test.ts` 回归，单次定向运行 **76/76 通过**。这是导航投影测试，不代替真实服务端角色矩阵验收；未重跑其他导航测试。
+- 侧栏/路由复核对照既有导航、守卫及浏览器收据，没有发现新的可复现跳转问题。纠正本报告此前措辞：客服详情返回链接指向可达 `/ops/support`，按组件合同不带 `task_id`；真实平台角色下深链、前进/后退仍缺运行环境证据。
+- Finance、Customer Delivery 与 User Directory 的企业工作区选择器此前在名称缺失/空白时分别回退为重复 ID 或空白名称。现统一显示“未命名企业主体 · <workspaceId>”，仍可核对准确 ID。FinancePage + CustomerDeliveryPage 两个受影响文件 **48/48** 通过；UserDirectory 新独立回归 **1/1** 通过，未重跑已有企业搜索浏览器回归。
 
 ### Ops ConfigCenter 精确 capability 门禁修复
 
@@ -350,7 +371,7 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 - 已定义 image-edit Host 响应规范化：支持 MCP `structuredContent`、常见 `result` wrapper 和 JSON text content；候选呈现使用规范化对象，不再因缺失函数引用而吞掉成功结果。新增浏览器回归在 stub `callTool` 返回 `structuredContent` 时确认 `multimodal.image.edit` 调用、候选 ID/模型/审核状态渲染，1/1 通过。该 stub 不调用真实 API/provider。
 - 画布现在按原图宽高与 `object-fit:contain` 的实际图像内容矩形转换指针坐标，不再把 letterbox 留白计入归一化区域。客户端对可编辑区域缺失/空数组/无效矩形、不可修改区域非数组/无效矩形 fail-closed。API contract 中 `editableRegions` 本身是可选约束，空数组等同未提供，不是服务端权限绕过；这里是 UI 必须显式声明绿色可编辑范围的误操作防护。独立桌面浏览器回归 `apps/plugin/ui/image-geometry.regression.browser.test.ts` 1/1 通过：200×100 原图在 contain 画布上的指针 y 坐标映射为 0.300，`editableRegions=[]` 禁止提交。此前综合文件中的尝试因目标 JSON textarea 位于折叠 details 而超时；修正 harness 后只运行独立失败用例，没有重跑另外两项已通过用例。
 - 充值页对 `billing.status`、订单列表、套餐目录增加请求代次及当前 tab/scope 保护；旧工作区订单响应不能覆盖切回“我的”后的新结果。仅用内存 deferred stub 验证“我的”已到账记录不会被迟到的工作区待支付响应替换，1/1 通过。未调用账务、目录 API 或写接口；真实宿主和商业数据仍未验收。
-- 上述 UI 修复与后续插件 parser 更新属于 production profile `0.1.0+codex.20261010011930`；本机 personal 插件路径 manifest 已显示此版本且 CLI 显示启用。基于 commit `40f22acd` 的新版本 bridge verifier 已通过并确认运行时文件/工具清单一致；当前 ChatGPT 会话刷新仍未验证。
+- 上述 UI 修复与后续插件 parser 更新的历史收据对应 production profile `0.1.0+codex.20261010011930`；该 personal 安装已被本轮 `0.1.0+codex.20261009233435` 替代。当前版本的 bridge verifier 已通过并确认运行时文件/工具清单一致；当前 ChatGPT 会话刷新仍未验证。
 
 
 ## 本机 stdio 工具覆盖清单（只读枚举）
@@ -533,6 +554,11 @@ Ops `models` 与 Incidents 当前在测试/路由中被隐藏或撤下；此处�
 - 视频制作技能：[xianyu110/ecommerce-video-skills README](https://github.com/xianyu110/ecommerce-video-skills/blob/main/README.md) 自述提供脚本、分镜、字幕/配音及本地 FFmpeg 拼接；README 声明 MIT，并标明 `edge-tts` 依赖为 LGPL-3.0。其演示、离线测试和最终成片效果均未在本项目执行或验证。
 - 带货视频 Skill：[ymh3753201/ai-commerce-video README](https://github.com/ymh3753201/ai-commerce-video/blob/main/README.zh-CN.md) 自述提供方案、素材准备和付费视频生成工作流；README 声明 MIT。没有调用该仓库提到的模型/中转，也没有验证服务商、费用或结果。
 
+本地 `ecommerce-detail-page-generator.md` 是 Store Nova 适配的规划文档；仓库历史没有保留其所述开源项目的 URL、版本或许可证。不能用该文件名证明具体上游仓库、许可兼容或外部代码/技能已安装。
+
+- **已修正图片扫描指引与服务端合同冲突：**主技能此前要求独立图片一律等安全扫描完成才调用生成，但服务端允许未绑定的独立候选在特定情况下使用 `unscanned` 素材，并要求如实标注“尚未扫描”。插件源文件及 `.codex-marketplace` 镜像现明确区分独立候选与正式绑定素材门禁，并禁止把 unscanned 描述为扫描通过。两份 `marketing-visual-contract.test.ts` 定向运行 **6/6 通过**。没有调用模型/provider 或触发生产素材工作流；该修正已包含在本轮 personal 新版安装包中。
+- 视频能力边界复核：插件可通过 MCP 请求和状态查询返回授权资产路径；没有内置下载、播放、抽帧或内容保真复核，故资产可下载不代表视频质检完成。此项作为明确产品边界记录，不宣称为已实现媒体 QA。
+
 **许可证与架构兼容性尚未评估。** 上述 MIT / LGPL-3.0 是各仓库 README 对自身或依赖的声明，不是法律结论；本次没有做许可证兼容审查。也没有评估将其依赖或生成代码接入本项目 ChatGPT→stdio/MCP→模型中转链路是否满足真实鉴权、成本/用量留证、素材权限、扫描和审计约束。因本项目宪法要求模型经已配置中转且保留证据，外部直连/API key/本地渲染路线不能据 README 自述直接视为可接入生产。插件内现有工作流参考已按 Store Nova 门禁整理；没有复制或安装这些上游仓库的 Skill 或执行器。
 
-插件更新方面，基于 commit `40f22acd` 的本地 stdio production-profile tar 位于 `artifacts/local-plugin/merchant-marketing-0.1.0+codex.20261010011930-darwin-arm64.tar.gz`，SHA256 为 `7635f806ceb794e00eb4947e68ed0679ce88d8f874791e0c6cfe32aed8d405ad`。构建状态 `release_status=local_stdio_candidate`、`ready_to_install=true`、`source_dirty=false`、`ci_test_certificate=false`；这是本地 ChatGPT stdio 插件候选，不是 ECS 发布候选；打包 provenance 对 tar/source 检查 `checked_files=85`；安装后 runtime inventory 为 source/install `69/69`，另外 verifier 确认 stdio 工具清单 `134/134` 一致。安装缓存不含 `.agents/plugins/marketplace.json` 是打包器按安装规则排除 `.agents` 项的预期行为，不能把 tar 的 85 项 provenance 描述成安装缓存有 85 项。没有配置时 `workspace.health` 以 `MCP_CONFIGURATION_REQUIRED` fail-closed。尚未验证当前 ChatGPT 宿主会话是否刷新；需要新会话/重新加载后才能验证工具快照已更新。当前 personal source/cache 均安装版本 `0.1.0+codex.20261010011930` 且保持启用；QA `merchant-local` 仍禁用，未新增或更改其缓存。安装器要求重启并重新登录；ChatGPT 新会话工具快照仍未验证。该收据证明本地包和 stdio 契约安装结果，不证明真实模型请求、生成成片、真实商家租户写入或生产权限矩阵。
+插件更新方面，上一轮历史候选基于 commit `40f22acd`，tar `artifacts/local-plugin/merchant-marketing-0.1.0+codex.20261010011930-darwin-arm64.tar.gz` 的 SHA256 为 `7635f806ceb794e00eb4947e68ed0679ce88d8f874791e0c6cfe32aed8d405ad`；该版本现已被本轮安装的新版替代。本轮版本 `0.1.0+codex.20261009233435` 基于 commit `ba0d892c3b4471d065ec5ca69aa0d0786e991d8a`，tar `artifacts/local-plugin/merchant-marketing-0.1.0+codex.20261009233435-darwin-arm64.tar.gz`，SHA256 `10676e7535a5d24a0b6c1d382633ae6352f5464c26fb4358039a047dd6a63d36`；构建报告 `release_status=local_stdio_candidate`、`ready_to_install=true`、插件包输入 `source_dirty=false`，未签署或验证包真实性。新版 bridge verifier `ok=true`，tar/source 检查 `checked_files=85`，安装后 runtime inventory source/install `69/69`，stdio 工具 `134/134` 一致。无配置时 `workspace.health` 以 `MCP_CONFIGURATION_REQUIRED` fail-closed。ChatGPT 会话刷新、真实模型请求、图像/视频成片、真实商家写入或生产权限矩阵仍未验证；此本地插件安装不是 ECS 部署。
