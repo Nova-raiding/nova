@@ -38,6 +38,11 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
   const [conflictWorkspaceId, setConflictWorkspaceId] = useState("");
   const storeLoadError = model.dataSetError("workspace.health", "ops.stores.list");
   const platformScope = model.authorization.scope.kind === "platform";
+  // The connection summary and directory are hydrated through the platform
+  // workspace-directory capability. `platform.settings.read` can expose this
+  // route on its own, so distinguish an unreadable directory from a real empty
+  // directory instead of rendering a zero-store result.
+  const canReadPlatformStoreDirectory = !platformScope || model.authorization.can("workspace.directory.read");
   const canManageCanonicalBackfill = platformScope && model.authorization.can("canonical.backfill.read");
   const canUpdateCanonicalBackfill = canScanCanonicalBackfill(
     platformScope,
@@ -59,8 +64,9 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
       actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新连接</Button>}
     >
       <div className="ops-stores-page">
+      {platformScope && !canReadPlatformStoreDirectory ? <div role="status" aria-live="polite"><strong>平台店铺目录未读取</strong><p>当前会话没有 workspace.directory.read 能力；本页不会请求平台店铺目录。空列表不能解释为没有已登记店铺，请由平台管理员更新权限后重新登录。</p></div> : null}
       <OpsPageError error={storeLoadError || automationLoadError || ""} onRetry={() => void model.load()} />
-      <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} platformLabels={platformLabels} />
+      {canReadPlatformStoreDirectory ? <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} platformLabels={platformLabels} /> : null}
       {!platformScope && <BrandTreeSection brands={model.brandNavigation} canRead={canCanonicalRead} canCreate={canCreateBrand} stores={model.storeDirectory} canBind={model.authorization.can("customer.content.update")} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenStore={(platform, accountId) => void openBrandStore(model, onNavigate, platform, accountId, onNavigateWithQuery)} onCreateBrand={model.createBrand} onBindStore={async ({ brandId, platform, accountId, expectedRevision }) => {
         await rpc("brand-unit.bind-store", { brand_id: brandId, platform, account_id: accountId, ...(expectedRevision !== undefined ? { expected_revision: String(expectedRevision) } : {}), reason: "运营台绑定品牌与已授权平台店铺" });
         await model.load();
@@ -74,7 +80,7 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
         await opsRestPost("/v1/canonical-backfill/conflicts/scan", { workspace_id: workspaceId, audit_batch_id: run.id, reason: "刷新 canonical 冲突队列" });
         await model.load();
       } : undefined} />
-      <StoreDirectorySection
+      {canReadPlatformStoreDirectory ? <StoreDirectorySection
         storeDirectory={model.storeDirectory}
         canPlatformOps={model.canPlatformOps}
         loading={model.loading}
@@ -93,7 +99,7 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
           await model.load();
           return response.applies_to_store_boundary;
         }}
-      />
+      /> : null}
       {platformScope && model.authorization.can("customer.manual_import") && <PlatformManualProductImport workspaces={model.workspaceDirectory?.items ?? []} />}
       <AutomationPolicySection
         automationPolicies={model.automationPolicies}

@@ -180,7 +180,7 @@ describe("StoresPage", () => {
     })} onNavigate={vi.fn()} />);
     const platformMarkup = renderToStaticMarkup(<StoresPage model={model({
       opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true },
-      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["platform.settings.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
+      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["platform.settings.read", "workspace.directory.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
     })} onNavigate={vi.fn()} />);
 
     expect(workspaceMarkup).toContain("规范商品一致性");
