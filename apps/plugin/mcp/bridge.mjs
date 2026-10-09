@@ -730,7 +730,7 @@ const METHODS = {
   },
   'billing.recharge.list': {
     description: '查看当前工作区充值订单，可按逗号分隔的状态筛选。只读。',
-    inputSchema: { type: 'object', properties: { states: { type: 'string' }, limit: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { states: { type: 'string' }, limit: { type: 'string' }, cursor: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false },
   },
   'billing.transactions': {
     description: '查看当前工作区充值和消费流水。只读。',
@@ -762,7 +762,7 @@ const METHODS = {
   },
   'catalog.search': {
     description: '只读搜索商品。商家提供的商品货号、商品编号或款号是商品级查询词，放入 query。只有系统返回或已确认对应到具体变体的 sku_id 才传给 sku_id；外部 SKU 编码不能直接假定为系统 sku_id。商品搜索无结果不能推断货号是 SKU，也不能把同一货号改放到 sku_id 重试。指定店铺必须同时提供平台和 account_id，全部店铺汇总必须明确 scope=workspace。结果包含逐商品店铺绑定或事实确认下一步；需要附带已审核的工作区知识上下文时传 include_knowledge=true。',
-    inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['store', 'workspace'], description: '默认选择具体店铺；只有明确 scope=workspace 才查询全部店铺。' }, query: { type: 'string', description: '商品级名称、货号、商品编号或款号。不要传变体 SKU 编码。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, store_name: { type: 'string' }, brand_name: { type: 'string' }, sku_id: { type: 'string', description: '系统返回或已确认对应到具体变体的 sku_id；外部 SKU 编码、商品货号、款号或颜色/尺码名称不能直接替代。' }, remote_product_id: { type: 'string' }, listing_status: { type: 'string', enum: ['on_sale', 'off_sale', 'draft', 'unknown'] }, product_state: { type: 'string', enum: ['active', 'disabled'] }, sync_status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'partial', 'failed'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, include_knowledge: { type: 'string', enum: ['true', 'false'], description: '附加当前工作区适用且已批准/已确认权益的知识上下文。' }, limit: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['store', 'workspace'], description: '默认选择具体店铺；只有明确 scope=workspace 才查询全部店铺。' }, query: { type: 'string', description: '商品级名称、货号、商品编号或款号。不要传变体 SKU 编码。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, store_name: { type: 'string' }, brand_name: { type: 'string' }, sku_id: { type: 'string', description: '系统返回或已确认对应到具体变体的 sku_id；外部 SKU 编码、商品货号、款号或颜色/尺码名称不能直接替代。' }, remote_product_id: { type: 'string' }, listing_status: { type: 'string', enum: ['on_sale', 'off_sale', 'draft', 'unknown'] }, product_state: { type: 'string', enum: ['active', 'disabled'] }, sync_status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'partial', 'failed'] }, date_from: { type: 'string', format: 'date-time' }, date_to: { type: 'string', format: 'date-time' }, include_knowledge: { type: 'string', enum: ['true', 'false'], description: '附加当前工作区适用且已批准/已确认权益的知识上下文。' }, limit: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.categories': {
     description: '查询品类库，返回品类名称、平台范围和必填属性模板。只读。',
@@ -1028,8 +1028,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { request_text: { type: 'string' } }, required: ['request_text'], additionalProperties: false },
   },
   'task.request.create': {
-    description: '当自然语言请求中的每个平台都能唯一绑定商品时，直接创建单任务或独立多平台任务组；否则返回需要澄清的绑定信息。',
-    inputSchema: { type: 'object', properties: { request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['request_text'], additionalProperties: false },
+    description: '当自然语言请求中的每个平台都能唯一绑定商品时，直接创建单任务或独立多平台任务组；可将 task.understand 确认过的范围作为 expected_scopes JSON 数组传入，范围变化时会在创建前返回冲突。',
+    inputSchema: { type: 'object', properties: { request_text: { type: 'string' }, expected_scopes: { type: 'string', contentMediaType: 'application/json', description: '可选；task.understand 确认的 JSON 数组，每项包含 platform、product_id 和可选 sku_ids。' }, idempotency_key: { type: 'string' } }, required: ['request_text'], additionalProperties: false },
   },
   'task.sku.split': {
     description: '把未确认方案的多 SKU 任务原子拆成每个 SKU 一个独立子任务/交付包；每个子任务保留自己的价格、库存、事实、图片和发布流程。',
@@ -1256,7 +1256,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' } }, required: ['modality', 'prompt', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.request': {
-    description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。',
+    description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。每个新渲染意图生成新的随机 idempotency_key；同一请求重试必须复用原 key，修改请求意图必须换新 key。',
     inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' } }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.get': {
@@ -2080,6 +2080,11 @@ function validateToolArguments(name, args) {
   const schema = METHODS[name]?.inputSchema
   if (!schema || schema.type !== 'object') return undefined
   const fail = message => ({ message: `工具 ${name} 参数无效：${message}` })
+  if (name === 'asset.upload') {
+    const filePath = typeof args.file_path === 'string' ? args.file_path.trim() : ''
+    const inlineContent = typeof args.content_base64 === 'string' ? args.content_base64.trim() : ''
+    if (!filePath && !inlineContent) return fail('必须提供 file_path 或 content_base64')
+  }
   if (name === 'commercial.notifications.mark-read' && 'workspace_id' in args) return fail('通知读状态不接受调用方工作区；使用已绑定会话')
   if (name === 'commercial.order.create' && args.purchase_kind === 'upgrade' && (typeof args.upgrade_quote_id !== 'string' || !args.upgrade_quote_id.trim())) return fail('升级需要服务端 upgrade_quote_id；请更新客户端并先获取升级报价')
   const validate = (value, propertySchema, path) => {
@@ -3249,6 +3254,7 @@ function prepareToolArguments(method, params) {
   const filePath = typeof params.file_path === 'string' ? params.file_path.trim() : ''
   const inlineContent = typeof params.content_base64 === 'string' ? params.content_base64.trim() : ''
   if (filePath && inlineContent) throw new Error('asset.upload 只能提供 file_path 或 content_base64 其中一个')
+  if (!filePath && !inlineContent) throw new Error('asset.upload 必须提供 file_path 或 content_base64')
   if (!filePath) return params
   if (!isAbsolute(filePath)) throw new Error('asset.upload file_path 必须是绝对路径')
   const info = lstatSync(filePath)
@@ -4032,7 +4038,10 @@ async function handle(request) {
   if (request.method === 'ping') return jsonRpc(id, {})
   if (request.method === 'initialize') {
     const requestedProtocol = request.params?.protocolVersion
-    if (requestedProtocol && requestedProtocol !== PROTOCOL_VERSION) return jsonRpcError(id, -32602, `不支持的 MCP 协议版本：${String(requestedProtocol)}`, { supportedProtocolVersion: PROTOCOL_VERSION })
+    // MCP version negotiation is a counter-offer: if the requested revision
+    // is not implemented, return a supported revision in InitializeResult.
+    // Rejecting here prevents otherwise compatible hosts from discovering the
+    // tools at all. The client can decide whether it supports our response.
     return jsonRpc(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {}, resourceTemplates: {} },

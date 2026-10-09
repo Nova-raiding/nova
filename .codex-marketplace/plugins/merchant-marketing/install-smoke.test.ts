@@ -540,7 +540,8 @@ printf '%s\n' Darwin
     expect(skill).toContain('ecommerce-video-marketing')
     expect(skill).toContain('storyboard-prompt-assistant')
     expect(skill).toContain('读取商品事实与素材扫描结果')
-    expect(skill).toContain('只有真实扫描通过才可标记扫描完成')
+    expect(skill).toContain('不得声称安全扫描通过')
+    expect(skill).toContain('不得伪造扫描结果')
     expect(skill).toContain('用 `creative.brief` 形成结构化视频 brief')
     // The merchant bridge does not expose the video rendering tool by default.
     // The entry skill must gate the call on the current tools/list surface
@@ -549,7 +550,8 @@ printf '%s\n' Darwin
     expect(skill).toContain('以 `output=rendering` 调用它')
     expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
-    expect(skill).toContain('下载、签名校验、对象归档、病毒扫描和商品保真复核')
+    expect(skill).toContain('由服务端完成对象归档与病毒扫描')
+    expect(skill).toContain('实际下载、播放、签名校验、抽帧和商品保真复核须由经授权')
     expect(skill).toContain('任何素材事实、扫描/权益状态')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
     expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')

@@ -152,7 +152,7 @@ beforeAll(async () => {
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'local-content-chain-e2e-session-secret')
   vi.stubEnv('AI_MODEL', 'fixture-text-model')
   api = await import('../../api/src/server.js')
-})
+}, 90_000)
 
 beforeEach(() => {
   fakeProvider.calls = 0

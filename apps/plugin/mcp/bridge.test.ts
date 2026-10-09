@@ -2024,7 +2024,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: pluginVersion } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
-      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ protocolVersion: '2025-06-18' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
       const resources = await nextLine(child.stdout)
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/onboarding-v1.html', mimeType: 'text/html;profile=mcp-app' }))
@@ -2464,6 +2464,7 @@ describe('Codex stdio MCP bridge', () => {
     const calls = [
       ['catalog.sync', { platform: 'taobao', account_id: 'acct_1', cursor: 'cursor_2' }],
       ['task.history', { publish_status: 'reconciling' }],
+      ['task.request.create', { request_text: '给选定商品准备内容', expected_scopes: '[{"platform":"taobao","product_id":"product_1"}]' }],
       ['task.group.create', { entries_json: '[]', request_text: '批量生成' }],
       ['task.plan.confirm', { task_id: 'task_1', expected_version: '2', price_impact_confirmed: 'true' }],
       ['multimodal.video.request', { prompt: '生成分镜', output: 'storyboard', context_json: '{}' }],
@@ -2479,7 +2480,7 @@ describe('Codex stdio MCP bridge', () => {
         const response = envelope.result
         expect(response.isError ? response.structuredContent?.code : response.structuredContent?.accepted).toBeTruthy()
       }
-      expect(requests).toHaveLength(4)
+      expect(requests).toHaveLength(5)
       for (const request of requests) {
         const expected = calls.find(([name]) => name === request.method)!
         expect(request).toMatchObject({ jsonrpc: '2.0', method: expected[0], params: { ...expected[1], workspace_id: 'ws_test' } })
