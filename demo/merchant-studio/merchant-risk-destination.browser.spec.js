@@ -36,6 +36,14 @@ const product = {
   updatedAt: '2026-10-09T02:00:00.000Z',
 }
 
+// These rows model products imported into the workspace and bound to a
+// manually registered JD store. They are intentionally not platform reads.
+const jdWorkspaceProducts = [product, ...['补充商品一', '补充商品二'].map((title, index) => ({
+  ...product,
+  id: `product-risk-imported-${index + 1}`,
+  title,
+}))]
+
 async function openOverview(issue) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -53,7 +61,9 @@ async function openOverview(issue) {
     } else if (pathname === '/healthz') {
       data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'postgres', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
     } else if (pathname === '/v1/platform-accounts') {
-      data = { items: [{ platform: 'jd', state: 'not_configured', readEnabled: false, writeEnabled: false, dataMode: 'account_record_only', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店' }] }
+      data = { items: [{ platform: 'jd', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'manual_upload', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店' }] }
+    } else if (pathname === '/v1/products') {
+      data = { items: jdWorkspaceProducts, total: jdWorkspaceProducts.length, limit: 50, offset: 0 }
     } else if (pathname === '/v1/tasks/task-risk-42') {
       data = task
     } else if (pathname === '/v1/products/product-risk-42') {
@@ -73,21 +83,71 @@ async function openOverview(issue) {
 
   await page.goto(new URL('/merchant/overview', studioUrl).href, { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: '事务看板' })).toBeVisible()
-  await expect(page.getByRole('button', { name: issue.title })).toBeVisible()
+  await expect(page.getByRole('button', { name: issue.type === 'AUTH_RECONNECT' ? /店铺接入方式待核实/u : issue.title })).toBeVisible()
   return { browser, context, page, apiCalls }
 }
 
-test('overview product risk opens the product catalog with the product search query', async () => {
-  const issue = { severity: 'high', type: 'LOW_STOCK', title: '测试商品-风险跳转', entityType: 'product', entityId: 'product-risk-42', nextAction: '查看商品库存' }
-  const { browser, context, page } = await openOverview(issue)
+test('overview product risk restores its platform, store, product, and search context', async () => {
+  const issue = { severity: 'high', type: 'LOW_STOCK', title: '测试商品-风险跳转', entityType: 'product', entityId: 'product-risk-42', platform: 'jd', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店', nextAction: '查看商品库存' }
+  const { browser, context, page, apiCalls } = await openOverview(issue)
   try {
     await page.getByRole('button', { name: /测试商品-风险跳转/ }).click()
     await expect.poll(() => {
       const url = new URL(page.url())
-      return { pathname: url.pathname, section: url.searchParams.get('section'), query: url.searchParams.get('q') }
-    }).toEqual({ pathname: '/merchant/products', section: 'products', query: '测试商品-风险跳转' })
-    await expect(page.getByRole('heading', { name: '选择平台与店铺' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: '事务看板' })).toHaveCount(0)
+      return {
+        pathname: url.pathname,
+        section: url.searchParams.get('section'),
+        query: url.searchParams.get('q'),
+        platform: url.searchParams.get('platform'),
+        accountId: url.searchParams.get('account_id'),
+        productId: url.searchParams.get('product_id'),
+      }
+    }).toEqual({
+      pathname: '/merchant/products', section: 'products', query: '测试商品-风险跳转',
+      platform: 'jd', accountId: 'jd-store-42', productId: 'product-risk-42',
+    })
+    await expect(page.getByRole('heading', { name: '平台&店铺&商品' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '测试商品-风险跳转' })).toBeVisible()
+    await expect(page.getByText('京东', { exact: true })).toBeVisible()
+    await expect(page.getByText('贵人鸟官方旗舰店', { exact: true })).toBeVisible()
+    await expect(page.getByText('当前商品属于人工登记、未授权的店铺，只能读取工作区导入资料；这不代表平台同步或授权。')).toBeVisible()
+    await expect(page.getByTestId('catalog-generate-image')).toBeVisible()
+    await expect.poll(() => apiCalls.some((call) => call.pathname === '/v1/products')).toBe(true)
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('manual authorization risk opens honest store guidance and the existing support-message entry', async () => {
+  const issue = {
+    severity: 'high', type: 'AUTH_RECONNECT', title: '店铺授权需重新连接', entityType: 'platform_account',
+    entityId: 'jd-store-42', platform: 'jd', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店',
+    nextAction: '在交互会话中重新发起官方授权',
+  }
+  const { browser, context, page, apiCalls } = await openOverview(issue)
+  try {
+    const authIssue = page.getByRole('button', { name: /店铺接入方式待核实/u })
+    await expect(authIssue).toContainText('当前为人工登记且未授权')
+    await expect(authIssue).not.toContainText('重新发起官方授权')
+    await authIssue.click()
+    await expect.poll(() => {
+      const url = new URL(page.url())
+      return {
+        pathname: url.pathname,
+        section: url.searchParams.get('section'),
+        platform: url.searchParams.get('platform'),
+        accountId: url.searchParams.get('account_id'),
+        intent: url.searchParams.get('intent'),
+      }
+    }).toEqual({ pathname: '/merchant/products', section: 'products', platform: 'jd', accountId: 'jd-store-42', intent: 'authorization' })
+    await expect(page.getByTestId('store-authorization-guidance')).toContainText('此页面不会发起授权')
+    await expect(page.getByTestId('store-authorization-guidance')).toContainText('请联系客户经理确认平台接入方式')
+    const callsBeforeSupport = apiCalls.length
+    await page.getByRole('button', { name: '查看客服支持消息' }).click()
+    await expect(page.getByRole('heading', { name: '支持消息' })).toBeVisible()
+    expect(apiCalls).toHaveLength(callsBeforeSupport)
+    await expect.poll(() => apiCalls.some((call) => call.pathname.includes('/authorization'))).toBe(false)
   } finally {
     await context.close()
     await browser.close()

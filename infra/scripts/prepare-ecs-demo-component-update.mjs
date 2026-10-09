@@ -45,7 +45,7 @@ function parseDocument(text, label) {
 function migrations(rows) {
   assert(Array.isArray(rows) && rows.length === 270, 'no-migration route requires the complete 270-row chain')
   for (const [index, row] of rows.entries()) {
-    assert(row && row.version === index + 1 && typeof row.name === 'string' && /^\d{3}_[a-z0-9_]+(?:\.sql)?$/u.test(row.name) && /^[a-f0-9]{64}$/u.test(row.checksum ?? ''), 'invalid migration version/name/checksum')
+    assert(row && row.version === index + 1 && typeof row.name === 'string' && /^[a-z0-9_]+$/u.test(row.name) && /^[a-f0-9]{64}$/u.test(row.checksum ?? ''), 'invalid migration version/name/checksum')
   }
 }
 
@@ -82,9 +82,15 @@ export function prepareDemoComponentUpdate(input) {
       assert((current.git_sha === null || git(current.git_sha)) && (current.source_sha256 === null || digest(current.source_sha256)), `${name} upstream identity malformed`)
       assert(immutable(current.reference) || (['postgres', 'redis'].includes(name) && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(current.reference)), `${name} upstream reference malformed`)
     } else {
-      assert(immutable(current.reference) && git(current.git_sha) && digest(current.source_sha256), `${name} owned image metadata incomplete`)
+      // The existing host-owned pilot gateway is pinned by Docker config ID,
+      // rather than a registry RepoDigest. Do not extend this exception to
+      // other services or accept a different/mutable local reference.
+      const pinnedLocalPilot = name === 'pilot-gateway' && digest(current.image_id) && current.reference === current.image_id
+      assert((immutable(current.reference) || pinnedLocalPilot) && git(current.git_sha) && digest(current.source_sha256), `${name} owned image metadata incomplete`)
     }
-    if (record.source_sha256 !== undefined) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
+    // Older manifests omitted source or recorded null as unknown. Enrich only
+    // from the actual bound image labels; a recorded digest must still match.
+    if (record.source_sha256 !== undefined && record.source_sha256 !== null) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
     baselineIds[name] = current.container_id
   }
   assert(new Set(Object.values(baselineIds)).size === runtimeServices.length, 'duplicate runtime container identity')

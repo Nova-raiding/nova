@@ -3,11 +3,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createScreenshotMatrixEvidence } from '../../scripts/screenshot-matrix-evidence.mjs'
 import { openPlatformConsole } from './ops-auth.js'
+import { assertLoopbackHttpOrigin } from './loopback-origin.js'
 
 const outputRoot = process.env.OPS_E2E_OUTPUT_DIR
 const base = process.env.OPS_BASE_URL
 const actorId = process.env.OPS_ACTOR_ID
 if (!outputRoot || !base || !actorId) throw new Error('ISOLATED_OPS_RUNNER_REQUIRED')
+assertLoopbackHttpOrigin(base)
 
 test.use({ channel: 'chrome', viewport: { width: 1440, height: 1050 }, timezoneId: 'Asia/Shanghai' })
 test.setTimeout(240_000)
@@ -123,6 +125,8 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
     await expect(primaryRail.getByRole('button', { name: label, exact: true })).toBeVisible()
   }
   expect((await primaryRail.getByRole('button').allTextContents()).map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '平台与店铺', '规则中心', '客服工作台'])
+  const operationsData = sidebar.locator('section[aria-labelledby="ops-nav-group-operations-data"]')
+  expect((await operationsData.getByRole('button').allTextContents()).map(value => value.trim())).toEqual(['账务与退款', '存储治理', '审计中心'])
   await expect(sidebar.getByRole('button', { name: '更多功能', exact: true })).toHaveCount(0)
   await page.goto(new URL('/ops/overview?workbench=platform', base).toString(), { waitUntil: 'domcontentloaded' })
   await expect(sidebar.getByRole('button', { name: '模型服务', exact: true })).toHaveCount(0)
@@ -135,8 +139,13 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
       const body = response.request().postDataJSON()
       return body?.method === 'ops.workspaces.list' && body?.params?.status === 'active' && body?.params?.merchant_only === 'true'
     }, { timeout: 30_000 }) : undefined
-    if (domain === 'overview') {
-      const routeButton = page.getByRole('navigation', { name: '平台运营功能导航' }).getByRole('button', { name: '总览', exact: true })
+    if (domain !== 'models') {
+      const routeLabels = {
+        overview: '总览', users: '用户中心', stores: '平台与店铺', rules: '规则中心',
+        finance: '账务与退款', storage: '存储治理', audit: '审计中心',
+        'customer-delivery': '客户交付',
+      }
+      const routeButton = page.getByRole('navigation', { name: '平台运营功能导航' }).getByRole('button', { name: routeLabels[domain], exact: true })
       await expect(routeButton).toBeVisible()
       await routeButton.click()
     } else {
@@ -184,7 +193,7 @@ test('platform desktop read-only route and tab matrix', async ({ page }) => {
     const tabs = await page.getByRole('tab').allTextContents()
     const alerts = await page.getByRole('alert').allTextContents()
     const navigation = await page.getByRole('navigation', { name: '平台运营功能导航' }).getByRole('button').allTextContents()
-    expect(navigation.map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '平台与店铺', '规则中心', '客服工作台'])
+    expect(navigation.map(value => value.trim())).toEqual(['总览', '用户中心', '客户交付', '平台与店铺', '规则中心', '客服工作台', '账务与退款', '存储治理', '审计中心'])
     await expect(sidebar.getByRole('button', { name: '更多功能', exact: true })).toHaveCount(0)
     const denied = headings.some(value => value.startsWith('无权访问'))
     expect(new URL(page.url()).pathname, `${domain} must remain on its canonical route`).toBe(`/ops/${domain}`)

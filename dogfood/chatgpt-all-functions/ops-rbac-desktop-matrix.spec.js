@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { assertLoopbackHttpOrigin } from './loopback-origin.js'
 
 test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
 
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
+assertLoopbackHttpOrigin(baseUrl)
 
 const sessionFor = (workbench, variant = 'full') => {
   const isControlledSupport = variant === 'controlled-support'
@@ -69,6 +71,10 @@ async function installSessionProjection(page, { initialWorkbench = 'platform', v
     localStorage.setItem('ops_actor_id', 'ops-rbac-desktop-qa')
     localStorage.setItem('ops_api_token', 'ops-rbac-desktop-local-token')
     localStorage.setItem('ops_workbench', workbench)
+    // Current cookie-backed Ops UI requires the password-session marker before
+    // it will issue the mocked ops.session MCP request. A legacy local token
+    // alone is intentionally not treated as an authenticated session.
+    localStorage.setItem('ops_password_session_active', 'true')
   }, { workbench: initialWorkbench })
   await page.route('**/api/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}
@@ -94,32 +100,31 @@ async function installSessionProjection(page, { initialWorkbench = 'platform', v
 test('keeps the platform overview scoped to the platform workbench', async ({ page }) => {
   await installSessionProjection(page)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '平台运营概况' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '平台运营实时概况' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('radiogroup', { name: '当前运营工作台' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '平台控制台' })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: '商家工作区' })).toHaveCount(0)
 })
 
-test('shows controlled-support scope and exits a JIT grant from the keyboard', async ({ page }) => {
+test('shows controlled-support scope and exits the controlled session from the keyboard', async ({ page }) => {
   await installSessionProjection(page, { variant: 'controlled-support', expireOnReload: true })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await expect(page.getByText('受控支持 · ws_demo', { exact: true })).toBeVisible({ timeout: 20_000 })
-  const exit = page.getByRole('button', { name: '退出当前临时授权' })
+  const exit = page.getByRole('button', { name: '退出受控会话并清除本机已加载的授权数据' })
   await expect(exit).toBeVisible()
   await exit.focus()
   await expect(exit).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(exit).toHaveCount(0)
-  await expect(page.getByText('企业主体 · ws_demo', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '受控会话' })).toHaveCount(0)
 })
 
 test('expires a controlled-support JIT grant and removes the action surface', async ({ page }) => {
   await installSessionProjection(page, { variant: 'controlled-support', expireOnReload: true })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('button', { name: '退出当前临时授权' })).toBeVisible({ timeout: 20_000 })
-  await page.getByRole('button', { name: '退出当前临时授权' }).focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: '退出当前临时授权' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '当前临时授权' })).toBeVisible({ timeout: 20_000 })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('region', { name: '当前临时授权' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '受控会话' })).toHaveCount(0)
   await expect(page.getByText('授权状态：已由服务端验证', { exact: true })).toBeVisible()
 })
 

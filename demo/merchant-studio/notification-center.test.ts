@@ -19,7 +19,8 @@ describe('merchant overview notification center', () => {
     expect(appSource).toContain("<Bell size={18}")
     expect(appSource).toContain('<Dropdown trigger={[\'click\']} placement="bottomRight"')
     expect(appSource).toContain('issueReadSession.read(apiBaseUrl')
-    expect(appSource).toContain('onOpenIssues={() => navigateTo(\'products\', { clearContext: true })}')
+    expect(appSource).toContain('onOpenIssues={openRiskIssue}')
+    expect(appSource).toContain('const destination = merchantRiskDestination(issue)')
     expect(appSource).not.toContain('issue-queue-panel')
   })
 

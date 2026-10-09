@@ -34,6 +34,29 @@ describe('workspace metadata diagnostic scope', () => {
     expect(result.safety).toEqual({ old_identity_reused: false, binding_deleted: false, secrets_read: false })
   })
 
+  it('marks a saved loopback binding for another workspace stale without reusing or deleting its identity', () => {
+    const oldBinding = {
+      schema_version: '2',
+      workspace_id: 'ws_previous',
+      scope: {
+        api_origin: 'http://127.0.0.1:8787',
+        actor_id: 'actor_previous',
+        token_sha256: 'historical-fingerprint',
+      },
+    }
+    const result = diagnose(oldBinding)
+
+    expect(result.stale).toBe(true)
+    expect(result.reusable).toBe(false)
+    expect(result.reasons).toEqual(expect.arrayContaining([
+      'loopback_to_production_origin',
+      'workspace_changed',
+    ]))
+    expect(result.stored).toMatchObject({ workspace_id: 'ws_previous', api_origin: 'http://127.0.0.1:8787' })
+    expect(result.target).toMatchObject({ workspace_id: 'ws_authorized', api_origin: 'https://yxsona.com' })
+    expect(result.safety).toEqual({ old_identity_reused: false, binding_deleted: false, secrets_read: false })
+  })
+
   it('does not infer missing host authentication from absence of a fallback metadata file', () => {
     const result = diagnose(undefined)
     expect(result.binding_present).toBe(false)

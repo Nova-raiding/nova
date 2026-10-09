@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import { PLATFORMS, TASK_STATES } from '../packages/contracts/src/domain.js'
 
 function parseMcpRequestSchema(source: string) {
   const lines = source.split('\n')
@@ -42,6 +43,27 @@ function openApiOperation(source: string, path: string, method: string) {
 }
 
 describe('OpenAPI security contract', () => {
+  it('documents strict task-list filter values and the invalid-request response', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const operation = openApiOperation(source, '/v1/tasks', 'get')
+    const stateParameter = operation.match(/- \{ name: state, in: query, required: false, schema: \{ type: string, enum: \[([^\]]+)\] \} \}/u)
+    expect(stateParameter, 'searchTasks.state must enumerate the runtime task states').not.toBeNull()
+    expect(stateParameter![1]!.split(',').map(value => value.trim())).toEqual([...TASK_STATES])
+    expect(operation).toContain("- { name: platform, in: query, required: false, schema: { $ref: '#/components/schemas/Platform' } }")
+    const platformSchema = source.slice(source.indexOf('    Platform:'), source.indexOf('    AuthorizeRequest:'))
+    const platformEnum = platformSchema.match(/enum: \[([^\]]+)\]/u)
+    expect(platformEnum, 'Platform must enumerate the runtime platforms').not.toBeNull()
+    expect(platformEnum![1]!.split(',').map(value => value.trim())).toEqual([...PLATFORMS])
+    expect(operation).toContain("'400': { $ref: '#/components/responses/ErrorEnvelope' }")
+  })
+
+  it('documents invalid product facts_confirmed filters as a 400 response', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const operation = openApiOperation(source, '/v1/products', 'get')
+    expect(operation).toContain('- { name: facts_confirmed, in: query, required: false, schema: { type: boolean } }')
+    expect(operation).toContain("'400': { $ref: '#/components/responses/ErrorEnvelope' }")
+  })
+
   it('documents recycled-media binding as 410 and missing-asset purge as 404', () => {
     const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
     const binding = openApiOperation(source, '/v1/products/{productId}/assets', 'post')

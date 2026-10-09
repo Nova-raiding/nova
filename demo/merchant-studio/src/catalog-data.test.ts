@@ -186,6 +186,32 @@ describe('product facts come from the server', () => {
     expect(catalogProductsForStore([{ id: 'p', title: 'p', updatedAt: '2026-01-02T00:00:00.000Z', accountId: 'a' } as Product], 'a')![0]!.price).toBeNull()
   })
 
+  it('keeps null and blank product facts unknown while preserving actual zero values', () => {
+    const [item] = catalogProductsForStore([{
+      id: 'p', title: 'p', accountId: 'a', updatedAt: '',
+      price: null, stock: null, skuCount: null,
+      skus: [{ id: 's-null', name: '未知', price: null, stock: null }, { id: 's-blank', name: '空白', price: ' ', stock: '' }, { id: 's-zero', name: '零值', price: 0, stock: 0 }],
+    } as unknown as Product], 'a')!
+    expect(item).toMatchObject({ price: null, subtitle: '' })
+    expect(item!.skus).toEqual([
+      { id: 's-null', name: '未知', price: null, stock: null },
+      { id: 's-blank', name: '空白', price: null, stock: null },
+      { id: 's-zero', name: '零值', price: 0, stock: 0 },
+    ])
+    expect(catalogProductSubtitle({ stock: null, skuCount: null } as unknown as Product)).toBe('')
+    expect(catalogProductSubtitle({ stock: 0, skuCount: 0 } as Product)).toBe('库存 0 件 · 0 个规格')
+  })
+
+  it('does not coerce malformed boolean facts into zero', () => {
+    const [item] = catalogProductsForStore([{
+      id: 'p', title: 'p', accountId: 'a', updatedAt: '', price: false,
+      stock: false, skuCount: false,
+      skus: [{ id: 's', name: '异常字段', price: false, stock: false }],
+    } as unknown as Product], 'a')!
+    expect(item).toMatchObject({ price: null, subtitle: '' })
+    expect(item!.skus).toEqual([{ id: 's', name: '异常字段', price: null, stock: null }])
+  })
+
   it('reports a sync time only when the server recorded one', () => {
     expect(catalogSyncLabel({})).toBe('')
     expect(catalogSyncLabel({ sync: { lastSuccessfulAt: null, lastAttemptAt: null } })).toBe('')

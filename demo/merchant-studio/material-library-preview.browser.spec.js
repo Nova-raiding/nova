@@ -142,6 +142,28 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     const lightboxImage = page.locator('.material-upload-lightbox img')
     await expect(lightboxImage).toBeVisible()
     await expect.poll(() => lightboxImage.evaluate((image) => image.naturalWidth)).toBe(1)
+    await page.getByRole('button', { name: '关闭素材图片预览' }).click()
+    await expect(page.getByRole('button', { name: `放大${'真实解码样图.png'}` })).toBeFocused()
+
+    // The nested upload preview is dismissible from the keyboard, and the
+    // containing dialog keeps its focus rather than dropping it to the page.
+    await page.getByRole('button', { name: '返回素材库' }).click()
+    await expect(workspace).toBeVisible()
+    await page.getByRole('button', { name: '上传素材' }).click()
+    const uploadDialog = page.getByTestId('material-upload-dialog')
+    await uploadDialog.locator('input[type="file"]').setInputFiles([
+      { name: '待上传预览.png', mimeType: 'image/png', buffer: validPng },
+      { name: '第二张待上传预览.png', mimeType: 'image/png', buffer: validPng },
+    ])
+    await uploadDialog.getByRole('button', { name: '预览待上传预览.png' }).click()
+    await expect(page.getByRole('button', { name: '关闭素材预览' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: '关闭素材预览' })).toHaveCount(0)
+    await expect(uploadDialog).toBeVisible()
+    await expect(uploadDialog.getByRole('button', { name: '预览待上传预览.png' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(uploadDialog).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '上传素材' })).toBeFocused()
 
     expect(downloads.map(({ assetId }) => assetId).sort()).toEqual([invalidAssetId, validAssetId].sort())
     expect(downloads.every(({ accept }) => accept === 'application/octet-stream')).toBe(true)

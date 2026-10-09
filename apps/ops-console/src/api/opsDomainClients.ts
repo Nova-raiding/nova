@@ -56,6 +56,7 @@ export const parseModelStatus = (value: unknown): ModelStatus => {
   if (candidate.ownership !== "platform" || candidate.user_key_binding !== false
     || !modelStates.includes(candidate.state as never) || !nullableText(candidate.provider_host)
     || !nullableText(candidate.text_model) || !nullableText(candidate.image_model)
+    || !(candidate.image_edit_model === undefined || nullableText(candidate.image_edit_model))
     || !nullableText(candidate.vision_model) || !nullableText(candidate.video_model)
     || !object(relay) || !bool(relay.configured) || !nullableText(relay.host) || !textArray(relay.reasons ?? [])
     || !object(capabilities) || !object(readiness) || modelKinds.some(kind => !modelGate(readiness[kind]))

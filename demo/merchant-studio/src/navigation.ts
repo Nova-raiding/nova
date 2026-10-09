@@ -8,12 +8,20 @@ export type MerchantRouteTarget =
   | { kind: 'task'; taskId: string }
   | { kind: 'product'; productId: string; platform?: MerchantPlatformId; accountId?: string; intentKey?: string }
 
+export interface MerchantCatalogContext {
+  platform?: MerchantPlatformId
+  accountId?: string
+  productId?: string
+  intent?: 'authorization'
+}
+
 export interface MerchantRoute {
   page: MerchantPage
   target?: MerchantRouteTarget
   searchQuery: string
   entry?: MerchantEntryPoint
   imageJobId?: string
+  catalogContext?: MerchantCatalogContext
 }
 
 export interface MerchantRiskDestinationInput {
@@ -21,10 +29,25 @@ export interface MerchantRiskDestinationInput {
   title?: string
   entityType?: string
   entityId?: string
+  platform?: string
+  accountId?: string
   evidence?: { taskId?: string; [key: string]: unknown }
 }
 
-export function merchantRiskDestination(issue: MerchantRiskDestinationInput) {
+export type MerchantRiskDestination =
+  | { page: 'overview' }
+  | { page: 'task'; target: { kind: 'task'; taskId: string } }
+  | { page: 'products'; entry: MerchantEntryPoint; searchQuery?: string; catalogContext?: MerchantCatalogContext }
+
+export function merchantRiskDestination(issue: MerchantRiskDestinationInput): MerchantRiskDestination {
+  const platform = issue.platform && platforms.has(issue.platform as MerchantPlatformId)
+    ? issue.platform as MerchantPlatformId
+    : undefined
+  const accountId = typeof issue.accountId === 'string' ? issue.accountId.trim() : ''
+  const storeContext = {
+    ...(platform ? { platform } : {}),
+    ...(accountId ? { accountId } : {}),
+  }
   const hasProductRiskCode = ['LOW_STOCK', 'MISSING_IMAGES'].includes(issue.type)
   if (hasProductRiskCode && issue.entityType !== undefined && issue.entityType !== 'product') {
     return { page: 'overview' as const }
@@ -33,15 +56,38 @@ export function merchantRiskDestination(issue: MerchantRiskDestinationInput) {
     const taskId = typeof issue.evidence?.taskId === 'string' ? issue.evidence.taskId.trim() : ''
     if (taskId) return { page: 'task' as const, target: { kind: 'task' as const, taskId } }
   }
+  if (issue.type === 'AUTH_RECONNECT' && issue.entityType === 'platform_account') {
+    return {
+      page: 'products' as const,
+      entry: 'products' as const,
+      catalogContext: { ...storeContext, intent: 'authorization' as const },
+    }
+  }
   // Older metrics projections may omit entityType even though their stable
-  // risk code still identifies a product row. Preserve the product title as
-  // the catalog search query for those two product-specific risk types.
+  // risk code still identifies a product row. Preserve both the server title
+  // and product/store identity when navigating into the catalog.
   const isProductRisk = issue.entityType === 'product' || (issue.entityType === undefined && hasProductRiskCode)
-  if (isProductRisk && issue.title?.trim()) {
-    return { page: 'products' as const, entry: 'products' as const, searchQuery: issue.title.trim() }
+  if (isProductRisk) {
+    const title = issue.title?.trim() ?? ''
+    const productId = typeof issue.entityId === 'string' ? issue.entityId.trim() : ''
+    if (!title && !productId) return { page: 'overview' as const }
+    const catalogContext = {
+      ...storeContext,
+      ...(productId ? { productId } : {}),
+    }
+    return {
+      page: 'products' as const,
+      entry: 'products' as const,
+      ...(title ? { searchQuery: title } : {}),
+      ...(Object.keys(catalogContext).length ? { catalogContext } : {}),
+    }
   }
   if (issue.entityType === 'platform_account' || issue.entityType === 'sync_job') {
-    return { page: 'products' as const, entry: 'products' as const }
+    return {
+      page: 'products' as const,
+      entry: 'products' as const,
+      ...(Object.keys(storeContext).length ? { catalogContext: storeContext } : {}),
+    }
   }
   return { page: 'overview' as const }
 }
@@ -84,7 +130,19 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
     // Direct links open the materials workspace; the catalog remains available
     // through its explicit screenshot-backed section=products entry.
     const entry = merchantEntryPointFromQuery(params.get('section')) ?? 'knowledge'
-    return { page: 'products', searchQuery: params.get('q') ?? '', entry }
+    const platform = platformFromQuery(params.get('platform'))
+    const accountId = params.get('account_id')?.trim()
+    const productId = params.get('product_id')?.trim()
+    const intent = params.get('intent') === 'authorization' ? 'authorization' as const : undefined
+    const catalogContext = platform || accountId || productId || intent
+      ? {
+          ...(platform ? { platform } : {}),
+          ...(accountId ? { accountId } : {}),
+          ...(productId ? { productId } : {}),
+          ...(intent ? { intent } : {}),
+        }
+      : undefined
+    return { page: 'products', searchQuery: params.get('q') ?? '', entry, ...(catalogContext ? { catalogContext } : {}) }
   }
   // Broad legacy destinations resolve to the materials workspace. Concrete
   // task deep-links remain supported below so old bookmarks still recover work.
@@ -118,7 +176,7 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
 
 export function urlForMerchantRoute(
   location: Pick<Location, 'pathname' | 'search'>,
-  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string },
+  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; catalogContext?: MerchantCatalogContext },
 ): string {
   const basePath = merchantRoutePattern.test(location.pathname)
     ? location.pathname.replace(merchantRoutePattern, '')
@@ -132,6 +190,10 @@ export function urlForMerchantRoute(
   let path = `${basePath}/merchant/${route.page === 'task' ? 'tasks' : route.page}`
   if (route.page === 'products' && route.searchQuery?.trim()) params.set('q', route.searchQuery.trim())
   if (route.page === 'products' && route.entry) params.set('section', route.entry)
+  if (route.page === 'products' && route.catalogContext?.platform && platforms.has(route.catalogContext.platform)) params.set('platform', route.catalogContext.platform)
+  if (route.page === 'products' && route.catalogContext?.accountId?.trim()) params.set('account_id', route.catalogContext.accountId.trim())
+  if (route.page === 'products' && route.catalogContext?.productId?.trim()) params.set('product_id', route.catalogContext.productId.trim())
+  if (route.page === 'products' && route.catalogContext?.intent === 'authorization') params.set('intent', 'authorization')
   if (route.page === 'task' && route.target?.kind === 'task') path += `/${encodeURIComponent(route.target.taskId)}`
   if (route.page === 'task' && route.target?.kind === 'product') {
     path += '/new'

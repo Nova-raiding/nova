@@ -33,7 +33,7 @@ const audit = [{
 
 /**
  * UI-boundary regression only: the real component and browser render, while
- * the /mcp HTTP boundary is intercepted with deterministic responses. This
+ * the opsClient RPC boundary is replaced with deterministic responses. This
  * does not claim API, MCP transport, authorization, or persistence acceptance.
  */
 describe("public rule draft detail UI boundary", () => {
@@ -53,6 +53,14 @@ describe("public rule draft detail UI boundary", () => {
       server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
       plugins: [{
         name: "public-rule-detail-rpc-mock",
+        enforce: "pre",
+        transform(code: string, id: string) {
+          if (id.includes("PublicRuleDraftReviewPanel.tsx")) {
+            const rpcImport = 'import { rpc } from "../../api/opsClient.js";';
+            if (!code.includes(rpcImport)) throw new Error("Could not locate the PublicRuleDraftReviewPanel RPC boundary");
+            return code.replace(rpcImport, "const rpc = (method, params, options) => window.__publicRuleRpcMock(method, params, options);");
+          }
+        },
         resolveId(id: string) {
           if (id === entryPath) return `\0${entryPath}`;
         },
@@ -103,23 +111,14 @@ describe("public rule draft detail UI boundary", () => {
   }, 60_000);
 
   async function openPanel(page: Page, detailResponse: unknown) {
-    await page.addInitScript(() => {
+    await page.addInitScript(({ ruleValue, auditValue, detailValue }) => {
       localStorage.setItem("ops_connection_config_v1", JSON.stringify({ apiBase: "/api", workspaceId: "ui-boundary-workspace", workbench: "platform" }));
-    });
-    await page.route("**/api/mcp", async route => {
-      const request = route.request().postDataJSON() as { id: string; method: string };
-      const result = request.method === "ops.rules.public.drafts.list"
-        ? { items: [rule] }
-        : request.method === "ops.rules.public.drafts.get"
-          ? detailResponse
-          : undefined;
-      if (result === undefined) throw new Error(`Unexpected RPC method: ${request.method}`);
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }),
-      });
-    });
+      window.__publicRuleRpcMock = async (method: string) => {
+        if (method === "ops.rules.public.drafts.list") return { items: [ruleValue] };
+        if (method === "ops.rules.public.drafts.get") return detailValue;
+        throw new Error(`Unexpected RPC method: ${method}`);
+      };
+    }, { ruleValue: rule, auditValue: audit, detailValue: detailResponse });
     await page.goto(`${baseUrl}/__public-rule-detail-test`);
     await page.waitForTimeout(1_000);
     const initialText = await page.locator("body").innerText();
@@ -169,4 +168,10 @@ describe("public rule draft detail UI boundary", () => {
 
 async function expectText(page: Page, text: string) {
   await page.getByText(text, { exact: false }).first().waitFor();
+}
+
+declare global {
+  interface Window {
+    __publicRuleRpcMock?: (method: string, params?: unknown) => Promise<unknown>;
+  }
 }

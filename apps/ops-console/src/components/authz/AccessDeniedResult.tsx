@@ -74,6 +74,7 @@ export function AccessDeniedResult({
   obligationsMissing,
   grantedCapabilities,
   onBack,
+  backLabel = "返回用户中心",
   onRefresh,
   refreshing = false,
 }: {
@@ -86,7 +87,8 @@ export function AccessDeniedResult({
   decisionId?: string;
   obligationsMissing?: readonly string[];
   grantedCapabilities?: readonly string[];
-  onBack: () => void;
+  onBack?: () => void;
+  backLabel?: string;
   onRefresh: () => void;
   refreshing?: boolean;
 }) {
@@ -103,7 +105,7 @@ export function AccessDeniedResult({
       title={<h1 ref={headingRef} tabIndex={-1} className="ops-result-heading">无权访问“{domainLabel}”</h1>}
       subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
       extra={<Space className="access-denied-actions" aria-busy={refreshing || undefined}>
-        <Button type="primary" onClick={onBack}>返回用户中心</Button>
+        {onBack ? <Button type="primary" onClick={onBack}>{backLabel}</Button> : null}
         <Button
           onClick={onRefresh}
           loading={refreshing}

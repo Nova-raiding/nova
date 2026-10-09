@@ -56,6 +56,30 @@ export function inventoryStatus(blockers) {
   }
 }
 
+export const PUBLIC_PROBE_URLS = Object.freeze([
+  'https://yxsona.com/releasez',
+  'https://yxsona.com/api/healthz',
+  'https://yxsona.com/api/readyz',
+  'https://ops.yxsona.com/healthz',
+])
+
+export async function collectPublicProbes(fetchImpl = fetch) {
+  const probes = []
+  for (const url of PUBLIC_PROBE_URLS) {
+    try {
+      const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
+      const body = await response.json()
+      probes.push({ url, status: response.status, ready: body.data?.ready ?? body.data?.status === 'ok', ...(body.data?.release ? { release: body.data.release } : {}) })
+    } catch { probes.push({ url, status: null, ready: false }) }
+  }
+  return probes
+}
+
+export function publicProbeBlockers(probes) {
+  return probes.filter(probe => probe.status !== 200 || !probe.ready)
+    .map(probe => `public_probe_failed:${probe.url}`)
+}
+
 const remote = String.raw`
 import json,subprocess,shutil
 
@@ -83,16 +107,9 @@ async function main() {
   })
   if (result.status !== 0) throw new Error('101 inventory failed; check SSH and Docker access; no deployment was attempted')
   const snapshot = JSON.parse(result.stdout)
-  const probes = []
-  for (const url of ['https://yxsona.com/releasez', 'https://yxsona.com/api/readyz', 'https://ops.yxsona.com/healthz']) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
-      const body = await response.json()
-      probes.push({ url, status: response.status, ready: body.data?.ready ?? body.data?.status === 'ok', ...(body.data?.release ? { release: body.data.release } : {}) })
-    } catch { probes.push({ url, status: null, ready: false }) }
-  }
+  const probes = await collectPublicProbes()
   const blockers = assess(snapshot)
-  for (const probe of probes) if (probe.status !== 200 || !probe.ready) blockers.push(`public_probe_failed:${probe.url}`)
+  blockers.push(...publicProbeBlockers(probes))
   const warnings = [...inventoryWarnings(snapshot), ...snapshot.services.filter(s => ['postgres', 'redis'].includes(s.service) && !s.image.includes('@sha256:')).map(s => `data_service_uses_tag_preserve_running_image_id:${s.service}`)]
   console.log(JSON.stringify({ observed_at: new Date().toISOString(), ...snapshot, probes, blockers, warnings,
     ...inventoryStatus(blockers),

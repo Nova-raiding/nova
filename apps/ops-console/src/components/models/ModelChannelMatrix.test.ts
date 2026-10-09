@@ -35,4 +35,20 @@ describe("model channel matrix", () => {
   it("never treats a missing status as ready", () => {
     expect(modelChannelRows(undefined).every((row) => !row.ready && !row.costEvidence)).toBe(true);
   });
+
+  it("shows the separately configured image-edit model instead of the image-generation model", () => {
+    const status = {
+      state: "partial_model_readiness",
+      image_model: "image-generation-v1",
+      image_edit_model: "image-edit-v2",
+      capabilities: { image_generation: true, image_editing: true },
+      model_readiness: {
+        image: { ready: true, provider_configured: true },
+        image_edit: { ready: true, provider_configured: true },
+      },
+      cost_evidence_by_modality: { image: true, image_edit: true },
+    } as unknown as ModelStatus;
+
+    expect(modelChannelRows(status).find((row) => row.key === "image_edit")?.model).toBe("image-edit-v2");
+  });
 });

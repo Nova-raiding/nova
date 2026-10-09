@@ -106,6 +106,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const listRequest = useRef(0);
+  const detailRequest = useRef(0);
   const [approvalRef, setApprovalRef] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
   const [approvedAt, setApprovedAt] = useState("");
@@ -138,19 +139,22 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   };
   useEffect(() => {
     listRequest.current += 1;
+    detailRequest.current += 1;
     setItems([]); setNextCursor(undefined); setPageIndex(0); setPageCursors([undefined]); setDetail(undefined); setLoading(false);
     void load(undefined, 0);
   }, [visible, platform]);
 
   if (!visible) return null;
   const openDetail = async (item: ReviewRule) => {
+    const requestId = ++detailRequest.current;
     setError(""); setDetail(undefined);
     try {
       const response = await rpc<unknown>("ops.rules.public.drafts.get", { platform: item.platform, pack_id: item.pack_id, version: item.version });
       const result = parsePublicRuleDraftDetail(response);
+      if (requestId !== detailRequest.current) return;
       if (result.rule.checksum !== item.checksum || result.rule.id !== item.id) throw new Error("规则列表与详情不一致，请刷新后重新选择");
       setDetail(result);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "公共规则详情读取失败"); }
+    } catch (cause) { if (requestId === detailRequest.current) setError(cause instanceof Error ? cause.message : "公共规则详情读取失败"); }
   };
   const transition = async (status: "active" | "inactive") => {
     if (!detail || busy || !canWrite) return;

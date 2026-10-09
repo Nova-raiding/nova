@@ -412,6 +412,8 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'knowledge.asset.create',
   'knowledge.asset.update',
   'knowledge.asset.list',
+  'knowledge.product.list',
+  'knowledge.product.update',
   'knowledge.brand.preference.get',
   'knowledge.brand.preference.update',
   'knowledge.feedback.record',

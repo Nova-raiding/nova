@@ -41,7 +41,7 @@ describe('merchant navigation cleanup contract', () => {
 
   it('routes transaction issues to the workspace that can handle their entity', () => {
     expect(app).toContain('onOpenIssues={onOpenTransactionIssue}')
-    expect(merchantRiskDestination({ type: 'AUTH_RECONNECT', entityType: 'platform_account' })).toEqual({ page: 'products', entry: 'products' })
+    expect(merchantRiskDestination({ type: 'AUTH_RECONNECT', entityType: 'platform_account' })).toEqual({ page: 'products', entry: 'products', catalogContext: { intent: 'authorization' } })
     expect(merchantRiskDestination({ type: 'LOW_STOCK', entityType: 'product', title: '商品甲' })).toEqual({ page: 'products', entry: 'products', searchQuery: '商品甲' })
     expect(merchantRiskDestination({ type: 'CONTENT_BLOCKING', entityType: 'content_version', evidence: { taskId: 'task-42' } })).toEqual({ page: 'task', target: { kind: 'task', taskId: 'task-42' } })
     const productHref = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, { page: 'products', entry: 'products', searchQuery: '商品甲' })

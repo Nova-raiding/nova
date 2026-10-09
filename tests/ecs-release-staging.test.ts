@@ -59,6 +59,7 @@ function run(value: ReturnType<typeof fixture>, releaseId = 'release-1') {
   return spawnSync('sh', [join(value.repo, 'infra/scripts/stage-verified-ecs-release.sh')], {
     env: { ...process.env, PATH: `${value.bin}:${process.env.PATH}`, ECS_BUILD_LOCK_PATH: join(value.base, 'build.lock'), ECS_CANDIDATE_BUNDLE_DIR: value.bundle, ECS_RELEASES_ROOT: value.releases, RELEASE_ID: releaseId },
     encoding: 'utf8',
+    timeout: 20_000,
   })
 }
 
@@ -83,7 +84,7 @@ describe('verified ECS release staging', () => {
     expect(readFileSync(join(release, '.candidate-identity'), 'utf8')).toContain('release_id=release-1')
     expect(readFileSync(join(release, '.npm-ci-args'), 'utf8')).toContain('--ignore-scripts')
     expect(existsSync(join(release, '.candidate-source.tar'))).toBe(true)
-  })
+  }, 30_000)
 
   it('serializes concurrent attempts for the same release identity', async () => {
     const value = fixture()

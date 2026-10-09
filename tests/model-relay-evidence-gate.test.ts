@@ -37,7 +37,8 @@ describe('model relay evidence gate', () => {
     for (const result of results) {
       const artifact = { schema_version: '1', release_id: 'release-1', modality: result.modality, observed_at: '2026-08-26T01:00:00Z', http_status: result.httpStatus, response_headers: {},
         result, ...(result.modality === 'video' ? { relay_response: { data: { status: 'completed', video_url: 'https://relay.example.com/output.mp4' } } } : {}),
-        ...(result.modality === 'embedding' ? { candidate_binding: candidateBinding,
+        candidate_binding: candidateBinding,
+        ...(result.modality === 'embedding' ? {
           embedding_response: { input_sha256: createHash('sha256').update(input, 'utf8').digest('hex'),
             embedding_sha256: createHash('sha256').update(JSON.stringify(vector), 'utf8').digest('hex'), data_count: 1, dimensions: 1024 } } : {}) }
       const body = JSON.stringify(artifact)
@@ -373,7 +374,7 @@ describe('model relay evidence gate', () => {
     bound.results = bound.results.map(result => {
       const summarizedResult = { ...result, costSource: 'provider_receipt' }
       const receiptResult = { ...summarizedResult, ...(result.modality === 'text' ? { costObserved: false, costCny: 0 } : {}) }
-      const body = JSON.stringify({ schema_version: '1', release_id: bound.release_id, modality: result.modality, http_status: result.httpStatus, result: receiptResult })
+      const body = JSON.stringify({ schema_version: '1', release_id: bound.release_id, modality: result.modality, observed_at: '2026-08-26T01:00:00Z', http_status: result.httpStatus, result: receiptResult })
       const digest = createHash('sha256').update(body).digest('hex')
       writeFileSync(join(root, 'relay', `${result.modality}.json`), body)
       return { ...summarizedResult, evidence_ref: `artifact://production/relay/${result.modality}.json#${digest}` }
@@ -390,7 +391,7 @@ describe('model relay evidence gate', () => {
     }
     bound.results = bound.results.map(result => {
       const summarizedResult = { ...result, costSource: 'provider_receipt' }
-      const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, http_status: result.httpStatus, result: summarizedResult })
+      const body = JSON.stringify({ schema_version: '1', release_id: result.modality === 'text' ? 'older-release' : bound.release_id, modality: result.modality, observed_at: '2026-08-26T01:00:00Z', http_status: result.httpStatus, result: summarizedResult })
       const digest = createHash('sha256').update(body).digest('hex')
       writeFileSync(join(root, 'relay', `${result.modality}.json`), body)
       return { ...summarizedResult, evidence_ref: `artifact://production/relay/${result.modality}.json#${digest}` }

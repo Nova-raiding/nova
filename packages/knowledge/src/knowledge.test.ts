@@ -243,6 +243,27 @@ describe('knowledge module', () => {
       .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT'))
   })
 
+  it('replays product-governance events without projecting them into legacy assets', () => {
+    const restored = createModule()
+    const event = {
+      id: 'event-product-governance-1', workspaceId: 'ws-a', aggregateId: 'knowledge_asset_product-1', sequence: 2,
+      eventType: 'knowledge.product.updated',
+      payload: {
+        id: 'knowledge_asset_product-1', productId: 'product-1', approvalStatus: 'approved', rightsStatus: 'cleared', revision: 2,
+        documents: [{ id: 'knowledge_document_product-1', approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'queued', revision: 3 }],
+        actor_id: 'editor-1', reason: '已核实商品资料来源并确认授权',
+      },
+    } as const
+
+    restored.hydrate([event])
+    restored.hydrate([{ ...event, payload: { ...event.payload } }])
+    expect(restored.getAsset('ws-a', 'knowledge_asset_product-1')).toBeUndefined()
+    expect(() => restored.hydrate([{ ...event, aggregateId: 'another-asset' }]))
+      .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_AGGREGATE_MISMATCH'))
+    expect(() => restored.hydrate([{ ...event, payload: { ...event.payload, reason: 'changed replay' } }]))
+      .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT'))
+  })
+
   it('rejects mis-scoped durable events without partially hydrating the batch', () => {
     const restored = createModule()
     const valid = {

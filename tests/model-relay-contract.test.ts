@@ -132,10 +132,14 @@ describe('production model relay contract', () => {
     }
     try {
       mkdirSync(join(directory, 'relay'))
+      const deploymentNonce = 'nonce_candidate_identity_123456'
+      const candidate = { releaseGitSha: 'a'.repeat(40), imageSetDigest: `sha256:${'b'.repeat(64)}`, manifestSha256: 'c'.repeat(64), deploymentNonce }
+      const candidate_binding = { release_git_sha: candidate.releaseGitSha, image_set_digest: candidate.imageSetDigest,
+        manifest_sha256: candidate.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex') }
       const results = (['text', 'image', 'image_edit', 'ocr', 'video'] as const).map(modality => {
         const result = { ...completeProbe(modality), state: 'ready' as const }
         const evidence_ref = saveReceipt(`${modality}.json`, {
-          schema_version: '1', release_id: releaseId, modality, http_status: 200, result,
+          schema_version: '1', release_id: releaseId, modality, observed_at: observedAt, candidate_binding, http_status: 200, result,
           ...(modality === 'video' ? { relay_response: { status: 'completed', output_url: 'https://cdn.example.test/video.mp4' } } : {}),
         })
         return { ...result, evidence_ref }
@@ -153,12 +157,14 @@ describe('production model relay contract', () => {
           recovery: { release_id: releaseId, observed_at: observedAt, http_status: 200, provider_request_id: 'req-recovered', relay, endpoint: '/probe' },
         }),
       }
-      const deploymentNonce = 'nonce_candidate_identity_123456'
-      const candidate = { releaseGitSha: 'a'.repeat(40), imageSetDigest: `sha256:${'b'.repeat(64)}`, manifestSha256: 'c'.repeat(64), deploymentNonce }
-      const evidence = { schema_version: '1', release_id: releaseId, release_git_sha: candidate.releaseGitSha, image_set_digest: candidate.imageSetDigest, manifest_sha256: candidate.manifestSha256, deployment_nonce_sha256: createHash('sha256').update(deploymentNonce).digest('hex'), generated_at: generatedAt, expires_at: new Date(now + 3_600_000).toISOString(), environment: 'production', simulated: false, relay, token_quota, results, error_recovery }
+      const evidence = { schema_version: '1', release_id: releaseId, release_git_sha: candidate.releaseGitSha, image_set_digest: candidate.imageSetDigest, manifest_sha256: candidate.manifestSha256, deployment_nonce_sha256: candidate_binding.deployment_nonce_sha256, generated_at: generatedAt, expires_at: new Date(now + 3_600_000).toISOString(), environment: 'production', simulated: false, relay, token_quota, results, error_recovery }
       const persisted = persistRelayCanaryEvidence({ path, environment: 'production', modalities: ['text', 'image', 'image_edit', 'ocr', 'video'], evidence, artifactRoot: directory, expectedCandidate: candidate })
       expect(persisted).toEqual({ evidence, state: 'complete', written: true, exitCode: 0 })
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(evidence)
+      for (const modality of ['text', 'image', 'image_edit', 'ocr', 'video'] as const) {
+        const receipt = JSON.parse(readFileSync(join(directory, 'relay', `${modality}.json`), 'utf8'))
+        expect(receipt).toMatchObject({ schema_version: '1', observed_at: observedAt, candidate_binding })
+      }
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
@@ -698,6 +704,22 @@ describe('production model relay contract', () => {
       }, { expectedReleaseId: 'release-1', requireProduction: true, artifactRoot: root })).toEqual(expect.arrayContaining([
         'image result is required', 'image_edit result is required', 'ocr result is required', 'video result is required',
       ]))
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('writes schema_version 1 on production %s receipt artifacts', modality => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-versioned-artifact-'))
+    try {
+      const result = completeProbe(modality)
+      const reference = writeRelayResponseArtifact(root, 'release-versioned', modality, {
+        status: 200,
+        headers: new Headers({ 'x-request-id': `req-${modality}` }),
+        payload: { choices: [{ message: { content: 'OK' } }], usage: { total_tokens: 2 } },
+        result: { ...result, state: 'ready' },
+      })
+      const artifactPath = join(root, `relay/release-versioned/${modality}.json`)
+      expect(reference).toContain(`artifact://production/relay/release-versioned/${modality}.json#`)
+      expect(JSON.parse(readFileSync(artifactPath, 'utf8')).schema_version).toBe('1')
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 

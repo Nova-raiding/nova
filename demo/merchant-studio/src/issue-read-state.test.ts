@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { IssueNotificationBell, IssueNotificationPanel } from './App'
+import { DescriptionsIssue, IssueNotificationBell, IssueNotificationPanel } from './App'
 import { describeApiError, fetchWorkspaceMetrics, type WorkspaceMetrics } from './api'
 import {
   actionableIssueItems,
@@ -49,13 +49,14 @@ const risk = (overrides: Partial<Risk> = {}): Risk => ({
 const state = (input: { baseUrl?: string; items?: Risk[] | null; error?: string; loading?: boolean }) =>
   resolveIssueReadState({ baseUrl: input.baseUrl, items: input.items ?? null, error: input.error ?? '', loading: input.loading ?? false })
 
-const panel = (input: Parameters<typeof state>[0], items: Risk[] = []) =>
+const panel = (input: Parameters<typeof state>[0], items: Risk[] = [], apiMode?: string | null) =>
   renderToStaticMarkup(createElement(IssueNotificationPanel, {
     state: state(input),
     items,
     onOpenIssue: () => undefined,
     onClose: () => undefined,
     onRetry: () => undefined,
+    apiMode,
   }))
 
 const bell = (input: Parameters<typeof state>[0]) => renderToStaticMarkup(createElement(IssueNotificationBell, { state: state(input) }))
@@ -107,6 +108,26 @@ describe('the bell never reports a count it did not read', () => {
     expect(one).toContain('1 项需要关注')
     expect(one).not.toContain('暂无需要处理的问题')
     expect(bell({ baseUrl: '/api', items: [risk()] })).toContain('工作区待处理问题，1 项')
+  })
+
+  it('uses manual-store guidance in both the notification row and issue detail', () => {
+    const issue = risk({
+      type: 'AUTH_RECONNECT',
+      title: '店铺授权需重新连接',
+      platform: 'jd',
+      storeName: '人工登记店铺',
+      nextAction: '在交互会话中重新发起官方授权',
+    })
+    const notification = panel({ baseUrl: '/api', items: [issue] }, [issue], 'manual')
+    const details = renderToStaticMarkup(createElement(DescriptionsIssue, { item: issue, apiMode: 'manual' }))
+
+    for (const html of [notification, details]) {
+      expect(html).toContain('店铺接入方式待核实')
+      expect(html).toContain('当前为人工登记且未授权')
+      expect(html).toContain('联系客户经理确认接入方式')
+      expect(html).not.toContain('重新发起官方授权')
+      expect(html).not.toContain('店铺授权需重新连接')
+    }
   })
 
   it('keeps an unconfigured workspace out of the empty state as well', () => {

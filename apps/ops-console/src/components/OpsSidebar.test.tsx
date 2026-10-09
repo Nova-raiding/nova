@@ -30,7 +30,8 @@ describe("OpsSidebar navigation", () => {
 
   it("keeps the established destinations and adds the authorized support entry", () => {
     expect(navigationGroups[0]?.items).toEqual(["overview", "users", "customer-delivery", "stores", "rules", "support"]);
-    expect(navigationGroups).toHaveLength(1);
+    expect(navigationGroups[1]).toEqual({ key: "operations-data", label: "运营数据与审计", items: ["finance", "storage", "audit"] });
+    expect(navigationGroups).toHaveLength(2);
     expect(mainItems.map(({ domain }) => domain)).toEqual([
       "overview", "users", "customer-delivery", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "support", "audit",
     ]);
@@ -82,22 +83,21 @@ describe("OpsSidebar navigation", () => {
     expect(markup).not.toContain("功能开关");
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain('aria-label="更多功能"');
-    expect(markup).not.toContain('aria-label="审计中心"');
+    expect(markup).toContain('aria-label="审计中心"');
     expect(markup).not.toContain('aria-label="平台与店铺"');
     expect(markup).not.toContain('aria-label="平台规则"');
     expect(markup).not.toContain('aria-label="账务与退款"');
     expect(markup).not.toContain('aria-label="存储与对账"');
   });
 
-  it("renders the governed platform workflow destinations in the primary rail", () => {
+  it("keeps the primary rail stable and places authorized data/audit routes in the secondary group", () => {
     const markup = renderToStaticMarkup(<OpsSidebar activeDomain="overview" visibleDomains={["overview", "users", "customer-delivery", "stores", "rules", "finance", "storage", "audit"]} onNavigate={() => undefined} />);
-    expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(5);
+    expect((markup.match(/class="sider-item(?: active)?"/g) ?? [])).toHaveLength(8);
     expect(markup).toContain('aria-label="总览"');
     expect(markup).toContain('aria-label="用户中心"');
     expect(markup).toContain('aria-label="客户交付"');
-    for (const label of ["账务与退款", "审计中心", "存储治理"]) {
-      expect(markup).not.toContain(`aria-label="${label}"`);
-    }
+    expect(markup).toContain('aria-labelledby="ops-nav-group-operations-data"');
+    for (const label of ["账务与退款", "审计中心", "存储治理"]) expect(markup).toContain(`aria-label="${label}"`);
     expect(markup).toContain('aria-label="平台与店铺"');
     expect(markup).toContain('aria-label="规则中心"');
     expect(mainItems.map(({ domain }) => domain)).toEqual(expect.arrayContaining(["stores", "rules", "finance", "storage", "audit"]));
@@ -105,7 +105,7 @@ describe("OpsSidebar navigation", () => {
 
   it("keeps finance reachable only when it is in the server-derived visibility set", () => {
     expect(mainItems.map(({ domain }) => domain)).toContain("finance");
-    expect(navigationGroups.flatMap(({ items }) => [...items])).not.toContain("finance");
+    expect(navigationGroups.flatMap(({ items }) => [...items])).toContain("finance");
     expect(mainItems.map(({ domain }) => domain)).not.toContain("feature-flags");
     const markup = renderToStaticMarkup(
       <OpsSidebar
@@ -117,7 +117,9 @@ describe("OpsSidebar navigation", () => {
     expect(markup).toContain('aria-label="总览"');
     expect(markup).not.toContain('aria-label="用户中心"');
     expect(markup).not.toContain('aria-label="客户交付"');
-    expect(markup).not.toContain('aria-label="账务与退款"');
+    expect(markup).toContain('aria-label="账务与退款"');
+    expect(markup).not.toContain('aria-label="存储治理"');
+    expect(markup).not.toContain('aria-label="审计中心"');
     const restrictedMarkup = renderToStaticMarkup(
       <OpsSidebar activeDomain="users" visibleDomains={["users"]} onNavigate={() => undefined} />,
     );

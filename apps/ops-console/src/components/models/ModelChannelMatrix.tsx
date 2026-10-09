@@ -5,7 +5,7 @@ import { modelStateLabel } from "../sections/overview/modelReadiness";
 const modalityConfig = [
   { key: "text", label: "文本", modelKey: "text_model", capabilityKey: "text_generation" },
   { key: "image", label: "图片", modelKey: "image_model", capabilityKey: "image_generation" },
-  { key: "image_edit", label: "图片编辑", modelKey: "image_model", capabilityKey: "image_editing" },
+  { key: "image_edit", label: "图片编辑", modelKey: "image_edit_model", capabilityKey: "image_editing" },
   { key: "ocr", label: "OCR", modelKey: "vision_model", capabilityKey: "image_fact_ocr" },
   { key: "video", label: "视频", modelKey: "video_model", capabilityKey: "video_rendering" },
 ] as const;

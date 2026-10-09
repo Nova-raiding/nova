@@ -160,8 +160,8 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
   const dockerConfig = join(output, `docker-client-${runId}`)
   await mkdir(dockerConfig, { mode: 0o700 })
   const socket = await localDockerSocket()
-  const docker = async (args: readonly string[], secrets: Record<string, string> = {}): Promise<string> => new Promise((resolveResult, reject) => {
-    execFile('docker', ['--host', `unix://${socket}`, '--config', dockerConfig, ...args], { env: isolatedFixtureSpawnEnvironment(secrets), timeout: 30_000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
+  const docker = async (args: readonly string[], secrets: Record<string, string> = {}, timeoutMs = 30_000): Promise<string> => new Promise((resolveResult, reject) => {
+    execFile('docker', ['--host', `unix://${socket}`, '--config', dockerConfig, ...args], { env: isolatedFixtureSpawnEnvironment(secrets), timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
       // Native errors include command arguments and stderr: expose only the
       // action, never generated credentials or daemon configuration details.
       if (error) reject(new Error(`ISOLATED_FIXTURE_DOCKER_${args[0]?.toUpperCase() ?? 'COMMAND'}_FAILED`))
@@ -206,7 +206,26 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
       try { await admin.query('SELECT 1'); ready = true; break } catch { await new Promise(resolveWait => setTimeout(resolveWait, 250)) }
     }
     if (!ready) throw new Error('ISOLATED_FIXTURE_POSTGRES_NOT_READY')
-    if (await docker(['exec', '--env', 'REDISCLI_AUTH', redis.id, 'redis-cli', 'ping'], { REDISCLI_AUTH: redisPassword }) !== 'PONG') throw new Error('ISOLATED_FIXTURE_REDIS_NOT_READY')
+    // Redis may accept the container start before redis-server is ready to
+    // execute commands. Probe only the already-owned exact container ID and
+    // retry this read-only ping for a bounded window; never start a second one.
+    let redisReady = false
+    let redisProbeError: Error | undefined
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        if (await docker(['exec', '--env', 'REDISCLI_AUTH', redis.id, 'redis-cli', '--raw', 'ping'], { REDISCLI_AUTH: redisPassword }, 2_000) === 'PONG') {
+          redisReady = true
+          break
+        }
+        redisProbeError = undefined
+      } catch (error) {
+        // docker() exposes only a sanitized action code, never stderr, args,
+        // generated credentials, or daemon configuration.
+        redisProbeError = error instanceof Error ? error : new Error('ISOLATED_FIXTURE_DOCKER_EXEC_FAILED')
+      }
+      if (attempt < 19) await new Promise(resolveWait => setTimeout(resolveWait, 250))
+    }
+    if (!redisReady) throw redisProbeError ?? new Error('ISOLATED_FIXTURE_REDIS_NOT_READY')
     const serverVersion = String((await admin.query('SHOW server_version')).rows[0]?.server_version ?? '')
     if (!serverVersion.startsWith('17.')) throw new Error('ISOLATED_FIXTURE_POSTGRES_MAJOR_MISMATCH')
     const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')

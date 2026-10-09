@@ -168,6 +168,23 @@ export function accessDeniedEvidence(
   };
 }
 
+/**
+ * Choose a 403 recovery destination from the server-projected visible routes.
+ * Preserve the established user-center destination when it is authorized;
+ * otherwise prefer overview and then the first authorized route.
+ */
+export function accessDeniedRecoveryDomain(
+  authorization: Parameters<typeof visibleOpsDomains>[0],
+  activeWorkbench: OpsWorkbench,
+): OpsDomain | undefined {
+  const visible = visibleOpsDomains(authorization).filter(
+    (domain) => domainNavigationBlockedReason(domain, activeWorkbench) === undefined,
+  );
+  if (visible.includes("users")) return "users";
+  if (visible.includes("overview")) return "overview";
+  return visible[0];
+}
+
 export async function selectStoreScope(
   model: Pick<OpsConsoleModel, "setSelectedStoreScope" | "loadAutomationScope">,
   scope: string,
@@ -232,6 +249,7 @@ function Dashboard({
   const visibleDomains = visibleOpsDomains(model.authorization);
   const blockedDomain = domainNavigationBlockedReason(activeDomain, activeWorkbench);
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
+  const accessDeniedReturnDomain = accessDeniedRecoveryDomain(model.authorization, activeWorkbench);
   const ActivePage = opsPageRegistry[activeDomain];
   const navigateToDomain = (domain: Parameters<typeof navigateToRoute>[0]) => {
     // A domain served by a workbench this console cannot activate would
@@ -397,7 +415,10 @@ function Dashboard({
               decisionId={sessionAccessDeniedEvidence.decisionId}
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
               grantedCapabilities={Array.from(model.authorization.capabilities).sort()}
-              onBack={() => navigateToDomain("users")}
+              onBack={accessDeniedReturnDomain ? () => navigateToDomain(accessDeniedReturnDomain) : undefined}
+              backLabel={accessDeniedReturnDomain
+                ? `返回${mainItems.find((item) => item.domain === accessDeniedReturnDomain)?.label ?? "可访问页面"}`
+                : undefined}
               onRefresh={() => void model.load()}
               refreshing={model.loading}
             />

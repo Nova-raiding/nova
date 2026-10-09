@@ -387,7 +387,7 @@ const matchesContext = (rule: RuleEntry, context: RuleContext): boolean => {
 const containsText = (values: readonly string[], text: string): boolean => values.some(value => value.toLocaleLowerCase().includes(text))
 
 const forbiddenCompetitorKeys = new Set(['originalText', 'copiedText', 'copyBrand', 'exactCopy', 'verbatimText'])
-const knownKnowledgeEventTypes = new Set(['knowledge.rule.created', 'knowledge.rule.updated', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
+const knownKnowledgeEventTypes = new Set(['knowledge.rule.created', 'knowledge.rule.updated', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.product.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
 
 function assertCompetitorInput(input: object): void {
   const visit = (value: unknown): void => {
@@ -510,6 +510,10 @@ export class KnowledgeModule {
         this.rules.set(id, rule)
       }
       if ((event.eventType === 'knowledge.asset.created' || event.eventType === 'knowledge.asset.updated') && id) this.assets.set(id, clone(payload as unknown as AssetEntry))
+      // Product-facts governance is projected by KnowledgeRepository, not this
+      // legacy KnowledgeModule. Accept and fingerprint its durable event so a
+      // shared workspace hydration can replay it without treating the valid
+      // product event as unknown or overwriting a legacy AssetEntry.
       if (event.eventType === 'knowledge.brand.preference.updated' && id) this.brandPreferences.set(String((payload as Record<string, unknown>).workspaceId), clone(payload as unknown as BrandPreference))
       if (event.eventType === 'knowledge.competitor.created' && id) this.competitors.set(id, clone(payload as unknown as CompetitorAnalysis))
       if (event.eventType === 'knowledge.feedback.recorded' && id) {

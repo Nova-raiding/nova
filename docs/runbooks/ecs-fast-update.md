@@ -64,6 +64,10 @@ sh infra/scripts/build-ecs-release-images.sh
 
 输出包含新完整 15 服务 manifest、四个 API `RELEASE_*` 输入、新 Compose、原始回滚 Compose/manifest 字节及旧身份、准备审查摘要。manifest 的候选 SHA 表示本次发布包；`services.*.git_sha/source_sha256/reference/image_id` 表示各组件自己的真实镜像身份。只有 `ui` 更换镜像及其容器标签；旧 API 镜像与标签仍保留旧 SHA，API 双实例仅更新发布四字段。其他 12 服务配置、网络、挂载、healthcheck 与 migrate 声明完全保留。
 
+现有宿主自有 `pilot-gateway` 可使用精确 Docker config ID 引用，但仅当 `reference === image_id` 且值为合法 `sha256:<64hex>`；其他自有服务仍必须使用 `repository@sha256`。旧 manifest 未记录 `source_sha256` 或记录 null 时，owner 仍须从当前容器所绑定的实际镜像 ID 的 `com.storenova.release.source_sha256` 标签采集该字段，同时从同一镜像采集 Git 标签；不得从候选源码、全局发布 SHA 或其他组件推断。pilot/payment 的实际镜像标签均存在合法 source SHA，应填入并输出真实 digest。所有自有镜像（含 pilot）缺少合法 Git/source 标签将被拒绝；旧 manifest 已记录非 null source 时还须逐项相等。上游 Postgres/Redis/ClamAV 无标签时仍允许显式 `null`，并绑定其原 config ID。
+
+迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，版本必须连续 1–270，checksum 必须完整 SHA256。当前 270 个真实 SQL 的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已部署链摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，仍需 owner 实读线上完整链逐行相等。
+
 API `/releasez` 读取启动环境，不读取 manifest 文件；因此这条路线必须将 `ui api api-replica` 列为明确更新/回滚服务，不能只重启 UI 或 `docker restart` API。只构建一个新 UI 镜像，同时重新创建两个沿用旧镜像的 API 容器。adapter 的输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
 
 owner 将输入输出仅保存在宿主受保护目录，并使用原有部署锁、全新候选目录和不覆盖旧输入的写入策略。在锁内重新确认实际 CID/镜像、配置来源 SHA、挂载/网络、公网四元组、完整迁移链没有漂移，完成 Compose render/no-interpolate 和相同三服务回滚审查后，才进入既有发布步骤。更新后必须实测 15 服务 healthy、12 个保留 CID 不变、UI 镜像/字节和 API 双实例完整发布四元组准确；另验真实桌面导航及本地 stdio 读链路。配置摘要是 owner 采集证据的绑定，不替代这些实际检查。该模块没有自动收集、写入或执行这些步骤。

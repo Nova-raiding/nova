@@ -38,10 +38,15 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores", "rules", "support"] },
+  // These platform routes remain live in opsDomains/opsPageRegistry, but were
+  // omitted from the primary rail and had no mounted contextual link. Keep the
+  // reviewed primary rail intact while giving their server-authorized users a
+  // direct, in-app route.
+  { key: "operations-data", label: "运营数据与审计", items: ["finance", "storage", "audit"] },
 ];
 
-// Match the reviewed desktop rail. Other authorized destinations remain
-// routable through their canonical links and contextual workflows.
+// Match the reviewed primary desktop rail; secondary platform routes are kept
+// in the separate operations-data group above.
 export function OpsSidebar({
   activeDomain,
   onNavigate,

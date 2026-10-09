@@ -11,10 +11,10 @@ test.use({ channel: 'chrome', trace: 'off', video: 'off', screenshot: 'off' })
 
 // This list mirrors the platform workbench's *route* set — the domains
 // `requiredWorkbenchForDomain` serves from the platform workbench, plus the two
-// dual-scope domains (`overview`, `finance`) — not the sidebar's
-// `navigationGroups`. `stores` / `storage` / `audit` have no sidebar entry at
-// all and the route walk still has to cover them; conversely a domain can be
-// withdrawn from the sidebar while its route stays registered for bookmarks.
+// dual-scope domains (`overview`, `finance`). The sidebar keeps its reviewed
+// primary rail and exposes finance/storage/audit in a permission-filtered
+// secondary group; models remains intentionally withdrawn while its route is
+// kept for bookmarked links.
 const platformSections = [
   ['总览', '/ops/overview?workbench=platform'],
   ['用户中心', '/ops/users?workbench=platform'],

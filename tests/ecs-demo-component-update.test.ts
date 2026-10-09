@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { loadMigrations, migrationChecksum } from '../packages/persistence/src/migration.js'
 
 const moduleUrl = pathToFileURL(resolve('infra/scripts/prepare-ecs-demo-component-update.mjs')).href
 const { prepareDemoComponentUpdate: prepare, imageSetDigest, canonicalJson, runtimeServices } = await import(moduleUrl)
@@ -24,7 +25,7 @@ function fixture() {
   services.migrate = { image: 'postgres:reviewed-tag', command: ['never-start-migrate'] }
   const compose = { services, networks: { default: { name: 'preserved_private' } }, volumes: { data: { name: 'existing_business_data' } } }
   for (const name of ['api', 'api-replica']) Object.assign(services[name].environment, { MCP_INTEGRATION_MODE: 'local_stdio', OPS_AUTH_MODE: 'password', RUN_MIGRATIONS_ON_STARTUP: 'false' })
-  const migrations = Array.from({ length: 270 }, (_, i) => ({ version: i + 1, name: `${String(i + 1).padStart(3, '0')}_fixture.sql`, checksum: hash(`migration${i}`) }))
+  const migrations = Array.from({ length: 270 }, (_, i) => ({ version: i + 1, name: `fixture_${i + 1}`, checksum: hash(`migration${i}`) }))
   const manifest = { schema_version: 'demo-runtime-service-set/1', release_id: 'release-previous', candidate_git_sha: previousGit, compose_project: 'merchant-demo-85575f9c', services: records, image_set_digest: imageSetDigest(records), configuration_contract_sha256: hash(canonicalJson(compose)), migration_version: 270, migration_chain_sha256: hash(canonicalJson(migrations)) }
   const manifestText = JSON.stringify(manifest, null, 2) + '\n'
   const identity = { RELEASE_ID: manifest.release_id, RELEASE_GIT_SHA: previousGit, RELEASE_MANIFEST_SHA256: hash(manifestText), RELEASE_IMAGE_SET_DIGEST: manifest.image_set_digest }
@@ -134,6 +135,77 @@ describe('Demo UI mixed-component publication identity', () => {
     input.baseline.runtime_services['payment-gateway'].git_sha = olderGit
     reseal(input, (_compose, manifest) => { manifest.services['payment-gateway'].git_sha = olderGit })
     expect(JSON.parse(prepare(input).manifest_text).services['payment-gateway'].git_sha).toBe(olderGit)
+  })
+  it('retains the actual host-owned pilot gateway pinned by its exact config image ID', () => {
+    const input = fixture(), current = input.baseline.runtime_services['pilot-gateway']
+    current.reference = current.image_id
+    reseal(input, (compose, manifest) => {
+      compose.services['pilot-gateway'].image = current.image_id
+      manifest.services['pilot-gateway'].reference = current.image_id
+      manifest.services['pilot-gateway'].source_sha256 = null
+    })
+    const result = prepare(input), record = JSON.parse(result.manifest_text).services['pilot-gateway']
+    expect(record.reference).toBe(current.image_id)
+    expect(record.image_id).toBe(current.image_id)
+    expect(record.git_sha).toBe(previousGit)
+    expect(record.source_sha256).toBe(previousSource)
+    expect(record.updated).toBe(false)
+    expect(result.review.preserved_services).toContain('pilot-gateway')
+  })
+  it.each(['pilot-gateway', 'api', 'payment-gateway'])('rejects invalid config-ID-only references for %s', name => {
+    const input = fixture(), current = input.baseline.runtime_services[name]
+    current.reference = name === 'pilot-gateway' ? sha('different config ID') : current.image_id
+    reseal(input, (compose, manifest) => {
+      compose.services[name].image = current.reference
+      manifest.services[name].reference = current.reference
+    })
+    expect(() => prepare(input)).toThrow(/owned image metadata incomplete/)
+  })
+  it('requires actual owned image source metadata when the old manifest omits source SHA', () => {
+    const input = fixture()
+    expect(JSON.parse(input.baseline.manifest_text).services.api.source_sha256).toBeUndefined()
+    input.baseline.runtime_services.api.source_sha256 = null
+    expect(() => prepare(input)).toThrow(/owned image metadata incomplete/)
+  })
+  it('rejects null pilot source even when historical manifest source is unknown', () => {
+    const input = fixture(), current = input.baseline.runtime_services['pilot-gateway']
+    current.reference = current.image_id; current.source_sha256 = null
+    reseal(input, (compose, manifest) => {
+      compose.services['pilot-gateway'].image = current.image_id
+      Object.assign(manifest.services['pilot-gateway'], { reference: current.image_id, source_sha256: null })
+    })
+    expect(() => prepare(input)).toThrow(/owned image metadata incomplete/)
+  })
+  it('rejects source SHA drift when the old manifest already records it', () => {
+    const input = fixture()
+    reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
+    expect(() => prepare(input)).toThrow(/source digest differs/)
+  })
+  it('strictly reproduces the deployed 270-row migration chain with actual logical Migration.name values', async () => {
+    const rows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
+    expect(rows).toHaveLength(270)
+    expect(rows[99]?.name).toBe('operation_alert_notifications')
+    const chain = hash(canonicalJson(rows))
+    expect(chain).toBe('35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf')
+    const input = fixture()
+    input.baseline.migrations = rows
+    input.target_migrations = structuredClone(rows)
+    reseal(input, (_compose, manifest) => { manifest.migration_chain_sha256 = chain })
+    expect(JSON.parse(prepare(input).manifest_text).migration_chain_sha256).toBe(chain)
+  })
+  it.each(['100_operation_alert_notifications.sql', '../operation_alert_notifications', 'operation-alert-notifications'])('rejects invalid logical migration name %s', name => {
+    const input = fixture()
+    input.target_migrations[99]!.name = name
+    expect(() => prepare(input)).toThrow(/migration version\/name\/checksum/)
+  })
+  it('rejects a pilot gateway without a real Git revision even when its config ID and source digest are exact', () => {
+    const input = fixture(), current = input.baseline.runtime_services['pilot-gateway']
+    current.reference = current.image_id; current.git_sha = null
+    reseal(input, (compose, manifest) => {
+      compose.services['pilot-gateway'].image = current.image_id
+      Object.assign(manifest.services['pilot-gateway'], { reference: current.image_id, git_sha: null, source_sha256: previousSource })
+    })
+    expect(() => prepare(input)).toThrow(/owned image metadata incomplete/)
   })
   it('accepts legitimate non-ASCII baseline configuration without dropping its existing hash contract', () => {
     const input = fixture()

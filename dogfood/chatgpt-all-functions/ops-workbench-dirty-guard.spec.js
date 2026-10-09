@@ -12,6 +12,7 @@ test('keeps a dirty desktop form when browser history targets the unavailable me
     localStorage.setItem('ops_actor_id', 'ops-dirty-guard-qa')
     localStorage.setItem('ops_api_token', 'ops-dirty-guard-local-token')
     localStorage.setItem('ops_workbench', 'platform')
+    localStorage.setItem('ops_password_session_active', 'true')
   })
   await page.route('**/api/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}

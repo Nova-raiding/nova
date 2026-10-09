@@ -3,6 +3,13 @@ import { randomUUID, randomBytes } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openPlatformConsole } from './ops-auth.js'
+import { assertLoopbackHttpOrigin } from './loopback-origin.js'
+
+const opsBase = process.env.OPS_BASE_URL
+const merchantBase = process.env.MERCHANT_STUDIO_URL
+if (!opsBase || !merchantBase) throw new Error('ISOLATED_OPS_RUNNER_REQUIRED')
+assertLoopbackHttpOrigin(opsBase)
+assertLoopbackHttpOrigin(merchantBase)
 
 // Explicitly opt in to a new QA identity. Never use this against a customer
 // workspace or infer payment verification from successful account creation.
@@ -48,7 +55,7 @@ test('platform operator provisions an isolated QA merchant and merchant logs in'
     const merchantContext = await browser.newContext()
     try {
       const merchant = await merchantContext.newPage()
-      await merchant.goto(process.env.MERCHANT_STUDIO_URL ?? 'https://yxsona.com/', { waitUntil: 'domcontentloaded' })
+      await merchant.goto(merchantBase, { waitUntil: 'domcontentloaded' })
       await merchant.getByLabel('商家账号', { exact: true }).fill(login)
       await merchant.getByLabel('密码', { exact: true }).fill(password)
       const loggedPromise = merchant.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/v1/auth/login'))

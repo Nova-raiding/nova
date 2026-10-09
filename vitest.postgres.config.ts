@@ -15,6 +15,7 @@ export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
   'packages/persistence/src/catalog-batch-import-rls.postgres.test.ts',
   'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts',
   'packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts',
+  'packages/persistence/src/creative-point-reversal-concurrency.regression.postgres.test.ts',
 ].filter(file => (
   file.startsWith('packages/persistence/src/')
   || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts'

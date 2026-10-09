@@ -62,7 +62,7 @@ const relayOrigin = (value: string): string | undefined => {
 }
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#([a-f0-9]{64})$/u
 type ExpectedCandidateArtifactBinding = { release_git_sha?: string; image_set_digest?: string; manifest_sha256?: string; deployment_nonce_sha256?: string }
-type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string; candidate?: ExpectedCandidateArtifactBinding; requireEmbeddingResponse?: boolean }
+type ExpectedArtifact = { releaseId?: string; result?: RelayResult; recovery?: RelayErrorRecovery; tokenQuota?: RelayTokenQuota; relay?: string; candidate?: ExpectedCandidateArtifactBinding; generatedAt?: string; requireFreshObservation?: boolean; requireEmbeddingResponse?: boolean }
 function videoResponseIsComplete(payload: unknown): boolean {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
   const root = payload as Record<string, unknown>
@@ -152,7 +152,15 @@ function validateArtifact(reference: string | undefined, root: string, label: st
           return [`${label} capture pair must match the summarized 503 MODEL_PROVIDER_OUTCOME_UNKNOWN recovery, release, relay, endpoint, times and request ids`]
         }
       } else if (expected.result) {
+        if (artifactValue.schema_version !== '1') return [`${label} schema_version must be 1`]
         if (artifactValue.modality !== expected.result.modality) return [`${label} modality must match ${expected.result.modality}`]
+        if (expected.requireFreshObservation) {
+          if (!isIsoInstant(artifactValue.observed_at) || !isIsoInstant(expected.generatedAt)
+            || Date.parse(artifactValue.observed_at) > Date.parse(expected.generatedAt)
+            || Date.parse(expected.generatedAt) - Date.parse(artifactValue.observed_at) > 24 * 3_600_000) {
+            return [`${label} observed_at must be a valid timestamp no later than generated_at and within 24 hours`]
+          }
+        }
         const receipt = artifactValue.result
         if (artifactValue.http_status !== expected.result.httpStatus || !receipt || typeof receipt !== 'object' || receipt.httpStatus !== expected.result.httpStatus || ['providerRequestId', 'providerJobId', 'model', 'dimensions', 'state', 'endpoint', 'usageObserved', 'usageProviderRequestId', 'costObserved', 'costCny', 'costSource', 'costEvidenceKind', 'pricingVersion', 'pricingGroup', 'pricingSnapshotSha256'].some(field => receipt[field] !== expected.result?.[field as keyof RelayResult]) || JSON.stringify(receipt.usage) !== JSON.stringify(expected.result.usage)) {
           return [`${label} receipt must bind successful HTTP status and summarized request, model, state, endpoint, usage and cost`]
@@ -327,7 +335,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!expectedKind || result.costEvidenceKind !== expectedKind) errors.push(`${modality}.costEvidenceKind must distinguish provider-reported actual cost from pricing-derived cost`)
     }
     if (options.requireProduction || options.artifactRoot) {
-      const embeddingCandidate = modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding
+      const candidateBinding = options.requireCandidateBinding || options.requireProduction
         ? options.expectedCandidate && {
           release_git_sha: options.expectedCandidate.releaseGitSha,
           image_set_digest: options.expectedCandidate.imageSetDigest,
@@ -335,12 +343,20 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
           deployment_nonce_sha256: options.expectedCandidate.deploymentNonce ? createHash('sha256').update(options.expectedCandidate.deploymentNonce).digest('hex') : undefined,
         }
         : undefined
-      if (modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding && (!embeddingCandidate
-        || !validGitSha.test(embeddingCandidate.release_git_sha ?? '')
-        || !/^sha256:[a-f0-9]{64}$/u.test(embeddingCandidate.image_set_digest ?? '')
-        || !sha256Digest.test(embeddingCandidate.manifest_sha256 ?? '')
-        || !sha256Digest.test(embeddingCandidate.deployment_nonce_sha256 ?? ''))) errors.push('embedding.evidence_ref requires complete expected candidate identity')
-      errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, { releaseId: value.release_id, result, ...(embeddingCandidate ? { candidate: embeddingCandidate, requireEmbeddingResponse: true } : {}) }))
+      if ((options.requireCandidateBinding || options.requireProduction) && (!candidateBinding
+        || !validGitSha.test(candidateBinding.release_git_sha ?? '')
+        || !/^sha256:[a-f0-9]{64}$/u.test(candidateBinding.image_set_digest ?? '')
+        || !sha256Digest.test(candidateBinding.manifest_sha256 ?? '')
+        || !sha256Digest.test(candidateBinding.deployment_nonce_sha256 ?? ''))) {
+        errors.push(`${modality}.evidence_ref requires complete expected candidate identity`)
+      }
+      errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`, {
+        releaseId: value.release_id,
+        result,
+        ...((options.requireCandidateBinding || options.requireProduction) && candidateBinding ? { candidate: candidateBinding } : {}),
+        ...(options.requireProduction ? { generatedAt: value.generated_at, requireFreshObservation: true } : {}),
+        ...(modality === EMBEDDING_RELAY_MODALITY && options.requireEmbedding ? { requireEmbeddingResponse: true } : {}),
+      }))
     }
   }
   if (options.requireProduction) {

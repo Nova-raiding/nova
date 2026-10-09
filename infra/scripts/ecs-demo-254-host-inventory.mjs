@@ -144,7 +144,7 @@ export function classifyInventory(snapshot) {
     if (matches.length > 1) blockers.push(`expected_service_duplicate:${service}`)
     for (const item of matches) {
       if (item.state !== 'running') blockers.push(`expected_service_not_running:${service}`)
-      if (item.health === 'unhealthy') blockers.push(`expected_service_unhealthy:${service}`)
+      if (item.health !== 'healthy') blockers.push(`expected_service_unhealthy:${service}`)
     }
   }
   const external = containers.filter(item => item.classification === 'unclassified_external_consumer')

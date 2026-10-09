@@ -281,11 +281,13 @@ jobs:
           packages/persistence/src/canonical-product-backfill.postgres.test.ts
           packages/persistence/src/local-212-collision-bridge.postgres.test.ts
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-contract-tenant-rls.regression.postgres.test.ts
           packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts
           packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
           packages/persistence/src/commercial-notification-read-rls.postgres.test.ts
           packages/persistence/src/catalog-batch-import-rls.postgres.test.ts
           packages/persistence/src/commercial-receipt-repository.postgres.test.ts
+          packages/persistence/src/commercial-receipt-read-rls.regression.postgres.test.ts
           packages/persistence/src/commercial-transaction-repository.release.postgres.test.ts
           packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts
           packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts
@@ -346,6 +348,7 @@ jobs:
           packages/persistence/src/outbox-worker-tenant-isolation.postgres.test.ts
           packages/persistence/src/commercial-allocation-replay-conflict.postgres.test.ts
           packages/persistence/src/commercial-quote-price-snapshot.regression.postgres.test.ts
+          packages/persistence/src/creative-point-reversal-concurrency.regression.postgres.test.ts
           packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts
           apps/api/src/catalog-positive-isolated.postgres.test.ts
           apps/api/src/content-generation-action-owner.postgres.test.ts

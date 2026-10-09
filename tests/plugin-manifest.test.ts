@@ -49,6 +49,7 @@ describe('Codex plugin package', () => {
       'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/managed-token.mjs', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
       'scripts/verify-installed-bridge.mjs',
       'skills/merchant-marketing/SKILL.md',
+      'skills/merchant-marketing/references/product-image-workflow.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json',

@@ -121,6 +121,16 @@ test('reports missing, duplicate, stopped, and explicitly unhealthy expected rol
   assert.ok(result.blockers.includes('expected_service_unhealthy:worker-publish'))
 })
 
+test('does not treat starting or absent Docker health as healthy for an expected role', () => {
+  for (const health of ['starting', 'absent']) {
+    const values = allExpected()
+    values.find(item => item.compose['com.docker.compose.service'] === 'api').health = health
+    const result = classifyInventory(snapshot(values))
+    assert.ok(result.blockers.includes('expected_service_unhealthy:api'), `health=${health}`)
+    assert.equal(result.release_approved, false)
+  }
+})
+
 test('rejects malformed remote schemas, duplicate IDs, unknown fields, and invalid hashes', () => {
   assert.throws(() => validateRemoteInventory({ ...snapshot([]), secret: 'do-not-emit' }), /schema rejected/u)
   const duplicateId = container('a', 'api')

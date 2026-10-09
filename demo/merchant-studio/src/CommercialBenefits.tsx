@@ -1,4 +1,5 @@
 import { COMMERCIAL_FEATURE_DEFINITIONS } from '../../../packages/contracts/src/commercial-feature-definitions.js'
+import { commercialBenefitValue } from './commercial-benefit-value.js'
 
 const featureNames = new Map<string, string>(COMMERCIAL_FEATURE_DEFINITIONS.map(feature => [feature.code, feature.name]))
 const benefitNames: Record<string, string> = {
@@ -7,12 +8,6 @@ const benefitNames: Record<string, string> = {
   grant_count: '赠点批次', points_per_grant: '每批赠点', monthly_one_to_one_hours: '每期一对一服务',
   one_to_one_service_hours: '一对一服务', outcome_review_count: '经营复盘',
 }
-const units: Record<string, string> = {
-  GB_DECIMAL: 'GB', byte: '字节', point: '点', points: '点', creative_points: '点',
-  brand: '个品牌', brands: '个品牌', store: '家店铺', stores: '家店铺',
-  hour: '小时', review: '次', business_hour: '工作小时', monthly_grants: '期',
-}
-
 type BenefitRecord = Record<string, unknown> & { code?: unknown }
 const recordOf = (value: unknown): BenefitRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as BenefitRecord : {}
 
@@ -22,25 +17,7 @@ export function commercialBenefitName(code: string, explicitName?: unknown): str
   return featureNames.get(code) ?? benefitNames[code] ?? (code.startsWith('feature.') ? '未登记功能权限' : '其他权益')
 }
 
-export function commercialBenefitValue(value: unknown): string {
-  const benefit = recordOf(value)
-  const code = typeof benefit.code === 'string' ? benefit.code : ''
-  const quantity = benefit.quantity
-  const rawValue = benefit.rawValue ?? benefit.raw_value
-  if (code.startsWith('feature.')) {
-    if (quantity === 1) return '包含'
-    if (quantity === 0) return '不包含'
-    return '权限待核实'
-  }
-  const normalized = benefit.normalizedValue ?? benefit.normalized_value
-  const amount = rawValue ?? normalized ?? quantity
-  if (amount === null || amount === undefined) return '额度待核实'
-  const rawUnit = benefit.rawUnit ?? benefit.raw_unit ?? benefit.unit
-  const unit = code === 'cloud_storage' && rawValue == null && normalized != null
-    ? '字节'
-    : typeof rawUnit === 'string' ? units[rawUnit] ?? rawUnit : ''
-  return `${String(amount)}${unit}`
-}
+export { commercialBenefitValue } from './commercial-benefit-value.js'
 
 export function commercialBenefitsSummary(benefits: unknown[]): string {
   return benefits.map(value => {

@@ -2,6 +2,7 @@ import type { MerchantSupportRequestInput, MerchantSupportRequestReceipt, Mercha
 import type { OnboardingGiftsView, CommercialPointOriginView } from '../../../packages/contracts/src/commercial-point-origins.js'
 import type { ImageGenerationExecutionState } from './image-generation-state.js'
 import { MerchantMcpSession } from './merchant-mcp-session.js'
+import { commercialBenefitValue } from './commercial-benefit-value.js'
 
 export interface ApiHealth {
   status: string
@@ -355,7 +356,10 @@ function catalogBenefitsSummary(benefits: unknown): string {
     if (!value || typeof value !== 'object') return ''
     const row = value as Record<string, unknown>
     const code = String(row.code ?? '权益')
-    return `${commercialBenefitNames[code] ?? code} ${row.quantity ?? row.rawValue ?? '按合同'}${row.rawUnit === 'GB_DECIMAL' ? ' GB' : row.rawUnit ?? ''}`
+    const displayValue = row.quantity === undefined && row.rawValue === undefined
+      ? '按合同'
+      : commercialBenefitValue({ code, quantity: row.quantity, raw_value: row.rawValue, raw_unit: row.rawUnit })
+    return `${commercialBenefitNames[code] ?? code} ${displayValue}`
   }).filter(Boolean).join(' · ')
 }
 

@@ -57,13 +57,15 @@ export function validateOpsE2eSpecIsolation(args: readonly string[], manualOpera
   const manualImportSpec = 'dogfood/chatgpt-all-functions/ops-manual-import-isolated.spec.js'
   const desktopMatrixSpec = 'dogfood/chatgpt-all-functions/ops-desktop-readonly-matrix.spec.js'
   const deliveryReadonlySpec = 'dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js'
+  const publicRuleUploadSpec = 'dogfood/chatgpt-all-functions/ops-public-rule-upload-isolated.spec.js'
   const unmatchedReadonlySpec = 'dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js'
   if (selectedSpecs.includes(jitSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_JIT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(manualImportSpec) && (selectedSpecs.length !== 1 || !manualOperationsMode)) throw new Error('OPS_E2E_MANUAL_IMPORT_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(desktopMatrixSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DESKTOP_MATRIX_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(deliveryReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+  if (selectedSpecs.includes(publicRuleUploadSpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_PUBLIC_RULE_UPLOAD_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
   if (selectedSpecs.includes(unmatchedReadonlySpec) && selectedSpecs.length !== 1) throw new Error('OPS_E2E_UNMATCHED_RECEIPT_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
-  const designatedAdminSpecs = [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec, 'dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js']
+  const designatedAdminSpecs = [jitSpec, manualImportSpec, desktopMatrixSpec, deliveryReadonlySpec, publicRuleUploadSpec, 'dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js']
   return designatedAdminSpecs.includes(selectedSpecs[0] ?? '') ? 'hyp@sn.com' : undefined
 }
 

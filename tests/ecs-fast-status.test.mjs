@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { assess, inventoryStatus, inventoryWarnings, isManagedDemoContainerName } from '../infra/scripts/ecs-fast-status.mjs'
+import { assess, collectPublicProbes, inventoryStatus, inventoryWarnings, isManagedDemoContainerName, publicProbeBlockers, PUBLIC_PROBE_URLS } from '../infra/scripts/ecs-fast-status.mjs'
 const names = ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']
 function snapshot() {
   return { free_bytes: 10 * 1024 ** 3, services: names.map(service => ({ service, state: 'running', health: 'healthy', image: `registry/service@sha256:${'a'.repeat(64)}`, git_sha: ['postgres', 'redis'].includes(service) ? null : 'b'.repeat(40) })) }
@@ -89,6 +89,7 @@ test('fast status keeps liveness and readiness probes separate', () => {
   // the liveness endpoint is 200; the report must not collapse them into one
   // boolean health result.
   assert.match(source, /https:\/\/yxsona\.com\/api\/readyz/u)
+  assert.match(source, /https:\/\/yxsona\.com\/api\/healthz/u)
   assert.match(source, /DOCKER_CALL_TIMEOUT_SECONDS=45/u)
   assert.match(source, /timeout=DOCKER_CALL_TIMEOUT_SECONDS/u)
   assert.match(source, /https:\/\/ops\.yxsona\.com\/healthz/u)
@@ -100,6 +101,35 @@ test('fast status keeps liveness and readiness probes separate', () => {
   assert.match(source, /formal_production_approved: false/u)
   assert.match(source, /formal production approval not evaluated/u)
   assert.match(source, /release_approved: false/u)
+})
+
+test('public API healthz probe is required and cannot grant release approval', async () => {
+  const responses = new Map(PUBLIC_PROBE_URLS.map(url => [url, {
+    status: 200,
+    body: { data: url.endsWith('/releasez') ? { ready: true, release: { release_id: 'old-release' } } : { status: 'ok' } },
+  }]))
+  const fetchMock = async url => {
+    const response = responses.get(url)
+    if (response instanceof Error) throw response
+    return { status: response.status, json: async () => response.body }
+  }
+
+  const healthy = await collectPublicProbes(fetchMock)
+  assert.equal(healthy.find(probe => probe.url === 'https://yxsona.com/api/healthz')?.ready, true)
+  assert.deepEqual(publicProbeBlockers(healthy), [])
+  assert.equal(inventoryStatus([]).scope, 'inventory_only')
+  assert.equal(inventoryStatus([]).release_approved, false)
+  assert.equal(inventoryStatus([]).formal_production_approved, false)
+
+  for (const failure of [
+    new Error('endpoint unavailable'),
+    { status: 503, body: { data: { status: 'ok' } } },
+  ]) {
+    responses.set('https://yxsona.com/api/healthz', failure)
+    const probes = await collectPublicProbes(fetchMock)
+    assert.ok(publicProbeBlockers(probes).includes('public_probe_failed:https://yxsona.com/api/healthz'))
+    assert.equal(inventoryStatus(publicProbeBlockers(probes)).release_approved, false)
+  }
 })
 
 test('a ready API does not hide an exited or unhealthy replica', () => {

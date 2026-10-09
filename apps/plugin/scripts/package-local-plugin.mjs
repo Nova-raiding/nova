@@ -144,6 +144,7 @@ const required = [
   'skills/six-platform-public-import/scripts/extract-product.mjs',
   'skills/merchant-marketing/references/automations.md',
   'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',
+  'skills/merchant-marketing/references/product-image-workflow.md',
   'skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md',
   'skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json',
   'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-profiles.json',

@@ -276,6 +276,12 @@ describe('Codex plugin installation package', () => {
       args: ['./mcp/bridge.mjs'],
       cwd: '.',
     })
+    // The package entry is a local stdio process. Remote MCP URLs, headers, or
+    // host OAuth declarations here would silently change the installation
+    // contract and make local plugin use depend on a hosted plugin service.
+    expect(server).not.toHaveProperty('url')
+    expect(server).not.toHaveProperty('transport')
+    expect(server).not.toHaveProperty('headers')
     expect(server).not.toHaveProperty('env')
     expect(server.env_vars).toEqual(inheritedRuntimeEnv)
     expect(server.env_vars).not.toContain('MERCHANT_MCP_ROLE')
@@ -283,6 +289,15 @@ describe('Codex plugin installation package', () => {
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 360000')
+
+    const packager = readFileSync(resolve(root, 'scripts/package-local-plugin.mjs'), 'utf8')
+    expect(packager).toMatch(/const required = \[\s*'\.codex-plugin\/plugin\.json', '\.mcp\.json'/u)
+    expect(packager).toContain("'mcp/bridge.mjs'")
+    expect(packager).toContain("'mcp/bridge.sh'")
+    const localInstaller = readFileSync(resolve(root, 'scripts/install-local-plugin.mjs'), 'utf8')
+    expect(localInstaller).toContain("mode: 'local_stdio'")
+    expect(localInstaller).toContain('public_marketplace_required: false')
+    expect(localInstaller).toContain('chatgpt_oauth_required: false')
   })
 
   it('refuses an install when the registered marketplace targets a different checkout', () => {
@@ -356,7 +371,8 @@ esac
         '--codex', fakeCodex,
         '--installed', installed,
         '--package-profile', 'qa-broker',
-      ], { encoding: 'utf8' })
+      ], { encoding: 'utf8', timeout: 30_000 })
+      expect(result.error).toBeUndefined()
       expect(result.status, result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toMatchObject({
         ok: true,
@@ -374,7 +390,7 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 15_000)
+  }, 45_000)
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))
@@ -517,8 +533,19 @@ printf '%s\n' Darwin
 
   it('keeps image generation on the business relay instead of the host image tool', () => {
     const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
+    const reference = readFileSync(resolve(root, 'skills/merchant-marketing/references/product-image-workflow.md'), 'utf8')
+    const packager = readFileSync(resolve(root, 'scripts/package-local-plugin.mjs'), 'utf8')
     expect(skill).toContain('统一使用 `catalog.image.generate` 的服务端适配器')
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
+    expect(skill).toContain('[商品图片工作流参考](references/product-image-workflow.md)')
+    expect(reference).toContain('ecommerce-image-skills')
+    expect(reference).toContain('ec-visual-skill')
+    expect(reference).toContain('商品身份锁定')
+    expect(reference).toContain('渠道规则')
+    expect(reference).toContain('真实性')
+    expect(reference).toContain('禁止调用宿主生图工具、第三方 provider')
+    expect(reference).toContain('创意点、用量/成本')
+    expect(packager).toContain("'skills/merchant-marketing/references/product-image-workflow.md'")
   })
 
   it('distinguishes product item numbers from exact SKU codes when searching', () => {
@@ -533,6 +560,27 @@ printf '%s\n' Darwin
     expect(catalogSearch).toContain('外部 SKU 编码不能直接假定为系统 sku_id')
     expect(catalogSearch).toContain('商品搜索无结果不能推断货号是 SKU')
     expect(catalogSearch).toContain('商品货号、款号或颜色/尺码名称不能直接替代')
+  })
+
+  it('installs a product-scoped knowledge review surface with an audit-CAS update tool', () => {
+    const result = spawnSync(process.execPath, [resolve(root, 'mcp/bridge.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`,
+      env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: 'local_desktop', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false' },
+      timeout: 10_000,
+    })
+    expect(result.status, result.stderr).toBe(0)
+    const response = result.stdout.trim().split('\n').map(line => JSON.parse(line))
+    const tools = response[1]?.result?.tools as Array<{ name: string; inputSchema: { properties: Record<string, unknown>; required?: string[] }; annotations?: { readOnlyHint?: boolean } }>
+    const list = tools.find(tool => tool.name === 'knowledge.product.list')
+    const update = tools.find(tool => tool.name === 'knowledge.product.update')
+    expect(list?.inputSchema.required).toEqual(['product_id'])
+    expect(list?.annotations?.readOnlyHint).toBe(true)
+    expect(update?.inputSchema.required).toEqual(['product_id', 'asset_id', 'expected_revision', 'reason'])
+    expect(update?.inputSchema.properties).toHaveProperty('approval_status')
+    expect(update?.inputSchema.properties).toHaveProperty('rights_status')
+    expect(update?.inputSchema.properties).not.toHaveProperty('index_state')
   })
 
   it('routes product video planning through confirmed facts and keeps rendering fail-closed', () => {
@@ -556,6 +604,10 @@ printf '%s\n' Darwin
     expect(skill).toContain('开头 3 秒内应出现明确商品或问题场景')
     expect(skill).toContain('按静音观看设计关键卖点、字幕和 CTA')
     expect(skill).toContain('以实际音频时长校准镜头时间')
+    expect(skill).toContain('锁定跨镜头不变的商品外形')
+    expect(skill).toContain('每次切镜都要说明其叙事或动作原因')
+    expect(skill).toContain('“画面内人物说话”“画外配音”或“无人声”之一')
+    expect(skill).toContain('不得生成额外人声')
     expect(skill).toContain('读取服务端平台媒体规格')
   })
 
@@ -760,8 +812,10 @@ esac
       writeFileSync(helperPath, `${readFileSync(helperPath, 'utf8')}\n// stale installed helper\n`)
       const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
         encoding: 'utf8',
+        timeout: 20_000,
         env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
       })
+      expect(result.error).toBeUndefined()
       expect(result.status).toBe(1)
       const evidence = JSON.parse(result.stdout)
       expect(evidence.connect_helper).toMatchObject({ source_verified: false, production_ready: false })
@@ -782,8 +836,10 @@ esac
       writeFileSync(bridgePath, bridge.replace("'merchant.start'", "'merchant.start.stale'"))
       const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', installed], {
         encoding: 'utf8',
+        timeout: 20_000,
         env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
       })
+      expect(result.error).toBeUndefined()
       expect(result.status).toBe(1)
       const evidence = JSON.parse(result.stdout)
       expect(evidence.tools.cache_drift).toMatchObject({
@@ -796,5 +852,5 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 })

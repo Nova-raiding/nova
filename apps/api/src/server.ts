@@ -176,6 +176,7 @@ import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../pa
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
 import { CommercialStorageEntitlementError } from '../../../packages/persistence/src/storage-quota-repository.js'
+import { appendOperationAuditInTransaction } from '../../../packages/persistence/src/operations-repository.js'
 import { StorageQuotaExceededError, AssetScanRedriveError, AuthorizationRepositoryError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, compareMembersByRecency, DEFAULT_MEMBER_ENTERPRISE_NAME, loadMigrations, reversalOrderId, settlementOrderId, visibleProductIds, memberIdentityKey, memberMatchesQuery, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type WorkspaceMember, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { PostgresDemoEvaluationEntitlementRepository } from '../../../packages/persistence/src/demo-evaluation-entitlement-repository.js'
@@ -4309,7 +4310,7 @@ async function commercialWorkerSnapshotForReservation(workspaceId: string, opera
   }
 }
 
-async function persistEvent(workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) {
+async function persistEventWithReceipt(workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>): Promise<OutboxEvent> {
   await persistenceReady
   const guardedPayload = await withCommercialWorkerSnapshot(workspaceId, eventType, payload)
   const event = persistence.outbox
@@ -4318,6 +4319,19 @@ async function persistEvent(workspaceId: string, aggregateId: string, eventType:
   const local = inMemoryTimelineEvents.get(workspaceId) ?? []
   if (!local.some(item => item.id === event.id)) local.push(event)
   inMemoryTimelineEvents.set(workspaceId, local)
+  return event
+}
+
+async function persistEvent(workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>): Promise<void> {
+  await persistEventWithReceipt(workspaceId, aggregateId, eventType, sequence, payload)
+}
+
+function removeInMemoryTimelineEvent(workspaceId: string, eventId: string) {
+  const local = inMemoryTimelineEvents.get(workspaceId)
+  if (!local) return
+  const remaining = local.filter(event => event.id !== eventId)
+  if (remaining.length) inMemoryTimelineEvents.set(workspaceId, remaining)
+  else inMemoryTimelineEvents.delete(workspaceId)
 }
 
 async function nextEventSequence(workspaceId: string, aggregateId: string) {
@@ -4678,7 +4692,7 @@ const COMMERCIAL_READ_ONLY_METHODS = new Set([
   // their separate commercial and store-boundary gates.
   'platform.store.list',
   'brand.get', 'support.customer.replies.list',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.product.list', 'knowledge.brand.preference.get',
   'knowledge.learning.list', 'knowledge.competitor.list',
   'rule.list', 'rule.sync.status',
   'automation.policy.get', 'automation.policy.list',
@@ -11330,6 +11344,25 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requestActor,
       persistEvent,
       recordOperationAudit,
+      writeProductGovernanceEvidence: async (client, evidence) => {
+        const reason = redactAuditReason(evidence.audit.reason)
+        const event = { ...evidence.event, payload: { ...evidence.event.payload, reason } }
+        if (!client) {
+          if (persistence.mode !== 'memory' || persistence.outbox) throw new DomainError('KNOWLEDGE_EVIDENCE_STORE_UNAVAILABLE', '当前商品知识仓储无法以同一事务写入审批证据', 503)
+          const appended = await persistEventWithReceipt(event.workspaceId, event.aggregateId, event.eventType, event.sequence, event.payload)
+          try {
+            await recordOperationAudit({ ...evidence.audit, reason })
+          } catch (error) {
+            removeInMemoryTimelineEvent(event.workspaceId, appended.id)
+            throw error
+          }
+          return
+        }
+        const appendInTransaction = (persistence.outbox as unknown as { appendInTransaction?: (transaction: import('../../../packages/persistence/src/repository.js').SqlClient, input: import('../../../packages/persistence/src/repository.js').OutboxEventInput) => Promise<unknown> } | undefined)?.appendInTransaction
+        if (!appendInTransaction) throw new DomainError('KNOWLEDGE_EVIDENCE_STORE_UNAVAILABLE', '商品知识审计与事件仓储未配置，审批未提交', 503)
+        await appendInTransaction.call(persistence.outbox, client, event)
+        await appendOperationAuditInTransaction(client, { ...evidence.audit, reason })
+      },
     }))
   }
   if (MCP_OPS_MODEL_METHODS.has(method)) {
@@ -13168,7 +13201,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const allModelReady = textReady && imageReady && imageEditReady && ocrReady && videoReady && embeddingReady
       return result({
         ownership: 'platform', user_key_binding: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null, reasons: relayGate.reasons }, state: allModelReady && costControlReady && releaseMetadataReady && (!isProduction() || relayGate.ready) ? 'ready' : !releaseMetadataReady ? 'release_metadata_blocked' : isProduction() && !relayGate.ready ? 'model_relay_blocked' : allModelReady ? 'cost_gate_blocked' : textReady ? 'partial_model_readiness' : 'not_configured',
-        provider_host: relayGate.endpointHost ?? textGate.endpointHost ?? providerHost ?? null, image_provider_host: relayGate.endpointHost ?? imageGate.endpointHost ?? null, text_model: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || null, image_model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, vision_model: process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || null, video_model: process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || null, embedding_model: process.env.EMBEDDING_MODEL?.trim() || null,
+        provider_host: relayGate.endpointHost ?? textGate.endpointHost ?? providerHost ?? null, image_provider_host: relayGate.endpointHost ?? imageGate.endpointHost ?? null, text_model: process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || null, image_model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, image_edit_model: process.env.IMAGE_EDIT_MODEL?.trim() || process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || null, vision_model: process.env.OCR_MODEL?.trim() || process.env.AI_VISION_MODEL?.trim() || null, video_model: process.env.VIDEO_MODEL?.trim() || process.env.AI_VIDEO_MODEL?.trim() || null, embedding_model: process.env.EMBEDDING_MODEL?.trim() || null,
         capabilities: { text_generation: textReady, image_generation: imageReady, image_editing: imageEditReady, image_fact_ocr: ocrReady, video_rendering: videoReady, knowledge_vector_indexing: embeddingConfigured }, endpoints: { text_https: textGate.https, image_https: imageGate.https, image_edit_https: imageEditGate.https, ocr_https: ocrGate.https, video_https: videoGate.https, embedding_https: embeddingGate.https },
         model_readiness: { text: { ...textGate, provider_configured: textReady }, image: { ...imageGate, provider_configured: imageReady }, image_edit: { ...imageEditGate, provider_configured: imageEditReady }, ocr: { ...ocrGate, provider_configured: ocrReady }, video: { ...videoGate, provider_configured: videoReady }, embedding: vectorIndexEnabled ? { ...embeddingGate, ready: embeddingConfigured, reasons: [...embeddingGate.reasons, ...vectorQueryGate.reasons], provider_configured: embeddingGate.ready } : { ...embeddingGate, ready: false, reasons: ['knowledge_vector_indexing_disabled', ...embeddingGate.reasons], provider_configured: embeddingGate.ready } },
         quotas: { rpm: rpm || null, tpm: tpm || null, daily_cny_limit: dailyCnyLimit ? dailyCnyLimit.toFixed(2) : null },

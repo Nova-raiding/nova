@@ -116,6 +116,13 @@ describe('Ops browser acceptance isolation', () => {
     await expect(runOpsE2e(['dogfood/chatgpt-all-functions/ops-delivery-readonly-isolated.spec.js', other], {})).rejects.toThrow('OPS_E2E_DELIVERY_READONLY_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
     expect(forbidRuntimeResources).not.toHaveBeenCalled()
   })
+  it('requires public rule upload to use its dedicated isolated fixture and designated admin', async () => {
+    const spec = 'dogfood/chatgpt-all-functions/ops-public-rule-upload-isolated.spec.js'
+    const other = 'dogfood/chatgpt-all-functions/ops-users.spec.js'
+    expect(validateOpsE2eSpecIsolation([spec], false)).toBe('hyp@sn.com')
+    await expect(runOpsE2e([spec, other], {})).rejects.toThrow('OPS_E2E_PUBLIC_RULE_UPLOAD_REQUIRES_DEDICATED_ISOLATED_FIXTURE')
+    expect(forbidRuntimeResources).not.toHaveBeenCalled()
+  })
   it('requires the unmatched receipt read-only browser spec to use its dedicated isolated fixture', async () => {
     const spec = 'dogfood/chatgpt-all-functions/ops-unmatched-receipt-readonly-isolated.spec.js'
     const other = 'dogfood/chatgpt-all-functions/ops-users.spec.js'

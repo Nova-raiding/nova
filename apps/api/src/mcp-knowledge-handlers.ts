@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, type KnowledgeModule } from '../../../packages/knowledge/src/index.js'
-import type { KnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import type { KnowledgeAsset, KnowledgeGovernanceEvidenceWriter, KnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
 import type { OperationAudit } from '../../../packages/persistence/src/index.js'
 
 export const MCP_KNOWLEDGE_METHODS = new Set([
@@ -13,6 +13,8 @@ export const MCP_KNOWLEDGE_METHODS = new Set([
   'knowledge.asset.create',
   'knowledge.asset.update',
   'knowledge.asset.list',
+  'knowledge.product.list',
+  'knowledge.product.update',
   'knowledge.brand.preference.get',
   'knowledge.brand.preference.update',
   'knowledge.feedback.record',
@@ -34,6 +36,7 @@ interface KnowledgeMcpDependencies {
   requestActor: (req: IncomingMessage) => string
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<unknown>
   recordOperationAudit: (audit: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
+  writeProductGovernanceEvidence?: KnowledgeGovernanceEvidenceWriter
 }
 
 export async function handleMcpKnowledgeMethod(
@@ -145,6 +148,50 @@ export async function handleMcpKnowledgeMethod(
         if (typeof params.tags_json === 'string') tags = JSON.parse(params.tags_json) as string[]
         return result(await withDocumentIndexSummary(deps.knowledgeRepository ?? deps.durableKnowledgeRepository, workspaceId, knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId, ...(typeof params.kind === 'string' ? { kind: params.kind as 'brand' | 'customer' } : {}), ...(typeof params.text === 'string' ? { text: params.text } : {}), ...(tags ? { tags } : {}) })))
       } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
+    }
+    case 'knowledge.product.list': {
+      try {
+        requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops', 'knowledge_reader', 'knowledge_editor'])
+        const repository = deps.knowledgeRepository ?? deps.durableKnowledgeRepository
+        if (!repository) throw new DomainError('KNOWLEDGE_REPOSITORY_UNAVAILABLE', '商品知识仓库当前不可用', 503)
+        const productId = required(params, 'product_id')
+        const documents = (await repository.listDocuments(workspaceId, { productId })).filter(document => document.knowledgeType === 'product_facts' && document.indexState !== 'deleted')
+        const assetsById = new Map<string, KnowledgeAsset>()
+        for (const assetId of new Set(documents.flatMap(document => document.knowledgeAssetId ? [document.knowledgeAssetId] : []))) {
+          const asset = await repository.getAsset(workspaceId, assetId)
+          if (asset?.workspaceId === workspaceId && asset.productId === productId && asset.kind === 'product_facts') assetsById.set(assetId, asset)
+        }
+        return result({ workspaceId, productId, assets: [...assetsById.values()].map(asset => ({ id: asset.id, productId, kind: asset.kind, name: asset.name, content: asset.content, approvalStatus: asset.approvalStatus, rightsStatus: asset.rightsStatus, indexState: asset.indexState, revision: asset.revision, sourceVersion: asset.sourceVersion, updatedAt: asset.updatedAt })), documents: documents.map(document => ({ id: document.id, assetId: document.knowledgeAssetId ?? null, productId, ...(document.skuId ? { skuId: document.skuId } : {}), title: document.title, knowledgeType: document.knowledgeType, extractedText: document.extractedText, contentHash: document.contentHash, approvalStatus: document.approvalStatus, rightsStatus: document.rightsStatus, indexState: document.indexState, revision: document.revision, sourceVersion: document.sourceVersion, sourceMetadata: document.sourceMetadata, updatedAt: document.updatedAt })) })
+      } catch (error) {
+        if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400)
+        throw error
+      }
+    }
+    case 'knowledge.product.update': {
+      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'platform_ops', 'knowledge_editor'])
+      const repository = deps.knowledgeRepository ?? deps.durableKnowledgeRepository
+      if (!repository) throw new DomainError('KNOWLEDGE_REPOSITORY_UNAVAILABLE', '商品知识仓库当前不可用', 503)
+      const productId = required(params, 'product_id')
+      const assetId = required(params, 'asset_id')
+      const expectedRevision = requiredPositiveInteger(params, 'expected_revision')
+      const reason = required(params, 'reason').trim()
+      if (reason.length < 8 || reason.length > 1000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '审批原因需为 8 至 1000 个字符，并说明核验依据', 400)
+      if (params.approval_status === undefined && params.rights_status === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '至少需要提交审批状态或权益状态', 400)
+      const writeProductGovernanceEvidence = deps.writeProductGovernanceEvidence
+      if (!writeProductGovernanceEvidence) throw new DomainError('KNOWLEDGE_EVIDENCE_STORE_UNAVAILABLE', '商品知识审计与事件仓储未配置，审批未提交', 503)
+      try {
+        const updated = await repository.updateProductGovernance({
+          workspaceId, productId, assetId, expectedRevision, actorId, reason,
+          ...(typeof params.approval_status === 'string' ? { approvalStatus: params.approval_status as import('../../../packages/persistence/src/knowledge.js').KnowledgeApprovalStatus } : {}),
+          ...(typeof params.rights_status === 'string' ? { rightsStatus: params.rights_status as import('../../../packages/persistence/src/knowledge.js').KnowledgeRightsStatus } : {}),
+        }, writeProductGovernanceEvidence)
+        return result(updated)
+      } catch (error) {
+        if (error instanceof Error && error.message === 'KNOWLEDGE_ASSET_REVISION_CONFLICT') throw new DomainError('KNOWLEDGE_ASSET_REVISION_CONFLICT', '商品知识状态已变化，请重新读取后再提交', 409)
+        if (error instanceof Error && error.message === 'KNOWLEDGE_PRODUCT_ASSET_NOT_FOUND') throw new DomainError('KNOWLEDGE_PRODUCT_ASSET_NOT_FOUND', '该工作区商品下不存在此商品知识资产', 404)
+        if (error instanceof Error && error.message === 'KNOWLEDGE_PRODUCT_UPDATE_INVALID') throw new DomainError(ERROR_CODES.INVALID_REQUEST, '商品知识更新参数无效', 400)
+        throw error
+      }
     }
     case 'knowledge.brand.preference.get': {
       try {

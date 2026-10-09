@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Alert, Badge, Breadcrumb, Button, Card, Checkbox, DatePicker, Dropdown, Form, Input, InputNumber, List, Modal, Select, Space, Statistic, Table, Tag } from 'antd'
 import zhCN from 'antd/es/date-picker/locale/zh_CN'
 import dayjs from 'dayjs'
@@ -14,6 +14,9 @@ import { mergeImageGenerationJobs } from './image-job-list'
 import { BrandAssetPreviewRegistry, brandAssetFileError, brandAssetMatchesKind, isUsableBrandAsset } from './material-brand-assets'
 import { yesterdayWindowInShanghai } from './entitlement-date'
 import { currentShanghaiMonthRange, filterFinanceEntriesByWindow, fillDailyFinancePoints, shanghaiCalendarDate } from './finance-window'
+import { financeUsageRangeHasPendingChanges, financeUsageRangeReducer, initialFinanceUsageRangeState } from './finance-usage-range'
+import { matchesSearchText } from './search-normalization'
+import { materialPurgeRequestOutcome } from './material-purge-request-state'
 import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import {
   buildCatalogPlatforms,
@@ -264,6 +267,7 @@ import {
   merchantRouteFromLocation,
   urlForMerchantRoute,
   type MerchantPage,
+  type MerchantCatalogContext,
   type MerchantRoute,
   type MerchantRouteTarget,
 } from './navigation.js'
@@ -912,12 +916,13 @@ export function IssueNotificationBell({ state, ...rest }: { state: IssueReadStat
  */
 const issueReadSession = createIssueReadSession({ load: fetchWorkspaceMetrics, describeError: describeApiError })
 
-export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onRetry }: {
+export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onRetry, apiMode }: {
   state: IssueReadState
   items: WorkspaceMetrics['riskItems']
   onOpenIssue: (item: WorkspaceMetrics['riskItems'][number]) => void
   onClose: () => void
   onRetry: () => void
+  apiMode?: string | null
 }) {
   return (
     <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
@@ -929,19 +934,22 @@ export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onR
         className="merchant-notification-list"
         size="small"
         dataSource={items}
-        renderItem={(item, index) => <List.Item className="merchant-notification-item">
+        renderItem={(item, index) => {
+          const copy = transactionIssueCopy(item, apiMode)
+          return <List.Item className="merchant-notification-item">
           <button
             type="button"
             className="merchant-notification-item-button"
-            aria-label={`查看问题：${item.title ?? item.type}`}
+            aria-label={`查看问题：${copy.title}`}
             onMouseDown={onClose}
             onClick={() => { onOpenIssue(item) }}
           >
             <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
-            <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
+            <span className="merchant-notification-copy"><strong>{copy.title}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{copy.action}</em></span>
             <span className="merchant-notification-index">{index + 1}</span>
           </button>
-        </List.Item>}
+          </List.Item>
+        }}
         />
       </> : <div className="merchant-notification-empty" role="status" aria-live="polite">
         <span>{state.notice}</span>
@@ -1083,6 +1091,7 @@ function Topbar({
     onOpenIssue={openIssueDetail}
     onClose={() => setNotificationOpen(false)}
     onRetry={() => setIssueReload((value) => value + 1)}
+    apiMode={apiMode}
   /><CommercialNotificationPanel key={`${account?.id ?? 'unbound'}:${account?.workspaceIds.join(',') ?? ''}`} baseUrl={apiBaseUrl} onOpenCatalog={(item) => { setNotificationOpen(false); onOpenCommercialCatalog(item) }} /></div>
   return (
     <header className="topbar">
@@ -1220,14 +1229,15 @@ function Topbar({
         </Form>
       </Modal>
       <Modal title="问题详情" open={Boolean(issueDetail)} onCancel={() => setIssueDetail(null)} footer={<Space><Button onClick={() => setIssueDetail(null)}>关闭</Button><Button type="primary" onClick={() => { if (issueDetail) onOpenIssues(issueDetail); setIssueDetail(null) }}>查看并处理</Button></Space>} destroyOnHidden>
-        {issueDetail ? <DescriptionsIssue item={issueDetail} /> : null}
+        {issueDetail ? <DescriptionsIssue item={issueDetail} apiMode={apiMode} /> : null}
       </Modal>
     </header>
   )
 }
 
-function DescriptionsIssue({ item }: { item: WorkspaceMetrics['riskItems'][number] }) {
-  return <div className="merchant-notification-detail"><Tag color={item.severity === 'high' ? 'red' : 'orange'}>{item.severity === 'high' ? '高优先级' : '需要关注'}</Tag><h3>{item.title ?? item.type}</h3><p>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</p><div className="merchant-notification-next"><strong>建议下一步</strong><span>{item.nextAction ?? '打开商品与任务查看处理方式'}</span></div></div>
+export function DescriptionsIssue({ item, apiMode }: { item: WorkspaceMetrics['riskItems'][number]; apiMode?: string | null }) {
+  const copy = transactionIssueCopy(item, apiMode)
+  return <div className="merchant-notification-detail"><Tag color={item.severity === 'high' ? 'red' : 'orange'}>{item.severity === 'high' ? '高优先级' : '需要关注'}</Tag><h3>{copy.title}</h3><p>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</p><div className="merchant-notification-next"><strong>建议下一步</strong><span>{copy.action}</span></div></div>
 }
 
 function EnvironmentStatusBanner({
@@ -2078,13 +2088,40 @@ function transactionCountLabel(read: IssueReadState): string {
   return `${UNREAD_METRIC} 待处理`
 }
 
+function transactionIssueCopy(issue: WorkspaceMetrics['riskItems'][number], apiMode: string | null | undefined) {
+  if (issue.type === 'AUTH_RECONNECT' && isManualPlatformOperationsMode(apiMode)) {
+    return {
+      title: '店铺接入方式待核实',
+      action: '当前为人工登记且未授权；查看该店铺状态，联系客户经理确认接入方式。',
+    }
+  }
+  if (issue.type === 'AUTH_RECONNECT' && !apiMode?.trim()) {
+    return {
+      title: '店铺接入状态待核实',
+      action: '正在读取平台接入方式；确认配置前不会显示或发起授权操作。',
+    }
+  }
+  if (issue.type === 'AUTH_RECONNECT') {
+    return {
+      title: issue.title ?? '店铺授权状态待处理',
+      action: '查看对应店铺的连接状态并按官方授权流程处理；此处不会代替你完成授权。',
+    }
+  }
+  return {
+    title: issue.title ?? issue.type,
+    action: issue.nextAction ?? '打开商品与任务查看处理方式',
+  }
+}
+
 export function TransactionDashboard({
   onOpenIssues,
   issues,
   read,
+  apiMode,
 }: {
   onOpenIssues: (issue: WorkspaceMetrics['riskItems'][number]) => void
   issues: WorkspaceMetrics['riskItems']
+  apiMode?: string | null
   /**
    * The dashboard answers the same question as the topbar bell about the same
    * `workspace.metrics` read, so it resolves that read with the same helper.
@@ -2112,13 +2149,14 @@ export function TransactionDashboard({
           <div className="account-all-clear"><RefreshCw size={28} /><strong>{read.notice}</strong></div>
         ) : issues.length ? (
           <div className="account-issue-list">
-            {issues.map((issue, index) => (
-              <button type="button" onClick={() => onOpenIssues(issue)} key={`${issue.type}-${issue.platform ?? ''}-${issue.accountId ?? ''}-${index}`}>
+            {issues.map((issue, index) => {
+              const copy = transactionIssueCopy(issue, apiMode)
+              return <button type="button" onClick={() => onOpenIssues(issue)} key={`${issue.type}-${issue.platform ?? ''}-${issue.accountId ?? ''}-${index}`}>
                 <span>{index + 1}</span>
-                <div><strong>{issue.title ?? issue.type}</strong><small>{issue.nextAction ?? '打开商品与任务查看处理方式'}</small></div>
+                <div><strong>{copy.title}</strong><small>{copy.action}</small></div>
                 <ChevronRight size={16} aria-hidden="true" />
               </button>
-            ))}
+            })}
           </div>
         ) : (
           <div className="account-all-clear"><CheckCircle2 size={28} /><strong>当前没有待处理事务</strong></div>
@@ -2536,6 +2574,7 @@ export function Overview({
           onOpenIssues={onOpenTransactionIssue}
           issues={overviewIssues ?? []}
           read={overviewIssueRead}
+          apiMode={apiMode}
         />
       </div>
 
@@ -2983,9 +3022,9 @@ function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: str
 }
 
 export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, notificationTarget }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void; notificationTarget?: CommercialNotification | null }) {
-  const [rangeMode, setRangeMode] = useState<'day' | 'month'>('day')
-  const [rangeStart, setRangeStart] = useState('')
-  const [rangeEnd, setRangeEnd] = useState('')
+  const [usageRange, dispatchUsageRange] = useReducer(financeUsageRangeReducer, initialFinanceUsageRangeState)
+  const { draft: draftUsageRange, applied: appliedUsageRange } = usageRange
+  const rangePending = financeUsageRangeHasPendingChanges(usageRange)
   const [currentEntitlement, setCurrentEntitlement] = useState<Awaited<ReturnType<typeof fetchCurrentCommercialEntitlement>> | null>(null)
   // `null` while the ledger read is unresolved or failed; `[]` is a real read
   // that returned no entries. Neither case may fall back to sample numbers.
@@ -3062,38 +3101,38 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
     statementEntries !== null && !statementTruncated && statementUnreadable === 0,
   )
   const currentMonthWindow = currentShanghaiMonthRange()
-  const defaultDayWindow = rangeMode === 'day' && !rangeStart && !rangeEnd
-  const rangeEntryStart = rangeMode === 'day'
-    ? (rangeStart || (defaultDayWindow ? currentMonthWindow.start : ''))
-    : rangeStart
-  const rangeEntryEnd = rangeMode === 'day'
-    ? (rangeEnd || (defaultDayWindow ? currentMonthWindow.end : ''))
-    : rangeEnd
+  const defaultDayWindow = appliedUsageRange.mode === 'day' && !appliedUsageRange.start && !appliedUsageRange.end
+  const rangeEntryStart = appliedUsageRange.mode === 'day'
+    ? (appliedUsageRange.start || (defaultDayWindow ? currentMonthWindow.start : ''))
+    : appliedUsageRange.start
+  const rangeEntryEnd = appliedUsageRange.mode === 'day'
+    ? (appliedUsageRange.end || (defaultDayWindow ? currentMonthWindow.end : ''))
+    : appliedUsageRange.end
   const entriesInRange = useMemo(() => statementEntries === null
     ? null
-    : filterFinanceEntriesByWindow(statementEntries, rangeMode, rangeEntryStart, rangeEntryEnd),
-  [rangeEntryEnd, rangeEntryStart, rangeMode, statementEntries])
+    : filterFinanceEntriesByWindow(statementEntries, appliedUsageRange.mode, rangeEntryStart, rangeEntryEnd),
+  [rangeEntryEnd, rangeEntryStart, appliedUsageRange.mode, statementEntries])
   const chartItems = useMemo(() => {
-    const source = rangeMode === 'day' ? dailyUsage : monthlyUsage
-    const startValue = rangeMode === 'day'
-      ? (rangeStart || (defaultDayWindow ? currentMonthWindow.start : '')).replaceAll('-', '/')
-      : rangeStart.replace('-', '/')
-    const endValue = rangeMode === 'day'
-      ? (rangeEnd || (defaultDayWindow ? currentMonthWindow.end : '')).replaceAll('-', '/')
-      : rangeEnd.replace('-', '/')
+    const source = appliedUsageRange.mode === 'day' ? dailyUsage : monthlyUsage
+    const startValue = appliedUsageRange.mode === 'day'
+      ? (appliedUsageRange.start || (defaultDayWindow ? currentMonthWindow.start : '')).replaceAll('-', '/')
+      : appliedUsageRange.start.replace('-', '/')
+    const endValue = appliedUsageRange.mode === 'day'
+      ? (appliedUsageRange.end || (defaultDayWindow ? currentMonthWindow.end : '')).replaceAll('-', '/')
+      : appliedUsageRange.end.replace('-', '/')
     const filtered = source.filter((item) => (!startValue || (item.dateLabel ?? item.label) >= startValue) && (!endValue || (item.dateLabel ?? item.label) <= endValue))
     const ledgerComplete = statementEntries !== null && !statementTruncated && statementUnreadable === 0
-    const boundedDayRange = defaultDayWindow || Boolean(rangeStart && rangeEnd)
-    if (rangeMode === 'day' && ledgerComplete && boundedDayRange) {
+    const boundedDayRange = defaultDayWindow || Boolean(appliedUsageRange.start && appliedUsageRange.end)
+    if (appliedUsageRange.mode === 'day' && ledgerComplete && boundedDayRange) {
       return fillDailyFinancePoints(filtered, startValue, endValue)
     }
     return filtered
-  }, [currentMonthWindow.end, currentMonthWindow.start, dailyUsage, defaultDayWindow, monthlyUsage, rangeEnd, rangeMode, rangeStart, statementEntries, statementTruncated, statementUnreadable])
+  }, [appliedUsageRange, currentMonthWindow.end, currentMonthWindow.start, dailyUsage, defaultDayWindow, monthlyUsage, statementEntries, statementTruncated, statementUnreadable])
   const chartLabel = defaultDayWindow
     ? `当月${currentMonthWindow.days}天`
-    : rangeStart || rangeEnd
-      ? `${(rangeStart || '最早').replaceAll('-', '/')} 至 ${(rangeEnd || '最新').replaceAll('-', '/')}`
-      : rangeMode === 'day'
+    : appliedUsageRange.start || appliedUsageRange.end
+      ? `${(appliedUsageRange.start || '最早').replaceAll('-', '/')} 至 ${(appliedUsageRange.end || '最新').replaceAll('-', '/')}`
+      : appliedUsageRange.mode === 'day'
         ? '已读取流水（按日汇总）'
         : '已读取流水（按月汇总）'
   const pointBalance = billing?.available_points ?? null
@@ -3101,11 +3140,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
   const storageLimitBytes = storageQuota?.limitBytes ?? null
   const storageAvailableBytes = storageQuota?.availableBytes ?? null
   const storageKnown = storageUsedBytes !== null && storageLimitBytes !== null && storageLimitBytes > 0
-  const resetUsage = () => {
-    setRangeMode('day')
-    setRangeStart('')
-    setRangeEnd('')
-  }
+  const resetUsage = () => dispatchUsageRange({ type: 'reset' })
   return (
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
@@ -3123,7 +3158,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
       <CommercialPurchaseCenter baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
       <CommercialPointLedger entries={statementEntries} unavailableMessage={statementNote} partial={statementTruncated || statementUnreadable > 0} />
       <section className="finance-panel finance-usage-panel">
-        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p></div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault() }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={rangeMode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => { setRangeMode(value); setRangeStart(''); setRangeEnd('') }} /></label><label><span>开始{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeStart ? dayjs(rangeStart).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeStart(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><i>至</i><label><span>结束{rangeMode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={rangeMode === 'day' ? 'date' : 'month'} value={rangeEnd ? dayjs(rangeEnd).locale('zh-cn') : null} format={rangeMode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={rangeMode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => setRangeEnd(date ? date.format(rangeMode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '')} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
+        <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p>{rangePending && <p className="finance-range-pending" role="status">日期范围已修改，点击“查询”后应用。</p>}</div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault(); dispatchUsageRange({ type: 'apply' }) }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={draftUsageRange.mode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => dispatchUsageRange({ type: 'set-mode', mode: value })} /></label><label><span>开始{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.start ? dayjs(draftUsageRange.start).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-start', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><i>至</i><label><span>结束{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.end ? dayjs(draftUsageRange.end).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-end', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
         {/* The sum may only be stated when the ledger read succeeded: a failed
             or pending read rendered as 「合计 0 点」 next to an 「已读取流水」
             caption reports a consumed total that was never measured. */}
@@ -5301,10 +5336,10 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, initialQuery = '' }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; initialQuery?: string }) {
-  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(initialCatalogContext?.platform ?? null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
-  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null)
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(initialCatalogContext?.accountId ?? null)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(1)
   const [videoPlaying, setVideoPlaying] = useState(false)
@@ -5340,6 +5375,20 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [products, setProducts] = useState<ApiProduct[] | null>(null)
   const [catalogReadNote, setCatalogReadNote] = useState('正在读取平台与店铺…')
   const [productsNote, setProductsNote] = useState('正在读取商品…')
+  useEffect(() => {
+    const requested = initialCatalogContext?.productId
+    if (!requested || !products) return
+    const product = products.find((item) => item.id === requested)
+    if (!product?.accountId) return
+    if (initialCatalogContext?.platform && product.platform !== initialCatalogContext.platform) return
+    if (initialCatalogContext?.accountId && product.accountId !== initialCatalogContext.accountId) return
+    // Product ID, platform and store identity must agree with the server's
+    // current workspace read before opening a risk deep-link. A stale or
+    // inconsistent notification falls back to the filtered catalogue.
+    setSelectedPlatform(product.platform)
+    setSelectedStoreId(product.accountId)
+    setSelectedProductId(product.id)
+  }, [initialCatalogContext, products])
   useEffect(() => {
     if (!baseUrl) {
       setAccounts(null)
@@ -5409,7 +5458,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const catalogStores = useMemo(() => (platforms ?? []).flatMap((platform) => platform.stores), [platforms])
   const realConnectedStores = catalogStores.filter((store) => store.realConnected).length
   const unboundDrafts = catalogUnboundDraftProducts(products, selectedPlatform ?? '')
-  const selectedStore = catalogStores.find((store) => store.id === selectedStoreId) ?? null
+  const selectedStore = catalogStores.find((store) => store.id === selectedStoreId && (!selectedPlatform || store.platformId === selectedPlatform)) ?? null
   const selectedPlatformView = (platforms ?? []).find((platform) => platform.id === selectedPlatform) ?? null
   const selectedPlatformStores = selectedPlatformView?.stores ?? []
   // `null` while the product read is unresolved (distinct from a store with no
@@ -5539,6 +5588,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     return (
       <div className="store-catalog-page catalog-connection-page">
         <button className="catalog-back" onClick={() => setSelectedStoreId(null)}><ArrowLeft size={17} />返回店铺选择</button>
+        {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权状态待核实</strong><span>当前店铺状态为“{selectedStore.connectionLabel}”。此页面不会发起授权或读取、同步平台数据；请联系客户经理确认平台接入方式。</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
         <section className="catalog-connection-required">
           <span className="catalog-disconnected-state"><i />未连接</span>
           <AlertCircle size={32} aria-hidden="true" />
@@ -5574,6 +5624,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     return (
       <div className="store-catalog-page catalog-detail-page">
         <button className="catalog-back" onClick={() => setSelectedProductId(null)}><ArrowLeft size={17} />返回商品列表</button>
+        {!selectedStore.readable && <div className="info-notice" role="status">当前商品属于人工登记、未授权的店铺，只能读取工作区导入资料；这不代表平台同步或授权。</div>}
         <section className="catalog-commerce-detail">
           <div className="catalog-detail-gallery">
             <div className={`catalog-detail-media media-${selectedMediaIndex} ${videoPlaying ? 'playing' : ''}`}>
@@ -5685,6 +5736,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   if (selectedStore) {
     return (
       <div className="store-catalog-page catalog-products-page">
+        {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权状态待核实</strong><span>当前店铺状态为“{selectedStore.connectionLabel}”。此页面不会发起授权或读取、同步平台数据；请联系客户经理确认平台接入方式。</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
         <section className={`catalog-store-hero ${selectedStore.tone}`}>
           <div className="catalog-store-logo" aria-label={`${selectedStore.name}店铺 Logo`}><img src={storeNovaLogo} alt="" /></div>
           <div><h1>{selectedStore.name}</h1></div>
@@ -5743,6 +5795,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             overview uses. Before the read answers the page says so. */}
         <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
+      {initialCatalogContext?.intent === 'authorization' && <div className="info-notice" role="status" data-testid="store-authorization-guidance"><strong>店铺授权待核实</strong><span>{selectedPlatform ? '当前平台运行模式为人工登记，没有在线 OAuth 连接入口。请在下方查看店铺状态，并联系客户经理确认接入方式。' : '该待办未返回平台标识，暂时无法定位具体连接状态；请联系客户经理确认平台和店铺后再处理。'}</span><button type="button" className="secondary" onClick={onOpenSupport}>查看客服支持消息</button></div>}
       <section className="catalog-platform-store-browser">
         <aside className="catalog-platform-rail" aria-label="平台列表">
           <div className="catalog-platform-rail-heading"><span>平台</span><small>选择后查看店铺</small></div>
@@ -5792,7 +5845,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             <Card size="small" title={selectedPlatformStores.length ? '登记另一家店铺' : '登记店铺'} style={{ marginTop: 24 }}>
               <p>仅登记店铺识别信息，不会建立 OAuth 授权，也不会读取店铺数据。请勿在此输入平台密码、Cookie、Token 或验证码。</p>
               <form onSubmit={event => void submitManualStore(event)}>
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
                   <label htmlFor="merchant-manual-store-id">{selectedPlatformView?.label ?? platformNames[selectedPlatform]}店铺 ID</label>
                   <Input id="merchant-manual-store-id" value={manualStoreId} onChange={event => { setManualStoreId(event.target.value); setManualStoreError(''); setManualStoreMessage('') }} maxLength={256} autoComplete="off" disabled={manualStoreSubmitting} />
                   <label htmlFor="merchant-manual-store-name">店铺名称</label>
@@ -6205,6 +6258,10 @@ function MaterialCategoryDropdown({
   )
 }
 
+export function RecycleBinEmptyState() {
+  return <div className="material-empty" role="status"><Trash2 size={30} /><strong>回收站为空</strong><span>服务端当前没有可恢复的素材。</span></div>
+}
+
 export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
   const [items, setItems] = useState<RecycleMaterialItem[]>([])
   const [readState, setReadState] = useState<'unread' | 'loading' | 'ready' | 'error'>(baseUrl ? 'loading' : 'unread')
@@ -6271,10 +6328,11 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       expectedRevision: item.revision,
     })))
     const accepted = new Set(selectedItems.filter((_, index) => settled[index]?.status === 'fulfilled').map(item => item.id))
-    setSelectedIds(current => current.filter(id => !accepted.has(id)))
-    setPurgeDialogOpen(false)
-    setPurgeConfirmation('')
-    setPurgeReason('')
+    const outcome = materialPurgeRequestOutcome(selectedItems.map(item => item.id), [...accepted])
+    setSelectedIds(outcome.selectedIds)
+    if (outcome.closeDialog) setPurgeDialogOpen(false)
+    if (outcome.clearConfirmation) setPurgeConfirmation('')
+    if (outcome.clearReason) setPurgeReason('')
     try { setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer)) }
     catch (error) { setRecycleError('删除请求已提交，但回收站刷新失败：' + describeApiError(error)) }
     const failure = settled.find((result) => result.status === 'rejected')
@@ -6332,18 +6390,19 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
             <div className="material-recycle-expiry"><Clock3 size={13} /><span>{item.purgeRequestedAt ? '已提交提前清理请求' : recycleExpiryLabel(item.expiresAt)}</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
             {item.purgeRequestedAt && <div className="material-recycle-purge-status"><span>{item.purgeError ? `清理遇到阻碍：${String(item.purgeError.code ?? '请稍后重试')}` : '对象存储清理处理中'}</span><button type="button" disabled={busy} onClick={() => void cancelPurgeRequest(item)}>撤销请求</button></div>}
           </article>
-        })}</div> : <div className="material-empty"><Trash2 size={30} /><strong>回收站为空</strong><span>服务端当前没有可恢复的素材。</span></div>}
+        })}</div> : <RecycleBinEmptyState />}
       </section>
       {purgeDialogOpen && <div className="material-recycle-confirm-backdrop"><section className="material-recycle-confirm" role="alertdialog" aria-modal="true" aria-labelledby="material-purge-title">
         <span className="section-kicker">PERMANENT DELETE</span><h2 id="material-purge-title">提前彻底删除素材</h2>
         <p>该请求会交给服务端清理 worker。对象存储确认删除前，素材记录与空间配额都会保留；worker 开始处理前可撤销请求。</p>
         <div className="material-recycle-confirm-list">{selectedItems.map(item => <span key={item.id}>{item.name}</span>)}</div>
-        <label>删除原因<textarea value={purgeReason} maxLength={500} onChange={event => setPurgeReason(event.target.value)} placeholder="说明提前删除原因" /></label>
-        <label>输入“彻底删除”确认<input value={purgeConfirmation} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
+        {recycleError && <p role="alert">{recycleError}</p>}
+        <label>删除原因<textarea value={purgeReason} maxLength={500} disabled={busy} onChange={event => setPurgeReason(event.target.value)} placeholder="说明提前删除原因" /></label>
+        <label>输入“彻底删除”确认<input value={purgeConfirmation} disabled={busy} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
         <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
       </section></div>}
       {previewItem && <button type="button" className="material-upload-lightbox" aria-label="关闭回收站图片预览" onClick={() => setPreviewId(null)}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭</small></span></button>}
-      {recycleError && readState !== 'error' && <p role="alert">{recycleError}</p>}
+      {recycleError && readState !== 'error' && !purgeDialogOpen && <p role="alert">{recycleError}</p>}
     </div>
   )
 }
@@ -6554,11 +6613,13 @@ export function MaterialLibraryWorkspace({
   const [uploadBusy, setUploadBusy] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
+  const pendingPreviewTriggerRef = useRef<HTMLButtonElement>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [materialStorageError, setMaterialStorageError] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
+  const detailPreviewTriggerRef = useRef<HTMLButtonElement>(null)
   // The global brand slot starts empty, like every other level of the stack.
   //
   // It used to open with `logoUrl: storeNovaLogo` and
@@ -6670,6 +6731,7 @@ export function MaterialLibraryWorkspace({
       if (event.key === 'Escape') {
         event.stopPropagation()
         setPendingPreviewIndex(null)
+        window.requestAnimationFrame(() => pendingPreviewTriggerRef.current?.focus({ preventScroll: true }))
       }
     }
     document.addEventListener('keydown', closePreview, true)
@@ -7161,7 +7223,7 @@ export function MaterialLibraryWorkspace({
     return <div className="material-detail-page" data-testid="material-detail-page">
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
-        <button type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
+        <button ref={detailPreviewTriggerRef} type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
         <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl>
           {detailMaterial.assetId ? <div className="material-detail-metadata-editors" aria-label="编辑素材分类和系列">
             <label><span>修改素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的素材分类`} value={detailMaterial.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory }) }} /></label>
@@ -7178,7 +7240,7 @@ export function MaterialLibraryWorkspace({
         <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
-      {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => setDetailPreviewOpen(false)}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
+      {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => { setDetailPreviewOpen(false); window.requestAnimationFrame(() => detailPreviewTriggerRef.current?.focus({ preventScroll: true })) }}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
     </div>
   }
 
@@ -7308,7 +7370,7 @@ export function MaterialLibraryWorkspace({
                 const fileKey = pendingFileKey(file)
                 const selected = pendingSelectedKeys.includes(fileKey)
                 return <article className={selected ? 'selected' : ''} key={fileKey}>
-                  <button type="button" className="material-upload-thumb" aria-label={`预览${file.name}`} onClick={() => setPendingPreviewIndex(index)}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <FileText size={24} />}</button>
+                  <button type="button" className="material-upload-thumb" aria-label={`预览${file.name}`} onClick={(event) => { pendingPreviewTriggerRef.current = event.currentTarget; setPendingPreviewIndex(index) }}>{file.type.startsWith('image/') ? <img src={url} alt="" /> : <FileText size={24} />}</button>
                   <button type="button" className="material-upload-select" aria-label={`选择${file.name}`} aria-pressed={selected} onClick={() => setPendingSelectedKeys((current) => current.includes(fileKey) ? current.filter((key) => key !== fileKey) : [...current, fileKey])}>{selected && <Check size={13} />}</button>
                   <strong title={file.name}>{file.name}</strong>
                   <small>{formatMaterialFileSize(file.size)}</small>
@@ -7317,7 +7379,7 @@ export function MaterialLibraryWorkspace({
             </div>
             <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件与素材分类写入当前工作区的服务端素材库；店铺归属与系列按服务端记录管理。上传文件仍需完成安全与权益确认后才能使用。' : `文件与“${uploadCategory}”分类写入当前工作区素材服务${uploadSeries ? `；“${uploadSeries}”系列归属按服务端店铺记录管理` : ''}；服务端未接受的文件不会出现在素材库中。`}</p>
             {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
-            {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭素材预览" onClick={() => setPendingPreviewIndex(null)}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><FileText size={52} /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
+            {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭素材预览" onClick={() => { setPendingPreviewIndex(null); window.requestAnimationFrame(() => pendingPreviewTriggerRef.current?.focus({ preventScroll: true })) }}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><FileText size={52} /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>
         </DialogFrame>
       )}
@@ -12380,10 +12442,10 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
   const classifyRule = (row: RulePack) => row.category
   const filteredRules = platformRows.filter((row) =>
     (ruleCategory === 'all' || classifyRule(row) === ruleCategory) &&
-    `${row.name}${row.scope}${row.version}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+    matchesSearchText(`${row.name}${row.scope}${row.version}`, query),
   )
   const filteredCategories = categories.filter((row) =>
-    `${row.name}${row.code}${row.fields.join('')}`.includes(query),
+    matchesSearchText(`${row.name}${row.code}${row.fields.join('')}`, query),
   )
   const attributeTemplateCount = new Set(
     categories.flatMap((category) => category.fields),
@@ -12998,6 +13060,7 @@ export default function App() {
   const [activeEntry, setActiveEntry] = useState<
     MerchantEntryPoint | undefined
   >(initialRoute.entry)
+  const [catalogContext, setCatalogContext] = useState<MerchantCatalogContext | undefined>(initialRoute.catalogContext)
   const [mobileNav, setMobileNav] = useState(false)
   const [publishModal, setPublishModal] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
@@ -13170,6 +13233,7 @@ export default function App() {
     const route = merchantRouteFromLocation(location)
     setPage(route.page)
     setActiveEntry(route.entry)
+    setCatalogContext(route.catalogContext)
     setGlobalSearch(route.searchQuery)
     setTaskContext(null)
     setPublishPreview(null)
@@ -13234,6 +13298,7 @@ export default function App() {
       target?: Target
       searchQuery?: string
       entry?: MerchantEntryPoint
+      catalogContext?: MerchantCatalogContext
       clearContext?: boolean
     } = {},
   ) => {
@@ -13263,11 +13328,13 @@ export default function App() {
       target: nextTarget,
       searchQuery: options.searchQuery,
       entry: requestedEntry,
+      catalogContext: options.catalogContext,
     })
     window.history.pushState(null, '', url)
     routeRequestId.current += 1
     setPage(effectivePage)
     setActiveEntry(requestedEntry)
+    setCatalogContext(options.catalogContext)
     setRouteTargetLoading(false)
     setRouteTargetError('')
     setWorkspaceNavigationKey((key) => key + 1)
@@ -13448,10 +13515,15 @@ export default function App() {
       applyLocation(window.location)
       return
     }
+    if (destination.page !== 'products') {
+      navigateTo('overview', { clearContext: true })
+      return
+    }
     setGlobalSearch(destination.searchQuery ?? '')
     navigateTo(destination.page, {
       entry: destination.entry,
       searchQuery: destination.searchQuery,
+      catalogContext: destination.catalogContext,
       clearContext: true,
     })
   }
@@ -13609,7 +13681,9 @@ export default function App() {
                       modelStatusRead={modelStatusRead}
                       onRefreshModelStatus={refreshEnvironmentStatus}
                       onOpenKnowledge={() => navigateTo('products', { entry: 'knowledge' })}
+                      onOpenSupport={() => openUtility('support')}
                       initialQuery={globalSearch}
+                      initialCatalogContext={catalogContext}
                     />
                   ) : (
                     <Products

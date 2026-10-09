@@ -211,7 +211,13 @@ describe("UserDirectorySection sorting", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps }');
     expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !model.canUserGovernance || model.userExporting }');
-    expect(source).toContain('initialValues={{ status: "", accountType: "all" }}');
+    expect(source).toContain('initialValues={{ status: "", accountType: "merchant" }}');
+    expect(source).toContain('disabled: !canReadUserDirectory');
+    expect(source).toContain('disabled={!canReadUserDirectory} maxLength={64}');
+    expect(source).toContain('aria-label="按激活状态筛选用户目录" disabled={!canReadUserDirectory}');
+    expect(source).toContain('aria-label="按账号属性筛选用户目录" disabled={!canReadUserDirectory}');
+    expect(source).toContain('htmlType="submit" disabled={!canReadUserDirectory}');
+    expect(source).toContain('aria-label="刷新用户目录" disabled={!canReadUserDirectory}');
     expect(source).toContain('{ value: "all", label: "全部" }');
     expect(source).toContain('accountType: nextAccountType, page: 1');
   });
@@ -260,5 +266,39 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('style={{ minHeight: 44 }}');
     expect(source).toContain('aria-describedby="user-directory-error-description"');
     expect(source).toContain('id="user-directory-error-description"');
+  });
+
+  it("defaults the directory to merchant accounts and stops reads without identity.read", () => {
+    const modelSource = readFileSync(new URL("../../hooks/useOpsConsoleModel.ts", import.meta.url), "utf8");
+    const componentSource = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(modelSource).toContain('}>({ accountType: "merchant" });');
+    expect(modelSource).toContain('if (!authorization.can("identity.read")) { recordOpsBootstrapTrace("users_load_skipped", { reason: "identity_read_denied" }); return false; }');
+    expect(componentSource).toContain('Form.useWatch("accountType", form) ?? "merchant"');
+    expect(componentSource).toContain('model.userDirectoryFilters?.accountType ?? "merchant"');
+  });
+
+  it("renders user directory search, filters, query, and refresh disabled without identity.read", () => {
+    const model = {
+      authorization: { can: () => false },
+      userDirectory: { items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 10, truncated: false },
+      userDirectoryLoading: false,
+      userDirectoryError: "当前角色不能读取用户目录",
+      userDirectoryCompatibilityWarning: "",
+      userExporting: false,
+      canPlatformOps: false,
+      canUserGovernance: false,
+      userDetail: undefined,
+      userDetailLoading: false,
+      opsSession: undefined,
+    } as unknown as OpsConsoleModel;
+
+    const markup = renderToStaticMarkup(createElement(UserDirectorySection, { model }));
+    expect(markup.match(/<div[^>]*ant-select-disabled[^>]*>/gu)).toHaveLength(2);
+    const submitButton = markup.match(/<button(?=[^>]*type="submit")[^>]*>/u)?.[0] ?? "";
+    expect(submitButton).toMatch(/\bdisabled(?:="")?/u);
+    const refreshButton = markup.match(/<button(?=[^>]*aria-label="刷新用户目录")[^>]*>/u)?.[0] ?? "";
+    expect(refreshButton).toMatch(/\bdisabled(?:="")?/u);
+    const queryInput = markup.match(/<input[^>]*aria-label="按关键词筛选用户目录"[^>]*>/u)?.[0] ?? "";
+    expect(queryInput).toMatch(/\bdisabled(?:="")?/u);
   });
 });

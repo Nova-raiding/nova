@@ -238,6 +238,7 @@ export type ModelStatus = {
   provider_host: string | null;
   text_model: string | null;
   image_model: string | null;
+  image_edit_model?: string | null;
   vision_model?: string | null;
   video_model?: string | null;
   relay?: { configured: boolean; host: string | null; reasons?: string[] };

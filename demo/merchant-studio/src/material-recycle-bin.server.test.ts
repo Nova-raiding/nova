@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { MaterialRecycleBinWorkspace, recycleMaterialFromServer } from './App'
+import { MaterialRecycleBinWorkspace, RecycleBinEmptyState, recycleMaterialFromServer } from './App'
 import type { TrashedAsset } from './api'
 
 const trashedAsset: TrashedAsset = {
@@ -46,5 +46,13 @@ describe('server-backed Merchant recycle bin', () => {
     expect(markup).not.toContain('回收站为空')
     expect(markup).not.toContain('server-owned-material.png')
     expect(markup).not.toContain('清除本地记录')
+  })
+
+  it('announces a successfully read empty recycle bin as a status update', () => {
+    const markup = renderToStaticMarkup(createElement(RecycleBinEmptyState))
+
+    expect(markup).toContain('role="status"')
+    expect(markup).toContain('回收站为空')
+    expect(markup).toContain('服务端当前没有可恢复的素材。')
   })
 })

@@ -183,12 +183,22 @@ export type CatalogProduct = {
 
 export const unclassifiedSeries = '未分类'
 
+/** Preserve real zeroes while treating absent or blank server fields as unknown. */
+function finiteServerNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null
+  if (typeof value === 'string' && value.trim() === '') return null
+  const number = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 /** What the product card may say about a product: the server's own facts. */
 export function catalogProductSubtitle(product: Product): string {
   const facts: string[] = []
   if (String(product.category ?? '').trim()) facts.push(String(product.category).trim())
-  if (Number.isFinite(Number(product.stock))) facts.push(`库存 ${Number(product.stock)} 件`)
-  if (Number.isFinite(Number(product.skuCount))) facts.push(`${Number(product.skuCount)} 个规格`)
+  const stock = finiteServerNumber(product.stock)
+  const skuCount = finiteServerNumber(product.skuCount)
+  if (stock !== null) facts.push(`库存 ${stock} 件`)
+  if (skuCount !== null) facts.push(`${skuCount} 个规格`)
   return facts.join(' · ')
 }
 
@@ -221,13 +231,13 @@ export function catalogProductsForStore(
       id: product.id,
       title: product.title,
       subtitle: catalogProductSubtitle(product),
-      price: product.price === undefined || !Number.isFinite(Number(product.price)) ? null : Number(product.price),
+      price: finiteServerNumber(product.price),
       addedAt: catalogProductAddedAt(product),
       skus: (product.skus ?? []).map((sku) => ({
         id: sku.id,
         name: sku.name,
-        price: sku.price === undefined || !Number.isFinite(Number(sku.price)) ? null : Number(sku.price),
-        stock: sku.stock === undefined || !Number.isFinite(Number(sku.stock)) ? null : Number(sku.stock),
+        price: finiteServerNumber(sku.price),
+        stock: finiteServerNumber(sku.stock),
       })),
       tone: catalogProductTone(index),
       series,

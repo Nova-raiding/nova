@@ -1,10 +1,25 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, popstateWorkbenchWarning, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
+import { accessDeniedRecoveryDomain, canActivateOpsWorkbench, commitOpsWorkbenchTransition, domainNavigationBlockedReason, initialOpsWorkbench, popstateWorkbenchWarning, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
 import { opsDomains, requiredWorkbenchForDomain } from "../navigation/opsNavigation.js";
 import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks/RuleCenterSection.js";
+import { createAuthorizationProjection } from "../authz/authorization.js";
 
 describe("ops workbench transition", () => {
+  it("keeps the user-center 403 return when allowed and falls back only to visible domains", () => {
+    const authorization = (capabilities: string[]) => createAuthorizationProjection({
+      actor_id: "actor_1", workspace_id: "platform", roles: [], workspace_granted: true, capabilities,
+    }, true);
+
+    expect(accessDeniedRecoveryDomain(authorization(["identity.read", "platform.summary.read"]), "platform")).toBe("users");
+    expect(accessDeniedRecoveryDomain(authorization(["platform.summary.read", "support.ticket.read"]), "platform")).toBe("overview");
+    expect(accessDeniedRecoveryDomain(authorization(["support.ticket.read"]), "platform")).toBe("support");
+    expect(accessDeniedRecoveryDomain(authorization(["billing.self.read"]), "platform")).toBe("finance");
+    expect(accessDeniedRecoveryDomain(authorization(["workspace.member.read"]), "platform")).toBeUndefined();
+    expect(accessDeniedRecoveryDomain(authorization(["workspace.member.read", "workspace.summary.read"]), "platform")).toBe("overview");
+    expect(accessDeniedRecoveryDomain(authorization([]), "platform")).toBeUndefined();
+  });
+
   it("uses the platform workbench for a customer-delivery deep link despite stale workspace state", () => {
     expect(initialOpsWorkbench({ pathname: "/ops/customer-delivery", search: "", hash: "" }, "workspace")).toBe("platform");
     expect(initialOpsWorkbench({ pathname: "/ops/tasks", search: "", hash: "" }, "platform")).toBe("platform");

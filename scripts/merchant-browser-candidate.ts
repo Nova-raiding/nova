@@ -360,7 +360,7 @@ async function main(): Promise<void> {
     controller.signal.throwIfAborted()
     if (process.argv.includes('--ensure')) return
     const extraArgs = process.argv.slice(2)
-    await command('npm', ['exec', '--', 'playwright', 'test', 'dogfood/chatgpt-all-functions/merchant-all.spec.js', 'dogfood/chatgpt-all-functions/merchant-interactions.spec.js', 'dogfood/chatgpt-all-functions/merchant.spec.js', 'dogfood/chatgpt-all-functions/merchant-data-safety.spec.js', 'dogfood/chatgpt-all-functions/merchant-brand-scopes.spec.js', 'demo/merchant-studio/overview-finance.browser.spec.js', 'demo/merchant-studio/image-visual-qa.spec.js', 'demo/merchant-studio/upload-rules-journey.browser.spec.js', '--workers=1', ...extraArgs], candidate.env)
+    await command('npm', ['exec', '--', 'playwright', 'test', 'dogfood/chatgpt-all-functions/merchant-all.spec.js', 'dogfood/chatgpt-all-functions/merchant-interactions.spec.js', 'dogfood/chatgpt-all-functions/merchant.spec.js', 'dogfood/chatgpt-all-functions/merchant-data-safety.spec.js', 'dogfood/chatgpt-all-functions/merchant-brand-scopes.spec.js', 'demo/merchant-studio/overview-finance.browser.spec.js', 'demo/merchant-studio/image-visual-qa.spec.js', 'demo/merchant-studio/upload-rules-journey.browser.spec.js', 'demo/merchant-studio/merchant-risk-destination.browser.spec.js', 'demo/merchant-studio/catalog-search-filters.browser.spec.js', '--workers=1', ...extraArgs], candidate.env)
   } finally {
     if (startupAttempted) {
       const evidence = await cleanupBrowserCandidate(candidate)

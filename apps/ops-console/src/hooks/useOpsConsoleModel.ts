@@ -517,7 +517,7 @@ export function useOpsConsoleModel() {
   const [userDetail, setUserDetail] = useState<PlatformUserDetail>();
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const userDetailRequestRef = useRef(0);
-  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number }>({ accountType: "all" });
+  const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number }>({ accountType: "merchant" });
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>(UNRESOLVED_WORKSPACE_DIRECTORY);
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
@@ -1612,6 +1612,7 @@ export function useOpsConsoleModel() {
   };
   const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform"; page?: number; pageSize?: number } = userDirectoryFilters) => {
     recordOpsBootstrapTrace("users_load_enter", { connected: hasOpsConnection(), identity: authorization.can("identity.read") });
+    if (!authorization.can("identity.read")) { recordOpsBootstrapTrace("users_load_skipped", { reason: "identity_read_denied" }); return false; }
     if (!hasOpsConnection()) { recordOpsBootstrapTrace("users_load_skipped", { reason: "no_connection" }); return false; }
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 10;

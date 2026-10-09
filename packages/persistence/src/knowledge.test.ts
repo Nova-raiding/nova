@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryKnowledgeRepository, PostgresKnowledgeRepository } from './knowledge.js'
+import { appendOperationAuditInTransaction } from './operations-repository.js'
+import { PostgresOutboxRepository } from './repository.js'
 import type { SqlClient, SqlPool } from './repository.js'
 
 class RecordingKnowledgePool implements SqlPool {
@@ -27,6 +29,75 @@ class RecordingKnowledgePool implements SqlPool {
           }] as Row[],
         }
         if (text.includes('FROM knowledge_embeddings')) return { rows: this.embeddingRow.embedding_model === values[2] && this.embeddingRow.embedding_version === values[3] && Array.isArray(this.embeddingRow.embedding) && this.embeddingRow.embedding.length === 1024 ? [this.embeddingRow] as Row[] : [] as Row[] }
+        return { rows: [] as Row[] }
+      },
+      release: () => {},
+    }
+  }
+}
+
+class KnowledgeAssetCasPool implements SqlPool {
+  readonly statements: string[] = []
+  constructor(private row: Record<string, unknown>) {}
+  async connect(): Promise<SqlClient> {
+    return {
+      query: async <Row>(text: string, values: unknown[] = []) => {
+        this.statements.push(text)
+        if (text.includes('FROM knowledge_assets') && text.includes('FOR UPDATE')) return { rows: [this.row] as Row[] }
+        if (text.includes('UPDATE knowledge_assets')) {
+          this.row = {
+            ...this.row,
+            ...(text.includes('approval_status=') ? { approval_status: values[2] } : {}),
+            ...(text.includes('rights_status=') ? { rights_status: values[text.includes('approval_status=') ? 3 : 2] } : {}),
+            revision: Number(this.row.revision) + 1,
+            updated_at: '2026-10-09T00:01:00.000Z',
+          }
+          return { rows: [this.row] as Row[] }
+        }
+        return { rows: [] as Row[] }
+      },
+      release: () => {},
+    }
+  }
+}
+
+class KnowledgeGovernanceCasPool implements SqlPool {
+  readonly statements: string[] = []
+  failOutboxAppend = false
+  failAuditAppend = false
+  asset: Record<string, unknown>
+  document: Record<string, unknown>
+  private snapshot?: { asset: Record<string, unknown>; document: Record<string, unknown> }
+  constructor() {
+    this.asset = { id: 'asset-governance', workspace_id: 'ws-a', kind: 'product_facts', name: '商品事实', content: {}, source_asset_id: null, product_id: 'product-a', sku_id: null, source_version: 1, approval_status: 'pending', rights_status: 'unknown', index_state: 'queued', revision: 1, created_at: '2026-10-09T00:00:00.000Z', updated_at: '2026-10-09T00:00:00.000Z' }
+    this.document = { id: 'doc-governance', workspace_id: 'ws-a', knowledge_asset_id: 'asset-governance', source_asset_id: null, source_version: 1, brand_id: null, product_id: 'product-a', sku_id: null, knowledge_type: 'product_facts', title: '商品事实', content_type: 'text/plain', content_hash: 'hash-a', extracted_text: '商品事实', source_metadata: {}, approval_status: 'pending', rights_status: 'unknown', rule_snapshot_version: null, embedding_model: null, embedding_version: null, index_state: 'queued', index_error: null, expires_at: null, revision: 1, created_at: '2026-10-09T00:00:00.000Z', updated_at: '2026-10-09T00:00:00.000Z' }
+  }
+  async connect(): Promise<SqlClient> {
+    return {
+      query: async <Row>(text: string, values: unknown[] = []) => {
+        this.statements.push(text)
+        if (text === 'BEGIN') this.snapshot = { asset: structuredClone(this.asset), document: structuredClone(this.document) }
+        if (text === 'ROLLBACK' && this.snapshot) { this.asset = this.snapshot.asset; this.document = this.snapshot.document; this.snapshot = undefined }
+        if (text === 'COMMIT') this.snapshot = undefined
+        if (text.includes('FROM knowledge_assets') && text.includes('FOR UPDATE')) return { rows: [this.asset] as Row[] }
+        if (text.includes('FROM knowledge_documents')) return { rows: [this.document] as Row[] }
+        if (text.includes('UPDATE knowledge_assets')) {
+          if (text.includes('approval_status=')) this.asset.approval_status = values[2]
+          if (text.includes('rights_status=')) this.asset.rights_status = values[text.includes('approval_status=') ? 3 : 2]
+          this.asset.revision = Number(this.asset.revision) + 1
+          this.asset.updated_at = '2026-10-09T00:01:00.000Z'
+          return { rows: [this.asset] as Row[] }
+        }
+        if (text.includes('UPDATE knowledge_documents')) {
+          if (text.includes('approval_status=')) this.document.approval_status = values[3]
+          if (text.includes('rights_status=')) this.document.rights_status = values[text.includes('approval_status=') ? 4 : 3]
+          this.document.revision = Number(this.document.revision) + 1
+          this.document.updated_at = '2026-10-09T00:01:00.000Z'
+        }
+        if (text.includes('INSERT INTO outbox_events') && this.failOutboxAppend) throw new Error('outbox unavailable')
+        if (text.includes('INSERT INTO workspace_operation_audit') && this.failAuditAppend) throw new Error('operation audit unavailable')
+        if (text.includes('INSERT INTO outbox_events')) return { rows: [{ id: values[0], workspace_id: values[1], aggregate_id: values[2], event_type: values[3], sequence: values[4], payload: JSON.parse(String(values[5])), published_at: null, created_at: '2026-10-09T00:01:00.000Z', attempts: 0, next_attempt_at: null, lease_token: null, lease_until: null, last_error: null, unknown_at: null }] as Row[] }
+        if (text.includes('INSERT INTO workspace_operation_audit')) return { rows: [{ id: values[0], workspaceId: values[1], actorId: values[2], action: values[3], resourceType: values[4], resourceId: values[5], before: values[6], after: values[7], reason: values[8], createdAt: '2026-10-09T00:01:00.000Z' }] as Row[] }
         return { rows: [] as Row[] }
       },
       release: () => {},
@@ -215,6 +286,127 @@ const semanticEmbeddingRow = {
 }
 
 describe('knowledge persistence contract', () => {
+  it('applies asset approval updates only against the expected revision under a row lock', async () => {
+    const pool = new KnowledgeAssetCasPool({
+      id: 'asset-cas', workspace_id: 'ws-a', kind: 'product_facts', name: '商品事实', content: {},
+      source_asset_id: null, product_id: 'product-a', sku_id: null, source_version: 1,
+      approval_status: 'pending', rights_status: 'unknown', index_state: 'queued', revision: 5,
+      created_at: '2026-10-09T00:00:00.000Z', updated_at: '2026-10-09T00:00:00.000Z',
+    })
+    const repository = new PostgresKnowledgeRepository(pool)
+    await expect(repository.updateAsset('ws-a', 'asset-cas', { approvalStatus: 'approved', expectedRevision: 4 })).rejects.toThrow('KNOWLEDGE_ASSET_REVISION_CONFLICT')
+    expect(pool.statements.some(statement => statement.includes('UPDATE knowledge_assets'))).toBe(false)
+    const updated = await repository.updateAsset('ws-a', 'asset-cas', { approvalStatus: 'approved', rightsStatus: 'cleared', expectedRevision: 5 })
+    expect(updated).toMatchObject({ id: 'asset-cas', approvalStatus: 'approved', rightsStatus: 'cleared', revision: 6 })
+    expect(pool.statements.filter(statement => statement.includes('FROM knowledge_assets') && statement.includes('FOR UPDATE'))).toHaveLength(2)
+  })
+
+  it('commits product approval CAS, document cascade, outbox and operation audit on one workspace transaction', async () => {
+    const pool = new KnowledgeGovernanceCasPool()
+    const repository = new PostgresKnowledgeRepository(pool)
+    const result = await repository.updateProductGovernance({ workspaceId: 'ws-a', productId: 'product-a', assetId: 'asset-governance', expectedRevision: 1, actorId: 'editor-a', reason: '核对商家授权说明', approvalStatus: 'approved', rightsStatus: 'cleared' }, async (client, evidence) => {
+      expect(client).toBeDefined()
+      expect(evidence.event).toMatchObject({ workspaceId: 'ws-a', aggregateId: 'asset-governance', eventType: 'knowledge.product.updated', sequence: 2 })
+      expect(evidence.audit).toMatchObject({ actorId: 'editor-a', action: 'knowledge.product.update', resourceId: 'asset-governance' })
+      await new PostgresOutboxRepository(pool).appendInTransaction(client!, evidence.event)
+      await appendOperationAuditInTransaction(client!, evidence.audit)
+    })
+    expect(result).toMatchObject({ id: 'asset-governance', productId: 'product-a', approvalStatus: 'approved', rightsStatus: 'cleared', revision: 2, documents: [{ id: 'doc-governance', approvalStatus: 'approved', rightsStatus: 'cleared', indexState: 'queued', revision: 2 }] })
+    expect(pool.statements.indexOf('BEGIN')).toBeLessThan(pool.statements.findIndex(statement => statement.includes('UPDATE knowledge_assets')))
+    expect(pool.statements.findIndex(statement => statement.includes('INSERT INTO outbox_events'))).toBeLessThan(pool.statements.findIndex(statement => statement.includes('INSERT INTO workspace_operation_audit')))
+    expect(pool.statements.indexOf('COMMIT')).toBeGreaterThan(pool.statements.findIndex(statement => statement.includes('INSERT INTO workspace_operation_audit')))
+    expect(pool.statements).not.toContain('ROLLBACK')
+  })
+
+  it('locks a document parent asset before insert so concurrent governance cascades cannot miss a phantom', async () => {
+    const pool = new KnowledgeGovernanceCasPool()
+    const repository = new PostgresKnowledgeRepository(pool)
+    await repository.createDocument({ id: 'doc-governance', workspaceId: 'ws-a', knowledgeAssetId: 'asset-governance', productId: 'product-a', knowledgeType: 'product_facts', contentHash: 'hash-a', extractedText: '商品事实' })
+    const parentLock = pool.statements.findIndex(statement => statement.includes('FROM knowledge_assets') && statement.includes('FOR UPDATE'))
+    const insert = pool.statements.findIndex(statement => statement.includes('INSERT INTO knowledge_documents'))
+    expect(parentLock).toBeGreaterThan(-1)
+    expect(parentLock).toBeLessThan(insert)
+    expect(pool.statements).not.toContain('ROLLBACK')
+  })
+
+  it('rejects document insertion when its locked parent asset is deleted', async () => {
+    const pool = new KnowledgeGovernanceCasPool()
+    pool.asset.index_state = 'deleted'
+    const repository = new PostgresKnowledgeRepository(pool)
+    await expect(repository.createDocument({ id: 'doc-after-delete', workspaceId: 'ws-a', knowledgeAssetId: 'asset-governance', productId: 'product-a', knowledgeType: 'product_facts', contentHash: 'hash-new', extractedText: '商品事实' })).rejects.toThrow('KNOWLEDGE_ASSET_NOT_FOUND')
+    expect(pool.statements.some(statement => statement.includes('INSERT INTO knowledge_documents'))).toBe(false)
+  })
+
+  it('rolls back asset and documents when transactional approval evidence append fails', async () => {
+    const pool = new KnowledgeGovernanceCasPool()
+    pool.failAuditAppend = true
+    const repository = new PostgresKnowledgeRepository(pool)
+    await expect(repository.updateProductGovernance({ workspaceId: 'ws-a', productId: 'product-a', assetId: 'asset-governance', expectedRevision: 1, actorId: 'editor-a', reason: '核对商家授权说明', approvalStatus: 'approved', rightsStatus: 'cleared' }, async client => {
+      const event = { workspaceId: 'ws-a', aggregateId: 'asset-governance', eventType: 'knowledge.product.updated', sequence: 2, payload: { failed: true } }
+      await new PostgresOutboxRepository(pool).appendInTransaction(client!, event)
+      await appendOperationAuditInTransaction(client!, { workspaceId: 'ws-a', actorId: 'editor-a', action: 'knowledge.product.update', resourceType: 'knowledge_product_asset', resourceId: 'asset-governance', before: {}, after: {}, reason: '核对商家授权说明' })
+    })).rejects.toThrow('operation audit unavailable')
+    expect(pool.asset).toMatchObject({ approval_status: 'pending', rights_status: 'unknown', revision: 1 })
+    expect(pool.document).toMatchObject({ approval_status: 'pending', rights_status: 'unknown', index_state: 'queued', revision: 1 })
+    expect(pool.statements).toContain('ROLLBACK')
+    expect(pool.statements).not.toContain('COMMIT')
+  })
+
+  it('rolls back asset and documents when outbox append fails before audit', async () => {
+    const pool = new KnowledgeGovernanceCasPool()
+    pool.failOutboxAppend = true
+    const repository = new PostgresKnowledgeRepository(pool)
+    await expect(repository.updateProductGovernance({ workspaceId: 'ws-a', productId: 'product-a', assetId: 'asset-governance', expectedRevision: 1, actorId: 'editor-a', reason: '核对商家授权说明', approvalStatus: 'approved', rightsStatus: 'cleared' }, async (client, evidence) => {
+      await new PostgresOutboxRepository(pool).appendInTransaction(client!, evidence.event)
+    })).rejects.toThrow('outbox unavailable')
+    expect(pool.asset).toMatchObject({ approval_status: 'pending', rights_status: 'unknown', revision: 1 })
+    expect(pool.document).toMatchObject({ approval_status: 'pending', rights_status: 'unknown', index_state: 'queued', revision: 1 })
+    expect(pool.statements).toContain('ROLLBACK')
+    expect(pool.statements).not.toContain('COMMIT')
+    expect(pool.statements.some(statement => statement.includes('INSERT INTO workspace_operation_audit'))).toBe(false)
+  })
+
+  it('restores in-memory asset and document state when the evidence writer rejects', async () => {
+    const repository = new MemoryKnowledgeRepository()
+    const asset = await repository.createAsset({ id: 'asset-memory-governance', workspaceId: 'ws-memory-governance', kind: 'product_facts', name: '商品事实', content: {}, productId: 'product-memory-governance' })
+    const document = await repository.createDocument({ id: 'doc-memory-governance', workspaceId: 'ws-memory-governance', knowledgeAssetId: asset.id, productId: asset.productId, knowledgeType: 'product_facts', contentHash: 'hash', extractedText: '商品事实' })
+    await expect(repository.updateProductGovernance({ workspaceId: 'ws-memory-governance', productId: asset.productId!, assetId: asset.id, expectedRevision: 1, actorId: 'editor-a', reason: '核对商家授权说明', approvalStatus: 'approved', rightsStatus: 'cleared' }, async (_client, evidence) => {
+      expect(evidence.event.eventType).toBe('knowledge.product.updated')
+      throw new Error('audit append failed')
+    })).rejects.toThrow('audit append failed')
+    expect(await repository.getAsset('ws-memory-governance', asset.id)).toMatchObject({ approvalStatus: 'pending', rightsStatus: 'unknown', revision: 1 })
+    expect((await repository.listDocuments('ws-memory-governance', { id: document.id }))[0]).toMatchObject({ approvalStatus: 'pending', rightsStatus: 'unknown', indexState: 'queued', revision: 1 })
+  })
+
+  it('serializes memory reads and document creation behind a failing governance writer', async () => {
+    const repository = new MemoryKnowledgeRepository()
+    const asset = await repository.createAsset({ id: 'asset-memory-serialized', workspaceId: 'ws-memory-serialized', kind: 'product_facts', name: '商品事实', content: {}, productId: 'product-memory-serialized' })
+    const existing = await repository.createDocument({ id: 'doc-memory-serialized', workspaceId: 'ws-memory-serialized', knowledgeAssetId: asset.id, productId: asset.productId, knowledgeType: 'product_facts', contentHash: 'hash-old', extractedText: '旧事实' })
+    let enterWriter!: () => void
+    let rejectWriter!: (error: Error) => void
+    const writerEntered = new Promise<void>(resolve => { enterWriter = resolve })
+    const writerFailure = new Promise<void>((_resolve, reject) => { rejectWriter = reject })
+    const governance = repository.updateProductGovernance({ workspaceId: 'ws-memory-serialized', productId: asset.productId!, assetId: asset.id, expectedRevision: 1, actorId: 'editor-a', reason: '核对事实', approvalStatus: 'approved', rightsStatus: 'cleared' }, async () => {
+      enterWriter()
+      await writerFailure
+    })
+    await writerEntered
+    let readFinished = false
+    let createFinished = false
+    const readDuringPending = repository.getAsset('ws-memory-serialized', asset.id).then(value => { readFinished = true; return value })
+    const createDuringPending = repository.createDocument({ id: 'doc-memory-concurrent', workspaceId: 'ws-memory-serialized', knowledgeAssetId: asset.id, productId: asset.productId, knowledgeType: 'product_facts', contentHash: 'hash-new', extractedText: '新事实' }).then(value => { createFinished = true; return value })
+    await Promise.resolve()
+    expect(readFinished).toBe(false)
+    expect(createFinished).toBe(false)
+    rejectWriter(new Error('audit unavailable'))
+    await expect(governance).rejects.toThrow('audit unavailable')
+    const [assetAfter, created] = await Promise.all([readDuringPending, createDuringPending])
+    expect(assetAfter).toMatchObject({ approvalStatus: 'pending', rightsStatus: 'unknown', revision: 1 })
+    expect(created.id).toBe('doc-memory-concurrent')
+    expect((await repository.listDocuments('ws-memory-serialized', { id: existing.id }))[0]).toMatchObject({ approvalStatus: 'pending', rightsStatus: 'unknown', revision: 1 })
+    expect((await repository.listDocuments('ws-memory-serialized', { id: created.id }))[0]).toMatchObject({ approvalStatus: 'pending', rightsStatus: 'unknown', revision: 1 })
+  })
+
   it('discards vectors for superseded content before later approval', async () => {
     const repository = new MemoryKnowledgeRepository()
     const asset = await repository.createAsset({ workspaceId: 'ws-a', kind: 'material', name: '旧材料', content: 'old' })

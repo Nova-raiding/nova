@@ -229,7 +229,7 @@ const READ_ONLY_METHODS = new Set([
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'multimodal.video.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.manual.get', 'publish.manual.list', 'publish.batch.get',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'automation.policy.get', 'automation.policy.list',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.product.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'automation.policy.get', 'automation.policy.list',
 ])
 const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 // Mirrors packages/contracts/src/commercial-operation-registry.ts
@@ -289,7 +289,7 @@ const COMMERCIAL_API_READ_ONLY_METHODS = new Set([
   'platform.media.spec.list', 'platform.media.spec.get', 'platform.store.list',
   'brand.get', 'support.customer.replies.list',
   'publish.manual.get', 'publish.manual.list',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.product.list', 'knowledge.brand.preference.get',
   'knowledge.learning.list', 'knowledge.competitor.list',
   'rule.list', 'rule.sync.status', 'automation.policy.get', 'automation.policy.list',
 ])
@@ -1199,6 +1199,14 @@ const METHODS = {
     description: '查询当前工作区的品牌资产和客户资产。只读。',
     inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['brand', 'customer'] }, text: { type: 'string' }, tags_json: { type: 'string' } }, additionalProperties: false },
   },
+  'knowledge.product.list': {
+    description: '按当前工作区和商品读取商品事实知识资产、来源事实与文档状态，返回后续审批所需的稳定资产 ID 和 revision；只读，不返回跨商品数据。',
+    inputSchema: { type: 'object', properties: { product_id: boundedString(200) }, required: ['product_id'], additionalProperties: false },
+  },
+  'knowledge.product.update': {
+    description: '按当前工作区、商品和知识资产 ID 更新商品事实审批/权益状态；必须使用 knowledge.product.list 返回的 asset_id 与 revision，并说明核验依据。不会修改索引状态；更新由工作区知识治理权限校验并记录审计。',
+    inputSchema: { type: 'object', properties: { product_id: boundedString(200), asset_id: boundedString(200), expected_revision: positiveIntegerString, approval_status: { type: 'string', enum: ['pending', 'approved', 'rejected'] }, rights_status: { type: 'string', enum: ['unknown', 'cleared', 'restricted'] }, reason: boundedString(1000, 8, '说明事实/权益核验依据的审计原因') }, required: ['product_id', 'asset_id', 'expected_revision', 'reason'], additionalProperties: false },
+  },
   'knowledge.brand.preference.get': {
     description: '读取当前工作区的品牌语气、风格和表达偏好。只读。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -2001,6 +2009,9 @@ function userFacingErrorText(code, details) {
 }
 
 function toolErrorPresentation(method, args, code, details) {
+  if (code === 'KNOWLEDGE_REVIEW_REQUIRED') {
+    return { text: '商品知识尚未通过审批或权益确认，请先完成知识资产审核，再生成内容。' }
+  }
   if (code === 'MCP_CONFIGURATION_REQUIRED') {
     const missing = Array.isArray(details?.missing) && details.missing.length
       ? details.missing.join('、')
@@ -2308,6 +2319,7 @@ function requireRelayEvidence(method, result) {
 
 function safeStructuredErrorMessage(error, code, details) {
   if (code === 'FACTS_CONFIRMATION_REQUIRED') return '请先确认商品事实'
+  if (code === 'KNOWLEDGE_REVIEW_REQUIRED') return '商品知识尚未通过审批或权益确认，请先完成知识资产审核，再生成内容。'
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return userFacingErrorText(code, details)
   const raw = error instanceof Error ? error.message : ''

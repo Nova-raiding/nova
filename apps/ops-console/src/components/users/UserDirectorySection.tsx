@@ -74,8 +74,8 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
 }) {
   const canReadUserDirectory = model.authorization.can("identity.read");
   const [form] = Form.useForm<UserFilters>();
-  const accountType = Form.useWatch("accountType", form) ?? "all";
-  const displayedAccountType = model.userDirectoryFilters?.accountType ?? "all";
+  const accountType = Form.useWatch("accountType", form) ?? "merchant";
+  const displayedAccountType = model.userDirectoryFilters?.accountType ?? "merchant";
   const [accessTarget, setAccessTarget] = useState<PlatformUser>();
   const [suspendReason, setSuspendReason] = useState("");
   const [suspending, setSuspending] = useState(false);
@@ -166,7 +166,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject, revision: row.revision }));
   const governanceMenuItems: NonNullable<MenuProps["items"]> = [
     ...(governanceSections.map(({ key, label }) => ({ key, label }))),
-    { key: "accountType", label: accountType === "platform" ? "返回全部账号" : "查看运营平台账号" },
+    { key: "accountType", label: accountType === "platform" ? "返回全部账号" : "查看运营平台账号", disabled: !canReadUserDirectory },
     { key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !model.canUserGovernance || model.userExporting },
     { key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps },
   ];
@@ -221,20 +221,20 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     {canReadUserDirectory && !model.canUserGovernance && <Alert showIcon type="info" title="当前为只读视图" description="可以查询身份、成员关系和审计详情，但停用、恢复、风险策略与会话撤销需要 identity.update。" />}
     <h2 id="user-directory-heading" className="sr-only">{displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"}</h2>
       <Card className="ops-user-directory-card" title={displayedAccountType === "platform" ? "运营平台用户" : "已接入用户"} extra={<Dropdown menu={{ items: governanceMenuItems, onClick: handleGovernanceMenuClick }}><Button type="text" aria-label={`更多用户治理操作${governanceSections.length ? `：${governanceSections.map(({ label }) => label).join("、")}` : ""}`} className="ops-user-directory-total">{directoryResultUnread ? unreadDirectoryLabel : displayedAccountType === "platform" ? `共 ${model.userDirectory.total} 个运营平台账号` : `共 ${model.userDirectory.workspaceCount} 家商家工作区`}</Button></Dropdown>} aria-busy={model.userDirectoryLoading}>
-      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "all" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
-        <Form.Item name="query" label="搜索"><Input allowClear maxLength={64} aria-label="按关键词筛选用户目录" style={{ width: 200 }} /></Form.Item>
+      <Form<UserFilters> form={form} layout="inline" initialValues={{ status: "", accountType: "merchant" }} onFinish={(values) => { void model.loadUsers({ ...values, status: values.status || undefined, page: 1 }); }} aria-label="用户目录筛选">
+        <Form.Item name="query" label="搜索"><Input allowClear disabled={!canReadUserDirectory} maxLength={64} aria-label="按关键词筛选用户目录" style={{ width: 200 }} /></Form.Item>
         <Form.Item name="status" label="状态">
-          <Select aria-label="按激活状态筛选用户目录" style={{ width: 140 }} options={[
+          <Select aria-label="按激活状态筛选用户目录" disabled={!canReadUserDirectory} style={{ width: 140 }} options={[
             { value: "", label: "全部" }, { value: "active", label: "已激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
         <Form.Item name="accountType" label="属性">
-          <Select aria-label="按账号属性筛选用户目录" style={{ width: 140 }} options={[
+          <Select aria-label="按账号属性筛选用户目录" disabled={!canReadUserDirectory} style={{ width: 140 }} options={[
             { value: "all", label: "全部" }, { value: "merchant", label: "商家账号" }, { value: "platform", label: "运营平台账号" },
           ]} />
         </Form.Item>
         <Form.Item><Space>
-          <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
+          <Button type="primary" htmlType="submit" disabled={!canReadUserDirectory} loading={model.userDirectoryLoading}>查询</Button>
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
@@ -248,7 +248,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
           type="error"
           title="用户目录加载失败"
           description={<span id="user-directory-error-description">{model.userDirectory.items.length > 0 ? "已保留最近一次成功加载的用户目录；修复连接后可重新拉取最新数据。" : model.userDirectoryError}</span>}
-          action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label="刷新用户目录" onClick={() => void model.loadUsers(form.getFieldsValue())}>刷新用户目录</Button>}
+          action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label="刷新用户目录" disabled={!canReadUserDirectory} onClick={() => void model.loadUsers(form.getFieldsValue())}>刷新用户目录</Button>}
         />
       </div>}
       {model.userDirectoryCompatibilityWarning && <Alert

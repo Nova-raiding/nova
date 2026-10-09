@@ -399,6 +399,8 @@ export const MCP_METHODS = [
   'knowledge.asset.create',
   'knowledge.asset.update',
   'knowledge.asset.list',
+  'knowledge.product.list',
+  'knowledge.product.update',
   'knowledge.brand.preference.get',
   'knowledge.brand.preference.update',
   'knowledge.feedback.record',
@@ -1706,6 +1708,16 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'knowledge.asset.update',
     description: 'Update approval, rights or metadata for a workspace knowledge asset with an audit trail.',
     params: params({ asset_id: { type: 'string' }, name: { type: 'string' }, content_json: { type: 'string' }, source: { type: 'string' }, tags_json: { type: 'string' }, approval_status: { type: 'string', enum: ['pending', 'approved', 'rejected'] }, rights_status: { type: 'string', enum: ['unknown', 'cleared', 'restricted'] } }, ['asset_id']),
+  },
+  {
+    method: 'knowledge.product.list',
+    description: 'List product-facts knowledge assets and documents for one product in the authenticated workspace, including stable IDs, source facts, revisions, rights/approval status and indexing state.',
+    params: params({ workspace_id: { type: 'string', description: '当前已认证工作区的 ID，必须与本地连接绑定范围一致' }, product_id: { type: 'string', minLength: 1, maxLength: 200, description: '要查询商品知识的商品 ID' } }, ['product_id']),
+  },
+  {
+    method: 'knowledge.product.update',
+    description: 'Update approval and/or rights state for one product-facts asset in the authenticated workspace. Requires the product and asset IDs from knowledge.product.list, the current asset revision, and an auditable reason. Does not mark documents indexed.',
+    params: params({ workspace_id: { type: 'string', description: '当前已认证工作区的 ID，必须与本地连接绑定范围一致' }, product_id: { type: 'string', minLength: 1, maxLength: 200, description: '商品 ID' }, asset_id: { type: 'string', minLength: 1, maxLength: 200, description: '待更新的商品知识资产 ID' }, expected_revision: { ...positiveIntegerString, description: '读取商品知识时返回的当前版本号' }, approval_status: { type: 'string', enum: ['pending', 'approved', 'rejected'], description: '知识审批状态' }, rights_status: { type: 'string', enum: ['unknown', 'cleared', 'restricted'], description: '素材权益核验状态' }, reason: { type: 'string', minLength: 8, maxLength: 1000, description: '填写审批依据，至少 8 个字符' } }, ['product_id', 'asset_id', 'expected_revision', 'reason']),
   },
   {
     method: 'knowledge.feedback.record',
