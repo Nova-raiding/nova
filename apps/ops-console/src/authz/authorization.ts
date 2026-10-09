@@ -60,7 +60,10 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
     "commercial.order.read", "commercial.rate.read", "commercial.service_fulfillment.read",
   ],
   support: ["support.ticket.read"],
-  audit: ["audit.read", "audit.export"],
+  // The audit page always loads and filters the list before it can export.
+  // Export permission alone must not expose a page whose primary read path
+  // the same session is not authorized to use.
+  audit: ["audit.read"],
 };
 
 function serverPermissions(session: OpsSession) {

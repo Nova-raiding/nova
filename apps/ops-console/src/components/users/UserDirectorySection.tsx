@@ -3,7 +3,7 @@ import { Alert, Button, Card, Descriptions, Dropdown, Drawer, Empty, Form, Input
 import type { MenuProps } from "antd";
 import type { TableProps } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
-import type { PlatformUser } from "../../types/ops";
+import type { PlatformUser, WorkspaceSummary } from "../../types/ops";
 import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 import { opsRestPost, describeOpsError } from "../../api/opsClient.js";
 import { canExportUserDirectory } from "../../api/userDirectoryPermission.js";
@@ -41,6 +41,11 @@ export function userDirectoryPageRequest(filters: UserFilters, current?: number,
     page: current ?? 1,
     pageSize: pageSize ?? 10,
   };
+}
+
+export function workspaceDirectoryOptionLabel(workspace: Pick<WorkspaceSummary, "workspaceId"> & Partial<Pick<WorkspaceSummary, "enterpriseName">>) {
+  const name = workspace.enterpriseName?.trim();
+  return name ? `${name} · ${workspace.workspaceId}` : `未命名企业主体 · ${workspace.workspaceId}`;
 }
 
 export function canWriteLoadedIdentity(model: Pick<OpsConsoleModel, "canUserGovernance" | "userDetail" | "userDetailLoading">) {
@@ -361,7 +366,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
           </Form.Item>
           {model.workspaceDirectoryError && <Alert role="alert" type="error" showIcon title="企业工作区查询失败" description={model.workspaceDirectoryError} />}
           <Form.Item label="目标企业" name="workspaceId" rules={[{ required: true, message: "请选择要绑定的企业" }]}>
-            <Select disabled={provisionWorkspaceQueryApplied === undefined || model.workspaceDirectoryLoading} loading={model.workspaceDirectoryLoading} options={provisionWorkspaceQueryApplied === undefined ? [] : (model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName || item.workspaceId} · ${item.workspaceId}` }))} placeholder={provisionWorkspaceQueryApplied === undefined ? "先搜索企业名称或 Workspace ID" : "选择已核实企业，服务端会再次验证"} />
+            <Select disabled={provisionWorkspaceQueryApplied === undefined || model.workspaceDirectoryLoading} loading={model.workspaceDirectoryLoading} options={provisionWorkspaceQueryApplied === undefined ? [] : (model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: workspaceDirectoryOptionLabel(item) }))} placeholder={provisionWorkspaceQueryApplied === undefined ? "先搜索企业名称或 Workspace ID" : "选择已核实企业，服务端会再次验证"} />
           </Form.Item>
           {provisionWorkspaceQueryApplied !== undefined && !model.workspaceDirectoryLoading && !model.workspaceDirectoryError && (model.workspaceDirectory?.items ?? []).filter(item => item.status === "active").length === 0 && <Typography.Text role="status">没有找到匹配的正常企业工作区</Typography.Text>}
           {provisionWorkspaceQueryApplied !== undefined && model.workspaceDirectory?.hasMore && <Button disabled={model.workspaceDirectoryLoading || provisionSubmitting} loading={model.workspaceDirectoryLoading} onClick={() => { const requestId = ++provisionWorkspaceRequestRef.current; setProvisionWorkspaceQueryApplied(undefined); provisionForm.setFieldValue("workspaceId", undefined); void model.loadWorkspaceDirectory({ query: provisionWorkspaceQueryApplied || undefined, status: "active", merchantOnly: true, page: Math.floor(model.workspaceDirectory.offset / model.workspaceDirectory.limit) + 2, pageSize: 100 }).then(ok => { if (requestId === provisionWorkspaceRequestRef.current && ok) setProvisionWorkspaceQueryApplied(provisionWorkspaceQueryApplied); }); }}>下一页企业</Button>}

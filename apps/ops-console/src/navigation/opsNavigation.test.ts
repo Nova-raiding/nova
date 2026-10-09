@@ -101,6 +101,11 @@ describe("operations navigation", () => {
     expect(visibleOpsDomains(support)).toEqual(["overview", "support", "audit"]);
   });
 
+  it("does not expose audit navigation to export-only sessions", () => {
+    expect(canViewOpsDomain("audit", authorization(["audit.export"]))).toBe(false);
+    expect(visibleOpsDomains(authorization(["audit.export"]))).not.toContain("audit");
+  });
+
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {
     const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "workspace.directory.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "storage.reconciliation.read", "billing.platform.read", "support.ticket.read", "audit.read"]);
     expect(visibleOpsDomains(all)).toEqual(opsDomains);
