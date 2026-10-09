@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+// @ts-ignore JavaScript packaging module
+import { packageInstallStatus } from './local-plugin-package-profile.mjs'
 
 const source = (path: string) => readFileSync(`apps/plugin/scripts/${path}`, 'utf8')
 const mirror = (path: string) => readFileSync(`.codex-marketplace/plugins/merchant-marketing/scripts/${path}`, 'utf8')
@@ -54,7 +56,12 @@ describe('local plugin package release profile contract', () => {
 
   it('keeps every QA broker archive non-installable as a release candidate', () => {
     const packaging = source('package-local-plugin.mjs')
-    expect(packaging).toContain('ready_to_install: profileManifest.release_eligible === true')
-    expect(packaging).toContain("if (profileManifest.qa_only) bundleStatus.release_status = 'qa_only'")
+    expect(packaging).toContain('...packageInstallStatus({ platform, profile: packageProfile, sourceDirty, gitCommit,')
+    for (const sourceDirty of [false, true]) {
+      expect(packageInstallStatus({ platform: 'darwin', profile: 'qa-broker', sourceDirty,
+        gitCommit: 'a'.repeat(40), bundledRuntimeVerified: true, nativeHelperVerified: true,
+        windowsHelperVerified: false, ciTestCertificate: false }))
+        .toEqual({ release_status: 'qa_only', ready_to_install: false })
+    }
   })
 })

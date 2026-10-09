@@ -3,11 +3,11 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { writeBundleProvenance, provenanceFile } from './bundle-provenance.mjs'
 import { verifyChatGPTMacApp } from './verify-chatgpt-macos.mjs'
-import { assertPackageProfileEntries, packageProfileManifest, parsePackageCliArgs, profileSourceEntries, readPackageProfile } from './local-plugin-package-profile.mjs'
+import { assertPackageProfileEntries, packageProfileManifest, packageInstallStatus, parsePackageCliArgs, profileSourceEntries, readPackageProfile } from './local-plugin-package-profile.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(pluginRoot, '..', '..')
@@ -189,6 +189,8 @@ try {
   chmodSync(resolve(runtimeFolder, platform === 'win32' ? 'node.exe' : 'node'), 0o755)
   const runtimeProbe = run(resolve(runtimeFolder, platform === 'win32' ? 'node.exe' : 'node'), ['-p', '`${process.platform}/${process.arch}/${process.versions.node}`'])
   if (runtimeProbe.trim() !== `${platform}/${architecture}/${nodeVersion.slice(1)}`) throw new Error('bundled Node runtime platform/version mismatch')
+  const bundledRuntimeVerified = true
+  let nativeHelperVerified = false
   if (platform === 'darwin') {
     const helperSource = resolve(staging, 'mcp/keychain-credential-helper.swift')
     const helperBinary = resolve(staging, 'mcp/keychain-credential-helper')
@@ -197,6 +199,12 @@ try {
     chmodSync(helperBinary, 0o700)
     const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')
     writeFileSync(resolve(staging, 'mcp/keychain-credential-helper.build.json'), `${JSON.stringify({ schema_version: '1', source_sha256: digest(helperSource), binary_sha256: digest(helperBinary), platform, arch: architecture })}\n`)
+    // Validate the staged source/binary manifest through the actual bundled
+    // runtime. This reads only helper artifacts and never accesses Keychain.
+    const helperModule = pathToFileURL(resolve(staging, 'mcp/keychain-credential.mjs')).href
+    run(resolve(runtimeFolder, 'node'), ['--input-type=module', '--eval',
+      `import { assertKeychainHelperReady } from ${JSON.stringify(helperModule)}; assertKeychainHelperReady();`])
+    nativeHelperVerified = true
     run(process.execPath, [resolve(pluginRoot, 'scripts/build-connect-helper.mjs'), resolve(staging, 'Store Nova Connect.app')])
   }
   if (bundledChatGPTPath) {
@@ -281,16 +289,13 @@ try {
   writeFileSync(resolve(staging, 'install.cmd'), windowsInstaller)
   const bundleStatus = {
     schema_version: '1',
-    release_status: platform === 'darwin' ? 'unsigned_candidate' : ciTestCertificate ? 'ci_test_only' : 'signed_candidate',
-    ready_to_install: profileManifest.release_eligible === true && platform === 'win32' && Boolean(windowsHelperFiles) && !ciTestCertificate && !sourceDirty,
+    ...packageInstallStatus({ platform, profile: packageProfile, sourceDirty, gitCommit,
+      bundledRuntimeVerified, nativeHelperVerified,
+      windowsHelperVerified: Boolean(windowsHelperFiles), ciTestCertificate }),
     ci_test_certificate: ciTestCertificate,
     source_dirty: sourceDirty,
     chatgpt_app_bundled: Boolean(bundledChatGPTPath),
   }
-  if (sourceDirty) bundleStatus.release_status = 'dirty_source_candidate'
-  // QA identity takes precedence over cleanliness so no consumer can mistake a
-  // clean or dirty QA broker archive for a production release candidate.
-  if (profileManifest.qa_only) bundleStatus.release_status = 'qa_only'
   writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
   writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
   const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'Store Nova Connect.app', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', 'bundle-profile.json', provenanceFile]
@@ -319,8 +324,8 @@ try {
     bundled_node_version: nodeVersion,
     package_profile: packageProfile,
     git_commit: gitCommit,
-    // The macOS tarball is a locally runnable candidate. Gatekeeper-ready
-    // distribution requires Developer ID signing and Apple notarization.
+    // Readiness covers verified local installation. Keychain interaction and
+    // actual ChatGPT/API acceptance still require separate runtime evidence.
     ...bundleStatus,
     cloud_code_included: false,
     connect_helper: {

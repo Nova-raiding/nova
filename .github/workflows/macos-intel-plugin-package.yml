@@ -32,11 +32,13 @@ jobs:
         run: |
           set -euo pipefail
           artifact="$RUNNER_TEMP/merchant-marketing-darwin-x64-ci.tar.gz"
-          node apps/plugin/scripts/package-local-plugin.mjs "$artifact" > "$RUNNER_TEMP/package-metadata.json"
+          node apps/plugin/scripts/package-local-plugin.mjs "$artifact" --profile production > "$RUNNER_TEMP/package-metadata.json"
           node -e '
             const p = require(process.argv[1]);
             if (p.platform !== "darwin" || p.architecture !== "x64" ||
-                p.release_status !== "unsigned_candidate" || p.ready_to_install !== false) process.exit(1);
+                p.package_profile !== "production" || p.source_dirty !== false ||
+                p.ci_test_certificate !== false ||
+                p.release_status !== "local_stdio_candidate" || p.ready_to_install !== true) process.exit(1);
           ' "$RUNNER_TEMP/package-metadata.json"
           tar -xzf "$artifact" -C "$RUNNER_TEMP" \
             runtime/node mcp/keychain-credential-helper mcp/keychain-credential-helper.build.json

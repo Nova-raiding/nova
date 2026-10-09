@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore JavaScript packaging module
-import { assertPackageProfileEntries, assertReleaseEligiblePackageProfile, packageProfileManifest, parsePackageCliArgs, profileSourceEntries, readPackageProfile } from './local-plugin-package-profile.mjs'
+import { assertPackageProfileEntries, assertReleaseEligiblePackageProfile, packageProfileManifest, packageInstallStatus, parsePackageCliArgs, profileSourceEntries, readPackageProfile } from './local-plugin-package-profile.mjs'
 
 describe('local plugin package profiles', () => {
   it('defaults to a production package that declares and excludes the QA broker', () => {
@@ -58,5 +58,50 @@ describe('local plugin package profiles', () => {
     expect(() => parsePackageCliArgs(['--windows-helper-dir', 'one', '--windows-helper-dir', 'two'])).toThrow('only once')
     expect(() => parsePackageCliArgs(['--ci-test-certificate', '--ci-test-certificate'])).toThrow('only once')
     expect(() => parsePackageCliArgs(['--unknown'])).toThrow('unsupported')
+  })
+})
+
+
+describe('local stdio package installation status', () => {
+  const nativeVerified = { profile: 'production', platform: 'darwin', sourceDirty: false,
+    gitCommit: 'a'.repeat(40), bundledRuntimeVerified: true, nativeHelperVerified: true,
+    windowsHelperVerified: false, ciTestCertificate: false }
+
+  it('marks a verified clean native macOS package ready for local installation', () => {
+    expect(packageInstallStatus(nativeVerified)).toEqual({ release_status: 'local_stdio_candidate', ready_to_install: true })
+  })
+
+  it.each([
+    ['dirty source', { sourceDirty: true }],
+    ['unverified source cleanliness', { sourceDirty: undefined }],
+    ['missing Git source identity', { gitCommit: '' }],
+    ['invalid Git source identity', { gitCommit: 'not-a-commit' }],
+    ['missing bundled Node validation', { bundledRuntimeVerified: false }],
+    ['unverified bundled Node validation', { bundledRuntimeVerified: undefined }],
+    ['missing native source/binary validation', { nativeHelperVerified: false }],
+    ['unverified native source/binary validation', { nativeHelperVerified: undefined }],
+    ['test certificate mode', { ciTestCertificate: true }],
+    ['unverified certificate mode', { ciTestCertificate: undefined }],
+  ])('does not mark a native package ready with %s', (_label, missing) => {
+    expect(packageInstallStatus({ ...nativeVerified, ...missing }).ready_to_install).toBe(false)
+  })
+
+  it('keeps both clean and dirty QA broker packages QA-only and not ready', () => {
+    for (const sourceDirty of [false, true]) {
+      expect(packageInstallStatus({ ...nativeVerified, profile: 'qa-broker', sourceDirty }))
+        .toEqual({ release_status: 'qa_only', ready_to_install: false })
+    }
+  })
+
+  it('preserves Windows helper verification and non-test certificate requirements', () => {
+    const windowsVerified = { ...nativeVerified, platform: 'win32', nativeHelperVerified: false, windowsHelperVerified: true }
+    expect(packageInstallStatus(windowsVerified)).toEqual({ release_status: 'signed_candidate', ready_to_install: true })
+    expect(packageInstallStatus({ ...windowsVerified, windowsHelperVerified: false }).ready_to_install).toBe(false)
+    expect(packageInstallStatus({ ...windowsVerified, ciTestCertificate: true }))
+      .toEqual({ release_status: 'ci_test_only', ready_to_install: false })
+  })
+
+  it('does not mark an unsupported desktop platform ready', () => {
+    expect(packageInstallStatus({ ...nativeVerified, platform: 'linux' }).ready_to_install).toBe(false)
   })
 })

@@ -99,3 +99,21 @@ export function assertPackageProfileEntries(profile, entries) {
   }
   return manifest
 }
+
+
+/** Readiness for local installation, independent of interactive Keychain/API acceptance. */
+export function packageInstallStatus({ platform, profile, sourceDirty, gitCommit,
+  bundledRuntimeVerified, nativeHelperVerified, windowsHelperVerified, ciTestCertificate }) {
+  const manifest = packageProfileManifest(profile)
+  const sourceVerified = sourceDirty === false && /^[a-f0-9]{40}$/u.test(gitCommit ?? '')
+  const desktopVerified = platform === 'darwin' ? nativeHelperVerified === true
+    : platform === 'win32' && windowsHelperVerified === true
+  const ready = manifest.release_eligible === true && sourceVerified && bundledRuntimeVerified === true
+    && desktopVerified && ciTestCertificate === false
+  let releaseStatus = platform === 'darwin' ? 'local_stdio_candidate'
+    : ciTestCertificate === true ? 'ci_test_only' : 'signed_candidate'
+  if (sourceDirty === true) releaseStatus = 'dirty_source_candidate'
+  // QA identity takes precedence even when its source and runtime validate.
+  if (manifest.qa_only) releaseStatus = 'qa_only'
+  return { release_status: releaseStatus, ready_to_install: ready }
+}
