@@ -538,6 +538,7 @@
           period: initialPeriod,
           busy: 0,
         },
+        requestIds = { status: 0, orders: 0, catalog: 0 },
         $ = (id) => document.getElementById(id),
         unwrap = (r) =>
           r?.structuredContent ??
@@ -648,14 +649,22 @@
           !d.viewer?.available_scopes?.includes("workspace");
       }
       async function loadStatus() {
+        const requestId = ++requestIds.status;
         busy(true, "正在刷新创意点准入状态");
         try {
-          status(await call("billing.status"));
-          fail();
-          busy(false, "创意点准入状态已更新");
+          const data = await call("billing.status");
+          if (requestId === requestIds.status && S.tab === "overview") {
+            status(data);
+            fail();
+            busy(false, "创意点准入状态已更新");
+          }
         } catch (e) {
-          fail(e.message || "创意点准入状态暂时不可用");
-          busy(false, "创意点准入状态更新失败");
+          if (requestId === requestIds.status && S.tab === "overview") {
+            fail(e.message || "创意点准入状态暂时不可用");
+            busy(false, "创意点准入状态更新失败");
+          }
+        } finally {
+          busy(false);
         }
       }
       function orderHtml(r, s) {
@@ -715,10 +724,13 @@
           : empty("当前没有可执行的公开套餐。服务端目录缺少批准、生效或支付条件时，不会展示为可购买。");
       }
       async function catalog() {
+        const requestId = ++requestIds.catalog;
         const el = $("catalogList");
         el.innerHTML = '<div class="loading">正在读取套餐目录…</div>';
         try {
-          el.innerHTML = catalogHtml(await call("commercial.catalog.get"));
+          const result = await call("commercial.catalog.get");
+          if (requestId !== requestIds.catalog || S.tab !== "catalog") return;
+          el.innerHTML = catalogHtml(result);
           el.querySelectorAll("[data-open-merchant-portal]").forEach((button) => {
             button.onclick = () => {
               window.open("https://yxsona.com", "_blank", "noopener,noreferrer");
@@ -728,23 +740,28 @@
           fail();
           $("live").textContent = "套餐目录已更新";
         } catch (e) {
+          if (requestId !== requestIds.catalog || S.tab !== "catalog") return;
           el.innerHTML = empty("套餐目录暂时无法读取");
           fail(e.message || "套餐目录暂时无法读取");
           $("live").textContent = "套餐目录读取失败";
         }
       }
       async function orders() {
+        const requestId = ++requestIds.orders;
+        const scope = S.scope;
         let el = $("ordersList");
         el.innerHTML = '<div class="loading">正在读取订单…</div>';
         try {
           let [r, s] = await Promise.all([
-            call("billing.recharge.list", { scope: S.scope, limit: "50" }),
-            call("subscription.orders.list", { scope: S.scope, limit: "50" }),
+            call("billing.recharge.list", { scope, limit: "50" }),
+            call("subscription.orders.list", { scope, limit: "50" }),
           ]);
+          if (requestId !== requestIds.orders || S.tab !== "orders" || S.scope !== scope) return;
           el.innerHTML = orderHtml(r, s);
           fail();
           $("live").textContent = "订单已更新";
         } catch (e) {
+          if (requestId !== requestIds.orders || S.tab !== "orders" || S.scope !== scope) return;
           el.innerHTML = empty("订单暂时无法读取");
           fail(e.message || "订单暂时无法读取");
           $("live").textContent = "订单读取失败";

@@ -12,7 +12,19 @@ const html = file ? readFileSync(file, 'utf8') : await new Promise(resolve => {
 const text = value => typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : ''
 const first = (...values) => values.map(text).find(Boolean) ?? null
 const metas = new Map()
-for (const match of html.matchAll(/<meta\b[^>]*?(?:name|property)=["']([^"']+)["'][^>]*?content=["']([^"']*)["'][^>]*>/giu)) metas.set(match[1].toLowerCase(), text(match[2]))
+const attributes = source => {
+  const result = new Map()
+  for (const match of source.matchAll(/([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gu)) {
+    result.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? '')
+  }
+  return result
+}
+for (const match of html.matchAll(/<meta\b([^>]*)>/giu)) {
+  const attrs = attributes(match[1])
+  const key = first(attrs.get('property'), attrs.get('name'))
+  const content = attrs.get('content')
+  if (key && content !== undefined) metas.set(key.toLowerCase(), text(content))
+}
 const jsonLd = []
 for (const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/giu)) {
   try { jsonLd.push(JSON.parse(match[1].replace(/<!--|-->/gu, '').trim())) } catch { /* malformed JSON-LD is non-fatal */ }
