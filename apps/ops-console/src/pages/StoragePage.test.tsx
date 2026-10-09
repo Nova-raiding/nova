@@ -26,11 +26,22 @@ describe("StoragePage platform reconciliation list", () => {
     // A workspace session can reach this page with `workspace.summary.read`
     // alone. The platform-wide list is never requested in that session, so its
     // empty state must not be the operator's only explanation.
-    const markup = renderToStaticMarkup(<StoragePage model={model(["workspace.summary.read"])} />);
+    const dataSetError = vi.fn(() => "对账读取被拒绝");
+    const markup = renderToStaticMarkup(<StoragePage model={model(["workspace.summary.read"], { dataSetError })} />);
 
     expect(markup).toContain("当前会话没有平台存储对账读取权限");
     expect(markup).toContain("storage.reconciliation.read");
     expect(markup).toContain("不能解读为对账任务未运行");
+    expect(markup).toContain("刷新存储摘要");
+    expect(markup).not.toContain("重试加载对账结果");
+    expect(dataSetError).not.toHaveBeenCalled();
+  });
+
+  it("does not show a storage refresh action when neither storage capability is available", () => {
+    const markup = renderToStaticMarkup(<StoragePage model={model([])} />);
+
+    expect(markup).not.toContain("刷新存储");
+    expect(markup).not.toContain("重试加载对账结果");
   });
 
   it("keeps the reconciliation empty state for a session that may read the list", () => {

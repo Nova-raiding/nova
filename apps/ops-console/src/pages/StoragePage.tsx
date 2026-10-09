@@ -14,11 +14,12 @@ export function StoragePage({ model }: StoragePageProps) {
   // an instruction for a capability the session does not have, about data that
   // was never read.
   const canReadPlatformReconciliation = model.authorization.can("storage.reconciliation.read");
-  const storageError = model.dataSetError("ops.storage.reconciliation.list");
+  const canRefreshPageData = canReadPlatformReconciliation || model.authorization.can("workspace.summary.read");
+  const storageError = canReadPlatformReconciliation ? model.dataSetError("ops.storage.reconciliation.list") : undefined;
   return (
-    <OpsPage eyebrow="STORAGE & RECONCILIATION" title="存储与对账" description="按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。" actions={<Button type="primary" loading={model.loading} style={{ minWidth: 110 }} onClick={() => void model.load()}>刷新存储</Button>}>
+    <OpsPage eyebrow="STORAGE & RECONCILIATION" title="存储与对账" description="按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。" actions={canRefreshPageData ? <Button type="primary" loading={model.loading} style={{ minWidth: 110 }} onClick={() => void model.load()}>{canReadPlatformReconciliation ? "刷新存储" : "刷新存储摘要"}</Button> : undefined}>
       <div className="ops-storage-page">
-        <OpsPageError error={storageError ?? ""} onRetry={() => void model.load()} />
+        {canReadPlatformReconciliation ? <OpsPageError error={storageError ?? ""} onRetry={() => void model.load()} /> : null}
         {!canReadPlatformReconciliation ? (
           <Alert
             style={{ marginBottom: 16 }}
@@ -28,7 +29,7 @@ export function StoragePage({ model }: StoragePageProps) {
             description="这不是空结果；平台级 workspace 对账列表需要 storage.reconciliation.read，未授权时本页不会发起该读取。下面的空列表只代表没有读取到平台数据，不能解读为对账任务未运行。"
           />
         ) : null}
-        <StorageReconciliationSection loading={model.loading} error={storageError} fixtureDataPresent={model.dataSource?.fixtureDataPresent} onRetry={() => void model.load()} summary={model.workspaceMetrics?.storageReconciliation} summaries={model.storageReconciliationWorkspaces} />
+        <StorageReconciliationSection loading={model.loading} error={storageError} fixtureDataPresent={model.dataSource?.fixtureDataPresent} onRetry={canReadPlatformReconciliation ? () => void model.load() : undefined} summary={model.workspaceMetrics?.storageReconciliation} summaries={model.storageReconciliationWorkspaces} />
       </div>
     </OpsPage>
   );
