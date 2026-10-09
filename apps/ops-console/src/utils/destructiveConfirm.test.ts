@@ -15,6 +15,7 @@ const sourceFiles = [
   "../components/delivery/CustomerDeliverySection.tsx",
   "../components/tasks/knowledge/MarketingQueuePanel.tsx",
   "../components/finance/RefundSection.tsx",
+  "../components/stores/StoreDirectorySection.tsx",
 ];
 
 describe("antd confirm focus default", () => {
