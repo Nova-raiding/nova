@@ -20,6 +20,21 @@ function dependencies() {
 }
 
 describe('HTTP catalog search query contract', () => {
+  it('rejects an invalid platform before resolving workspace or querying data', async () => {
+    const deps = dependencies()
+    await expect(handleHttpCatalogReadRoute(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      '/v1/products',
+      new URL('http://localhost/v1/products?platform=other'),
+      deps,
+    )).rejects.toMatchObject({ code: ERROR_CODES.INVALID_REQUEST, status: 400 })
+
+    expect(deps.resolveWorkspace).not.toHaveBeenCalled()
+    expect(deps.business.listProductsPage).not.toHaveBeenCalled()
+    expect(deps.service.listProducts).not.toHaveBeenCalled()
+  })
+
   it('rejects malformed facts_confirmed before resolving workspace or querying data', async () => {
     const deps = dependencies()
     await expect(handleHttpCatalogReadRoute(

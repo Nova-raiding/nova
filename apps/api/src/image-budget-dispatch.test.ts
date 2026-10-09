@@ -95,6 +95,21 @@ describe('durable image MCP admission budget', () => {
     await expect(f.call()).rejects.toThrow('budget denied')
     expect(f.persist).not.toHaveBeenCalled(); expect(f.release).toHaveBeenCalledOnce(); expect(f.discard).toHaveBeenCalledWith('ws', 'job')
   })
+  it('rejects an unbound candidate without a merchant-confirmed title before admission', async () => {
+    const reserve = vi.fn()
+    const persist = vi.fn()
+    const enforceAssetAccess = vi.fn()
+    const runtime = {
+      service: { products: new Map(), imageGenerationJobs: new Map() },
+      enforceAssetAccess, reserveDailyModelBudget: reserve,
+      persistSnapshotAndEvent: persist,
+    } as unknown as Parameters<typeof handleImageMcpMethod>[4]
+    await expect(handleImageMcpMethod('catalog.image.generate', { asset_ids_json: '["asset-1"]' }, 'ws', {} as IncomingMessage, runtime))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+    expect(reserve).not.toHaveBeenCalled()
+    expect(persist).not.toHaveBeenCalled()
+    expect(enforceAssetAccess).not.toHaveBeenCalled()
+  })
 })
 
 describe('known zero-dispatch image budget cleanup', () => {

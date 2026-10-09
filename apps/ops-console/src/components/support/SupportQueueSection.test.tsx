@@ -36,4 +36,10 @@ describe("SupportQueueSection error recovery", () => {
     expect(html).toContain("SUP-001");
     expect(html).toContain("刷新工单");
   });
+
+  it("disables ticket creation when the route is read-only", () => {
+    const html = renderToStaticMarkup(<SupportQueueSection model={model()} />);
+    expect(html).toContain('title="当前会话没有工单变更权限"');
+    expect(html).toContain('disabled=""');
+  });
 });

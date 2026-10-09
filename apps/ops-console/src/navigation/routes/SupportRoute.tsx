@@ -4,7 +4,7 @@ import type { OpsDomainPageProps } from "../opsPageRegistry.js";
 
 function WorkspaceSupportRoute({ model }: OpsDomainPageProps) {
   const supportModel = useSupportDomain(model.supportClient, model.opsWorkspaceId);
-  return <SupportPage model={supportModel} />;
+  return <SupportPage model={supportModel} canMutate={model.authorization.can("support.ticket.update")} />;
 }
 
 export function SupportRoute(props: OpsDomainPageProps) {

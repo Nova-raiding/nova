@@ -31,6 +31,10 @@ function paginatedResult<T>(url: URL, items: T[]) {
 export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: HttpCatalogReadRouteDependencies): Promise<boolean> {
   const { service, business, resolveWorkspace, accessibleTaskBrandIds, accessibleProductIds, filterByTaskBrandAccess, send } = deps
   if (req.method === 'GET' && path === '/v1/products') {
+    const platform = url.searchParams.get('platform')
+    if (platform !== null && !(PLATFORMS as readonly string[]).includes(platform)) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
+    }
     const factsConfirmed = url.searchParams.get('facts_confirmed')
     if (factsConfirmed !== null && factsConfirmed !== 'true' && factsConfirmed !== 'false') {
       throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'facts_confirmed 必须为 true 或 false', 400)
@@ -43,7 +47,7 @@ export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: Serv
         ...page,
         ...(accessibleBrandIds !== undefined ? { accessibleBrandIds } : {}),
         ...(url.searchParams.get('query') ? { query: url.searchParams.get('query')! } : {}),
-        ...(url.searchParams.get('platform') ? { platform: url.searchParams.get('platform')! } : {}),
+        ...(platform ? { platform } : {}),
         ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
         ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
         ...(factsConfirmed !== null ? { factsConfirmed: factsConfirmed === 'true' } : {}),
@@ -53,7 +57,7 @@ export async function handleHttpCatalogReadRoute(req: IncomingMessage, res: Serv
     const accessibleIds = await accessibleProductIds(req, workspaceId)
     const products = service.listProducts(workspaceId, {
       ...(url.searchParams.get('query') ? { query: url.searchParams.get('query')! } : {}),
-      ...(url.searchParams.get('platform') ? { platform: url.searchParams.get('platform') as Platform } : {}),
+      ...(platform ? { platform: platform as Platform } : {}),
       ...(url.searchParams.get('account_id') ? { accountId: url.searchParams.get('account_id')! } : {}),
       ...(url.searchParams.get('store_name') ? { storeName: url.searchParams.get('store_name')! } : {}),
     }).filter(product => accessibleIds === undefined || accessibleIds.has(product.id))

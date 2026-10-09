@@ -25,6 +25,16 @@ describe("SupportTicketDetailSection", () => {
     expect(html).toContain("从工单队列中选择一项");
   });
 
+  it("keeps mutation actions disabled for read-only sessions", () => {
+    const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
+      selected: {
+        ticket: { id: "ticket_1", workspaceId: "ws_1", ticketNumber: "SUP-001", subject: "支付异常", description: "待核对", status: "open", priority: "normal", customerId: "customer_1", customerName: "云朵商家", tags: [], revision: 1, createdBy: "support_1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z", sla: { policy: { version: 1, calendar: "business_weekday_utc", firstResponseMinutes: 120, resolutionMinutes: 480 }, firstResponseDueAt: "2026-08-31T11:00:00.000Z", resolutionDueAt: "2026-09-01T17:00:00.000Z", pausedMinutes: 0, state: "on_track" } },
+        events: [],
+      },
+    })} />);
+    expect(html.match(/title="当前会话没有工单变更权限"/gu)).toHaveLength(3);
+  });
+
   it("presents immutable event history and optimistic revision", () => {
     const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
       selected: {

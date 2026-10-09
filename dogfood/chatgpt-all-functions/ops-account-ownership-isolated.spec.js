@@ -19,11 +19,11 @@ test('separates platform operators from merchant members', async ({ page }, test
 
   await filters.getByRole('combobox', { name: '按账号属性筛选用户目录' }).click()
   await page.locator('.ant-select-dropdown:visible').getByText('运营平台账号', { exact: true }).click()
-  await filters.getByRole('button', { name: '查询', exact: true }).click()
+  await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(page.locator('.ant-card[aria-busy]')).toHaveAttribute('aria-busy', 'false', { timeout: 15_000 })
   const table = page.getByRole('table', { name: '用户目录数据表' })
   await expect(table).toContainText(operator)
-  await expect(page.getByText(/当前筛选：\d+ 条运营平台账号/u)).toBeVisible()
+  await expect(page.getByText(/共\s*\d+\s*个运营平台账号/u)).toBeVisible()
   const row = table.getByRole('row').filter({ hasText: operator })
   await expect(row).toContainText('运营平台')
   await row.getByRole('button', { name: /用户详情/u }).click()

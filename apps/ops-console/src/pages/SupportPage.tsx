@@ -7,7 +7,7 @@ import { SupportSlaReportSection } from "../components/support/SupportSlaReportS
 import { PlatformSupportWorkspace, type PlatformSupportModel } from "../components/support/PlatformSupportWorkspace.js";
 import type { SupportDomainModel } from "../hooks/useSupportDomain.js";
 
-export function SupportPage(props: { model: SupportDomainModel; platformModel?: never } | { platformModel: PlatformSupportModel; model?: never }) {
+export function SupportPage(props: { model: SupportDomainModel; canMutate?: boolean; platformModel?: never } | { platformModel: PlatformSupportModel; model?: never }) {
   if (props.platformModel) return <OpsPage eyebrow="CUSTOMER SUPPORT" title="客服工作台" description="选择授权企业处理真实客户工单；首单前无需订单或任务。"><PlatformSupportWorkspace model={props.platformModel}/></OpsPage>;
   const model = props.model;
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
@@ -26,9 +26,9 @@ export function SupportPage(props: { model: SupportDomainModel; platformModel?: 
           title="客服处理顺序"
           description="核对真实客户与企业后处理问题；首单前无需订单或任务，可选关联已有任务/订单再分配负责人；所有沟通写入工单事件，按 SLA 跟踪，确认客户可见回复后再解决或关闭。"
         />
-        <SupportQueueSection model={model} />
+        <SupportQueueSection model={model} canMutate={props.canMutate === true} />
         {!initialLoadFailed ? <SupportSlaReportSection model={model} /> : null}
-        {!initialLoadFailed ? <SupportTicketDetailSection model={model} /> : null}
+        {!initialLoadFailed ? <SupportTicketDetailSection model={model} canMutate={props.canMutate === true} /> : null}
       </div>
     </OpsPage>
   );

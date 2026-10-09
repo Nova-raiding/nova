@@ -13,7 +13,7 @@ const eventLabels: Record<SupportTicketEventContract["eventType"], string> = {
 const slaStateLabels = { on_track: "SLA 正常", at_risk: "SLA 临近", breached: "SLA 已超时", met: "SLA 已达成" } as const;
 const slaStateColors = { on_track: "green", at_risk: "orange", breached: "red", met: "blue" } as const;
 
-export function SupportTicketDetailSection({ model }: { model: SupportDomainModel }) {
+export function SupportTicketDetailSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [assignOpen, setAssignOpen] = useState(false);
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
@@ -77,9 +77,9 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
         </Space>
       </Card>
       <Space wrap style={{ marginBottom: 24 }}>
-        <Button disabled={model.mutating} onClick={() => setAssignOpen(true)}>分配负责人</Button>
-        <Button disabled={model.mutating} onClick={() => setTransitionOpen(true)}>变更状态</Button>
-        <Button type="primary" disabled={model.mutating} onClick={() => setCommentOpen(true)}>添加备注</Button>
+        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setAssignOpen(true)}>分配负责人</Button>
+        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setTransitionOpen(true)}>变更状态</Button>
+        <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setCommentOpen(true)}>添加备注</Button>
       </Space>
       <Typography.Title level={5}>不可变事件历史</Typography.Title>
       {events.length === 0 ? <Alert type="warning" showIcon title="事件历史为空" description="工单投影存在但事件缺失，请停止修改并检查事件存储。" /> : (

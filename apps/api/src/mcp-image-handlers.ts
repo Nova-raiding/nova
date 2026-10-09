@@ -69,7 +69,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
         }
       }
       if (!productId) {
-        const title = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : '未绑定候选图'
+        const title = typeof params.title === 'string' ? params.title.trim() : ''
         if (!title || typeof params.asset_ids_json !== 'string' || !params.asset_ids_json.trim()) {
           throw new DomainError(ERROR_CODES.INVALID_REQUEST, '未绑定生成必须提供 title 和 asset_ids_json；已绑定生成必须提供 product_id', 400)
         }

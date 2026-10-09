@@ -19,7 +19,7 @@ const slaLabels: Record<SupportSlaState, string> = { on_track: "正常", at_risk
 
 type CreateForm = Omit<CreateSupportTicketCommand, "workspaceId" | "idempotencyKey">;
 
-export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
+export function SupportQueueSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm<CreateForm>();
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
@@ -43,7 +43,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
       aria-busy={model.loading}
       extra={<Space wrap>
         <Button icon={<ReloadOutlined aria-hidden="true" />} loading={model.loading} onClick={() => void model.reload()}>刷新</Button>
-        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={initialLoadFailed} title={initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => setCreateOpen(true)}>新建工单</Button>
+        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={!canMutate || initialLoadFailed} title={!canMutate ? "当前会话没有工单变更权限" : initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => setCreateOpen(true)}>新建工单</Button>
       </Space>}
     >
       <Space wrap aria-label="工单筛选" style={{ marginBottom: 16 }}>
