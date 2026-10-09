@@ -670,6 +670,14 @@ describe('production readiness fail-closed', () => {
     expect(productionReadinessDiagnostics({ NODE_ENV: 'production', DEPLOYMENT_PROFILE: 'ecs' })).toMatchObject({ required: true, ready: false })
   })
 
+  it('reports the explicit 101 Demo target as demo while retaining the production-shaped process', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DEMO_RUNTIME_MODE', 'true')
+    const setup = runtimeHealth({ commercialReadiness: { ready: true, reasons: [] } }).setup
+    expect(setup.mode).toBe('demo')
+    expect(setup.productionGate).toBe(false)
+  })
+
   it('returns 503 from /readyz for an incomplete production deployment while /livez stays process-only', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'false')

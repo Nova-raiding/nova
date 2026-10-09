@@ -5,6 +5,8 @@
 ## 硬约束
 
 - 不漂移目标，不为未授权的平台或场景虚构功能和成功证据。
+- 本项目只有一个常驻应用环境：ECS `101` 上的 `merchant-demo-85575f9c`，它是唯一 demo 验收和部署目标。不得把历史环境或本地测试栈称作第二个 demo，也不得创建常驻副本。
+- `yxsona.com` 与 `ops.yxsona.com` 仅作为唯一 demo 的访问入口；除非用户明确修改本宪法，不访问或部署独立生产环境，也不以生产门禁代替 demo 验收。
 - ChatGPT 侧只采用本地直装/本地 stdio 插件链路；不上公开或团队插件市场，插件市场上架不是需求、验收项或上线门禁，也不要求配置真实 ChatGPT OAuth。
 - 不要求 Apple Developer ID 签名、公证或 ChatGPT 进程祖先签名/宿主身份认证；这些不作为本地直装/stdio 场景的验收或上线阻断项。商家及运营后台的 API 登录、业务权限和租户隔离仍须真实验证。
 - 运营后台是桌面工作台；本项目不把手机、平板适配作为需求、验收项或上线阻断项。
@@ -21,22 +23,23 @@
 1. ChatGPT 插件真实链路和 MCP 契约。
 2. 桌面运营后台的租户、用户、权限、账务、规则、模型和审计能力。
 3. 中转模型五模态的配置、鉴权、成本证据和 fail-closed 行为。
-4. 多租户隔离、并发稳定性、迁移完整性和生产发布门禁。
+4. 多租户隔离、并发稳定性、迁移完整性和唯一 demo 发布门禁。
 
-## Deploy Configuration (configured by /setup-deploy)
+## Demo Configuration
 - Platform: Custom ECS via SSH
-- Production URL: https://yxsona.com
-- Deploy workflow: Manual release runbook on SSH host alias `101` (no repository deploy workflow detected)
-- Deploy status command: `ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'`
-- Merge method: not required for deployment; deploy directly from the reviewed candidate over SSH to host alias `101`
+- Canonical environment: `merchant-demo-85575f9c` on SSH host alias `101`
+- Demo URLs: https://yxsona.com and https://ops.yxsona.com (only while routed to the canonical demo)
+- Deploy workflow: Manual demo runbook `docs/runbooks/ecs-demo-direct-deploy.md`
+- Deploy status command: `ssh 101 'docker ps --filter name=merchant-demo-85575f9c --format "table {{.Names}}\\t{{.Status}}"'`
+- Merge method: deploy only the reviewed candidate to the canonical demo
 - Project type: ChatGPT plugin with API/MCP and desktop operations web apps
-- Post-deploy health check: `https://yxsona.com/api/healthz` and `https://ops.yxsona.com/healthz`
+- Post-deploy health check: demo API `https://yxsona.com/api/healthz` and demo Ops `https://ops.yxsona.com/healthz`
 
-### Custom deploy hooks
-- Pre-merge: `npm run typecheck && npm run test:release-gates`
-- Deploy trigger: Manual, following `docs/runbooks/ecs-candidate-safe-sync.md` and the production release gate
-- Deploy status: `ssh 101 'docker ps --format "table {{.Names}}\\t{{.Status}}"'`
-- Health check: `curl -fsS https://yxsona.com/api/healthz` and `curl -fsS https://ops.yxsona.com/healthz`
+### Demo deploy hooks
+- Pre-deploy: `npm run typecheck` plus affected unit/API tests and local desktop-browser checks; follow `docs/runbooks/ecs-demo-direct-deploy.md`.
+- Deploy trigger: Manual, following the single-demo runbook and its release checks
+- Deploy status: `ssh 101 'docker ps --filter name=merchant-demo-85575f9c --format "table {{.Names}}\\t{{.Status}}"'`
+- Health check: check demo URLs only after confirming both resolve to `merchant-demo-85575f9c`
 
 ## Skill routing
 

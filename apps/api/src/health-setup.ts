@@ -40,6 +40,7 @@ export interface SetupDiagnosticsDependencies {
 export function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; reasons?: string[] } } = {}, deps: SetupDiagnosticsDependencies) {
   const { isProduction, fixtureMode, paymentProviderReadiness, productionPaymentReadiness, imageFactsExtractor, imageEditGenerator, videoGenerator, requiredModelCostEvidenceByModality, connectorRuntime, configuredEnv, lifecycleDiagnostics, productionReadinessDiagnostics, evidenceReadiness, SUPPORTED_PLATFORMS, manualPlatformEnabled, fixturePlatformEnabled, paymentCapabilityStatus } = deps
   const production = isProduction()
+  const demoRuntime = process.env.DEMO_RUNTIME_MODE === 'true'
   const configuredPlatformOperationsMode = process.env.PLATFORM_OPERATIONS_MODE?.trim().toLowerCase()
   const platformOperationsMode = configuredPlatformOperationsMode === 'manual' || configuredPlatformOperationsMode === 'official_api'
     ? configuredPlatformOperationsMode
@@ -124,19 +125,25 @@ export function setupDiagnostics(options: { commercialReadiness?: { ready: boole
   // as a follow-up operational artifact.
   if (!production) nextActions.push('当前不是生产模式；上线前还需完成 TLS/DNS/WAF、备份恢复、容量压测及所选运营模式验收')
   const platformOperationsReady = manualPlatformOperations || (platformOperationsMode === 'official_api' && Object.values(platformDiagnostics).every(item => item.ready) && vaultConfigured && capabilityEvidence.configured)
-  const productionGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && productionPayment.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready
+  const paymentRuntimeGate = production && !fixtureMode && platformOperationsMode !== 'invalid' && platformOperationsReady && commercialReadiness.ready && controlPlaneReadiness.ready && relayGate.ready && productionPayment.ready && contentProviderConfigured && imageProviderConfigured && imageEditProviderConfigured && imageFactsConfigured && videoProviderConfigured && modelCostGateConfigured && objectStorageConfigured && dataLifecycle.configured && alertNotifications.ready
+  // A demo can run with a production-hardened process and retain its configured
+  // payment capability, but it must never present formal production approval.
+  const productionGate = !demoRuntime && paymentRuntimeGate
   const payment = paymentCapabilityStatus({
     mode: process.env.PAYMENT_MODE,
     providerReady: paymentReadiness.ready,
     production,
     fixtureMode,
-    productionGate,
+    productionGate: paymentRuntimeGate,
     reasons: productionPayment.reasons,
     supportedChannels: paymentReadiness.supportedChannels,
     channelReadiness: paymentReadiness.channelReadiness,
   })
   return {
-    mode: production ? 'production' : fixtureMode ? 'fixture' : 'local',
+    // NODE_ENV describes the hardened process profile, not which deployment
+    // target it serves. The canonical ECS app is a demo running a production-
+    // shaped process, and must not be presented as a separate production env.
+    mode: demoRuntime ? 'demo' : production ? 'production' : fixtureMode ? 'fixture' : 'local',
     ai: { ownership: 'platform', userKeyRequired: false, relay: { configured: relayGate.ready, host: relayGate.endpointHost ?? null }, contentGeneration: contentProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageGeneration: imageProviderConfigured ? 'configured' : fixtureMode ? 'fixture_fallback' : 'not_configured', imageEditing: imageEditProviderConfigured ? 'configured' : 'blocked', imageFacts: imageFactsConfigured ? 'configured' : 'manual_fallback', videoRendering: videoProviderConfigured ? 'configured' : 'storyboard_only', costGate: modelCostGateConfigured ? 'ready' : 'blocked', taskCostLimit: { ready: taskCostGate.ready, limitCny: taskCostGate.limitCny, reasons: taskCostGate.reasons } },
     modelReadiness: {
       text: { ...evaluatePlatformModelGate(process.env, 'text'), providerConfigured: contentProviderConfigured },

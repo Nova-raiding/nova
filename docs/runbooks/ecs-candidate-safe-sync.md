@@ -1,5 +1,7 @@
 # ECS 候选包安全同步
 
+> Legacy production-only workflow; it is not the current application's demo deployment or acceptance path. The only standing application target is `merchant-demo-85575f9c`; use [the demo direct-deploy runbook](ecs-demo-direct-deploy.md). Do not use this workflow to create or address a separate production environment unless the user explicitly changes the project constitution.
+
 此流程用于比较本地 OSS、授权和发布证据实现与 ECS 上的版本，生成供人工审查的候选包。它不负责部署，也不应直接覆盖现网目录。当前候选明确关闭告警，并排除 Kubernetes/ACK 配置。
 
 ## 发布阶段与完成判据

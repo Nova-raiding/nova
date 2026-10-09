@@ -128,12 +128,12 @@ export function resolveMerchantEnvironmentStatus({
     `运行模式：${modeLabel}`,
     ...(manualPlatformOperations ? [] : [`平台运营：${officialApiPlatformOperations ? '官方接口' : '未确认'}`]),
     `自动平台写入：${automatedWritesEnabled === true ? '已开放' : automatedWritesEnabled === false ? '已关闭' : '未确认'}`,
-    `生产门禁：${productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`,
+    `${isDemo ? '正式生产门禁' : '生产门禁'}：${isDemo ? '不适用（唯一 Demo）' : productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`,
     modelFact(modelStatus, modelStatusRead),
   ]
   const actions: string[] = []
   if (isDemo)
-    actions.push('如需上线，请管理员切换到生产环境，并完成生产门禁。')
+    actions.push('当前项目只配置唯一 Demo 环境；此状态不代表或切换到独立生产环境。')
   if (officialApiPlatformOperations && (writesEnabled !== true || automatedWritesEnabled !== true))
     actions.push('请管理员检查官方接口写入能力；当前页面不会提交真实平台写入。')
   if (!isDemo && productionGate !== true)

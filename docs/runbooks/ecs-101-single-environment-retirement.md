@@ -1,5 +1,7 @@
 # 101 单一常驻环境退役手册
 
+> 历史审计/退役记录，不是当前环境清单。当前唯一常驻应用目标是 `merchant-demo-85575f9c`；本手册中其他环境名称仅用于解释历史基线，不表示它们仍在运行或可作为发布目标。
+
 ## 目标与边界
 
 当前只有一个常驻应用环境的需求：保留 `merchant-demo-85575f9c` 作为 prelaunch 环境，退役 `101` 上其余长期运行或残留的应用/数据库环境。`merchant-demo-85575f9c` 当前持有 `yxsona.com` 的 80/443；清理不得停止或重建其 gateway、API、UI、worker、Postgres、Redis、素材卷或 payment gateway。

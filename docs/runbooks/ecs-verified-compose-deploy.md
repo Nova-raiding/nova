@@ -1,5 +1,7 @@
 # ECS Compose 受验证部署执行器
 
+> Formal production-only legacy workflow. It is not the release path for this repository's single canonical demo (`merchant-demo-85575f9c`); use [the demo direct-deploy runbook](ecs-demo-direct-deploy.md). Do not run this executor for the current demo.
+
 `infra/scripts/deploy-verified-ecs-compose.sh` 只在 ECS 宿主的已审查发布目录运行。它不建立 SSH 连接，也不会从开发机复制配置、密钥或生产证据。执行器依次绑定干净提交和 `candidate-identity.txt`、复制并校验 rendered Compose 与生产配置、运行完整 ECS preflight、保存现网容器状态、消费 deployment nonce、执行迁移、通过两个运行角色验证数据库已到候选完整迁移链、启动摘要固定的服务，核对 `/livez`、`/readyz`、`/releasez`、数据库支持的鉴权请求和生产 canary，最后等待并校验真实 ChatGPT Desktop 公网插件宿主 smoke。
 
 完整 ECS preflight 会验证摘要固定的 Ops UI 镜像带有构建时 auth-mode 标签，并要求其值与受保护生产配置中的 API `OPS_AUTH_MODE=password` 一致。缺少标签或 Ops UI/API 未使用 password 模式时，preflight 在消费 nonce 或任何运行时变更前退出。

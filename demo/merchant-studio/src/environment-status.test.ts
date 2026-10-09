@@ -39,6 +39,22 @@ describe('resolveMerchantEnvironmentStatus', () => {
     expect(result.actions.join('；')).not.toMatch(/授权|同步|OAuth/iu)
   })
 
+  it('keeps the canonical demo labeled as demo when its process uses NODE_ENV production', () => {
+    const result = resolve(health({
+      setup: {
+        mode: 'demo', productionGate: false,
+        platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false },
+      },
+    }))
+
+    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '演示环境' })
+    expect(result.detail).toContain('当前是演示模式')
+    expect(result.actions.join('；')).toContain('唯一 Demo 环境')
+    expect(result.actions.join('；')).not.toContain('切换到生产环境')
+    expect(result.facts).toContain('正式生产门禁：不适用（唯一 Demo）')
+    expect(result.facts.join('；')).not.toContain('生产门禁：已通过')
+  })
+
   it('blocks production/manual when the production gate is false without treating manual writes as missing', () => {
     const result = resolve(health({
       setup: {

@@ -15,7 +15,7 @@
 
 ## 2. 更新目标服务并接管公网
 
-本次 demo 的运行配置采用 `MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
+本次 demo 的运行配置采用 `NODE_ENV=production`（保留生产加固行为）、`DEMO_RUNTIME_MODE=true`（明确唯一 demo 部署目标）、`DEPLOYMENT_PROFILE=ecs`、`MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。健康接口的 `setup.mode` 必须报告 `demo`；若报告 `production`，说明 demo 标记丢失，停止发布并先修复受保护 Compose 配置。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
 
 使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更的服务，例如 API 修复只更新 `api api-replica`，Ops 修复只更新 `ops-ui`；确实修改 worker 或 gateway 才更新对应服务。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得运行无服务名的 `up -d`，以免启动 `worker-scan`、ClamAV 或无关旧服务。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
 
