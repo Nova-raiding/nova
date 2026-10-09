@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { catalogPriceYuan } from "./FinancePage.js";
+import { catalogPriceYuan, financeWorkspaceLabel } from "./FinancePage.js";
 
 const financeSource = readFileSync(new URL("./FinancePage.tsx", import.meta.url), "utf8");
 
@@ -19,12 +19,17 @@ describe("catalogPriceYuan", () => {
 });
 
 describe("finance workspace context", () => {
+  it("labels missing enterprise names explicitly while retaining the workspace ID", () => {
+    expect(financeWorkspaceLabel({ workspaceId: "ws_unnamed", enterpriseName: " " })).toBe("未命名企业主体 · ws_unnamed");
+    expect(financeWorkspaceLabel({ workspaceId: "ws_named", enterpriseName: "商家 A" })).toBe("商家 A · ws_named");
+  });
+
   it("selects a tenant from the enterprise directory and labels the active scope", () => {
     expect(financeSource).toContain("model.workspaceRows.map(row => ({ value: row.workspaceId");
     expect(financeSource).toContain("allowedWorkspaceIds");
     expect(financeSource).toContain("useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench || canOperateCrossWorkspaceCommercial, canReconcileCommercialRefund, allowedWorkspaceIds)");
     expect(financeSource).toContain('aria-label="商业目标企业主体"');
-    expect(financeSource).toContain("当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}");
+    expect(financeSource).toContain("未命名企业主体 · ${workspaceDraft}");
     expect(financeSource).not.toContain('placeholder="例如 ws_demo"');
   });
 

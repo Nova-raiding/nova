@@ -16,6 +16,11 @@ import { PlatformCatalogManagementPanel } from "../components/commercial/Platfor
 
 export { catalogPriceYuan } from "../components/commercial/catalogManagementModel.js";
 
+export function financeWorkspaceLabel(workspace: { workspaceId: string; enterpriseName?: string | null }) {
+  const name = workspace.enterpriseName?.trim();
+  return name ? `${name} · ${workspace.workspaceId}` : `未命名企业主体 · ${workspace.workspaceId}`;
+}
+
 interface FinancePageProps { model: OpsConsoleModel; }
 export function FinancePage({ model }: FinancePageProps) {
   const isPlatformWorkbench = model.opsSession?.workbench
@@ -27,7 +32,7 @@ export function FinancePage({ model }: FinancePageProps) {
   const allowedWorkspaceIds = model.workspaceRows.map(row => row.workspaceId);
   const commercial = useCommercialOperations(model.authorization, undefined, !isPlatformWorkbench || canOperateCrossWorkspaceCommercial, canReconcileCommercialRefund, allowedWorkspaceIds);
   const workspaceDraft = commercial.targetWorkspaceId;
-  const workspaceOptions = model.workspaceRows.map(row => ({ value: row.workspaceId, label: `${row.enterpriseName || row.workspaceId} · ${row.workspaceId}` }));
+  const workspaceOptions = model.workspaceRows.map(row => ({ value: row.workspaceId, label: financeWorkspaceLabel(row) }));
   if (workspaceDraft && !workspaceOptions.some(option => option.value === workspaceDraft)) {
     workspaceOptions.unshift({ value: workspaceDraft, label: `当前目标 · ${workspaceDraft}` });
   }
@@ -66,7 +71,7 @@ export function FinancePage({ model }: FinancePageProps) {
       nextStep={isPlatformWorkbench ? undefined : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
     >
       <div className="ops-finance-page">
-        {workspaceDraft ? <Alert type="info" showIcon title={`当前企业：${selectedWorkspace?.enterpriseName || workspaceDraft}`} description={`财务和商业操作范围：${workspaceDraft}`} style={{ marginBottom: 16 }} /> : null}
+        {workspaceDraft ? <Alert type="info" showIcon title={`当前企业：${selectedWorkspace?.enterpriseName?.trim() || `未命名企业主体 · ${workspaceDraft}`}`} description={`财务和商业操作范围：${workspaceDraft}`} style={{ marginBottom: 16 }} /> : null}
         {isPlatformWorkbench ? <>
           {canSearchFinance ? <FinanceSearchSection controller={financeSearch} canExport={canExportFinance} showProviderStatementStatus={false} compactSummary /> : (
             <Alert
