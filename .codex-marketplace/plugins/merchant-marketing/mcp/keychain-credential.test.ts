@@ -1,19 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 // @ts-ignore JavaScript runtime module
 import { KEYCHAIN_SERVICE, installationIdentitySeed, installationIdentityStore, keychainHelperFailureReason, readKeychainCredential, writeKeychainCredential } from './keychain-credential.mjs'
 
 const bound = { apiOrigin: 'https://merchant.example.test', workspaceId: 'ws_test' }
 
 describe('macOS keychain credential', () => {
-  it('authenticates the live native caller chain before Keychain access', () => {
+  it('uses native local-user Keychain access with input validation and no signing host gate', () => {
     const source = readFileSync(new URL('./keychain-credential-helper.swift', import.meta.url), 'utf8')
-    expect(source).toContain('SecCodeCopyGuestWithAttributes')
-    expect(source).toContain('SecCodeCheckValidity')
-    expect(source).toContain('kSecCSStrictValidate')
-    expect(source).toContain('identifier == "com.openai.codex" && team == "2DC432GLL2"')
-    expect(source).toContain('identifier == "com.storenova.connect-helper" && team == ownTeam')
-    expect(source.indexOf('validSignedAncestor()')).toBeLessThan(source.indexOf('SecItemCopyMatching'))
+    expect(source).toContain('import Security')
+    expect(source).toContain('SecItemCopyMatching')
+    expect(source).toContain('SecItemUpdate')
+    expect(source).toContain('SecItemAdd')
+    expect(source).toContain('request.service == "com.storenova.merchant-mcp"')
+    expect(source).toContain('^[a-f0-9]{64}$')
+    expect(source.indexOf('request.account.range')).toBeLessThan(source.indexOf('let status = SecItemCopyMatching'))
+    expect(source).not.toMatch(/SecCode|SecStaticCode|TeamIdentifier|validSignedAncestor|proc_pidinfo/u)
     expect(source).not.toContain('ProcessInfo.processInfo.environment')
   })
   it('keeps only the OSStatus and operation from helper failures', () => {
@@ -23,26 +25,16 @@ describe('macOS keychain credential', () => {
     expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_osstatus=-25308 operation=write\n' }, 'read')).toBe('helper_exit=1')
     expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: '' }, 'read')).toBe('helper_timeout operation=read')
   })
-  it('reports only allowlisted native trust failures without reflecting stderr', () => {
-    for (const reason of ['helper_signing_identity_unavailable', 'helper_signed_ancestor_invalid']) {
-      expect(keychainHelperFailureReason({ status: 1, stderr: `keychain_trust=${reason}\n` }, 'read')).toBe(reason)
-      expect(keychainHelperFailureReason({ status: 1, stderr: `keychain_trust=${reason}\naccess_token=never-print\n` }, 'read')).toBe('helper_exit=1')
-    }
-    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_trust=access_token=never-print\n' }, 'read')).toBe('helper_exit=1')
-    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_trust=helper_signing_identity_unavailable\nextra\n' }, 'read')).toBe('helper_exit=1')
-    expect(keychainHelperFailureReason({ status: null, error: { code: 'ETIMEDOUT' }, stderr: 'keychain_trust=helper_signed_ancestor_invalid\n' }, 'read')).toBe('helper_timeout operation=read')
+  it('does not promote obsolete signing stderr to a credential status', () => {
+    expect(keychainHelperFailureReason({ status: 1, stderr: 'keychain_trust=helper_signing_identity_unavailable\n' }, 'read')).toBe('helper_exit=1')
+    expect(keychainHelperFailureReason({ status: null, error: { code: 'ENOENT' }, stderr: 'never-print' }, 'read')).toBe('helper_start_failed operation=read')
   })
-  it('fails closed when the native helper caller has no accepted signed ancestor', () => {
+  it('fails closed when the native helper is unavailable or its build binding is invalid', () => {
     const bundle = { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
       access_token: 'access-secret', refresh_token: 'refresh-secret', expires_at: '2030-01-01T00:00:00Z' }
     const spawnUnavailable = () => ({ status: null, error: Object.assign(new Error('helper missing'), { code: 'ENOENT' }), stdout: '', stderr: '' })
-    if (process.platform === 'darwin' && existsSync(new URL('./keychain-credential-helper', import.meta.url))) {
-      expect(() => readKeychainCredential(bound, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_start_failed operation=read')
-      expect(() => writeKeychainCredential(bound, bundle, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_start_failed operation=write')
-    } else {
-      expect(() => readKeychainCredential(bound, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
-      expect(() => writeKeychainCredential(bound, bundle, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
-    }
+    expect(() => readKeychainCredential(bound, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
+    expect(() => writeKeychainCredential(bound, bundle, { spawnHelper: spawnUnavailable })).toThrow('MCP_KEYCHAIN_HELPER_INVALID')
   })
   it('writes one atomic JSON item without placing secrets in argv', async () => {
     let call: Record<string, string> | undefined

@@ -36,4 +36,43 @@ describe('desktop ops real-backend smoke', () => {
     await expect(runSmoke(configFromEnv(env), fakeFetch({ ...replies, 'workspace:ops.members.list': { items: [{ workspaceId: 'other' }], total: 1 } }))).rejects.toThrow(/tenant-scoped/u)
     await expect(runSmoke(configFromEnv(env), fakeFetch({ ...replies, 'platform:platform.model.status': { ...model, provider_host: 'fixture.example.test' } }))).rejects.toThrow(/fixture marker/u)
   })
+  it('sends the validated API origin for cookie-authenticated production requests without exposing credentials', async () => {
+    const cookieEnv = { ...env, OPS_SMOKE_PLATFORM_TOKEN: '', OPS_SMOKE_PLATFORM_COOKIE: 'non-secret-test-cookie' }
+    const calls: Array<{ workbench: string | undefined; origin?: string }> = []
+    const productionOriginFetch = async (url: string, options: RequestInit) => {
+      const headers = options.headers as Record<string, string>
+      calls.push({ workbench: headers['x-ops-workbench'], origin: headers.origin })
+      if (headers.cookie && headers.origin !== new URL(url).origin) return new Response('', { status: 403 })
+      return fakeFetch()(url, options)
+    }
+    const result = await runSmoke(configFromEnv(cookieEnv), productionOriginFetch)
+    expect(calls.filter(call => call.workbench === 'platform')).toEqual([
+      { workbench: 'platform', origin: 'https://yxsona.com' },
+      { workbench: 'platform', origin: 'https://yxsona.com' },
+    ])
+    expect(calls.filter(call => call.workbench === 'workspace').every(call => call.origin === undefined)).toBe(true)
+    expect(JSON.stringify(result)).not.toContain(cookieEnv.OPS_SMOKE_PLATFORM_COOKIE)
+    expect(JSON.stringify(result)).not.toContain(env.OPS_SMOKE_WORKSPACE_TOKEN)
+  })
+  it('retains the validated origin on cookie-authenticated denied-scope checks', async () => {
+    const cookieEnv = { ...env, OPS_SMOKE_WORKSPACE_TOKEN: '', OPS_SMOKE_WORKSPACE_COOKIE: 'non-secret-workspace-cookie', OPS_SMOKE_DENIED_WORKSPACE_ID: 'ws-denied' }
+    const result = await runSmoke(configFromEnv(cookieEnv), async (url: string, options: RequestInit) => {
+      const headers = options.headers as Record<string, string>
+      if (headers.cookie) expect(headers.origin).toBe(new URL(url).origin)
+      return fakeFetch(replies, 403)(url, options)
+    })
+    expect(result.checks).toContain('ops.members.list:denied_scope')
+    expect(() => configFromEnv({ ...cookieEnv, OPS_SMOKE_API_BASE_URL: 'https://yxsona.com/api?origin=https://untrusted.example' })).toThrow(/no credentials\/query/u)
+    expect(() => configFromEnv({ ...cookieEnv, OPS_SMOKE_API_BASE_URL: 'https://user:password@yxsona.com/api' })).toThrow(/no credentials\/query/u)
+  })
+  const invalidProvenance = [
+    ['missing', undefined], ['empty', ''], ['blank', '   '], ['number', 7], ['boolean', false],
+  ] as const
+  it.each(['workspace', 'platform'].flatMap(workbench => ['identity_id', 'session_id'].flatMap(field =>
+    invalidProvenance.map(([variant, value]) => ({ workbench, field, variant, value })),
+  )))('rejects $variant $field in the $workbench session', async ({ workbench, field, value }) => {
+    const session = { ...(workbench === 'workspace' ? wsSession : platformSession), [field]: value }
+    await expect(runSmoke(configFromEnv(env), fakeFetch({ ...replies, [`${workbench}:ops.session`]: session })))
+      .rejects.toThrow(/session lacks authenticated.*provenance/u)
+  })
 })

@@ -20,8 +20,6 @@ export function keychainHelperFailureReason(result, operation) {
   const stderr = typeof result?.stderr === 'string' ? result.stderr : ''
   const statusMatch = stderr.match(/^keychain_osstatus=(-?\d+) operation=(read|read_optional|write)\n?$/u)
   if (statusMatch && statusMatch[2] === safeOperation) return `keychain_osstatus=${statusMatch[1]} operation=${safeOperation}`
-  const trustMatch = stderr.match(/^keychain_trust=(helper_signing_identity_unavailable|helper_signed_ancestor_invalid)\n?$/u)
-  if (trustMatch) return trustMatch[1]
   if (result?.error) return `helper_start_failed operation=${safeOperation}`
   return `helper_exit=${Number.isInteger(result?.status) ? result.status : 'unknown'}`
 }
@@ -90,10 +88,10 @@ export function installationIdentitySeed(apiOrigin, owner, identity) {
 function defaultHelper(request, spawn = spawnSync) {
   const qaBroker = isQaBrokerPackage()
   if (!qaBroker) assertKeychainHelperReady()
-  // QA packages use the explicitly release-ineligible seeded broker. A signed
-  // production package invokes the native helper directly; the helper checks
-  // the live process ancestry and designated signatures before touching the
-  // Keychain, accepting only ChatGPT or Store Nova Connect from its own team.
+  // QA packages use the explicitly release-ineligible seeded broker. The
+  // local stdio package invokes the native helper directly. macOS controls
+  // local-user Keychain access; helper source/binary binding and request
+  // validation remain required without signing or process-ancestor gates.
   const executable = qaBroker
     ? process.execPath
     : fileURLToPath(new URL('./keychain-credential-helper', import.meta.url))

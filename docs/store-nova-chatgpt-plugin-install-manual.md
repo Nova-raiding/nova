@@ -16,6 +16,8 @@
 stdio bridge，由 bridge 连接 Store Nova API/MCP。这条链路不使用 ChatGPT 远程 MCP OAuth，
 不要求 OpenAI Apps challenge，也不发布到公开或团队插件市场。
 
+本项目的本地直装/stdio 验收不要求 Apple Developer ID 签名、公证或 ChatGPT 进程祖先签名/宿主身份认证。仍须真实验证插件加载、API/MCP 登录与业务权限、租户隔离，并保留 Keychain helper 固定路径及源码/二进制哈希绑定；不能伪造签名或宿主认证状态。
+
 本地模式仍然需要 Store Nova 自己的身份边界：商家使用 Store Nova 账号密码登录，插件
 使用平台为该工作区签发的短期 Bearer 凭据调用 `/mcp`。账号密码不会写入插件、环境变量、
 聊天或日志；不能用 Cookie、平台密码或共享演示 token 代替用户凭据。
@@ -67,11 +69,11 @@ access token 过期时 bridge 沿用 `POST /v1/auth/mcp-token/refresh` 轮换并
 
 ### A2. 安装包含运行环境的平台包
 
-插件普通包按平台分别构建：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。普通插件包不含 OpenAI 客户端，需从官方渠道取得原版 ChatGPT。另有 macOS arm64 单文件 bundled **内部候选包**，包含经校验的官方 `ChatGPT.app`、插件和运行环境；其 `bundle-status.json` 标记 `unsigned_candidate`、`ready_to_install=false`，尚未签名、公证及完成 ChatGPT 图形界面验收，不能交付客户。当前没有完成 Windows bundled 包及实机安装验收。Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
+插件普通包按平台分别构建：macOS `darwin-arm64` 或 `darwin-x64`，Windows `win32-x64`。包内包括对应平台的 Node 运行时；macOS 还包括已编译的 Keychain helper，Windows 包必须包括已签名、单文件且自带 .NET 运行时的 Credential Manager helper。用户电脑不需要预装 Node、Swift、.NET SDK 或 Codex CLI。普通插件包不含 OpenAI 客户端，需从官方渠道取得原版 ChatGPT。另有 macOS arm64 单文件 bundled **内部候选包**，包含经校验的官方 `ChatGPT.app`、插件和运行环境；其 `bundle-status.json` 标记 `unsigned_candidate`、`ready_to_install=false`，该元数据记录现有打包状态，不代表签名是本地 stdio 门禁；是否可交付须依据真实安装及工作流验收，不能只看源码或包内标记。当前没有完成 Windows bundled 包及实机安装验收。Store Nova 商家账号、管理员分配的工作区和网络连接仍需具备。
 
-macOS 普通包正式 DMG 用户运行 `install-all.command`：入口先核验本机原版 ChatGPT.app 的签名与公证；缺失时打开 OpenAI 官方下载页，待用户完成原版安装后继续。bundled 候选包中的 `install-all.command` 会优先使用本机已验证的原版；本机缺失时才校验并安装包内官方 ChatGPT.app，然后安装插件。目前 bundled 包仅供内部验收，不能作为正式 DMG 或客户安装说明。随后按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。工作区留空时安装器会明确报告“已安装、待绑定”，不会报告可用。直接打包产生的 `.tar.gz` 只用于内部验收，不交付用户。Windows 用户必须取得同一发布的 ZIP 和包外 Authenticode 签名 `.install.ps1`，先验证生产发布者签名，再运行包外安装器；它先核对整个 ZIP 的 SHA-256，随后检查官方 Microsoft Store 客户端身份，缺失时从官方渠道安装原版 ChatGPT，再安装插件并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。不得直接运行 ZIP 内脚本，包内 `install.cmd`、`install-chatgpt.ps1` 和 `install-plugin.ps1` 会拒绝安装。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验真实宿主身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
+选择可选签名 DMG 分发路径时，macOS 用户运行 `install-all.command`：入口先核验本机原版 ChatGPT.app 的签名与公证；缺失时打开 OpenAI 官方下载页，待用户完成原版安装后继续。bundled 候选包中的 `install-all.command` 会优先使用本机已验证的原版；本机缺失时才校验并安装包内官方 ChatGPT.app，然后安装插件。该入口现有的签名与公证检查属于可选分发实现，不是本项目本地直装/stdio 门禁；本文不改变安装器行为。bundled 包的实际安装验收状态须独立记录。随后按提示输入分配的工作区；也可运行 `sh install.sh`，然后运行 `sh login.sh --workspace ws_<管理员分配的工作区>`。工作区留空时安装器会明确报告“已安装、待绑定”，不会报告可用。直接打包产生的 `.tar.gz` 须完成来源、helper 源码/二进制绑定和真实工作流验收，未签名本身不阻断本地 stdio 交付。Windows 用户必须取得同一发布的 ZIP 和包外 Authenticode 签名 `.install.ps1`，先验证生产发布者签名，再运行包外安装器；它先核对整个 ZIP 的 SHA-256，随后检查官方 Microsoft Store 客户端身份，缺失时从官方渠道安装原版 ChatGPT，再安装插件并输入工作区；也可稍后运行 `login.cmd --workspace ws_<管理员分配的工作区>`。不得直接运行 ZIP 内脚本，包内 `install.cmd`、`install-chatgpt.ps1` 和 `install-plugin.ps1` 会拒绝安装。登录时在浏览器核对商家账号与工作区并确认授权。最后完全退出并重新打开 ChatGPT，在新对话调用 `onboarding.status` 核验插件实际加载、商家 API 身份和工作区。安装器写入本机个人插件源、安装缓存和启用配置，不发布到公开或团队市场。
 
-macOS 正式 DMG 在持有 Developer ID Application 证书和 Apple 公证 Keychain profile 的发布机上运行 `apps/plugin/scripts/build-signed-macos-package.mjs` 生成。缺少签名身份、公证接受结果、装订票据或 Gatekeeper 验证时不产生可交付包。发布机凭据不进入用户包。
+可选 macOS 签名 DMG 在持有 Developer ID Application 证书和 Apple 公证 Keychain profile 的发布机上运行 `apps/plugin/scripts/build-signed-macos-package.mjs` 生成。该脚本缺少签名身份、公证接受结果、装订票据或 Gatekeeper 验证时不产生签名 DMG；这不阻断本地 CLI/stdio 路径。发布机凭据不进入用户包。
 
 Windows 管理员应从独立可信渠道公布生产发布者证书指纹。用户在 PowerShell 中先运行 `Get-AuthenticodeSignature -LiteralPath <名称>.install.ps1`，确认 `Status` 为 `Valid`、`SignerCertificate.Thumbprint` 与公布值一致，再运行 `powershell.exe -NoProfile -File <名称>.install.ps1`；没有公布指纹、生产签名无效或只拿到 ZIP 时停止安装。CI 的临时测试证书不是生产发布者证书。
 
@@ -79,7 +81,7 @@ Windows 包必须在 Windows x64 发布机上构建。发布机安装构建工�
 
 #### 开发人员从源码安装
 
-此命令安装的是 `qa-broker` 开发/QA 包。它使用未认证的同用户凭据 broker，标记为 `qa_only` 且 `release_eligible=false`；不得交付客户、用于生产或作为正式上线验收证据。生产安装须等待可信签名、公证和发布门禁全部完成后使用正式包。
+此命令安装的是 `qa-broker` 开发/QA 包。它使用未认证的同用户凭据 broker，标记为 `qa_only` 且 `release_eligible=false`；不得交付客户、用于生产或作为正式上线验收证据。生产验收须使用经审核、来源与二进制绑定一致的本地包并完成真实工作流；不以 Apple 签名、公证或 ChatGPT 宿主身份认证作为门禁。
 
 在目标仓库根目录执行：
 
@@ -280,7 +282,7 @@ ChatGPT 宿主已经加载或验收通过。
 
 目标 **≤5 分钟**只适用于：已有可用授权环境、本地包已安装、当前登录身份已合法绑定 Workspace、服务器及目录读取依赖就绪。它衡量新 ChatGPT 会话的两项只读查询与桌面对照，不包括安装、获权限、填支付配置、上架通知、实际转账/授予或模型生成。当前实际耗时 **unknown**，不能填写 0 或声称目标已达到。
 
-安装/支持人员先在仓库运行既有 `npm run dev:doctor` 检查准备项，确认目标 API、身份和桌面工作台可读；配置缺失分别记录 blocked、责任人和准备耗时。`dev:doctor` 不给客户签发凭据，也不代替正式包签名及宿主验收。完成 A2/A3/A4 后，由未参与开发的安装或支持人员复测：
+安装/支持人员先在仓库运行既有 `npm run dev:doctor` 检查准备项，确认目标 API、身份和桌面工作台可读；配置缺失分别记录 blocked、责任人和准备耗时。`dev:doctor` 不给客户签发凭据，也不代替真实插件加载、业务权限和工作区验收。完成 A2/A3/A4 后，由未参与开发的安装或支持人员复测：
 
 1. 打开新会话并记 t0，请插件调用 `onboarding.status`，核对真实用户与管理员已分配企业，记录 t1。
 2. 请插件调用 `commercial.catalog.get`，记录 t2；成功空目录如实记录，仓储错误不能显示成空商品。

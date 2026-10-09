@@ -139,6 +139,7 @@ async function checkUi() {
 }
 
 async function main() {
+  assert(mode === 'production' || mode === 'fixture', 'SMOKE_MODE must be production or fixture')
   const ui = await checkUi()
   const health = await request<{ connectors: Record<Platform, string>; writesEnabled: boolean; persistence?: { ready: boolean } }>('/healthz')
   assert(health.persistence?.ready !== false, 'API persistence is not ready')
@@ -166,6 +167,11 @@ async function main() {
   const productsBefore = normalizeItems(await request<Array<{ id: string; platform: Platform; workspaceId: string; title: string }> | ItemsPage<{ id: string; platform: Platform; workspaceId: string; title: string }>>('/v1/products'), 'products')
   for (const product of productsBefore) assert(product.workspaceId === workspaceId, `product ${product.id} crossed workspace boundary`)
 
+  if (mode === 'production') {
+    console.log(JSON.stringify({ status: 'PASS', mode, ui, platforms, productCount: productsBefore.length, fullFlow: 'SKIPPED_READ_ONLY_PRODUCTION', note: 'Production smoke is read-only; use disposable fixture mode for workflow writes.' }, null, 2))
+    return
+  }
+
   const syncResults = await Promise.all(platforms.map(async platform => {
     try {
       const result = await request<{ platform: Platform; items: unknown[]; simulated: boolean }>(`/v1/platform-accounts/${platform}/sync`, { method: 'POST', body: JSON.stringify({}) })
@@ -187,10 +193,6 @@ async function main() {
   assert(syncResults.length === platforms.length, 'not all platform sync probes completed')
 
   const products = normalizeItems(await request<Array<{ id: string; platform: Platform; title: string }> | ItemsPage<{ id: string; platform: Platform; title: string }>>('/v1/products'), 'products')
-  if (mode === 'production') {
-    console.log(JSON.stringify({ status: 'PASS', mode, ui, platforms, productCount: products.length, fullFlow: 'SKIPPED_READ_ONLY_PRODUCTION', note: 'Production smoke is read-only; use disposable fixture mode for workflow writes.' }, null, 2))
-    return
-  }
   if (!products.length) {
     assert(!requireFullFlow, 'full flow requested but fixture API returned no products')
     console.log(JSON.stringify({ status: 'PASS', mode, ui, platforms, fullFlow: 'SKIPPED_NO_PRODUCTS', note: 'Production API is correctly fail-closed until platform accounts are configured.' }, null, 2))
