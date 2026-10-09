@@ -66,7 +66,8 @@ describe("destructive confirmation call sites", () => {
     // loading underneath and cancelling the second closed both with no feedback.
     expect(refund.match(/modal\.confirm\(/gu)).toHaveLength(1);
     expect(refundSection).not.toContain("Modal.confirm");
-    expect(refundSection).toContain("refund(values)");
+    expect(refundSection).toContain("onFinish={submitRefund}");
+    expect(refundSection).toContain("void refund({ orderId: values.orderId.trim(), reason: values.reason.trim() });");
   });
 
   it("states that a cancelled refund created no billing entry", () => {
