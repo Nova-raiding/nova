@@ -51,6 +51,23 @@ sh infra/scripts/build-ecs-release-images.sh
 5. 核对运行数据库迁移链与目标代码：版本、名称、checksum 均一致才进入无迁移路径。新增迁移先完成备份、隔离恢复、前向迁移和旧版兼容验证，单独安排窗口；切勿只看迁移数字。数据库不兼容时，旧镜像不能自动回滚。
 6. 必需的候选业务验收和发布证据在切流前准备齐。缺一项就列出具体缺口及修复动作，退出准备阶段，不循环重建无关镜像。
 
+### Demo 商家 UI 混合组件身份适配
+
+`infra/scripts/prepare-ecs-demo-component-update.mjs` 的 `prepareDemoComponentUpdate(input)` 是纯配置适配器，没有宿主 CLI，也不读文件、调用 Docker/SSH、构建或切流。范围固定为 `merchant-demo-85575f9c` 的商家 UI 更新，不能用于正式生产或其他组件发布。原有单候选渲染器要求所有镜像同提交，保持该规则；不要用它伪造未更新组件的提交。
+
+输入 `schema_version=demo-component-update-input/1` 包含：
+
+- `compose_project` 与 `candidate={release_id,git_sha,source_sha256}`，来自 owner 校验的冻结归档；此适配器不替代归档提交、摘要校验。
+- `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及完整 270 行 `{version,name,checksum}` 的 `migrations`。`target_migrations` 必须逐行一致。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
+- `baseline.runtime_services` 为当前实际 15 服务的安全投影。每项严格包含 `container_id,reference,image_id,git_sha,source_sha256,running,health,restarts,oom_killed,compose_service_sha256`；后者是 owner 已对照实际容器配置后封存的该 Compose service 的 canonical JSON SHA。Git/source 来自不可变镜像 OCI 标签，上游镜像无标签时为 `null`。不传完整 inspect、Env、Cmd 或密钥。
+- 本轮仅 `merchant-ui` 的 `component_images`，格式与组件构建器输出一致；`imported_ui` 包含宿主实际镜像 inspect 的 `reference,image_id,repo_digests,labels,os,architecture` 安全投影，必须绑定同一不可变引用、候选标签与 `linux/amd64`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
+
+输出包含新完整 15 服务 manifest、四个 API `RELEASE_*` 输入、新 Compose、原始回滚 Compose/manifest 字节及旧身份、准备审查摘要。manifest 的候选 SHA 表示本次发布包；`services.*.git_sha/source_sha256/reference/image_id` 表示各组件自己的真实镜像身份。只有 `ui` 更换镜像及其容器标签；旧 API 镜像与标签仍保留旧 SHA，API 双实例仅更新发布四字段。其他 12 服务配置、网络、挂载、healthcheck 与 migrate 声明完全保留。
+
+API `/releasez` 读取启动环境，不读取 manifest 文件；因此这条路线必须将 `ui api api-replica` 列为明确更新/回滚服务，不能只重启 UI 或 `docker restart` API。只构建一个新 UI 镜像，同时重新创建两个沿用旧镜像的 API 容器。adapter 的输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
+
+owner 将输入输出仅保存在宿主受保护目录，并使用原有部署锁、全新候选目录和不覆盖旧输入的写入策略。在锁内重新确认实际 CID/镜像、配置来源 SHA、挂载/网络、公网四元组、完整迁移链没有漂移，完成 Compose render/no-interpolate 和相同三服务回滚审查后，才进入既有发布步骤。更新后必须实测 15 服务 healthy、12 个保留 CID 不变、UI 镜像/字节和 API 双实例完整发布四元组准确；另验真实桌面导航及本地 stdio 读链路。配置摘要是 owner 采集证据的绑定，不替代这些实际检查。该模块没有自动收集、写入或执行这些步骤。
+
 构建成功的 digest 可以保留，不因之后的业务验收失败而无条件重建。再次构建只针对实际改动；不得把另一 SHA 的证据重贴到新候选上。构建缓存按现有预算维护，不删除数据库、业务卷或 Registry blob 来腾空间。
 
 ## 3. 发布窗口：20–30 分钟目标
