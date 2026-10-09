@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Sidebar } from './App.js'
-import { merchantRouteFromLocation } from './navigation.js'
+import { merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
 
 const app = readFileSync(resolve(import.meta.dirname, 'App.tsx'), 'utf8')
 const css = readFileSync(resolve(import.meta.dirname, 'styles.css'), 'utf8')
@@ -35,8 +35,15 @@ describe('merchant navigation cleanup contract', () => {
       const activeSubItems = [...markup.matchAll(/<button class="active"[^>]*>([\s\S]*?)<\/button>/gu)].map((match) => match[1])
       expect(activeSubItems.filter((item) => item?.includes('素材库'))).toHaveLength(materialSubitemActive ? 1 : 0)
     }
-    // Images keeps the target's knowledge title while the shared materials child stays unselected.
-    expect(app).toContain("products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'products' || activeEntry === 'images' ? '知识库' : '素材库'")
+    // The catalog route has its own title; image deep-links retain the knowledge title.
+    expect(app).toContain("products: activeEntry === 'products' ? '平台&店铺&商品' : activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'images' ? '知识库' : '素材库'")
+  })
+
+  it('opens transaction-dashboard issues in the platform and product catalog route', () => {
+    expect(app).toContain("onOpenIssues={() => goProducts('products')}")
+    const href = urlForMerchantRoute({ pathname: '/merchant/overview', search: '' }, { page: 'products', entry: 'products' })
+    expect(href).toBe('/merchant/products?section=products')
+    expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=products', hash: '' }).entry).toBe('products')
   })
 
   it('keeps member governance out of the screenshot-matched primary rail while retaining its gated route', () => {

@@ -1046,7 +1046,7 @@ function Topbar({
   }, [apiBaseUrl, issueReload])
   const titles: Record<Page, string> = {
     overview: '运营概览',
-    products: activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'products' || activeEntry === 'images' ? '知识库' : '素材库',
+    products: activeEntry === 'products' ? '平台&店铺&商品' : activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'images' ? '知识库' : '素材库',
     finance: '财务概况',
     members: '成员与权限',
     task: '营销任务',
