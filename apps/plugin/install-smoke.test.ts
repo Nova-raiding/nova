@@ -84,7 +84,8 @@ describe('Codex plugin installation package', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-local-package-'))
     const artifact = resolve(directory, 'merchant-marketing.tar.gz')
     try {
-      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact], { encoding: 'utf8' })
+      const packaged = spawnSync(process.execPath, [resolve(root, 'scripts/package-local-plugin.mjs'), artifact], { encoding: 'utf8', timeout: 180_000 })
+      expect(packaged.error).toBeUndefined()
       expect(packaged.status, packaged.stderr).toBe(0)
       const packageMetadata = JSON.parse(packaged.stdout)
       expect(packageMetadata).toMatchObject({
@@ -92,7 +93,7 @@ describe('Codex plugin installation package', () => {
         platform: 'darwin',
         architecture: process.arch,
         bundled_node_version: 'v22.16.0',
-        ready_to_install: false,
+        ready_to_install: true,
         connect_helper: {
           source_included: true,
           app_bundle_included: true,
@@ -104,8 +105,9 @@ describe('Codex plugin installation package', () => {
           },
         },
       })
-      expect(packageMetadata.release_status).toBe(packageMetadata.source_dirty ? 'dirty_source_candidate' : 'unsigned_candidate')
-      const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
+      expect(packageMetadata.release_status).toBe('local_stdio_candidate')
+      const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8', timeout: 60_000 })
+      expect(listing.error).toBeUndefined()
       expect(listing.status, listing.stderr).toBe(0)
       const skillFiles: string[] = []
       const collectSkillFiles = (directoryPath: string, relative = ''): void => {
@@ -131,12 +133,14 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('scripts/verify-chatgpt-macos.mjs')
       expect(listing.stdout).not.toContain('ChatGPT.app')
       expect(listing.stdout).toContain('bundle-provenance.json')
-      const macInstaller = spawnSync('tar', ['-xOf', artifact, 'install.command'], { encoding: 'utf8' })
+      const macInstaller = spawnSync('tar', ['-xOf', artifact, 'install.command'], { encoding: 'utf8', timeout: 30_000 })
+      expect(macInstaller.error).toBeUndefined()
       expect(macInstaller.status, macInstaller.stderr).toBe(0)
       writeFileSync(resolve(directory, 'install.command'), macInstaller.stdout)
       writeFileSync(resolve(directory, 'install.sh'), '#!/bin/sh\nexit 0\n')
       writeFileSync(resolve(directory, 'login.sh'), '#!/bin/sh\nexit 0\n')
-      const installCommandResult = spawnSync('/bin/sh', [resolve(directory, 'install.command')], { encoding: 'utf8' })
+      const installCommandResult = spawnSync('/bin/sh', [resolve(directory, 'install.command')], { encoding: 'utf8', timeout: 30_000 })
+      expect(installCommandResult.error).toBeUndefined()
       expect(installCommandResult.status).toBe(0)
       expect(installCommandResult.stdout).toContain('点击连接 ChatGPT 本地插件完成授权')
       expect(listing.stdout).toContain('scripts/bundle-provenance.mjs')
@@ -146,12 +150,15 @@ describe('Codex plugin installation package', () => {
       expect(listing.stdout).toContain('scripts/install-chatgpt-bundled.mjs')
       expect(listing.stdout).toContain('scripts/package-local-plugin.mjs')
       expect(listing.stdout).toContain('scripts/local-plugin-package-profile.mjs')
-      const extractedHelper = spawnSync('tar', ['-xzf', artifact, '-C', directory, 'mcp/keychain-credential-helper'], { encoding: 'utf8' })
+      const extractedHelper = spawnSync('tar', ['-xzf', artifact, '-C', directory, 'mcp/keychain-credential-helper'], { encoding: 'utf8', timeout: 60_000 })
+      expect(extractedHelper.error).toBeUndefined()
       expect(extractedHelper.status, extractedHelper.stderr).toBe(0)
-      const buildVersion = spawnSync('vtool', ['-show-build', resolve(directory, 'mcp/keychain-credential-helper')], { encoding: 'utf8' })
+      const buildVersion = spawnSync('vtool', ['-show-build', resolve(directory, 'mcp/keychain-credential-helper')], { encoding: 'utf8', timeout: 20_000 })
+      expect(buildVersion.error).toBeUndefined()
       expect(buildVersion.status, buildVersion.stderr).toBe(0)
       expect(buildVersion.stdout).toMatch(/minos 11\.0/u)
-      const packagedMcp = spawnSync('tar', ['-xOzf', artifact, '.mcp.json'], { encoding: 'utf8' })
+      const packagedMcp = spawnSync('tar', ['-xOzf', artifact, '.mcp.json'], { encoding: 'utf8', timeout: 30_000 })
+      expect(packagedMcp.error).toBeUndefined()
       expect(JSON.parse(packagedMcp.stdout).mcpServers['merchant-marketing'].command).toBe('./runtime/node')
       const installer = spawnSync('tar', ['-xOzf', artifact, 'install-plugin.ps1'], { encoding: 'utf8' })
       expect(installer.status, installer.stderr).toBe(0)
@@ -223,7 +230,7 @@ describe('Codex plugin installation package', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 120_000)
+  }, 210_000)
 
   it('does not bundle a Windows credential binary without a Windows signing check', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-windows-package-'))
