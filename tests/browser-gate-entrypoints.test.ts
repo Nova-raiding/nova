@@ -260,6 +260,14 @@ describe('browser gate entrypoints', () => {
     expect(chromiumFiles.length, 'the scan must find the Ops Chromium-backed tests').toBeGreaterThan(0)
   })
 
+  it('allows targeted Ops browser runs only for files in the dedicated runner allowlist', () => {
+    const browserRunner = readFileSync(resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs'), 'utf8')
+    expect(browserRunner).toContain('process.argv.slice(2)')
+    expect(browserRunner).toContain('requestedFiles.filter(file => !files.includes(file))')
+    expect(browserRunner).toContain('const filesToRun = requestedFiles.length ? requestedFiles : files')
+    expect(browserRunner).toContain('--no-file-parallelism')
+  })
+
   it('runs the commercial Ops Console specs through their dedicated entrypoint', () => {
     const command = script('test:browser:ops:commercial')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')

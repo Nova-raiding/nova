@@ -6,10 +6,12 @@ import { MarketingQueuePanel } from "./knowledge/MarketingQueuePanel";
 import { UploadedAssetGovernance } from "./knowledge/UploadedAssetGovernance";
 
 export function marketingQueueCount(queue: OpsConsoleModel["marketingQueue"]): number {
-  return queue.generation.length
+  return queue.videoProviderJobs.length
+    + queue.generation.length
     + queue.publish.length
     + queue.visuals.length
     + queue.batches.length
+    + queue.imageExecutions.length
     + queue.uploadedAssetRisks.length;
 }
 

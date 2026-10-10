@@ -15,6 +15,19 @@ type ReviewAudit = { id: string; action: string; actor_id: string; reason?: stri
 type ReviewDetail = { rule: ReviewRule; audit: ReviewAudit[] };
 const PUBLIC_RULE_DRAFT_PAGE_SIZE = "20";
 
+export function isPublicRuleApprovalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/u.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [, year, month, day, hour, minute, second, , zone, , zoneHour, zoneMinute] = match;
+  const date = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+  const validCalendarDate = Number(year) >= 1 && date.toISOString().slice(0, 10) === `${year}-${month}-${day}`;
+  const validClock = Number(hour) <= 23 && Number(minute) <= 59 && Number(second) <= 59;
+  const validZone = zone === "Z" || (Number(zoneHour) <= 14 && Number(zoneMinute) <= 59
+    && (Number(zoneHour) !== 14 || Number(zoneMinute) === 0));
+  return validCalendarDate && validClock && validZone;
+}
+
 export function buildPublicRuleDraftListParams(platform: Platform | "", cursor?: string) {
   return { ...(platform ? { platform } : {}), limit: PUBLIC_RULE_DRAFT_PAGE_SIZE, ...(cursor ? { cursor } : {}) };
 }
@@ -109,6 +122,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const [busy, setBusy] = useState(false);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [approvalRef, setApprovalRef] = useState("");
   const [approvedBy, setApprovedBy] = useState("");
   const [approvedAt, setApprovedAt] = useState("");
@@ -116,6 +130,11 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const [approvalToken, setApprovalToken] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchApprovalOpen, setBatchApprovalOpen] = useState(false);
+  const validApprovalTime = isPublicRuleApprovalTimestamp(approvedAt.trim());
+
+  const clearReviewInputs = () => {
+    setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
+  };
 
   const load = async (cursor?: string, targetPage = pageIndex) => {
     if (!visible) return;
@@ -143,6 +162,8 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
     listRequest.current += 1;
     detailRequest.current += 1;
     setItems([]); setNextCursor(undefined); setPageIndex(0); setPageCursors([undefined]); setDetail(undefined); setLoading(false);
+    setBatchApprovalOpen(false);
+    setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
     void load(undefined, 0);
   }, [visible, platform]);
 
@@ -150,6 +171,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   const openDetail = async (item: ReviewRule) => {
     const requestId = ++detailRequest.current;
     setError(""); setDetail(undefined);
+    clearReviewInputs();
     try {
       const response = await rpc<unknown>("ops.rules.public.drafts.get", { platform: item.platform, pack_id: item.pack_id, version: item.version });
       const result = parsePublicRuleDraftDetail(response);
@@ -160,7 +182,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   };
   const transition = async (status: "active" | "inactive") => {
     if (!detail || busy || !canWrite) return;
-    if (status === "active" && (!canApprove || !canReviewPublicRuleDraft(authorization, detail.rule) || !approvalRef.trim() || !approvedBy.trim() || !approvedAt.trim() || !reason.trim() || !approvalToken.trim())) return;
+    if (status === "active" && (!canApprove || !canReviewPublicRuleDraft(authorization, detail.rule) || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !reason.trim() || !approvalToken.trim())) return;
     if (status === "inactive" && !reason.trim()) return;
     setBusy(true); setError("");
     try {
@@ -183,16 +205,21 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   };
 
   const selectedRules = items.filter(item => selectedIds.includes(item.id));
+  const approvableSelectedRules = selectedRules.filter(item => canReviewPublicRuleDraft(authorization, item));
   const detailColumns: ColumnsType<ReviewRule> = [...columns, {
     title: "操作",
-    render: (_: unknown, item: ReviewRule) => <Button type="link" aria-label={`查看${item.name}审核详情`} onClick={event => { event.stopPropagation(); void openDetail(item); }}>查看详情</Button>,
+    render: (_: unknown, item: ReviewRule) => <Button type="link" aria-label={`查看${item.name}审核详情`} onClick={event => {
+      detailTriggerRef.current = event.currentTarget as HTMLButtonElement;
+      void openDetail(item);
+    }}>查看详情</Button>,
   }];
   const approveBatch = async () => {
-    if (!canApprove || !selectedRules.length || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !approvedAt.trim() || !approvalToken.trim()) return;
+    if (!canApprove || !approvableSelectedRules.length || approvableSelectedRules.length !== selectedRules.length
+      || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim()) return;
     setBusy(true); setError("");
     try {
-      await rpc("rule.approve.batch", buildPublicRuleBatchApprovalParams(selectedRules, reason, { approvalRef, approvedBy, approvedAt }), { ruleApprovalToken: approvalToken.trim() });
-      message.success(`已审批并激活 ${selectedRules.length} 条公共规则`);
+      await rpc("rule.approve.batch", buildPublicRuleBatchApprovalParams(approvableSelectedRules, reason, { approvalRef, approvedBy, approvedAt }), { ruleApprovalToken: approvalToken.trim() });
+      message.success(`已审批并激活 ${approvableSelectedRules.length} 条公共规则`);
       setBatchApprovalOpen(false); setSelectedIds([]); setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
       await load(pageCursors[pageIndex], pageIndex);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "公共规则批量审批失败"); }
@@ -202,15 +229,34 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   return <Card title="公共平台规则草稿审核" extra={<Typography.Text type="secondary">平台工作台 · 仅展示待审核公共草稿</Typography.Text>}>
     <Alert type="warning" showIcon title="审核会影响所有商家" description="激活前请核对官方依据、规则内容和校验和。人工审批仅记录运营审核，不代表系统独立验证来源网站。" style={{ marginBottom: 16 }} />
     {!canWrite && <Alert type="info" showIcon title="只读审核视图" description="当前身份只有规则读取权限；审批、激活或拒绝需要 rule.update，激活还需要 rule.publish.approve 和服务端签发的规则审批凭证。" style={{ marginBottom: 16 }} />}
-    <Space wrap style={{ marginBottom: 12 }}><Select aria-label="按平台筛选公共规则草稿" allowClear disabled={busy} placeholder="全部平台" value={platform || undefined} onChange={value => setPlatform((value ?? "") as Platform | "")} options={platforms.map(value => ({ value, label: platformLabels[value] }))} style={{ minWidth: 180 }} /><Button onClick={() => void load(pageCursors[pageIndex], pageIndex)} loading={loading}>刷新草稿</Button>{canApprove && <Button type="primary" disabled={!selectedRules.length || busy} onClick={() => setBatchApprovalOpen(true)}>一键审批选中（{selectedRules.length}）</Button>}</Space>
-    {error && <Alert type="error" showIcon title="公共规则审核操作失败" description={error} style={{ marginBottom: 12 }} />}
-    {items.length ? <Table rowKey="id" size="small" dataSource={items} rowSelection={canApprove ? { selectedRowKeys: selectedIds, onChange: keys => setSelectedIds(keys.map(String)) } : undefined} columns={detailColumns} pagination={false} scroll={{ x: 1000 }} onRow={item => ({ onClick: () => void openDetail(item), style: { cursor: "pointer" } })} /> : !loading ? <Empty description="当前筛选范围内没有待审核公共规则草稿" /> : null}
+    <Space wrap style={{ marginBottom: 12 }}><Select aria-label="按平台筛选公共规则草稿" allowClear disabled={busy} placeholder="全部平台" value={platform || undefined} onChange={value => setPlatform((value ?? "") as Platform | "")} options={platforms.map(value => ({ value, label: platformLabels[value] }))} style={{ minWidth: 180 }} /><Button onClick={() => void load(pageCursors[pageIndex], pageIndex)} loading={loading}>刷新草稿</Button>{canApprove && <Button type="primary" disabled={!approvableSelectedRules.length || busy} onClick={() => setBatchApprovalOpen(true)}>一键审批选中（{approvableSelectedRules.length}）</Button>}</Space>
+    {error && <Alert
+      type="error"
+      showIcon
+      title="公共规则审核操作失败"
+      description={error}
+      action={<Button htmlType="button" disabled={loading || busy} loading={loading} onClick={() => void load(pageCursors[pageIndex], pageIndex)}>刷新审核数据</Button>}
+      style={{ marginBottom: 12 }}
+    />}
+    {items.length ? <Table rowKey="id" size="small" dataSource={items} rowSelection={canApprove ? {
+      selectedRowKeys: selectedIds,
+      onChange: keys => setSelectedIds(keys.map(String)),
+      getCheckboxProps: item => ({
+        disabled: !canReviewPublicRuleDraft(authorization, item),
+        title: canReviewPublicRuleDraft(authorization, item) ? undefined : "校验、来源或审核状态不满足批量激活条件；仍可打开详情逐项核对",
+      }),
+    } : undefined} columns={detailColumns} pagination={false} scroll={{ x: 1000 }} /> : !loading && !error ? <Empty description="当前筛选范围内没有待审核公共规则草稿" /> : null}
     {(pageIndex > 0 || nextCursor) && <Space align="center" style={{ marginTop: 12 }}>
       <Button aria-label="上一页公共规则草稿" disabled={pageIndex === 0 || loading} onClick={() => void load(pageCursors[pageIndex - 1], pageIndex - 1)}>上一页</Button>
       <Typography.Text aria-live="polite">第 {pageIndex + 1} 页</Typography.Text>
       <Button aria-label="下一页公共规则草稿" disabled={!nextCursor || loading} loading={loading} onClick={() => void load(nextCursor, pageIndex + 1)}>下一页</Button>
     </Space>}
-    {detail && <Card size="small" title={`${detail.rule.name} · ${detail.rule.version}`} style={{ marginTop: 16 }}>
+    {detail && <Card size="small" title={`${detail.rule.name} · ${detail.rule.version}`} extra={<Button htmlType="button" aria-label={`关闭${detail.rule.name}审核详情`} onClick={() => {
+      const trigger = detailTriggerRef.current;
+      setDetail(undefined);
+      clearReviewInputs();
+      requestAnimationFrame(() => trigger?.focus());
+    }}>关闭详情</Button>} style={{ marginTop: 16 }}>
       <Descriptions size="small" column={2} items={[
         { key: "platform", label: "平台", children: platformLabels[detail.rule.platform] ?? detail.rule.platform }, { key: "creator", label: "提交人", children: detail.rule.created_by },
         { key: "source", label: "依据来源", children: <Typography.Text copyable>{detail.rule.source.reference}</Typography.Text> }, { key: "source-trust", label: "来源状态", children: detail.rule.source.trust },
@@ -220,17 +266,18 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
       ]} />
       {canWrite && <Space direction="vertical" style={{ width: "100%" }}>
         <Input aria-label="审核原因" placeholder="审核原因（必填）" value={reason} onChange={event => setReason(event.target.value)} />
-        {canApprove && <><Input aria-label="审批凭证编号" placeholder="审批凭证编号" value={approvalRef} onChange={event => setApprovalRef(event.target.value)} /><Input aria-label="独立审批人" placeholder="独立审批人" value={approvedBy} onChange={event => setApprovedBy(event.target.value)} /><Input aria-label="审批时间" placeholder="审批时间 ISO 8601" value={approvedAt} onChange={event => setApprovedAt(event.target.value)} /><Input.Password aria-label="规则审批凭证" placeholder="服务端签发的规则审批凭证" value={approvalToken} onChange={event => setApprovalToken(event.target.value)} /></>}
-        <Space><Button danger disabled={!reason.trim() || detail.rule.status !== "draft"} loading={busy} onClick={() => void transition("inactive")}>拒绝并归档</Button>{canApprove && <Button type="primary" disabled={!reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !approvedAt.trim() || !approvalToken.trim() || !canReviewPublicRuleDraft(authorization, detail.rule)} loading={busy} onClick={() => void transition("active")}>审批并激活</Button>}</Space>
+        {canApprove && <><Input aria-label="审批凭证编号" placeholder="审批凭证编号" value={approvalRef} onChange={event => setApprovalRef(event.target.value)} /><Input aria-label="独立审批人" placeholder="独立审批人" value={approvedBy} onChange={event => setApprovedBy(event.target.value)} /><Input aria-label="审批时间" placeholder="例如 2026-10-09T08:00:00.000Z" status={approvedAt && !validApprovalTime ? "error" : undefined} value={approvedAt} onChange={event => setApprovedAt(event.target.value)} />{approvedAt && !validApprovalTime && <Typography.Text type="danger" role="alert">请输入包含时区的有效 ISO 8601 日期时间。</Typography.Text>}<Input.Password aria-label="规则审批凭证" placeholder="服务端签发的规则审批凭证" value={approvalToken} onChange={event => setApprovalToken(event.target.value)} /></>}
+        <Space><Button danger disabled={!reason.trim() || detail.rule.status !== "draft"} loading={busy} onClick={() => void transition("inactive")}>拒绝并归档</Button>{canApprove && <Button type="primary" disabled={!reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim() || !canReviewPublicRuleDraft(authorization, detail.rule)} loading={busy} onClick={() => void transition("active")}>审批并激活</Button>}</Space>
       </Space>}
     </Card>}
-    <Modal title={`一键审批选中的 ${selectedRules.length} 条公共规则`} open={batchApprovalOpen} okText="审批并激活" cancelText="取消" confirmLoading={busy} okButtonProps={{ disabled: !selectedRules.length || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !approvedAt.trim() || !approvalToken.trim() }} onOk={() => void approveBatch()} onCancel={() => { if (!busy) setBatchApprovalOpen(false); }}>
+    <Modal title={`一键审批选中的 ${approvableSelectedRules.length} 条公共规则`} open={batchApprovalOpen} okText="审批并激活" cancelText="取消" confirmLoading={busy} okButtonProps={{ disabled: !approvableSelectedRules.length || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim() }} onOk={() => void approveBatch()} onCancel={() => { if (!busy) { setBatchApprovalOpen(false); clearReviewInputs(); } }}>
       <Alert type="warning" showIcon title="将逐条校验并写入审计" description="服务端会对每条规则分别校验 expected_revision、来源、独立审批凭证和创建人与审批人分离；任一条失败时整批回滚。" style={{ marginBottom: 12 }} />
       <Space direction="vertical" style={{ width: "100%" }}>
         <Input aria-label="批量审核原因" placeholder="审核原因（必填）" value={reason} onChange={event => setReason(event.target.value)} />
         <Input aria-label="批量审批凭证编号" placeholder="审批凭证编号" value={approvalRef} onChange={event => setApprovalRef(event.target.value)} />
         <Input aria-label="批量独立审批人" placeholder="独立审批人" value={approvedBy} onChange={event => setApprovedBy(event.target.value)} />
-        <Input aria-label="批量审批时间" placeholder="审批时间 ISO 8601" value={approvedAt} onChange={event => setApprovedAt(event.target.value)} />
+        <Input aria-label="批量审批时间" placeholder="例如 2026-10-09T08:00:00.000Z" status={approvedAt && !validApprovalTime ? "error" : undefined} value={approvedAt} onChange={event => setApprovedAt(event.target.value)} />
+        {approvedAt && !validApprovalTime && <Typography.Text type="danger" role="alert">请输入包含时区的有效 ISO 8601 日期时间。</Typography.Text>}
         <Input.Password aria-label="批量规则审批凭证" autoComplete="off" placeholder="服务端签发的规则审批凭证" value={approvalToken} onChange={event => setApprovalToken(event.target.value)} />
       </Space>
     </Modal>

@@ -1276,7 +1276,12 @@ describe('Codex stdio MCP bridge', () => {
         expect(response.result._meta).toBeUndefined()
         expect(response.result.content[0].text).toContain('候选已归档（演示模式，未扫描）')
         expect(response.result.content[0].text).not.toContain('通过')
-      } else expect(response.result.structuredContent.candidate_state.state).not.toBe('ready')
+      } else {
+        expect(response.result.structuredContent.candidate_state.state).toBe(variant === 'blocked_scan' ? 'blocked' : 'needs_review')
+        expect(response.result.structuredContent.poll_request).toBeUndefined()
+        expect(response.result.structuredContent.candidate_state.scan_status).toBe(variant === 'blocked_scan' ? 'blocked' : 'unscanned')
+        expect(response.result.structuredContent.completed_summary).toMatch(variant === 'blocked_scan' ? /安全检查未通过/u : /授权状态待确认/u)
+      }
     } finally { child.kill(); await close(server) }
   })
 
@@ -1340,6 +1345,77 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).not.toContain('状态尚未确认')
       expect(generates).toBe(1)
       expect(polls).toBe(variant.startsWith('initial') ? 0 : 1)
+    } finally { child.kill(); await close(server) }
+  })
+
+  it('stops polling an archived image result when the real scan fixture is blocked', async () => {
+    let generates = 0
+    let polls = 0
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const request = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      if (request.method === 'catalog.image.get') polls += 1
+      else generates += 1
+      const result = {
+        job_id: 'job_blocked',
+        execution_state: 'completed',
+        execution: { providerExecuted: true, providerRequestId: 'provider-blocked-fixture', usage: { images: 1 }, costCny: 0.2, settlementStatus: 'settled' },
+        images: ['data:image/png;base64,aGVsbG8='],
+        job: { state: 'succeeded', archiveState: 'archived', candidates: [{ ordinal: 1, visualRef: 'visual_blocked', scanStatus: 'blocked', reviewStatus: 'passed' }] },
+      }
+      res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      await nextLine(child.stdout)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'prod_test', count: '1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.structuredContent.candidate_state.state).toBe('blocked')
+      expect(response.result.structuredContent.poll_request).toBeUndefined()
+      expect(response.result.content[0].text).toContain('安全检查未通过')
+      expect(generates).toBe(1)
+      expect(polls).toBe(0)
+    } finally { child.kill(); await close(server) }
+  })
+
+  it.each(['rendering', 'processing', 'running', 'pending'])('describes video %s as still generating', async state => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { provider_job_id: 'video-pending', rendering: { status: state } } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-pending' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content[0].text).toBe('视频正在生成，无需重新提交。')
+    } finally { child.kill(); await close(server) }
+  })
+
+  it('turns a temporary video status failure into a safe retry instruction', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ data: { error: {
+        code: 'VIDEO_PROVIDER_STATUS_FAILED',
+        message: 'https://relay.internal/status?api_key=must-not-leak',
+        details: { provider_job_id: 'video-job-existing', retryable: true, next_action: 'multimodal.video.get', authorization: 'Bearer must-not-leak' },
+      } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_RETRY_ATTEMPTS: '1' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-existing' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(true)
+      expect(response.result.content[0].text).toContain('不要重新提交生成')
+      expect(response.result.content[0].text).toContain('multimodal.video.get')
+      expect(response.result.structuredContent).toMatchObject({ code: 'VIDEO_PROVIDER_STATUS_FAILED', details: { retryable: true, next_action: 'multimodal.video.get' } })
+      expect(JSON.stringify(response.result.structuredContent)).not.toMatch(/relay\.internal|must-not-leak/u)
     } finally { child.kill(); await close(server) }
   })
 
@@ -2277,6 +2353,29 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('requires a nonblank existing video job id and trims surrounding whitespace before lookup', async () => {
+    const received: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { provider_job_id: 'video-job-existing', status: 'queued', execution: { state: 'queued' } } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...TEST_PROCESS_ENV,
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: '   ' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(received).toHaveLength(0)
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: ' video-job-existing ' } } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).toBe(false)
+      expect(received).toHaveLength(1)
+      expect(received[0].params.provider_job_id).toBe('video-job-existing')
+    } finally { child.kill(); await close(server) }
+  })
+
   it('allows polling an existing video job without opening an interactive write session', async () => {
     const received: any[] = []
     const server = createServer(async (req, res) => {
@@ -2364,7 +2463,8 @@ describe('Codex stdio MCP bridge', () => {
       await expect.poll(() => stderr.trim(), { timeout: 2000 }).not.toBe('')
       const diagnostic = JSON.parse(stderr.trim())
       expect(diagnostic).toMatchObject({ event: 'merchant.mcp.error', method: 'multimodal.video.request', error_code: 'API_UNAVAILABLE' })
-      expect(Object.keys(diagnostic).sort()).toEqual(['error_code', 'event', 'method', 'ts'])
+      expect(diagnostic.operation_status).toBe('unknown')
+      expect(Object.keys(diagnostic).sort()).toEqual(['error_code', 'event', 'method', 'operation_status', 'ts'])
       expect(stderr).not.toContain(sensitivePrompt)
       expect(stderr).not.toContain('merchant.image.error')
     } finally {
@@ -2698,6 +2798,47 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('bounds merchant.start requested_goal to the authoritative 1–2000 character contract before forwarding', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += String(chunk)
+      requests.push(JSON.parse(body))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_goal_bounds', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = await nextLine(child.stdout)
+      const requestedGoal = listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties.requested_goal
+      expect(requestedGoal).toMatchObject({ type: 'string', minLength: 1, maxLength: 2000 })
+
+      for (const [id, goal] of [[2, 'x'], [3, 'x'.repeat(2000)]] as const) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: goal } } })}\n`)
+        expect((await nextLine(child.stdout)).result.isError).toBe(false)
+      }
+
+      for (const [id, goal] of [[4, ''], [5, 'x'.repeat(2001)]] as const) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: goal } } })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({
+          isError: true,
+          structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' },
+        })
+      }
+      expect(requests).toHaveLength(2)
+      expect(requests.map(request => request.params.requested_goal)).toEqual(['x', 'x'.repeat(2000)])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('executes catalog.image.review through the bridge as a safe read path', async () => {
     const requests: any[] = []
     const server = createServer(async (req, res) => {
@@ -2740,12 +2881,12 @@ describe('Codex stdio MCP bridge', () => {
         { visualRef: 'visual_secret_1', assetId: 'asset_secret_1', ordinal: 1, scanStatus: 'clean' },
         { visualRef: 'visual_secret_2', assetId: 'asset_secret_2', ordinal: 2, scanStatus: request.params.job_id === 'job_dirty' ? 'quarantined' : 'clean' },
       ]
-      const state = request.params.job_id === 'job_queued' ? 'queued' : request.params.job_id === 'job_failed' ? 'failed' : request.params.job_id === 'job_unknown' ? 'running' : undefined
+      const state = request.params.job_id === 'job_queued' ? 'queued' : request.params.job_id === 'job_failed' ? 'failed' : request.params.job_id === 'job_unknown' ? 'running' : request.params.job_id === 'job_dirty' ? 'succeeded' : undefined
       const result = request.params.visual_ref
         ? { job_id: 'job_secret', execution: { providerRequestId: 'provider_secret' }, images: [firstImage], image_urls: [firstImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, archiveState: 'archived', candidates } }
         : state
-          ? { job_id: request.params.job_id, job: { state, errorCode: state === 'failed' ? 'IMAGE_GENERATION_FAILED' : state === 'running' && request.params.job_id === 'job_unknown' ? 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' : undefined, reconciliationRequired: request.params.job_id === 'job_unknown', archiveState: 'pending', candidates } }
-          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', candidates } }
+          ? { job_id: request.params.job_id, job: { state, errorCode: state === 'failed' ? 'IMAGE_GENERATION_FAILED' : state === 'running' && request.params.job_id === 'job_unknown' ? 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' : undefined, reconciliationRequired: request.params.job_id === 'job_unknown', archiveState: request.params.job_id === 'job_dirty' ? 'archived' : 'pending', candidates } }
+          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, state: request.params.job_id === 'job_unarchived' ? undefined : 'succeeded', archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', candidates } }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -2806,16 +2947,21 @@ describe('Codex stdio MCP bridge', () => {
       expect(native.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(2)
       expect(JSON.stringify({ content: native.result.content.map((item: { type: string; text?: string }) => item.type === 'text' ? item : { type: item.type }), structuredContent: native.result.structuredContent })).not.toMatch(/selection_tickets|nonce_hash|intent_hash|a{64}|b{64}|c{64}|d{64}/u)
 
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_queued' } } })}\n`)
+      const queued = await nextLine(child.stdout)
+      expect(queued.result._meta['openai/toolInvocation/invoked']).toBe('正在准备主图候选')
+      expect(queued.result.structuredContent.candidate_state.state).toBe('queued')
+
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_dirty' } } })}\n`)
       const dirty = await nextLine(child.stdout)
       expect(dirty.result).toHaveProperty('structuredContent')
       expect(dirty.result.structuredContent).toEqual({
-        candidate_state: { state: 'processing', archive_state: 'archived', scan_status: 'processing', candidate_count: 0, presentation: 'component_progress', next_action: { type: 'wait', label: '系统自动继续', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
-        completed_summary: '主图候选仍在自动检查，通过后会继续，无需操作。',
+        candidate_state: { state: 'blocked', archive_state: 'archived', scan_status: 'blocked', candidate_count: 0, presentation: 'native_status', next_action: { type: 'none', label: '安全检查未通过', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
+        completed_summary: '图片候选已归档，但安全检查未通过，不能使用。请更换素材或联系平台核对。',
         expected_input: { kind: 'none', user_action_required: false },
-        poll_request: { job_id: 'job_dirty', max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 },
+        display_request: { job_id: 'job_dirty' },
       })
-      expect(dirty.result.content).toEqual([{ type: 'text', text: '主图候选仍在自动检查，通过后会继续，无需操作。' }])
+      expect(dirty.result.content).toEqual([{ type: 'text', text: '图片候选已归档，但安全检查未通过，不能使用。请更换素材或联系平台核对。' }])
       expect(JSON.stringify(dirty.result)).not.toMatch(/data:image|管理员|运营后台|context_bar|action_cards/iu)
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_unarchived' } } })}\n`)
@@ -3007,6 +3153,8 @@ describe('Codex stdio MCP bridge', () => {
       const html = read.result.contents[0].text as string
       expect(html).toContain("currentState==='queued'||currentState==='processing'||currentState==='unknown'&&payload.poll_request")
       expect(html).toContain("currentState==='unknown'?'图片结果正在确认':'图片正在准备'")
+      expect(html).toContain("currentState==='blocked'||currentState==='needs_review'")
+      expect(html).toContain("titleNode.textContent=currentState==='blocked'?'安全检查未通过':'授权状态待确认'")
     } finally {
       child.kill()
     }

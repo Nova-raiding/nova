@@ -158,4 +158,57 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     expect((await peer.claimPending(otherScope, { now: due, leaseMs: 60_000 })).map(item => item.id)).toEqual([other.id])
     await expect(repository.claimPending('')).rejects.toThrow('workspace scope is required')
   })
+
+  it('does not let legacy markPublished clear an active durable lease', async () => {
+    const scope = await workspace()
+    const event = await append(scope, 'mark_published_active', 'audit.retry.mark-published-active')
+    const [claim] = await repository.claimPending(scope, { leaseMs: 60_000, eventTypes: ['audit.retry.mark-published-active'] })
+    expect(claim?.leaseToken).toBeTruthy()
+
+    await expect(repository.markPublished(scope, event.id)).rejects.toMatchObject({ code: 'OUTBOX_EVENT_NOT_FOUND' })
+    await expect(repository.validateLease(scope, event.id, claim!.leaseToken!)).resolves.toMatchObject({ leaseToken: claim!.leaseToken })
+    await expect(repository.ack(scope, event.id, claim!.leaseToken)).resolves.toMatchObject({ publishedAt: expect.any(String) })
+  })
+
+  it('rejects an outcome whose valid lease expires while its row lock is blocked', async () => {
+    const scope = await workspace()
+    const event = await append(scope, 'lease_lock_wait', 'audit.retry.lease-lock-wait')
+    const [claim] = await repository.claimPending(scope, { leaseMs: 500, eventTypes: ['audit.retry.lease-lock-wait'] })
+    expect(claim?.leaseToken).toBeTruthy()
+
+    const blocker = await database!.connect()
+    let blockerInTransaction = false
+    let outcome: Promise<unknown> | undefined
+    try {
+      await blocker.query('BEGIN')
+      blockerInTransaction = true
+      await blocker.query("SELECT set_config('app.workspace_id',$1,true)", [scope])
+      const { rows } = await blocker.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')
+      const blockerPid = rows[0]!.pid
+      await blocker.query('SELECT id FROM outbox_events WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [scope, event.id])
+
+      outcome = repository.ack(scope, event.id, claim!.leaseToken)
+      const waitDeadline = Date.now() + 2_000
+      let updateIsBlocked = false
+      while (Date.now() < waitDeadline) {
+        const wait = await database!.query<{ waiting: boolean }>(`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity activity
+          WHERE activity.datname=current_database() AND activity.wait_event_type='Lock'
+            AND activity.query LIKE 'SELECT id FROM outbox_events%'
+            AND $1 = ANY(pg_blocking_pids(activity.pid))
+        ) AS waiting`, [blockerPid])
+        if (wait.rows[0]?.waiting) { updateIsBlocked = true; break }
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(updateIsBlocked).toBe(true)
+      await new Promise(resolve => setTimeout(resolve, 550))
+      await blocker.query('COMMIT')
+      blockerInTransaction = false
+      await expect(outcome).rejects.toMatchObject({ code: 'OUTBOX_EVENT_NOT_FOUND' })
+    } finally {
+      if (blockerInTransaction) await blocker.query('ROLLBACK')
+      blocker.release()
+      if (outcome) await outcome.catch(() => undefined)
+    }
+  })
 })

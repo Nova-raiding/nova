@@ -44,6 +44,7 @@ test('recycle bin retries failed reads and restores the selected server asset in
   await context.addCookies([{ name: 'recycle-auth-fixture', value: 'same-origin-session', domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }])
   const page = await context.newPage()
   let trashReads = 0
+  let failTrashRefresh = false
   const restoreRequests = []
   let trashRows = [{
     asset: {
@@ -92,6 +93,12 @@ test('recycle bin retries failed reads and restores the selected server asset in
           error: { code: 'FIXTURE_UNAVAILABLE', message: 'fixture read unavailable' },
         }) })
       }
+      if (failTrashRefresh && trashReads === 4) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
+          request_id: 'recycle-bin-refresh-failure',
+          error: { code: 'FIXTURE_UNAVAILABLE', message: 'fixture refresh unavailable' },
+        }) })
+      }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
         items: trashRows, total: trashRows.length, limit: 50, offset: 0,
       })) })
@@ -137,6 +144,18 @@ test('recycle bin retries failed reads and restores the selected server asset in
     await expect(row).toContainText('2026/10/8 删除')
     expect(trashReads).toBe(3)
 
+    failTrashRefresh = true
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(recycleBin.getByRole('alert')).toContainText('回收站刷新失败')
+    await expect(row).toBeVisible()
+    expect(trashReads).toBe(4)
+
+    failTrashRefresh = false
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(recycleBin.getByRole('alert')).toHaveCount(0)
+    await expect(row).toBeVisible()
+    expect(trashReads).toBe(5)
+
     const restoreButton = recycleBin.getByRole('button', { name: '恢复', exact: true })
     await expect(restoreButton).toBeDisabled()
     await row.getByRole('button', { name: '选择待恢复春季主图.png' }).click()
@@ -146,6 +165,7 @@ test('recycle bin retries failed reads and restores the selected server asset in
 
     await expect.poll(() => restoreRequests.length).toBe(1)
     expect(restoreRequests).toEqual([{ assetId, workspaceId, method: 'POST' }])
+    await expect.poll(() => trashReads).toBe(6)
     await expect(row).toHaveCount(0)
     await expect(recycleBin.getByText('回收站为空')).toBeVisible()
   } finally {

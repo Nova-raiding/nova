@@ -32,7 +32,7 @@ describe("Ops Overview page read-only journey", () => {
       const canReadModel = new URLSearchParams(location.search).get('modelRead') === 'true';
       const model = {
         authorization: { can: capability => capability === 'model.status.read' && canReadModel },
-        workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0 },
+        workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
         platformFinanceSummary: undefined,
         platformMonthlyFinanceSummary: undefined,
         platformMonthlyFinanceMonth: '2026年10月',
@@ -90,8 +90,10 @@ describe("Ops Overview page read-only journey", () => {
     try {
       await page.goto(`${baseUrl}/${harnessName}.html?modelRead=false`, { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.getByRole("region", { name: "平台运营数据" }).waitFor();
-      await expectMetric(page, "客户总数", "0");
-      await expectMetric(page, "有效客户数", "0");
+      await expectMetric(page, "已关联商家工作区", "0");
+      await expectMetric(page, "有活跃成员的工作区", "0");
+      expect(await page.getByRole("article", { name: "已关联商家工作区：0 个" }).count()).toBe(1);
+      expect(await page.getByRole("article", { name: "有活跃成员的工作区：0 个" }).count()).toBe(1);
       await expectMetric(page, "接入费总收入", "—");
       await expectMetric(page, "累计平台消耗金额", "—");
       await page.getByText("当前账号没有模型状态读取权限").waitFor();

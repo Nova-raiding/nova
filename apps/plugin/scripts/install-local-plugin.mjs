@@ -43,7 +43,12 @@ const pluginEntries = marketplace.plugins?.filter(entry => entry?.name === plugi
 if (pluginEntries.length !== 1 || pluginEntries[0].source?.source !== 'local' || typeof pluginEntries[0].source.path !== 'string') {
   throw new Error(`local marketplace must declare exactly one local source for ${plugin}`)
 }
-const marketplacePluginRoot = resolve(localSourceRoot, pluginEntries[0].source.path)
+const canonicalMarketplaceRoot = realpathSync(localSourceRoot)
+const marketplacePluginRoot = realpathSync(resolve(canonicalMarketplaceRoot, pluginEntries[0].source.path))
+const expectedMarketplacePluginRoot = resolve(canonicalMarketplaceRoot, 'plugins', plugin)
+if (marketplacePluginRoot !== expectedMarketplacePluginRoot) {
+  throw new Error(`local marketplace source for ${plugin} must resolve to ${expectedMarketplacePluginRoot}`)
+}
 
 function verifySameVersionRuntime(candidateRoot, label) {
   const candidateManifest = JSON.parse(readFileSync(resolve(candidateRoot, '.codex-plugin/plugin.json'), 'utf8'))
@@ -74,7 +79,7 @@ const installedRoot = resolve(args.get('installed') ?? resolve(codexHome, 'plugi
 if (existsSync(installedRoot)) verifySameVersionRuntime(installedRoot, `existing cache for immutable version ${version}`)
 
 const runCodex = commandArgs => spawnSync(codex, commandArgs, { encoding: 'utf8', timeout: 30_000 })
-const expectedMarketplaceRoot = realpathSync(localSourceRoot)
+const expectedMarketplaceRoot = canonicalMarketplaceRoot
 function inspectRegistration() {
   const result = runCodex(['plugin', 'marketplace', 'list', '--json'])
   if (result.error || result.status !== 0) {

@@ -51,9 +51,22 @@ export function TasksPage({ model }: TasksPageProps) {
     appliedQueryKey.current = queryKey;
     model.setQueueFilters(queueFilters);
     void model.load({ queueFilters });
+    // A store deep link is only meaningful when it resolves inside the
+    // current workspace's authorized directory. Remove rejected parameters
+    // from the address bar so a copied or refreshed URL does not keep
+    // promising a filter that was never applied. Preserve unrelated context.
+    if (hasStoreQuery && Object.keys(storeFilters).length === 0) {
+      params.delete("platform");
+      params.delete("accountId");
+      const query = params.toString();
+      const normalizedUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+      window.history.replaceState(window.history.state, "", normalizedUrl);
+      appliedQueryKey.current = `${scopeKey}|${query ? `?${query}` : ""}`;
+    }
   }, [model.authorization.scope, model.loading, model.opsSession?.workspace_id, model.queueFilters, model.setQueueFilters, model.load, model.storeDirectory]);
   const canReadPlatformTasks = model.authorization.can("workspace.directory.read");
   const canReadPlatformMarketing = model.authorization.can("marketing.summary.read");
+  const canReadMarketingQueue = model.authorization.can("marketing.queue.read");
   const canReadCustomerContent = model.authorization.canAny(["marketing.queue.read", "customer.content.read"]);
   const taskError = model.dataSetError(
     "ops.alerts.list",
@@ -130,8 +143,8 @@ export function TasksPage({ model }: TasksPageProps) {
             <span className="ops-tasks-section-description">先筛选范围，再处理任务或告警</span>
           </div>
           <div className="ops-tasks-filter-grid">
-            <MarketingQueueFiltersSection model={model} />
-            <AlertFiltersSection model={model} />
+            {canReadMarketingQueue ? <MarketingQueueFiltersSection model={model} /> : null}
+            {canReadPlatformMarketing ? <AlertFiltersSection model={model} /> : null}
           </div>
         </section>
 

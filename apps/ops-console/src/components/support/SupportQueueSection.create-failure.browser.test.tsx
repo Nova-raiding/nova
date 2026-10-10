@@ -31,13 +31,15 @@ describe("support ticket create failure feedback", () => {
         load(id: string) {
           if (id !== `\0${entryPath}`) return;
           return `
-            import React, { useState } from 'react';
+            import React, { useRef, useState } from 'react';
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { SupportQueueSection } from '/src/components/support/SupportQueueSection.tsx';
             function Harness() {
               const [attempts, setAttempts] = useState(0);
               const [mutating, setMutating] = useState(false);
+              const failNext = useRef(false);
+              window.__failNextSupportCreate = () => { failNext.current = true; };
               const model = {
                 workspaceId: 'ws_test', tickets: [], filters: { query: '' }, loading: false, loadingMore: false,
                 detailLoading: false, mutating, error: '', hasMore: false, setFilters: () => {}, reload: async () => {},
@@ -49,7 +51,7 @@ describe("support ticket create failure feedback", () => {
                   await new Promise(resolve => setTimeout(resolve, 300));
                   setMutating(false);
                   setAttempts(current => current + 1);
-                  if (attempts === 0) throw new Error('服务端拒绝创建工单');
+                  if (attempts === 0 || failNext.current) { failNext.current = false; throw new Error('服务端拒绝创建工单'); }
                 }, assign: async () => {}, transition: async () => {}, comment: async () => {},
                 reportLoading: false, loadReport: async () => {},
               };
@@ -133,14 +135,22 @@ describe("support ticket create failure feedback", () => {
       expect(await page.getByText("工单队列读取失败").count()).toBe(0);
       expect(await dialog.getByLabel("主题").inputValue()).toBe("支付未到账");
 
+      await page.evaluate(() => window.__failNextSupportCreate?.());
+      await dialog.getByRole("button", { name: "创建工单" }).click();
+      await expect.poll(() => alert.innerText()).toContain("服务端拒绝创建工单");
+      expect(await dialog.getByLabel("主题").inputValue()).toBe("支付未到账");
+
+      await dialog.getByLabel("主题").fill("支付回执已核对");
       await dialog.getByRole("button", { name: "创建工单" }).click();
       await dialog.waitFor({ state: "detached" });
-      expect(await page.getByTestId("attempts").textContent()).toBe("2");
+      expect(await page.getByTestId("attempts").textContent()).toBe("3");
       const payloads = await page.evaluate(() => window.__supportCreatePayloads?.map(({ subject, description, customerId, customerName, idempotencyKey }) => ({ subject, description, customerId, customerName, idempotencyKey })));
-      expect(payloads).toHaveLength(2);
+      expect(payloads).toHaveLength(3);
       expect(payloads?.[0]).toMatchObject({ subject: "支付未到账", description: "客户支付完成后账单仍未更新，需要检查回执状态。", customerId: "customer-1", customerName: "示例客户" });
       expect(payloads?.[1]).toMatchObject({ subject: "支付未到账", description: "客户支付完成后账单仍未更新，需要检查回执状态。", customerId: "customer-1", customerName: "示例客户" });
       expect(payloads?.[1]?.idempotencyKey).toBe(payloads?.[0]?.idempotencyKey);
+      expect(payloads?.[2]).toMatchObject({ subject: "支付回执已核对", description: "客户支付完成后账单仍未更新，需要检查回执状态。", customerId: "customer-1", customerName: "示例客户" });
+      expect(payloads?.[2]?.idempotencyKey).not.toBe(payloads?.[1]?.idempotencyKey);
       expect(fixtureModuleResponses).toHaveLength(1);
       expect(fixtureModuleResponses[0]?.status).toBe(200);
     } finally { await page.close(); }
@@ -150,6 +160,7 @@ describe("support ticket create failure feedback", () => {
 declare global {
   interface Window {
     __supportCreatePayloads?: Array<{ subject: string; description: string; customerId?: string; customerName?: string; idempotencyKey: string }>;
+    __failNextSupportCreate?: () => void;
     __supportCreateWindowErrors?: string[];
   }
 }

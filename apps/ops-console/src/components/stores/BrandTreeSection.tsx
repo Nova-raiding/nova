@@ -47,7 +47,9 @@ export function BrandTreeSection({ brands = [], canRead = true, canCreate = fals
   const bindStore = async (brand: BrandNavigationItem) => {
     if (bindingInFlight.current.has(brand.id)) return;
     const selected = selectedStores[brand.id];
-    const [platform, accountId] = selected?.split(":", 2) ?? [];
+    const separator = selected?.indexOf(":") ?? -1;
+    const platform = separator >= 0 ? selected?.slice(0, separator) : undefined;
+    const accountId = separator >= 0 ? selected?.slice(separator + 1) : undefined;
     if (!onBindStore || !platform || !accountId) {
       setBindingErrors((current) => ({ ...current, [brand.id]: "请选择一个真实可用的店铺" }));
       return;

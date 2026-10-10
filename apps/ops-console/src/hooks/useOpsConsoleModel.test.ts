@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { UNRESOLVED_WORKSPACE_DIRECTORY, automationPolicyUpdateParams, operationsAuditExportParams, operationsAuditExportPayload } from "./useOpsConsoleModel.js";
+import { describe, expect, it, vi } from "vitest";
+import { UNRESOLVED_WORKSPACE_DIRECTORY, automationPolicyUpdateParams, operationsAuditExportParams, operationsAuditExportPayload, revokeStoreAuthorization } from "./useOpsConsoleModel.js";
 import { validateMcpRequest } from "../../../../packages/contracts/src/mcp.js";
 
 const modelSource = () => readFile(new URL("./useOpsConsoleModel.ts", import.meta.url), "utf8");
@@ -109,5 +109,48 @@ describe("automation policy MCP request contract", () => {
     expect(result.valid).toBe(true);
     expect(params).toMatchObject({ platform: "taobao", account_id: "store-7", sync_enabled: "true", enabled: "true" });
     expect(params).not.toHaveProperty("workspace_id");
+  });
+});
+
+describe("store authorization revoke feedback", () => {
+  it("rechecks authorization and rejects before sending the revoke request", async () => {
+    const revoke = vi.fn(async () => undefined);
+
+    await expect(revokeStoreAuthorization({
+      canUpdate: false,
+      revoke,
+      onSuccess: vi.fn(),
+      refresh: vi.fn(async () => undefined),
+    })).rejects.toThrow("缺少平台运营权限");
+
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failed revoke so its confirmation dialog can keep the target for retry", async () => {
+    const refresh = vi.fn(async () => undefined);
+    const onSuccess = vi.fn();
+
+    await expect(revokeStoreAuthorization({
+      canUpdate: true,
+      revoke: async () => { throw new Error("revoke failed"); },
+      onSuccess,
+      refresh,
+    })).rejects.toThrow("revoke failed");
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not misreport a committed revoke when the follow-up refresh fails", async () => {
+    const onSuccess = vi.fn();
+
+    await expect(revokeStoreAuthorization({
+      canUpdate: true,
+      revoke: async () => undefined,
+      onSuccess,
+      refresh: async () => { throw new Error("refresh failed"); },
+    })).resolves.toBeUndefined();
+
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 });

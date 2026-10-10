@@ -109,4 +109,15 @@ describe("StoreDirectorySection", () => {
     expect(markup).not.toContain("暂无已登记店铺");
     expect(markup).not.toContain("尚未连接店铺不代表没有工作区权限");
   });
+
+  it("disables manual registration when no active workspace can be selected", () => {
+    const markup = render({
+      workspaces: [{ workspaceId: "ws_paused", enterpriseName: "暂停工作区", status: "suspended", planName: "基础版", monthlyPriceCny: 0, usedTasks: 0, includedTasks: 0, subscriptionStatus: "inactive", memberCount: 0 }],
+      onRegisterManualStore: vi.fn(async () => true),
+    });
+
+    expect(markup).toContain("没有可选的已启用商家工作区");
+    expect(markup).toContain("登记人工店铺");
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>[\s\S]*?登记人工店铺/u);
+  });
 });

@@ -2518,6 +2518,12 @@ describe('API HTTP vertical slice', () => {
       'publish.requested', 'publish.observation', 'publish.reconcile_requested',
     ]))
     expect((timeline.data as Array<{ event_type: string }>).filter(item => item.event_type === 'publish.reconcile_requested')).toHaveLength(2)
+    for (const query of ['?limit=0', '?limit=']) {
+      const invalidTimelineResponse = await fetch(`${base}/v1/tasks/${taskId}/timeline${query}`, { headers: { 'x-workspace-id': 'ws_demo' } })
+      const invalidTimeline = await invalidTimelineResponse.json() as { error?: { code?: string } }
+      expect(invalidTimelineResponse.status).toBe(400)
+      expect(invalidTimeline.error?.code).toBe('INVALID_REQUEST')
+    }
     const timelineDenied = await fetch(`${base}/v1/tasks/${taskId}/timeline`, { headers: { 'x-workspace-id': 'ws_other' } }).then(json)
     expect(timelineDenied.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
     expect(service.listPublishJobs('ws_demo')).toHaveLength(1)
@@ -2945,7 +2951,7 @@ describe('API HTTP vertical slice', () => {
 
   it('lists and reviews merchant registration applications over the platform HTTP boundary', async () => {
     vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'true')
-    const auth = new MemoryPasswordAuthRepository()
+    const auth = new MemoryPasswordAuthRepository(undefined, async workspaceId => workspaceId === 'ws_demo' ? 'active' : undefined)
     await auth.ensurePlatformAccount({ login: 'platform-registration-review@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
     setPasswordAuthRepositoryForTests(auth)
     const base = await start()

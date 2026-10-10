@@ -15,14 +15,14 @@ const extractedFacts = {
   ],
 }
 
-const envelope = (data) => ({
+const envelope = (data, error = null) => ({
   request_id: 'material-product-import-fixture',
   trace_id: 'material-product-import-fixture',
   workspace_id: workspaceId,
   data,
   warnings: [],
   next_actions: [],
-  error: null,
+  error,
 })
 
 test('spreadsheet import uploads a product table and carries its material ID through batch import', async () => {
@@ -57,6 +57,7 @@ test('spreadsheet import uploads a product table and carries its material ID thr
   const unexpectedRequests = []
   let trustedScanReceiptAvailable = false
   let parseCompleted = false
+  let failNextAssetListRead = false
   const uploadedAsset = {
     id: assetId, workspaceId, name: 'merchant-products.csv', mimeType: 'text/csv', sizeBytes: 86,
     sha256: 'a'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
@@ -112,10 +113,20 @@ test('spreadsheet import uploads a product table and carries its material ID thr
     requests.push({ path: '/api/v1/assets/upload', method: route.request().method(), contentType: route.request().headers()['content-type'], name: route.request().headers()['x-asset-name'] })
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(assetProjection())) })
   })
-  await page.route('**/v1/assets?*', route => route.fulfill({
-    contentType: 'application/json',
-    body: JSON.stringify(envelope({ items: [assetProjection()], total: 1, limit: 50, offset: 0 })),
-  }))
+  await page.route('**/v1/assets?*', route => {
+    if (failNextAssetListRead) {
+      failNextAssetListRead = false
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify(envelope(null, { code: 'TEMPORARY_UNAVAILABLE', message: '读取素材状态失败，请重试。' })),
+      })
+    }
+    return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(envelope({ items: [assetProjection()], total: 1, limit: 50, offset: 0 })),
+    })
+  })
   await page.route(`**/v1/assets/${assetId}/parse`, route => {
     requests.push({ path: `/api/v1/assets/${assetId}/parse`, method: route.request().method() })
     parseCompleted = true
@@ -155,6 +166,12 @@ test('spreadsheet import uploads a product table and carries its material ID thr
     await expect(importer.getByRole('alert')).toContainText('安全扫描凭据缺失或无效')
     expect(requests.filter(request => request.path.endsWith('/parse'))).toHaveLength(0)
 
+    failNextAssetListRead = true
+    await importer.getByRole('button', { name: '继续检查' }).click()
+    await expect(importer.getByRole('alert')).toContainText('读取素材状态失败，请重试')
+    await expect(importer.getByRole('button', { name: '继续检查' })).toBeEnabled()
+    expect(pageErrors).toEqual([])
+
     trustedScanReceiptAvailable = true
     await importer.getByRole('button', { name: '继续检查' }).click()
     await expect(importer.getByText('表格绑定素材商品', { exact: true })).toBeVisible()
@@ -185,7 +202,8 @@ test('spreadsheet import uploads a product table and carries its material ID thr
     expect(requests[4]).toMatchObject({ method: 'catalog.facts.confirm', params: { product_id: productId } })
     expect(unexpectedRequests).toEqual([])
     expect(pageErrors).toEqual([])
-    expect(consoleErrors).toEqual([])
+    expect(consoleErrors).toHaveLength(1)
+    expect(consoleErrors[0]).toMatch(/503/u)
   } finally {
     await context.close()
     await browser.close()
@@ -222,6 +240,7 @@ test('a partial product-fact confirmation failure can be retried without importi
   const unexpectedRequests = []
   const productIds = ['product_confirm_ok_fixture', 'product_confirm_retry_fixture']
   let batchImports = 0
+  let committedBatchWrites = 0
   let retryProductConfirmations = 0
   page.on('pageerror', error => pageErrors.push(error.stack || error.message))
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
@@ -275,6 +294,15 @@ test('a partial product-fact confirmation failure can be retried without importi
     if (rpc?.method === 'catalog.import.batch') {
       batchImports += 1
       requests.push({ method: rpc.method, params: rpc.params })
+      if (batchImports === 1) {
+        // Model the server committing the idempotent request while its first
+        // response is lost. The next identical key/payload replays the result.
+        committedBatchWrites += 1
+        return route.fulfill({ status: 504, contentType: 'application/json', body: JSON.stringify({
+          request_id: 'material-import-lost-response',
+          error: { code: 'UPSTREAM_TIMEOUT', message: '批量导入响应超时' },
+        }) })
+      }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result: { batchId: 'batch_confirm_retry_fixture', count: 2, products: productIds.map(id => ({ id })), factsConfirmationRequired: true } })) })
     }
     if (rpc?.method === 'catalog.facts.confirm') {
@@ -299,15 +327,27 @@ test('a partial product-fact confirmation failure can be retried without importi
     })
     await expect(importer.getByRole('button', { name: '确认并创建草稿' })).toBeVisible()
     await importer.getByRole('button', { name: '确认并创建草稿' }).click()
+    await expect(importer.getByRole('alert')).toContainText('批量导入结果尚未确认')
+    const safeReplay = importer.getByRole('button', { name: '使用原请求安全重试' })
+    await expect(safeReplay).toBeEnabled()
+    await expect(importer.getByLabel('仅草稿')).toBeDisabled()
+    await expect(importer.getByRole('button', { name: '重新开始' })).toBeDisabled()
+    await safeReplay.click()
     await expect(importer.getByRole('status')).toContainText('已创建 2 个商品；1 个商品事实尚未确认')
     const retry = importer.getByRole('button', { name: '重试确认 1 个商品事实' })
     await expect(retry).toBeEnabled()
     await retry.click()
     await expect(importer.getByRole('status')).toContainText('所有商品事实均已确认')
     await expect(importer.getByRole('button', { name: /重试确认/u })).toHaveCount(0)
-    expect(batchImports).toBe(1)
+    expect(batchImports).toBe(2)
+    expect(committedBatchWrites).toBe(1)
+    expect(requests.filter(request => request.method === 'catalog.import.batch')).toHaveLength(2)
+    expect(requests[0].params).toMatchObject({ idempotency_key: expect.any(String) })
+    expect(requests[1].params.idempotency_key).toBe(requests[0].params.idempotency_key)
+    expect(requests[1].params).toEqual(requests[0].params)
     expect(requests).toEqual([
-      { method: 'catalog.import.batch', params: expect.objectContaining({ source_asset_id: retryAsset.id, draft_only: 'true' }) },
+      { method: 'catalog.import.batch', params: expect.objectContaining({ source_asset_id: retryAsset.id, draft_only: 'true', idempotency_key: expect.any(String) }) },
+      { method: 'catalog.import.batch', params: requests[0].params },
       { method: 'catalog.facts.confirm', productId: productIds[0] },
       { method: 'catalog.facts.confirm', productId: productIds[1] },
       { method: 'catalog.facts.confirm', productId: productIds[1] },

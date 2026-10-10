@@ -246,6 +246,8 @@ describe("ops header logout failure feedback", () => {
       await page.goto(`${baseUrl}/__ops-header-test?unauth=1`);
       await page.getByRole("button", { name: "平台运营账号登录", exact: true }).first().click();
       const dialog = page.getByRole("dialog", { name: "平台运营账号登录" });
+      expect(await dialog.getByLabel("平台运营账号").getAttribute("aria-required")).toBe("true");
+      expect(await dialog.getByLabel("密码").getAttribute("aria-required")).toBe("true");
       await dialog.getByLabel("平台运营账号").fill("ops@example.com");
       await dialog.getByLabel("密码").fill("wrong-password");
       await page.locator(".ant-modal-footer .ant-btn-primary").click();

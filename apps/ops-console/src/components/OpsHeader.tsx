@@ -234,11 +234,11 @@ export function OpsHeader({
         <Space orientation="vertical" size="middle" className="full-width">
           <label className="ops-connection-field">
             <span>平台运营账号</span>
-            <Input autoComplete="username" value={platformLogin} onChange={(event) => setPlatformLogin(event.target.value)} placeholder="例如 ops@example.com" />
+            <Input autoComplete="username" required aria-required="true" value={platformLogin} onChange={(event) => setPlatformLogin(event.target.value)} placeholder="例如 ops@example.com" />
           </label>
           <label className="ops-connection-field">
             <span>密码</span>
-            <Input.Password autoComplete="current-password" value={platformPassword} onChange={(event) => setPlatformPassword(event.target.value)} />
+            <Input.Password autoComplete="current-password" required aria-required="true" value={platformPassword} onChange={(event) => setPlatformPassword(event.target.value)} />
           </label>
           <Typography.Text type="secondary">
             登录成功后服务端创建 HttpOnly 会话。退出登录会撤销当前会话，密码不会保存到浏览器。

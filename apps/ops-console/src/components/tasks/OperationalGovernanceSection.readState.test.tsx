@@ -55,10 +55,11 @@ describe("OperationalGovernanceSection read state", () => {
     expect(html).not.toContain("未读取");
   });
 
-  it("counts every queue list a landed read returned", () => {
+  it("counts each actionable queue row rendered by the task queue", () => {
     const html = queueHarness({
       queue: {
         ...EMPTY_QUEUE,
+        videoProviderJobs: [{ providerJobId: "v-1" }],
         batches: [
           { id: "b-1", itemCount: 3, state: "running", queuedCount: 2, failedCount: 1, updatedAt: "2026-09-20T00:00:00Z" },
         ],
@@ -69,10 +70,13 @@ describe("OperationalGovernanceSection read state", () => {
         publish: [
           { id: "p-1", platform: "jd", taskId: "t-1", state: "queued", revision: 1, createdAt: "2026-09-20T00:00:00Z" },
         ],
+        visuals: [{ visualRef: "visual-1" }],
+        imageExecutions: [{ jobId: "image-1" }],
+        uploadedAssetRisks: [{ id: "asset-1" }],
       } as unknown as OpsConsoleModel["marketingQueue"],
       loadedAt: new Date("2026-09-20T00:00:00Z"),
     });
-    expect(html).toContain("任务队列（4）");
+    expect(html).toContain("任务队列（8）");
     expect(marketingQueueCount(EMPTY_QUEUE)).toBe(0);
   });
 

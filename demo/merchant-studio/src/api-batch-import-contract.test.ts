@@ -13,7 +13,7 @@ describe('merchant spreadsheet batch import transport', () => {
       error: null,
     }), { status: 200, headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', fetch)
-    const input = { source_asset_id: 'asset_test', products_json: '[{"platform":"jd","title":"贵人鸟"}]', draft_only: 'true' as const }
+    const input = { source_asset_id: 'asset_test', products_json: '[{"platform":"jd","title":"贵人鸟"}]', draft_only: 'true' as const, idempotency_key: 'merchant-import-test-1' }
 
     await expect(catalogImportBatch('/api', input)).resolves.toMatchObject({
       products: [{ id: 'product_test' }], draft_only: true, knowledge: { indexState: 'queued', approvalStatus: 'pending' },

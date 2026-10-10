@@ -5,6 +5,7 @@ const workspaceId = 'ws_manual_store_registration_browser'
 const apiEnvelope = (data) => ({ request_id: 'manual-store-browser', trace_id: 'manual-store-browser', workspace_id: workspaceId, data, warnings: [], next_actions: [], error: null })
 
 test('商家可登记店铺识别资料，并清楚看到该记录仍未授权', async () => {
+  test.setTimeout(60_000)
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
@@ -12,6 +13,7 @@ test('商家可登记店铺识别资料，并清楚看到该记录仍未授权',
   const requests = []
   const unexpectedWrites = []
   const pageErrors = []
+  let failFirstPostRegistrationRead = true
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.route('**/api/**', async route => {
     const request = route.request()
@@ -44,7 +46,16 @@ test('商家可登记店铺识别资料，并清楚看到该记录仍未授权',
     else if (pathname === '/healthz') data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
     // Return a fresh API snapshot. Reusing this mutable fixture array would
     // let POST mutate the same React state reference and suppress the refresh.
-    else if (pathname === '/v1/platform-accounts' && request.method() === 'GET') data = { items: accounts.map(account => ({ ...account })) }
+    else if (pathname === '/v1/platform-accounts' && request.method() === 'GET') {
+      if (accounts.length && failFirstPostRegistrationRead) {
+        failFirstPostRegistrationRead = false
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
+          request_id: 'manual-store-readback-unavailable',
+          error: { code: 'TEMPORARY_UNAVAILABLE', message: '店铺列表暂时不可用' },
+        }) })
+      }
+      data = { items: accounts.map(account => ({ ...account })) }
+    }
     else if (pathname === '/v1/platform-accounts/taobao/manual-record' && request.method() === 'POST') {
       const body = request.postDataJSON()
       requests.push({ method: request.method(), pathname, body })
@@ -86,6 +97,11 @@ test('商家可登记店铺识别资料，并清楚看到该记录仍未授权',
     await expect(submit).toBeEnabled()
     await submit.click()
 
+    await expect(page.getByRole('alert')).toContainText('登记请求已成功返回，但店铺列表尚未核实')
+    await expect(submit).toBeDisabled()
+    const reconcile = page.getByRole('button', { name: '重新核对登记结果' })
+    await expect(reconcile).toBeEnabled()
+    await reconcile.click()
     await expect(page.locator('.ant-alert-success')).toContainText('人工登记（未授权）')
     await expect(page.getByRole('heading', { name: '本地验收旗舰店' })).toBeVisible()
     await expect(page.locator('.catalog-store-card')).toContainText('平台未授权；商品资料由工作区人工导入，不代表平台同步')

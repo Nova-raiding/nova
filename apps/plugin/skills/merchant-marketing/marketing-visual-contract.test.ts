@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const skillPath = new URL('./SKILL.md', import.meta.url)
 const bridgePath = new URL('../../mcp/bridge.mjs', import.meta.url)
+const mirrorSkillPath = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md')
 
 describe('merchant marketing visual and video contract', () => {
   it('routes detail page visuals and video requests by requested deliverable and live tool availability', async () => {
@@ -54,6 +55,22 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('仅在服务端明确启用演示未扫描策略时，独立候选才可使用 `unscanned` 素材，并须明确标注为“演示环境候选、尚未扫描”')
     expect(videoSkill).toContain('仅当 merchant-marketing 主技能已将当前请求路由为可审阅脚本/分镜文本')
     expect(storyboardSkill).toContain('For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text')
+  })
+
+  it('chooses create versus optimize from the requested edit, not from the mere presence of an upload', async () => {
+    const [skill, mirrorSkill] = await Promise.all([
+      readFile(skillPath, 'utf8'),
+      readFile(mirrorSkillPath, 'utf8'),
+    ])
+    const routeStart = skill.indexOf('**独立图片生成路由（强制）**')
+    const routeEnd = skill.indexOf('\n\n', routeStart)
+    const route = skill.slice(routeStart, routeEnd)
+
+    expect(mirrorSkill).toBe(skill)
+    expect(route).toContain('附件存在本身不决定生成模式')
+    expect(route).toContain('保留或编辑上传图中的现有画面时用 `mode=optimize`')
+    expect(route).toContain('以上传图作为商品参考并重新设计构图时用 `mode=create`')
+    expect(route).toContain('两种模式都必须传用户确认的商品 `title` 和真实 `asset_ids_json`')
   })
 
   it('keeps ecommerce image prompt recipes on the Store Nova relay and synchronized with the install mirror', async () => {

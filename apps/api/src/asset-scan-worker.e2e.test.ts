@@ -256,6 +256,12 @@ describe('automatic platform asset scanner boundary', () => {
     })
     expect(uploaded.error).toBeNull()
     expect(uploaded.data.result).toMatchObject({ scanStatus: 'quarantined', generationContinuation: { state: 'waiting_scan', jobId: expect.any(String) } })
+    // Upload persists a source asset and a continuation reservation only. It
+    // must never return a generated candidate/image before scan, rights, and
+    // the explicit continuation confirmation have completed.
+    expect(uploaded.data.result.images).toBeUndefined()
+    expect(uploaded.data.result.candidate_state).toBeUndefined()
+    expect(uploaded.data.result.image_urls).toBeUndefined()
     const asset = uploaded.data.result as { id: string; storageKey: string; sha256: string; sizeBytes: number; sourceRevision?: number; scanStatus: string; generationContinuation: { jobId: string } }
     const jobId = asset.generationContinuation.jobId
 

@@ -455,7 +455,7 @@ const METHODS = {
       type: 'object',
       properties: {
         requested_platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '用户在当前消息中明确指定的平台' },
-        requested_goal: { type: 'string', description: '用户在当前消息中明确提出的任务目标' },
+        requested_goal: boundedString(2_000, 1, '用户在当前消息中明确提出的任务目标'),
         // The wire-level integer string is the canonical form declared by
         // packages/contracts and is the only shape the API parses. A JSON
         // integer 0-20 is accepted as a documented alias; the bridge normalizes
@@ -1268,7 +1268,7 @@ const METHODS = {
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
-    inputSchema: { type: 'object', properties: { provider_job_id: { type: 'string' } }, required: ['provider_job_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { provider_job_id: { type: 'string', minLength: 1, description: '从 multimodal.video.request 返回的任务标识；查询或重试时原样复用' } }, required: ['provider_job_id'], additionalProperties: false },
   },
 }
 
@@ -1355,7 +1355,7 @@ function rawImageCandidateChoiceUiHtml() {
   var updateAction=function(){var inputs=Array.from(choices.querySelectorAll('input'));if(inputs.length&&availableInputs().length===0){button.dataset.mode='reload';button.textContent='重新读取图片';button.disabled=false;setStatus('所有候选图片都无法显示，请重新读取。',true);return}var persisted=String(selectionRequest().selected_visual_ref||'');if(!selected&&persisted){var savedIndex=(Array.isArray(selectionRequest().candidates)?selectionRequest().candidates:[]).findIndex(function(candidate){return String(candidate&&candidate.visual_ref||'')===persisted});var savedInput=inputs[savedIndex];if(savedInput&&!savedInput.disabled){savedInput.checked=true;selected=savedIndex+1}}var active=candidateFor(selected-1);var activeInput=inputs[selected-1];if(active&&persisted&&String(active.visual_ref||'')===persisted&&activeInput&&!activeInput.disabled){button.dataset.mode='select';button.textContent='已保存';button.disabled=true;setStatus('已保存为首选主图，尚未审核或发布',false);return}if(active&&!ticketFor(active.visual_ref)){button.dataset.mode='refresh';button.textContent='刷新候选';button.disabled=false;setStatus('当前确认已过期，请刷新候选后重试。',true);return}button.dataset.mode='select';button.textContent=currentImages.length===1?'使用这张主图':'使用所选主图';button.disabled=!selected||Boolean(activeInput&&activeInput.disabled)};
   var disableCandidate=function(input,label,title,image,ordinal,subject){input.checked=false;input.disabled=true;input.setAttribute('aria-disabled','true');input.setAttribute('aria-label','方案 '+String(ordinal)+'：'+subject+'，图片不可用');label.classList.add('failed');title.textContent='方案 '+String(ordinal)+' · 图片不可用';image.alt='方案 '+String(ordinal)+'：'+subject+'，图片不可用';if(selected===Number(input.value))selected=0;updateAction()};
   var clearPoll=function(reset){if(pollTimer!==null){clearTimeout(pollTimer);pollTimer=null}if(reset){pollAttempt=0;pollJobId=''}};
-  var render=function(value,responseMetadata){var priorRef=selectedRef();var payload=normalize(value,responseMetadata);currentPayload=payload;var images=Array.isArray(payload.image_urls)?payload.image_urls.filter(function(item){return typeof item==='string'&&(/^https:\/\//iu.test(item)||/^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(item))}):[];var fallbacks=Array.isArray(payload.image_fallbacks)?payload.image_fallbacks.filter(function(item){return typeof item==='string'&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)}):[];if(!images.length&&fallbacks.length)images=fallbacks.slice();choices.replaceChildren();selected=0;currentImages=images;button.disabled=true;button.hidden=false;fieldset.hidden=false;actions.hidden=false;button.dataset.mode='select';titleNode.textContent='选择一张作为主图';leadNode.textContent='候选均已归档并通过自动检查。保存首选不会审核或发布。';var request=selectionRequest();var candidates=Array.isArray(request.candidates)?request.candidates:[];var ready=currentState==='ready'&&images.length>0&&candidates.length>0;if(!ready){fieldset.hidden=true;if(currentState==='queued'||currentState==='processing'){button.hidden=true;titleNode.textContent='图片正在准备';leadNode.textContent=String(payload.completed_summary||'正在准备主图候选。');schedulePoll(payload);return}clearPoll(true);if(currentState==='failed'||currentState==='unknown'){var recovery=recoveryRequest();button.dataset.mode=currentState==='failed'?'regenerate':'query';button.textContent=currentState==='failed'?'回到对话重新生成':'查询图片结果';button.disabled=currentState==='unknown'&&!String(recovery.job_id||'');titleNode.textContent=currentState==='failed'?'本次生成未完成':'图片结果待确认';leadNode.textContent=String(payload.completed_summary||'可以安全恢复当前步骤。');setStatus(currentState==='failed'?'可以回到对话重新生成，不会继续读取失败任务。':'先查询最终结果，不会自动重复生成。',currentState==='failed')}else{button.hidden=true;titleNode.textContent='图片暂不可用';leadNode.textContent=String(payload.completed_summary||'请在对话中继续。');setStatus('请在对话中继续。',false)}return}clearPoll(true);images.forEach(function(src,index){var candidate=candidateFor(index);var label=document.createElement('label');label.className='choice';var input=document.createElement('input');input.type='radio';input.name='main-image';input.value=String(index+1);var ordinal=Number(candidate&&candidate.ordinal)||index+1;var subject=String(candidate&&candidate.subject_label||'商品主体');var availability=String(candidate&&candidate.availability_label||(candidate&&candidate.selectable===true?'可用':'不可用'));var alt='方案 '+String(ordinal)+'：'+subject+'，'+availability;input.setAttribute('aria-label',alt);var body=document.createElement('span');body.className='choice-body';var image=document.createElement('img');var fallback=fallbacks[index];var fallbackTried=src===fallback;image.src=src;image.alt=alt;image.loading='eager';image.decoding='async';image.referrerPolicy='no-referrer';var title=document.createElement('span');title.className='label';title.textContent='方案 '+String(ordinal)+' · '+availability;image.addEventListener('error',function(){if(!fallbackTried&&fallback&&image.src!==fallback){fallbackTried=true;image.src=fallback;return}disableCandidate(input,label,title,image,ordinal,subject)});body.append(image,title);input.disabled=!candidate||candidate.selectable!==true;input.setAttribute('aria-disabled',input.disabled?'true':'false');input.addEventListener('change',function(){selected=index+1;updateAction();setStatus(images.length===1?'已准备好，确认后保存。':'已选择方案 '+String(ordinal)+'。',false)});label.append(input,body);choices.appendChild(label);if(input.disabled){label.classList.add('failed');title.textContent='方案 '+String(ordinal)+' · 不可用';image.alt='方案 '+String(ordinal)+'：'+subject+'，不可用'}});var restoreRef=String(request.selected_visual_ref||priorRef||'');if(restoreRef){var restoreIndex=candidates.findIndex(function(candidate){return String(candidate&&candidate.visual_ref||'')===restoreRef});var restoreInput=Array.from(choices.querySelectorAll('input'))[restoreIndex];if(restoreInput&&!restoreInput.disabled){restoreInput.checked=true;selected=restoreIndex+1}}if(images.length===1){var only=choices.querySelector('input');if(only&&!only.disabled){only.checked=true;selected=1;titleNode.textContent='主图候选';setStatus('已准备好，确认后保存。',false)}}updateAction()};
+  var render=function(value,responseMetadata){var priorRef=selectedRef();var payload=normalize(value,responseMetadata);currentPayload=payload;var images=Array.isArray(payload.image_urls)?payload.image_urls.filter(function(item){return typeof item==='string'&&(/^https:\/\//iu.test(item)||/^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(item))}):[];var fallbacks=Array.isArray(payload.image_fallbacks)?payload.image_fallbacks.filter(function(item){return typeof item==='string'&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)}):[];if(!images.length&&fallbacks.length)images=fallbacks.slice();choices.replaceChildren();selected=0;currentImages=images;button.disabled=true;button.hidden=false;fieldset.hidden=false;actions.hidden=false;button.dataset.mode='select';titleNode.textContent='选择一张作为主图';leadNode.textContent='候选均已归档并通过自动检查。保存首选不会审核或发布。';var request=selectionRequest();var candidates=Array.isArray(request.candidates)?request.candidates:[];var ready=currentState==='ready'&&images.length>0&&candidates.length>0;if(!ready){fieldset.hidden=true;if(currentState==='queued'||currentState==='processing'){button.hidden=true;titleNode.textContent='图片正在准备';leadNode.textContent=String(payload.completed_summary||'正在准备主图候选。');schedulePoll(payload);return}clearPoll(true);if(currentState==='blocked'||currentState==='needs_review'){fieldset.hidden=true;actions.hidden=true;titleNode.textContent=currentState==='blocked'?'安全检查未通过':'授权状态待确认';leadNode.textContent=String(payload.completed_summary||'当前图片候选不可使用。');setStatus(currentState==='blocked'?'请更换素材或联系平台核对。':'请联系平台核对扫描与授权状态。',true);return}if(currentState==='failed'||currentState==='unknown'){var recovery=recoveryRequest();button.dataset.mode=currentState==='failed'?'regenerate':'query';button.textContent=currentState==='failed'?'回到对话重新生成':'查询图片结果';button.disabled=currentState==='unknown'&&!String(recovery.job_id||'');titleNode.textContent=currentState==='failed'?'本次生成未完成':'图片结果待确认';leadNode.textContent=String(payload.completed_summary||'可以安全恢复当前步骤。');setStatus(currentState==='failed'?'可以回到对话重新生成，不会继续读取失败任务。':'先查询最终结果，不会自动重复生成。',currentState==='failed')}else{button.hidden=true;titleNode.textContent='图片暂不可用';leadNode.textContent=String(payload.completed_summary||'请在对话中继续。');setStatus('请在对话中继续。',false)}return}clearPoll(true);images.forEach(function(src,index){var candidate=candidateFor(index);var label=document.createElement('label');label.className='choice';var input=document.createElement('input');input.type='radio';input.name='main-image';input.value=String(index+1);var ordinal=Number(candidate&&candidate.ordinal)||index+1;var subject=String(candidate&&candidate.subject_label||'商品主体');var availability=String(candidate&&candidate.availability_label||(candidate&&candidate.selectable===true?'可用':'不可用'));var alt='方案 '+String(ordinal)+'：'+subject+'，'+availability;input.setAttribute('aria-label',alt);var body=document.createElement('span');body.className='choice-body';var image=document.createElement('img');var fallback=fallbacks[index];var fallbackTried=src===fallback;image.src=src;image.alt=alt;image.loading='eager';image.decoding='async';image.referrerPolicy='no-referrer';var title=document.createElement('span');title.className='label';title.textContent='方案 '+String(ordinal)+' · '+availability;image.addEventListener('error',function(){if(!fallbackTried&&fallback&&image.src!==fallback){fallbackTried=true;image.src=fallback;return}disableCandidate(input,label,title,image,ordinal,subject)});body.append(image,title);input.disabled=!candidate||candidate.selectable!==true;input.setAttribute('aria-disabled',input.disabled?'true':'false');input.addEventListener('change',function(){selected=index+1;updateAction();setStatus(images.length===1?'已准备好，确认后保存。':'已选择方案 '+String(ordinal)+'。',false)});label.append(input,body);choices.appendChild(label);if(input.disabled){label.classList.add('failed');title.textContent='方案 '+String(ordinal)+' · 不可用';image.alt='方案 '+String(ordinal)+'：'+subject+'，不可用'}});var restoreRef=String(request.selected_visual_ref||priorRef||'');if(restoreRef){var restoreIndex=candidates.findIndex(function(candidate){return String(candidate&&candidate.visual_ref||'')===restoreRef});var restoreInput=Array.from(choices.querySelectorAll('input'))[restoreIndex];if(restoreInput&&!restoreInput.disabled){restoreInput.checked=true;selected=restoreIndex+1}}if(images.length===1){var only=choices.querySelector('input');if(only&&!only.disabled){only.checked=true;selected=1;titleNode.textContent='主图候选';setStatus('已准备好，确认后保存。',false)}}updateAction()};
   var schedulePoll=function(payload){var request=object(payload&&payload.poll_request)||{};var jobId=String(request.job_id||'');var maxAttempts=Math.min(5,Math.max(1,Number(request.max_attempts)||4));var initialDelay=Math.min(2000,Math.max(500,Number(request.initial_delay_ms)||750));var maxDelay=Math.min(5000,Math.max(initialDelay,Number(request.max_delay_ms)||4000));if(!jobId||!window.openai||typeof window.openai.callTool!=='function'){button.hidden=false;button.dataset.mode='query';button.textContent='再次查询';button.disabled=!jobId;setStatus('暂时无法自动查询，可手动再试。',true);return}if(pollJobId!==jobId){clearPoll(false);pollJobId=jobId;pollAttempt=0}if(pollAttempt>=maxAttempts){button.hidden=false;button.dataset.mode='query';button.textContent='再次查询';button.disabled=false;setStatus('自动查询已暂停，可手动再查一次。',false);return}var visibleAttempt=pollAttempt+1;var delay=Math.min(maxDelay,initialDelay*Math.pow(2,pollAttempt));setStatus('正在准备图片，自动查询 '+String(visibleAttempt)+'/'+String(maxAttempts)+'…',false);pollTimer=setTimeout(async function(){pollTimer=null;pollAttempt=visibleAttempt;setBusy(true);try{var response=await window.openai.callTool('catalog.image.get',{job_id:jobId});if(response&&response.isError)throw new Error('poll');render(response,null)}catch(error){button.hidden=false;button.dataset.mode='query';button.textContent='再次查询';button.disabled=false;setStatus('自动查询暂时失败，可手动再试。',true)}finally{setBusy(false)}},delay)};
   window.addEventListener('message',function(event){if(event.source!==window.parent)return;var message=event.data;if(!message||message.jsonrpc!=='2.0'||message.method!=='ui/notifications/tool-result')return;render(message.params||{},null)},{passive:true});var metadata=window.openai&&window.openai.toolResponseMetadata;var initial=window.openai&&window.openai.toolOutput;if(!initial&&metadata){initial=metadata.mcp_tool_result&&metadata.mcp_tool_result.structuredContent||metadata.call_tool_result&&metadata.call_tool_result.structuredContent}render({structuredContent:initial||{}},metadata||{});
   var responseCode=function(value){var envelope=object(value)||{};var structured=object(parse(envelope.structuredContent))||envelope;return String(structured.code||envelope.code||'').toUpperCase()};var errorKind=function(code){if(code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'||code==='INTERACTIVE_CONFIRMATION_INTENT_MISMATCH'||code.indexOf('CONFIRMATION_TICKET_EXPIRED')>=0||code.indexOf('TICKET_MISMATCH')>=0)return'confirmation_expired';if(code==='IMAGE_GENERATION_REVISION_CONFLICT'||code==='QUEUE_ASSIGNMENT_VERSION_CONFLICT')return'revision';if(code==='VISUAL_NOT_READY'||code==='VISUAL_NOT_FOUND'||code==='VISUAL_BLOCKED'||code==='VISUAL_SCAN_REQUIRED'||code==='VISUAL_SELECTION_SCOPE_MISMATCH')return'invalid';if(code.indexOf('UNKNOWN')>=0||code.indexOf('RECONCILIATION')>=0)return'unknown';return'unknown'};var markSelectedInvalid=function(){var inputs=Array.from(choices.querySelectorAll('input'));var input=inputs[selected-1];if(!input)return;input.disabled=true;input.setAttribute('aria-disabled','true');input.checked=true;var label=input.parentNode;if(label&&label.classList)label.classList.add('failed');var title=label&&label.querySelector?label.querySelector('.label'):null;if(title)title.textContent='当前方案已失效';button.dataset.mode='select';button.textContent='请选择其他候选';button.disabled=true};var runRefresh=async function(mode){var request=selectionRequest();var recovery=recoveryRequest();var poll=object(currentPayload.poll_request)||{};var jobId=String(request.job_id||recovery.job_id||poll.job_id||'');button.disabled=true;setStatus(mode==='query'?'正在查询图片结果…':'正在刷新候选…',false);try{var refreshed=await window.openai.callTool('catalog.image.get',{job_id:jobId});if(refreshed&&refreshed.isError)throw new Error('refresh');render(refreshed,null)}catch(error){button.dataset.mode=mode;button.textContent=mode==='query'?'再次查询':'刷新候选';button.disabled=false;setStatus(mode==='query'?'查询失败，请稍后再试。':'刷新失败，请稍后再试。',true)}};
@@ -1841,8 +1841,9 @@ function userFacingToolText(method, result) {
     const video = result.rendering && typeof result.rendering === 'object'
       ? { ...result, ...result.rendering }
       : result
-    if (video.status === 'queued') return '视频正在生成，无需重新提交。'
-    if (video.status === 'completed') {
+    const videoStatus = String(video.status ?? '').toLowerCase()
+    if (['queued', 'rendering', 'processing', 'running', 'pending', 'provider_reserved', 'provider_started'].includes(videoStatus)) return '视频正在生成，无需重新提交。'
+    if (videoStatus === 'completed' || videoStatus === 'complete' || videoStatus === 'succeeded') {
       const scanStatus = video.scanStatus ?? video.scan_status
       const assetId = video.assetId ?? video.asset_id
       const downloadPath = video.downloadPath ?? video.download_path
@@ -1985,6 +1986,7 @@ function userFacingErrorText(code, details) {
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认当前工作区的创意点余额，本次操作已停止；如果正在上传文件，不能将这次请求视为上传成功。请在 Store Nova 商家桌面的“财务与资源”核对套餐权益、订单与创意点到账状态；如页面仍显示未读取，请联系平台运营核对。待确认余额不会按 0 处理，也不能按套餐标称额度视为已到账。'
   if (code === 'MODEL_USAGE_COST_MISSING' || code === 'MODEL_USAGE_SETTLEMENT_PENDING') return '模型调用已发出，但用量成本尚未完成结算，结果暂不能交付。创意点可能仍处于预留状态；请在商家后台查看账务状态并联系平台运营对账，不要重复生成。'
+  if (code === 'VIDEO_PROVIDER_STATUS_FAILED') return '暂时无法读取视频任务状态，任务已保留。不要重新提交生成；请用本次相同的 provider_job_id 再调用 multimodal.video.get 查询。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
   if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return '旧版钱包充值已停用；请仅使用服务端返回的创意点包 SKU 恢复入口。'
@@ -2141,6 +2143,7 @@ function validateToolArguments(name, args) {
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
     if (hasJobId === hasVisualRef) return fail('job_id 和 visual_ref 必须且只能提供其中一个')
   }
+  if (name === 'multimodal.video.get' && !args.provider_job_id.trim()) return fail('provider_job_id 不能为空')
   if (name === 'catalog.image.generate') {
     const hasProduct = typeof args.product_id === 'string' && Boolean(args.product_id.trim())
     let hasAssetIds = false
@@ -3125,7 +3128,7 @@ function toolResultUiMetadata(name, result, selectionTickets = []) {
     ui: { resourceUri: IMAGE_CANDIDATE_CHOICE_UI_URI, prefersBorder: true },
     'openai/outputTemplate': IMAGE_CANDIDATE_CHOICE_UI_URI,
     'openai/widgetAccessible': true,
-    'openai/toolInvocation/invoked': '主图候选已准备',
+    'openai/toolInvocation/invoked': readyChoice ? '主图候选已准备' : '正在准备主图候选',
     'merchant/candidateImages': Array.isArray(result.image_urls) ? result.image_urls : [],
     ...(Array.isArray(result.images) && result.images.length ? { 'merchant/candidateImageFallbacks': result.images } : {}),
     ...(selectionTickets.length ? { 'merchant/candidateSelectionTickets': selectionTickets } : {}),
@@ -3239,6 +3242,7 @@ function idempotencyKey(method, params) {
 }
 
 function prepareToolArguments(method, params) {
+  if (method === 'multimodal.video.get') return { ...params, provider_job_id: params.provider_job_id.trim() }
   if (method === 'merchant.start') {
     const context = merchantStartContext(params)
     const normalized = {
@@ -3326,6 +3330,14 @@ function imagePollingMustStop(result) {
   const states = [result?.state, result?.status, result?.execution_state, result?.execution?.state,
     job.state, job.executionState, job.execution_state].map(value => String(value ?? '').toLowerCase())
   if (states.some(state => ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired', 'outcome_unknown'].includes(state))) return true
+  const terminal = states.some(state => ['succeeded', 'completed', 'complete', 'ready'].includes(state))
+  const candidates = Array.isArray(job.candidates) ? job.candidates : []
+  const archived = String(job.archiveState ?? job.archive_state ?? '').toLowerCase() === 'archived'
+  const terminalCandidateUnavailable = terminal && archived && candidates.length > 0 && candidates.some(candidate => {
+    const scan = String(candidate?.scanStatus ?? candidate?.scan_status ?? '').toLowerCase()
+    return ['blocked', 'quarantined', 'rejected', 'unscanned', 'pending', 'unknown'].includes(scan)
+  })
+  if (terminalCandidateUnavailable) return true
   // The API also marks queued/in-flight executions as reconciliation-required
   // until accounting is readable. That flag alone is not a terminal outcome.
   if (imageExecutionStillPending(result)) return false
@@ -3681,6 +3693,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
   ) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' || String(result.execution_state ?? '').toLowerCase() === 'outcome_unknown')
   const rawJobState = String(job.state ?? result.state ?? '').toLowerCase()
   const executionState = String(result.execution_state ?? job.executionState ?? job.execution_state ?? '').toLowerCase()
+  const terminalArchived = archived && (['succeeded', 'completed', 'complete', 'ready'].includes(rawJobState) || ['succeeded', 'completed', 'complete', 'ready'].includes(executionState)) && candidates.length > 0
+  const candidateScanStatuses = candidates.map(candidate => String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase())
+  const terminalBlockedScan = terminalArchived && candidateScanStatuses.some(status => ['blocked', 'quarantined', 'rejected'].includes(status))
+  const terminalNeedsReview = terminalArchived && !deliverable && !terminalBlockedScan
   const archivePendingAfterExecution = executionState === 'completed' && !deliverable
   const createdAtRaw = job.createdAt ?? job.created_at ?? result.created_at ?? result.createdAt
   const createdAtMs = typeof createdAtRaw === 'string' ? Date.parse(createdAtRaw) : Number.NaN
@@ -3692,6 +3708,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ? 'ready'
     : reconciliationRequired
       ? 'unknown'
+      : terminalBlockedScan
+        ? 'blocked'
+        : terminalNeedsReview
+          ? 'needs_review'
       : pollBudgetExceeded
         ? 'unknown'
       : archivePendingAfterExecution
@@ -3703,6 +3723,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
           : 'processing'
   const nextAction = demoUnscannedDelivery
     ? { type: 'none', label: '演示预览·未扫描', allowed: false }
+    : candidateLifecycle === 'blocked'
+      ? { type: 'none', label: '安全检查未通过', allowed: false }
+      : candidateLifecycle === 'needs_review'
+        ? { type: 'none', label: '授权或审核状态待确认', allowed: false }
     : candidateLifecycle === 'ready'
     ? { type: 'select', label: '选择主图', allowed: true }
     : candidateLifecycle === 'failed'
@@ -3735,7 +3759,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     candidate_state: {
       state: candidateLifecycle,
       archive_state: archived ? 'archived' : rawJobState === 'queued' ? 'pending' : 'processing',
-      scan_status: deliverable ? demoUnscannedDelivery ? 'unscanned' : 'clean' : rawJobState === 'queued' ? 'pending' : 'processing',
+      scan_status: deliverable ? demoUnscannedDelivery ? 'unscanned' : 'clean' : terminalBlockedScan ? 'blocked' : terminalNeedsReview ? candidateScanStatuses.find(Boolean) || 'unknown' : rawJobState === 'queued' ? 'pending' : 'processing',
       candidate_count: images.length,
       presentation: demoUnscannedDelivery ? 'native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
       next_action: nextAction,
@@ -3754,6 +3778,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         ? '主图候选已准备好。'
         : candidateLifecycle === 'failed'
           ? '本次主图生成未完成，可以回到对话重新生成。'
+          : candidateLifecycle === 'blocked'
+            ? '图片候选已归档，但安全检查未通过，不能使用。请更换素材或联系平台核对。'
+            : candidateLifecycle === 'needs_review'
+              ? '图片候选已归档，授权状态待确认；确认前不可使用。请联系平台核对。'
           : candidateLifecycle === 'unknown'
             ? pollBudgetExceeded
               ? '图片任务已超过 5 分钟仍未完成，系统已安全暂停自动等待；不会重复生成或重复扣费。'
@@ -3786,7 +3814,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         })).filter(candidate => Number.isSafeInteger(candidate.ordinal) && candidate.ordinal > 0 && candidate.visual_ref),
       },
     } : {}),
-    ...((candidateLifecycle === 'unknown' || demoUnscannedDelivery) && selectionJobId ? {
+    ...((candidateLifecycle === 'unknown' || candidateLifecycle === 'blocked' || candidateLifecycle === 'needs_review' || demoUnscannedDelivery) && selectionJobId ? {
       display_request: { job_id: selectionJobId },
     } : {}),
     ...(candidateLifecycle === 'failed' && selectionJobId ? {

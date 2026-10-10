@@ -401,7 +401,23 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
       try {
         const billingContext = await assertVideoProviderJobScope(workspaceId, providerJobId)
         const candidateStatus = billingContext.candidateOnly === true ? { candidate_only: true, publishable: false, candidate_status: '未绑定商品、仅候选、不可发布' } : {}
-        const observed = await videoGenerator.getStatus(providerJobId, billingContext)
+        let observed: Awaited<ReturnType<NonNullable<MultimodalMcpRuntime['videoGenerator']>['getStatus']>>
+        try {
+          observed = await videoGenerator.getStatus(providerJobId, billingContext)
+        } catch (error) {
+          // A provider adapter may use DomainError too; do not let its raw
+          // message/details bypass the redaction applied to ordinary errors.
+          // Keep recognized settlement errors intact for the outer handler,
+          // which persists definitive provider failures before returning them.
+          if (error instanceof DomainError && !modelSettlementDomainError(error)) {
+            throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', '视频中转状态暂时无法读取；任务已保留，请稍后调用 multimodal.video.get 查询，不要重新提交生成请求', 503, {
+              provider_job_id: providerJobId,
+              retryable: true,
+              next_action: 'multimodal.video.get',
+            })
+          }
+          throw error
+        }
         if (observed.settlementStatus !== 'settled') return result({ ...candidateStatus, provider_job_id: providerJobId, status: 'queued', settlement_status: 'pending_receipt', execution: executionContract('video', true) })
         try {
           const rendering = await archiveCompletedVideo(workspaceId, observed, billingContext)
@@ -426,15 +442,18 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
           throw error
         }
       } catch (error) {
-        if (error instanceof DomainError) throw error
+        const providerFailure = modelSettlementDomainError(error)
         const providerError = error as { code?: unknown; details?: unknown }
-        const details = providerError.details && typeof providerError.details === 'object' && !Array.isArray(providerError.details)
-          ? providerError.details as Record<string, unknown>
+        const safeDetails = providerFailure?.details
+        const details = safeDetails && typeof safeDetails === 'object' && !Array.isArray(safeDetails)
+          ? safeDetails as Record<string, unknown>
+          : providerError.details && typeof providerError.details === 'object' && !Array.isArray(providerError.details)
+            ? providerError.details as Record<string, unknown>
           : {}
         // Definitive provider rejection is terminal provider state. Persist it
         // before mapping the error so Ops can show the failure and its safe
         // retry instruction instead of leaving the job queued forever.
-        if (providerError.code === 'MODEL_PROVIDER_REQUEST_FAILED' && details.provider_outcome === 'failed') {
+        if ((providerFailure?.code ?? providerError.code) === 'MODEL_PROVIDER_REQUEST_FAILED' && details.provider_outcome === 'failed') {
           const eventSequence = nextEventSequence ? await nextEventSequence(workspaceId, `video_${providerJobId}`) : 1
           await persistEvent(workspaceId, `video_${providerJobId}`, 'multimodal.video_status_observed', eventSequence, {
             provider_job_id: providerJobId,
@@ -445,9 +464,16 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
             next_action: 'provider 已明确拒绝该视频任务；保留失败证据，请修正请求后使用新的幂等键重试',
           })
         }
-        const providerFailure = modelSettlementDomainError(error)
         if (providerFailure) throw providerFailure
-        throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', error instanceof Error ? error.message : '视频 provider 状态查询失败', 503)
+        if (error instanceof DomainError) throw error
+        // Provider exceptions can include relay URLs, request payload details, or
+        // credentials. Keep the public MCP contract stable and tell the caller
+        // which read-only action is safe while the provider status is unavailable.
+        throw new DomainError('VIDEO_PROVIDER_STATUS_FAILED', '视频中转状态暂时无法读取；任务已保留，请稍后调用 multimodal.video.get 查询，不要重新提交生成请求', 503, {
+          provider_job_id: providerJobId,
+          retryable: true,
+          next_action: 'multimodal.video.get',
+        })
       }
     }
   }

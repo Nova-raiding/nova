@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { MerchantAuthAccount } from './api.js'
-import { MemberRequestGate, memberActions, memberSessionScope } from './MerchantMembersPage.js'
+import { MemberRequestGate, memberActions, memberSessionScope, preferredInviteRole } from './MerchantMembersPage.js'
 import { merchantRouteFromLocation, urlForMerchantRoute } from './navigation.js'
 
 const membersPageSource = readFileSync(resolve(import.meta.dirname, 'MerchantMembersPage.tsx'), 'utf8')
@@ -24,6 +24,12 @@ describe('merchant members scope and governance', () => {
     expect(memberActions({ ...session, capabilities: ['workspace.member.read'] }, { ...member, governance: { canChangeTarget: true, canDeactivateTarget: true } })).toEqual({ changeRole: false, suspend: false, reactivate: false })
     expect(memberActions(session, { ...member, governance: { canChangeTarget: true, canDeactivateTarget: false } })).toEqual({ changeRole: true, suspend: false, reactivate: false })
     expect(memberActions(session, { ...member, status: 'suspended', governance: { canChangeTarget: true, canDeactivateTarget: false } })).toEqual({ changeRole: true, suspend: false, reactivate: true })
+  })
+
+  it('keeps the invitation role inside the server assignable-role set', () => {
+    expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'platform_ops'] }, 'operator')).toBe('finance')
+    expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'operator'] }, 'operator')).toBe('operator')
+    expect(preferredInviteRole({ ...session, assignable_roles: [] }, 'operator')).toBeNull()
   })
 
   it('keeps the rendered member list behind server read capability and workspace scope', () => {
@@ -61,8 +67,24 @@ describe('merchant members scope and governance', () => {
     expect(switchHandler).toContain('setPage(null)')
   })
 
+  it('clears prior member data and invite drafts when the selected workspace changes', () => {
+    const switchEffect = membersPageSource.match(/useEffect\(\(\) => \{([\s\S]*?)\}, \[load, selectedWorkspaceId\]\)/)?.[1] ?? ''
+    expect(switchEffect).toContain('setSession(null)')
+    expect(switchEffect).toContain('setPage(null)')
+    expect(switchEffect).toContain("setSubject('')")
+    expect(switchEffect).toContain("setDisplayName('')")
+    expect(switchEffect).toContain("setInviteReason('')")
+    expect(switchEffect).toContain('void load()')
+  })
+
   it('uses the parent workbench workspace for mutations after a global workspace switch', () => {
     expect(membersPageSource).toContain('selectedWorkspaceRef.current = selectedWorkspaceId')
-    expect(membersPageSource).toContain("useEffect(() => {\n    setAction(null)\n    setNotice('')\n  }, [selectedWorkspaceId])")
+    expect(membersPageSource).toContain('selectedWorkspaceRef.current !== targetWorkspaceId')
+  })
+
+  it('gives each member action a screen-reader label with the target identity', () => {
+    expect(membersPageSource).toContain('aria-label={`调整 ${member.displayName || member.externalSubject} 的角色`}')
+    expect(membersPageSource).toContain('aria-label={`停用 ${member.displayName || member.externalSubject}`}')
+    expect(membersPageSource).toContain('aria-label={`恢复 ${member.displayName || member.externalSubject}`}')
   })
 })

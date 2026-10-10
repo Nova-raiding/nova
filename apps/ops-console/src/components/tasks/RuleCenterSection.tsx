@@ -216,6 +216,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
   const [markdownImporting, setMarkdownImporting] = useState(false);
   const [markdownImportResult, setMarkdownImportResult] = useState<{ succeeded: number; failedCard?: string; reason?: string }>();
   const [activationTarget, setActivationTarget] = useState<Rule>();
+  const [statusConfirmation, statusConfirmationContextHolder] = Modal.useModal();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string; approvalToken: string }>();
   const unverifiedRules = rules.filter((rule) => !isTrustedPlatformRule(rule));
   const verifiedRules = rules.filter((rule) => !unverifiedRules.includes(rule));
@@ -246,6 +247,19 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     void activateRule().catch((cause: unknown) => {
       if (cause && typeof cause === "object" && "errorFields" in cause) return;
       message.error(cause instanceof Error ? cause.message : "规则激活表单提交失败，请重试");
+    });
+  };
+
+  const confirmRuleStatusChange = (row: Rule, status: "expired" | "inactive") => {
+    const action = status === "expired" ? "标记过期" : "停用";
+    const scope = row.scope === "platform" ? "所有商家" : "当前工作区";
+    statusConfirmation.confirm({
+      title: `确认${action}？`,
+      content: `将对${scope}应用“${row.name}”（${row.packId} · ${row.version}）的状态变更。确认前请核对规则及版本。`,
+      okText: `确认${action}`,
+      cancelText: "取消",
+      okButtonProps: status === "inactive" ? { danger: true } : undefined,
+      onOk: () => updateRuleStatus(row, status),
     });
   };
 
@@ -287,6 +301,8 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
   </Card>;
 
   return (
+    <>
+    {statusConfirmationContextHolder}
     <Card
       title="规则中心"
       extra={
@@ -375,7 +391,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
                   disabled={!canRules || Boolean(ruleMutationKey)}
                   loading={ruleMutationKey === `${row.id}:expired`}
                   type="link"
-                  onClick={() => void updateRuleStatus(row, "expired")}
+                  onClick={() => confirmRuleStatusChange(row, "expired")}
                 >
                   标记过期
                 </Button>
@@ -384,7 +400,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
                   loading={ruleMutationKey === `${row.id}:inactive`}
                   type="link"
                   danger
-                  onClick={() => void updateRuleStatus(row, "inactive")}
+                  onClick={() => confirmRuleStatusChange(row, "inactive")}
                 >
                   停用
                 </Button>
@@ -445,5 +461,6 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
         </Form>
       </Modal>
     </Card>
+    </>
   );
 }

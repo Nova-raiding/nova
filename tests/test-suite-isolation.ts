@@ -16,6 +16,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'apps/ops-console/src/navigation/OpsNavigation.browser.test.tsx',
   'apps/ops-console/src/pages/OverviewPage.browser.test.tsx',
   'apps/ops-console/src/components/OpsPageError.browser.test.tsx',
+  'apps/ops-console/src/components/rules/PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx',
   'apps/ops-console/src/pages/OpsConsoleController.identity-route.browser.test.tsx',
   'apps/ops-console/src/components/finance/RefundSection.validation.browser.test.tsx',
   'apps/ops-console/src/components/users/WorkspaceGovernanceSection.browser.test.tsx',
@@ -220,7 +221,7 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/commercial-zero-side-effect-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/outbox-lease-takeover.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
-  { file: 'tests/outbox-retry.postgres.test.ts', pending: 3, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'tests/outbox-retry.postgres.test.ts', pending: 5, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   // PLATFORM_MEDIA_SPEC_DATABASE_URL
   { file: 'packages/persistence/src/campaign-lifecycle.postgres.test.ts', pending: 1, binding: 'PLATFORM_MEDIA_SPEC_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/mapping-preflight-approval-repository.test.ts', pending: 1, binding: 'PLATFORM_MEDIA_SPEC_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

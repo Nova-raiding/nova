@@ -12,6 +12,7 @@ declare global {
     __financeExports?: number;
     __financeDownloads?: number;
     __financeDetailCalls?: number;
+    __financeTruncatedExport?: boolean;
     __failNextFinanceDetail?: boolean;
     __releaseFinanceExport?: () => void;
     __failReplacementSearch?: () => void;
@@ -62,12 +63,13 @@ describe("finance search stale snapshot protection", () => {
                 }
                 return { ...record, enterpriseName: '演示企业', attributes: {} };
               },
-              exportCsv: async () => { window.__financeExports++; return await new Promise(resolve => { window.__releaseFinanceExport = () => resolve({ csv: 'id\\nold-record', contentType: 'text/csv', fileName: 'finance.csv' }); }); },
+              exportCsv: async () => { window.__financeExports++; return await new Promise(resolve => { window.__releaseFinanceExport = () => resolve({ csv: 'id\\nold-record', contentType: 'text/csv', fileName: 'finance.csv', rowCount: window.__financeTruncatedExport ? 5000 : 1, truncated: window.__financeTruncatedExport ?? false, snapshotAt: '2026-08-29T00:00:00.000Z' }); }); },
             };
             window.__financeSearchCalls = [];
             window.__financeExports = 0;
             window.__financeDownloads = 0;
             window.__financeDetailCalls = 0;
+            window.__financeTruncatedExport = false;
             window.__failNextFinanceDetail = false;
             HTMLAnchorElement.prototype.click = function() { window.__financeDownloads++; };
             function Harness() {
@@ -157,6 +159,26 @@ describe("finance search stale snapshot protection", () => {
       await page.keyboard.press("Escape");
       await drawer.waitFor({ state: "hidden" });
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "查看 钱包流水 old-record 详情");
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("announces when the server truncates the exported finance snapshot", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(10_000);
+    try {
+      await page.goto(`${baseUrl}/__finance-stale-search`, { waitUntil: "commit", timeout: 60_000 });
+      await page.getByRole("button", { name: "读取旧筛选" }).click();
+      await page.getByText("old-record", { exact: true }).waitFor();
+      await page.evaluate(() => { window.__financeTruncatedExport = true; });
+      await page.getByRole("button", { name: "导出当前筛选" }).click();
+      await page.waitForFunction(() => typeof window.__releaseFinanceExport === "function");
+      await page.evaluate(() => window.__releaseFinanceExport?.());
+
+      const notice = page.getByRole("status").filter({ hasText: "财务导出已截断" });
+      await notice.waitFor({ state: "visible" });
+      expect(await notice.textContent()).toContain("前 5,000 条记录");
+      expect(await notice.textContent()).toContain("缩小筛选条件");
+      expect(await page.evaluate(() => window.__financeDownloads)).toBe(1);
     } finally { await page.close(); }
   }, 60_000);
 });

@@ -74,7 +74,7 @@ describe('PostgresOutboxRepository', () => {
   it('lists only pending events in deterministic order and marks publication idempotently', async () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_2' })); client.enqueue() // pending tx
-    client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_2', published_at: '2026-08-22T02:00:00.000Z' })); client.enqueue() // mark tx
+    client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_2' })); client.enqueue(row({ id: 'evt_2', published_at: '2026-08-22T02:00:00.000Z' })); client.enqueue() // mark tx: lock, update
     const repository = new PostgresOutboxRepository(new RecordingPool(client))
     expect(await repository.pending('ws_1', 25)).toHaveLength(1)
     const marked = await repository.markPublished('ws_1', 'evt_2', '2026-08-22T02:00:00.000Z')
@@ -82,7 +82,9 @@ describe('PostgresOutboxRepository', () => {
     const pending = client.calls.find(call => call.text.includes('published_at IS NULL'))
     expect(pending?.values).toEqual(['ws_1', 25])
     const update = client.calls.find(call => call.text.includes('UPDATE outbox_events'))
+    expect(update?.text).toContain('unknown_at IS NULL AND lease_token IS NULL AND lease_until IS NULL')
     expect(update?.values).toEqual(['ws_1', 'evt_2', '2026-08-22T02:00:00.000Z'])
+    expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_2'])
   })
 
   it('lists a tenant-scoped aggregate timeline including delivered and unknown events', async () => {
@@ -123,7 +125,7 @@ describe('PostgresOutboxRepository', () => {
 
   it('persists a terminal dead letter so it cannot be claimed again', async () => {
     const client = new RecordingClient()
-    client.enqueue(); client.enqueue(); client.enqueue(row({ published_at: null, attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false, terminal: true } })); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_1' })); client.enqueue(row({ published_at: null, attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false, terminal: true } })); client.enqueue()
     const module = await loadCurrentRepositoryModule()
     const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
     const failure = { code: 'GENERATION_JOB_TERMINAL', message: 'already failed', retryable: false, unknown: false }
@@ -138,7 +140,7 @@ describe('PostgresOutboxRepository', () => {
     const client = new RecordingClient()
     const leased = row({ lease_token: 'lease_1', lease_until: '2026-08-29T00:00:30.000Z' })
     client.enqueue(); client.enqueue(); client.enqueue(leased); client.enqueue()
-    client.enqueue(); client.enqueue(); client.enqueue({ ...leased, lease_until: '2026-08-29T00:01:00.000Z' }); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue(leased); client.enqueue({ ...leased, lease_until: '2026-08-29T00:01:00.000Z' }); client.enqueue()
     const module = await loadCurrentRepositoryModule()
     const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
     const now = '2026-08-29T00:00:00.000Z'
@@ -148,9 +150,11 @@ describe('PostgresOutboxRepository', () => {
 
     const validation = client.calls.find(call => call.text.includes('SELECT id, workspace_id') && call.text.includes('lease_until > GREATEST'))
     expect(validation?.values).toEqual(['ws_1', 'evt_1', 'lease_1', now])
+    expect(validation?.text).toContain('lease_until > GREATEST($4::timestamptz, clock_timestamp())')
     const renewal = client.calls.find(call => call.text.includes('SET lease_until = GREATEST'))
     expect(renewal?.values).toEqual(['ws_1', 'evt_1', 'lease_1', now, 60_000])
-    expect(renewal?.text).toContain('lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())')
+    expect(renewal?.text).toContain('lease_token = $3 AND lease_until > GREATEST($4::timestamptz, clock_timestamp())')
+    expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_1'])
   })
 
   it('counts a claim as an attempt so a crashed worker still spends its retry budget', async () => {
@@ -171,22 +175,44 @@ describe('PostgresOutboxRepository', () => {
   it('does not count an attempt twice when the outcome is recorded', async () => {
     const failure = { code: 'RATE_LIMITED', message: 'retry after backoff', retryable: true }
     const recorded = new RecordingClient()
-    recorded.enqueue(); recorded.enqueue(); recorded.enqueue(row({ attempts: 3 })); recorded.enqueue()
+    recorded.enqueue(); recorded.enqueue(); recorded.enqueue(row({ id: 'evt_1' })); recorded.enqueue(row({ attempts: 3 })); recorded.enqueue()
     await new PostgresOutboxRepository(new RecordingPool(recorded)).recordFailure('ws_1', 'evt_1', failure, '2026-08-29T00:01:00.000Z', 'lease_1')
     const retry = recorded.calls.find(call => call.text.includes('next_attempt_at = $4'))
     expect(retry?.text).not.toContain('attempts = attempts + 1')
 
     const dead = new RecordingClient()
-    dead.enqueue(); dead.enqueue(); dead.enqueue(row({ attempts: 3 })); dead.enqueue()
+    dead.enqueue(); dead.enqueue(); dead.enqueue(row({ id: 'evt_1' })); dead.enqueue(row({ attempts: 3 })); dead.enqueue()
     await new PostgresOutboxRepository(new RecordingPool(dead)).deadLetter('ws_1', 'evt_1', failure, 'lease_1')
     const terminal = dead.calls.find(call => call.text.includes('last_error = COALESCE'))
     expect(terminal?.text).not.toContain('attempts = attempts + 1')
 
     const unknown = new RecordingClient()
-    unknown.enqueue(); unknown.enqueue(); unknown.enqueue(row({ attempts: 3 })); unknown.enqueue()
+    unknown.enqueue(); unknown.enqueue(); unknown.enqueue(row({ id: 'evt_1' })); unknown.enqueue(row({ attempts: 3 })); unknown.enqueue()
     await new PostgresOutboxRepository(new RecordingPool(unknown)).markUnknown('ws_1', 'evt_1', { ...failure, unknown: true }, 'lease_1')
     const reconciliation = unknown.calls.find(call => call.text.includes('unknown_at = COALESCE'))
     expect(reconciliation?.text).not.toContain('attempts = attempts + 1')
+  })
+
+  it('fences un-tokened outcome writes to rows without an outstanding lease', async () => {
+    const failure = { code: 'RATE_LIMITED', message: 'retry', retryable: true, unknown: false }
+    const calls = [
+      async (repository: PostgresOutboxRepository) => repository.recordFailure('ws_1', 'evt_1', failure, '2026-08-29T00:01:00.000Z'),
+      async (repository: PostgresOutboxRepository) => repository.deadLetter('ws_1', 'evt_1', failure),
+      async (repository: PostgresOutboxRepository) => repository.markUnknown('ws_1', 'evt_1', { ...failure, unknown: true }),
+      async (repository: PostgresOutboxRepository) => repository.ack('ws_1', 'evt_1'),
+    ]
+
+    for (const invoke of calls) {
+      const client = new RecordingClient()
+      client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_1' })); client.enqueue(row()); client.enqueue()
+      await invoke(new PostgresOutboxRepository(new RecordingPool(client)))
+      const update = client.calls.find(call => call.text.includes('UPDATE outbox_events'))
+      expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_1'])
+      expect(update?.text).toContain('$3::text IS NULL AND lease_token IS NULL AND lease_until IS NULL')
+      expect(update?.text).toContain('$3::text IS NOT NULL AND lease_token = $3 AND lease_until > clock_timestamp()')
+      if (invoke === calls[2]) expect(update?.text).toContain('unknown_at IS NULL')
+      if (invoke === calls[3]) expect(update?.text).toContain('unknown_at IS NULL')
+    }
   })
 
   it('gives a claim back only for the current lease token and only when an attempt was counted', async () => {

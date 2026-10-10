@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type Locator, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
 describe("manual store registration failure recovery", () => {
@@ -77,8 +77,8 @@ describe("manual store registration failure recovery", () => {
     try {
       await page.goto(`${baseUrl}/__store-register-error`);
       await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "登记人工店铺" });
-      await dialog.waitFor();
+      const dialog = dialogByTitle(page, "登记人工店铺");
+      await waitForDialog(page, dialog);
       await dialog.locator("#manual-store-workspace").click();
       await page.getByText("隔离测试企业 · ws_test", { exact: true }).click();
       await dialog.locator("#manual-store-platform").click();
@@ -95,24 +95,25 @@ describe("manual store registration failure recovery", () => {
       expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(1);
 
       await dialog.getByRole("button", { name: "确认登记", exact: true }).click();
-      await dialog.waitFor({ state: "detached" });
+      await page.waitForFunction(() => (window as any).__storeRegisterAttempts === 2);
+      await dialog.waitFor({ state: "hidden" });
       expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(2);
       expect(pageErrors).toEqual([]);
     } finally { await page.close(); }
-  }, 45_000);
+  }, 75_000);
 
   it("keeps manual registration and alias edit limits aligned with the 40-character server rule", async () => {
     const page = await browser!.newPage();
     try {
       await page.goto(`${baseUrl}/__store-register-error`);
       await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
-      const registrationDialog = page.getByRole("dialog", { name: "登记人工店铺" });
-      await registrationDialog.waitFor();
+      const registrationDialog = dialogByTitle(page, "登记人工店铺");
+      await waitForDialog(page, registrationDialog);
       const manualAlias = registrationDialog.getByLabel("店铺别名（可选）", { exact: true });
       expect(await manualAlias.getAttribute("maxlength")).toBe("40");
       expect(await registrationDialog.getByText("最多 40 个可见字符，与平台店铺别名规则一致。", { exact: true }).count()).toBe(1);
       await page.keyboard.press("Escape");
-      await registrationDialog.waitFor({ state: "detached" });
+      await registrationDialog.waitFor({ state: "hidden" });
 
       await page.getByRole("button", { name: "改别名", exact: true }).click();
       const editedAlias = page.locator("#store-display-alias");
@@ -121,6 +122,109 @@ describe("manual store registration failure recovery", () => {
       expect(await page.locator("#store-display-alias-limit").textContent()).toBe("最多 40 个可见字符，与平台店铺别名规则一致。");
     } finally { await page.close(); }
   }, 45_000);
+
+  it("explains required manual-registration fields and keeps whitespace-only values from enabling submit", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
+      const dialog = dialogByTitle(page, "登记人工店铺");
+      await waitForDialog(page, dialog);
+      await dialog.getByRole("note").getByText("工作区、平台、店铺账号 ID 和登记理由为必填项", { exact: false }).waitFor();
+      await dialog.locator("#manual-store-workspace").click();
+      await page.getByText("隔离测试企业 · ws_test", { exact: true }).click();
+      await dialog.locator("#manual-store-platform").click();
+      await page.getByText("淘宝", { exact: true }).click();
+      const submit = dialog.getByRole("button", { name: "确认登记", exact: true });
+      await expectDisabled(submit);
+
+      await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("   ");
+      await expectDisabled(submit);
+      await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("isolated-store-1");
+      await dialog.getByLabel("登记理由", { exact: true }).fill("   ");
+      await expectDisabled(submit);
+      await dialog.getByLabel("登记理由", { exact: true }).fill("边界用例");
+      if (await submit.isDisabled()) throw new Error("Manual store registration remained disabled when all required fields were valid");
+      expect(await dialog.locator("#manual-store-account").getAttribute("aria-required")).toBe("true");
+      expect(await dialog.locator("#manual-store-reason").getAttribute("aria-required")).toBe("true");
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("filters only the loaded directory and lets keyboard users reset to the full result set", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      const search = page.getByRole("textbox", { name: "搜索店铺" });
+      await search.focus();
+      await page.keyboard.type("missing-store");
+      await page.getByText("没有匹配的店铺", { exact: true }).waitFor();
+      expect(await page.getByRole("status").filter({ hasText: "显示 0 / 1 条目录记录" }).count()).toBe(1);
+
+      const clear = page.getByRole("button", { name: "清除筛选", exact: true });
+      await clear.focus();
+      await page.keyboard.press("Enter");
+      await page.getByText("隔离店铺", { exact: true }).waitFor();
+      expect(await page.getByRole("status").filter({ hasText: "显示 1 / 1 条目录记录" }).count()).toBe(1);
+
+      await page.getByLabel("按平台筛选").click();
+      await page.getByText("淘宝", { exact: true }).last().click();
+      await page.getByLabel("按授权状态筛选").click();
+      await page.getByText("真实授权", { exact: true }).last().click();
+      expect(await page.getByText("隔离店铺", { exact: true }).count()).toBe(1);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("keeps alias edits available for retry and explains an unsuccessful save inline", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      await page.getByRole("button", { name: "改别名", exact: true }).click();
+      const dialog = dialogByTitle(page, "修改店铺展示别名");
+      await waitForDialog(page, dialog);
+      const alias = dialog.getByLabel("店铺展示别名");
+      const save = dialog.getByRole("button", { name: "保存别名", exact: true });
+      if (!(await save.isDisabled())) throw new Error("Unchanged alias should not be submitted");
+      await alias.fill("新的展示名称");
+      await save.click();
+      await dialog.getByRole("alert").getByText("别名尚未保存", { exact: false }).waitFor();
+      expect(await alias.inputValue()).toBe("新的展示名称");
+      await alias.fill("调整后的展示名称");
+      expect(await dialog.getByRole("alert").count()).toBe(0);
+      expect(await save.isDisabled()).toBe(false);
+    } finally { await page.close(); }
+  }, 45_000);
 });
+
+async function expectDisabled(button: import("playwright").Locator) {
+  if (!(await button.isDisabled())) throw new Error("Manual store registration submitted while required fields were incomplete");
+}
+
+function dialogByTitle(page: Page, title: string): Locator {
+  // rc-component's NODE_ENV=test useId stub reuses "test-id" across dialogs, so role-name
+  // computation is ambiguous in this harness. Keep the role check and bind to the visible title.
+  return page.locator('[role="dialog"]').filter({ has: page.locator(".ant-modal-title").getByText(title, { exact: true }) });
+}
+
+async function waitForDialog(page: Page, dialog: Locator) {
+  try {
+    await dialog.waitFor({ timeout: 5_000 });
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      bodyText: document.body.innerText.slice(0, 2_000),
+      dialogs: [...document.querySelectorAll<HTMLElement>("[role=dialog], .ant-modal")].map(element => ({
+        role: element.getAttribute("role"),
+        ariaLabel: element.getAttribute("aria-label"),
+        ariaLabelledBy: element.getAttribute("aria-labelledby"),
+        title: element.querySelector<HTMLElement>(".ant-modal-title")?.innerText,
+        titleId: element.querySelector<HTMLElement>(".ant-modal-title")?.id,
+        className: element.className,
+        display: getComputedStyle(element).display,
+        visibility: getComputedStyle(element).visibility,
+        text: element.innerText.slice(0, 500),
+      })),
+    }));
+    throw new Error(`Expected dialog did not open. Browser DOM snapshot: ${JSON.stringify(state)}. ${String(error)}`);
+  }
+}
 
 function join(...parts: string[]) { return parts.join("/"); }

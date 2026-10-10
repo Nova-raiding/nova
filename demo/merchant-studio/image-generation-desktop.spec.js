@@ -236,6 +236,7 @@ test('surfaces a failed job and exposes only the safe retry recovery', async () 
     await expect(retry).toBeVisible()
     await retry.focus()
     await page.keyboard.press('Enter')
+    await expect.poll(() => retryRequests.length, 'safe retry must reach the MCP fixture once').toBe(1)
     const retryError = page.locator('#image-job-retry-error')
     await expect(retryError).toContainText('安全重试结果未确认')
     await expect(retryError).toContainText('服务端没有返回确认')
@@ -369,6 +370,20 @@ test('switching deep-linked image jobs drops old candidates and ignores the late
     await page.waitForTimeout(1_000)
     await expect(page.getByText(/任务 job_image_b · 商品 product_b/)).toBeVisible()
     await expect(page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })).not.toBeChecked()
+  } finally {
+    await context.close(); await browser.close()
+  }
+})
+
+test('returning from an image job keeps unrelated route context and clears only the image-job deep link', async () => {
+  const detail = baseJob({ outputs: [output()], images: ['data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>'] })
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix&workspace_hint=keep-me', { detail })
+  try {
+    await expect(page.getByText(/任务 job_image_matrix · 商品 product_1/)).toBeVisible()
+    await page.locator('.task-breadcrumb').getByRole('button', { name: '营销任务' }).click()
+    await expect(page).toHaveURL(/\/merchant\/tasks\?workspace_hint=keep-me$/u)
+    await expect(page.locator('.image-generation-discovery')).toBeVisible()
+    await expect(page.locator('.image-generation-job-panel')).toHaveCount(0)
   } finally {
     await context.close(); await browser.close()
   }

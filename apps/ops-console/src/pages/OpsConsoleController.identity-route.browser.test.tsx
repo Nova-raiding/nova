@@ -74,7 +74,7 @@ describe("Ops controller identity route authorization", () => {
     page.on("requestfailed", request => browserErrors.push(`requestfailed ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`));
     page.on("response", response => {
       if (response.headers()["content-type"]?.includes("application/json") && response.url().includes("127.0.0.1")) {
-        void response.text().then(body => jsonModuleResponses.push(`${response.status()} ${response.url()}: ${body.slice(0, 800)}`));
+        void response.text().then(body => jsonModuleResponses.push(`${response.status()} ${response.url()}: ${body.slice(0, 800)}`)).catch(() => undefined);
       }
     });
     try {
@@ -138,7 +138,11 @@ describe("Ops controller identity route authorization", () => {
     } finally { await page.close(); }
   }, 60_000);
 
-  it("explains that Members is unavailable in the platform workbench and returns to an accessible route", async () => {
+  it.each([
+    { routeDomain: "members", navLabel: "成员管理" },
+    { routeDomain: "tasks", navLabel: "任务中心" },
+    { routeDomain: "knowledge", navLabel: "知识治理" },
+  ])("explains that $routeDomain is unavailable in the platform workbench and returns to an accessible route", async ({ routeDomain, navLabel }) => {
     if (!browser) throw new Error("Browser did not start");
     const page = await browser.newPage();
     page.setDefaultTimeout(30_000);
@@ -170,15 +174,13 @@ describe("Ops controller identity route authorization", () => {
         } : null;
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
       });
-      await page.goto(`${baseUrl}/${harnessName}.html?route=members`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${baseUrl}/${harnessName}.html?route=${routeDomain}`, { waitUntil: "domcontentloaded" });
       const blocked = page.getByRole("status").filter({ hasText: "此页面需要商家工作区权限" });
       await blocked.waitFor({ state: "visible" });
-      await expectEventually(() => page.url().includes("/ops/members?workbench=platform"));
+      await expectEventually(() => page.url().includes(`/ops/${routeDomain}?workbench=platform`));
       await blocked.getByText("平台运营控制台不提供该页面").waitFor();
       expect(await blocked.getByRole("button", { name: "返回总览" }).count()).toBe(1);
-      for (const label of ["成员管理", "任务中心", "知识治理"]) {
-        expect(await page.getByRole("button", { name: label, exact: true }).count()).toBe(0);
-      }
+      expect(await page.getByRole("button", { name: navLabel, exact: true }).count()).toBe(0);
       expect(rpcMethods).toEqual(["ops.session"]);
       await blocked.getByRole("button", { name: "返回总览" }).click();
       await page.getByText("当前账号没有模型状态读取权限").waitFor();

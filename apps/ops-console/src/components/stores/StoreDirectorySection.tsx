@@ -45,6 +45,7 @@ export function StoreDirectorySection({
 }: StoreDirectorySectionProps) {
   const [aliasTarget, setAliasTarget] = useState<StoreDirectory>();
   const [alias, setAlias] = useState("");
+  const [aliasError, setAliasError] = useState("");
   const [savingAlias, setSavingAlias] = useState(false);
   const [revokingKey, setRevokingKey] = useState<string>();
   const [revokeTarget, setRevokeTarget] = useState<StoreDirectory>();
@@ -58,14 +59,22 @@ export function StoreDirectorySection({
   const [manualReason, setManualReason] = useState("");
   const [manualStoreError, setManualStoreError] = useState("");
   const [manualStoreBoundaryApplicable, setManualStoreBoundaryApplicable] = useState<boolean>();
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [platformFilter, setPlatformFilter] = useState("");
+  const [authorizationFilter, setAuthorizationFilter] = useState("");
+  const [directoryPage, setDirectoryPage] = useState(1);
   const errorRef = useRef<HTMLDivElement>(null);
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
     if (!aliasTarget || alias.trim().length < 1) return;
     setSavingAlias(true);
+    setAliasError("");
     try {
       const saved = await onSaveAlias(aliasTarget, alias);
-      if (saved) { setAliasTarget(undefined); setAlias(""); }
+      if (saved) { setAliasTarget(undefined); setAlias(""); setAliasError(""); }
+      else setAliasError("别名尚未保存；请检查权限、名称是否变更或网络后重试。");
+    } catch (error) {
+      setAliasError(error instanceof Error && error.message.trim() ? error.message : "别名尚未保存，请检查权限或网络后重试。");
     } finally {
       setSavingAlias(false);
     }
@@ -88,6 +97,22 @@ export function StoreDirectorySection({
     }
   };
   const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
+  const authorizationFilterLabel = (row: StoreDirectory) => row.authorization?.reauthorizationRequired
+    ? "需重新授权"
+    : row.dataMode === "fixture"
+      ? "演示授权"
+      : storeAuthorizationStateLabel(row.state);
+  const visibleStores = storeDirectory.filter((row) => {
+    const query = directorySearch.trim().toLocaleLowerCase();
+    const matchesSearch = !query || [row.label, ...(row.aggregate === true ? [] : [row.accountId]), row.platform, row.alias ?? ""]
+      .some((value) => value.toLocaleLowerCase().includes(query));
+    return matchesSearch
+      && (!platformFilter || row.platform === platformFilter)
+      && (!authorizationFilter || authorizationFilterLabel(row) === authorizationFilter);
+  });
+  const authorizationOptions = [...new Set(storeDirectory.map(authorizationFilterLabel))];
+  const filtersActive = Boolean(directorySearch.trim() || platformFilter || authorizationFilter);
+  const activeWorkspaces = workspaces.filter((item) => item.status === "active");
   const representedStoreCount = storeDirectory.reduce((total, store) => total + (store.aggregate === true && Number.isSafeInteger(store.count) && (store.count ?? 0) >= 0 ? store.count! : 1), 0);
   const resetManualForm = () => {
     setRegisterOpen(false); setManualWorkspaceId(""); setManualPlatform(undefined);
@@ -111,6 +136,10 @@ export function StoreDirectorySection({
     if (error) errorRef.current?.focus({ preventScroll: true });
   }, [error]);
 
+  useEffect(() => {
+    setDirectoryPage(1);
+  }, [storeDirectory]);
+
   return (
     <Card
       id="ops-domain-stores"
@@ -118,20 +147,59 @@ export function StoreDirectorySection({
       title="平台连接与授权健康"
       extra={
         <Space>
-          {canPlatformOps && onRegisterManualStore ? <Button type="primary" onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button> : null}
+          {canPlatformOps && onRegisterManualStore ? <>
+            <Button type="primary" disabled={activeWorkspaces.length === 0} onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button>
+            {activeWorkspaces.length === 0 ? <Typography.Text type="secondary">没有可选的已启用商家工作区；请检查工作区目录权限或刷新后重试。</Typography.Text> : null}
+          </> : null}
           <Tag color={representedStoreCount ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${representedStoreCount} 个已登记店铺`}</Tag>
         </Space>
       }
     >
+      <Space wrap style={{ marginBlock: 16 }} role="group" aria-label="店铺目录筛选">
+        <Input
+          aria-label="搜索店铺"
+          placeholder="搜索店铺名称、账号 ID 或平台"
+          value={directorySearch}
+          onChange={(event) => { setDirectoryPage(1); setDirectorySearch(event.target.value); }}
+          allowClear
+        />
+        <Select
+          aria-label="按平台筛选"
+          value={platformFilter || undefined}
+          onChange={(value) => { setDirectoryPage(1); setPlatformFilter(value); }}
+          placeholder="全部平台"
+          allowClear
+          options={[...new Set(storeDirectory.map((store) => store.platform))].map((platform) => ({ value: platform, label: platformLabels[platform] ?? platform }))}
+        />
+        <Select
+          aria-label="按授权状态筛选"
+          value={authorizationFilter || undefined}
+          onChange={(value) => { setDirectoryPage(1); setAuthorizationFilter(value); }}
+          placeholder="全部授权状态"
+          allowClear
+          options={authorizationOptions.map((label) => ({ value: label, label }))}
+        />
+        <Button
+          htmlType="button"
+          disabled={!filtersActive}
+          onClick={() => { setDirectoryPage(1); setDirectorySearch(""); setPlatformFilter(""); setAuthorizationFilter(""); }}
+        >清除筛选</Button>
+        <Typography.Text role="status" aria-live="polite">显示 {visibleStores.length} / {storeDirectory.length} 条目录记录</Typography.Text>
+      </Space>
       <Table
         rowKey={(row: StoreDirectory) => row.aggregate === true
           ? `summary:${row.platform}:${row.state}:${row.dataMode}:${Number(row.readable)}:${Number(row.writeEnabled)}`
           : `${row.platform}:${row.accountId}`}
-        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => storeDirectory.some((store) => store.aggregate === true) ? `共 ${total} 个平台汇总组` : `共 ${total} 条` }}
+        pagination={{ current: directoryPage, onChange: (page) => setDirectoryPage(page), pageSize: 20, showSizeChanger: false, showTotal: (total) => visibleStores.some((store) => store.aggregate === true) ? `共 ${total} 个平台汇总组` : `共 ${total} 条` }}
         loading={loading}
-        dataSource={storeDirectory}
+        dataSource={visibleStores}
         locale={{
-          emptyText: loading ? "正在读取店铺目录…" : initialLoadFailed ? "尚未取得店铺目录；请先检查网络或工作区权限。" : (
+          emptyText: loading ? "正在读取店铺目录…" : filtersActive && storeDirectory.length > 0 ? (
+            <Space orientation="vertical" size={4}>
+              <Typography.Text>没有匹配的店铺</Typography.Text>
+              <Typography.Text type="secondary">请调整搜索词或筛选条件。</Typography.Text>
+            </Space>
+          ) : initialLoadFailed ? "尚未取得店铺目录；请先检查网络或工作区权限。" : (
             <Space orientation="vertical" size={4}>
               <Typography.Text>暂无已登记店铺</Typography.Text>
               <Typography.Text type="secondary">尚未连接店铺不代表没有工作区权限，可先在已授权工作区导入商品资料、预览草稿。</Typography.Text>
@@ -214,7 +282,7 @@ export function StoreDirectorySection({
                   type="link"
                   style={{ minHeight: 44 }}
                   disabled={!canPlatformOps || row.aggregate === true || row.state === "revoked"}
-                  onClick={() => { setAliasTarget(row); setAlias(row.alias ?? row.label); }}
+                  onClick={() => { setAliasTarget(row); setAlias(row.alias ?? row.label); setAliasError(""); }}
                 >
                   改别名
                 </Button>
@@ -265,24 +333,26 @@ export function StoreDirectorySection({
         okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
         onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary" role="note">工作区、平台、店铺账号 ID 和登记理由为必填项。人工登记只保存账号记录，不会创建平台授权或连接凭证。</Typography.Text>
           {manualStoreError ? <Alert role="alert" type="error" showIcon title="人工店铺登记失败" description={manualStoreError} /> : null}
           <label htmlFor="manual-store-workspace">商家工作区</label>
-          <Select id="manual-store-workspace" value={manualWorkspaceId || undefined} onChange={setManualWorkspaceId} options={workspaces.filter(item => item.status === "active").map(item => ({ value: item.workspaceId, label: `${item.enterpriseName ?? "未命名企业主体"} · ${item.workspaceId}` }))} placeholder="选择已启用商家工作区" showSearch optionFilterProp="label" />
+          <Select id="manual-store-workspace" aria-required="true" value={manualWorkspaceId || undefined} onChange={setManualWorkspaceId} options={activeWorkspaces.map(item => ({ value: item.workspaceId, label: `${item.enterpriseName ?? "未命名企业主体"} · ${item.workspaceId}` }))} placeholder="选择已启用商家工作区" showSearch optionFilterProp="label" />
           <label htmlFor="manual-store-platform">平台</label>
-          <Select id="manual-store-platform" value={manualPlatform} onChange={setManualPlatform} options={platforms.map(platform => ({ value: platform, label: platformLabels[platform] }))} placeholder="选择平台" />
+          <Select id="manual-store-platform" aria-required="true" value={manualPlatform} onChange={setManualPlatform} options={platforms.map(platform => ({ value: platform, label: platformLabels[platform] }))} placeholder="选择平台" />
           <label htmlFor="manual-store-account">平台店铺账号 ID</label>
-          <Input id="manual-store-account" value={manualAccountId} onChange={event => setManualAccountId(event.target.value)} maxLength={256} />
+          <Input id="manual-store-account" aria-required="true" autoComplete="off" placeholder="填写平台返回的店铺账号 ID" value={manualAccountId} onChange={event => setManualAccountId(event.target.value)} maxLength={256} />
           <label htmlFor="manual-store-alias">店铺别名（可选）</label>
           <Input id="manual-store-alias" aria-describedby="manual-store-alias-limit" value={manualAlias} onChange={event => setManualAlias(event.target.value)} maxLength={40} showCount />
           <Typography.Text id="manual-store-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
           <label htmlFor="manual-store-reason">登记理由</label>
-          <Input.TextArea id="manual-store-reason" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
+          <Input.TextArea id="manual-store-reason" aria-required="true" placeholder="说明登记依据，便于后续审计" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
         </Space>
       </Modal>
-      <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: alias.trim().length < 1 }} onCancel={closeAlias} onOk={() => void submitAlias()}>
+      <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: alias.trim().length < 1 || alias.trim() === (aliasTarget?.alias ?? aliasTarget?.label ?? "").trim() }} onCancel={closeAlias} onOk={() => void submitAlias()}>
         <Typography.Paragraph>仅修改运营后台展示名称，不会修改平台店铺真实名称。</Typography.Paragraph>
+        {aliasError ? <Alert role="alert" type="error" showIcon title="别名保存失败" description={aliasError} /> : null}
         <label htmlFor="store-display-alias">店铺展示别名</label>
-        <Input id="store-display-alias" aria-describedby="store-display-alias-limit" autoFocus maxLength={40} showCount value={alias} onChange={(event) => setAlias(event.target.value)} />
+        <Input id="store-display-alias" aria-describedby="store-display-alias-limit" autoFocus maxLength={40} showCount value={alias} onChange={(event) => { setAlias(event.target.value); setAliasError(""); }} />
         <Typography.Text id="store-display-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
       </Modal>
       <Modal

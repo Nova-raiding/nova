@@ -61,7 +61,7 @@ describe('video.get settlement delivery boundary', () => {
     const scope = vi.fn(async () => context)
     const nextEventSequence = vi.fn(async () => 1)
     const assetForWorkspace = vi.fn((_workspaceId: string, _assetId: string) => ({ scanStatus: 'clean' }))
-    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, assetForWorkspace, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: () => new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503), service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
+    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, assetForWorkspace, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: (error: unknown) => (error as { code?: string })?.code === 'MODEL_USAGE_SETTLEMENT_PENDING' ? new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503) : undefined, service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
     return { dependencies, context, getStatus, archive, persistEvent, scope, assetForWorkspace }
   }
   it('uses server context and returns pending without downloading or returning any asset', async () => {
@@ -73,9 +73,101 @@ describe('video.get settlement delivery boundary', () => {
     expect(f.archive).not.toHaveBeenCalled(); expect(f.persistEvent).not.toHaveBeenCalled()
   })
   it('does not fall back to a cached asset when current settlement fails', async () => {
-    const f = runtime(); f.getStatus.mockRejectedValue(new Error('settlement failed'))
+    const f = runtime(); f.getStatus.mockRejectedValue(new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'settlement failed', 503))
     await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_PENDING' })
     expect(f.archive).not.toHaveBeenCalled()
+  })
+  it('maps unexpected relay status errors to a safe, actionable MCP diagnostic', async () => {
+    const f = runtime()
+    const internalFailure = 'https://relay.internal/status?api_key=do-not-expose'
+    f.getStatus.mockRejectedValue(new Error(internalFailure))
+    ;(f.dependencies as any).modelSettlementDomainError = () => undefined
+
+    await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({
+      code: 'VIDEO_PROVIDER_STATUS_FAILED',
+      status: 503,
+      message: '视频中转状态暂时无法读取；任务已保留，请稍后调用 multimodal.video.get 查询，不要重新提交生成请求',
+      details: { provider_job_id: 'job-a', retryable: true, next_action: 'multimodal.video.get' },
+    })
+    expect(f.archive).not.toHaveBeenCalled()
+  })
+  it('redacts provider DomainError messages and details before they reach MCP callers', async () => {
+    const f = runtime()
+    const internalFailure = 'https://relay.internal/status?api_key=do-not-expose'
+    f.getStatus.mockRejectedValue(new DomainError('RELAY_INTERNAL_FAILURE', internalFailure, 502, { authorization: 'Bearer do-not-expose' }))
+    ;(f.dependencies as any).modelSettlementDomainError = () => undefined
+
+    const result = handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)
+    const mapped = await result.then(() => undefined, error => error as DomainError)
+    expect(mapped).toMatchObject({
+      code: 'VIDEO_PROVIDER_STATUS_FAILED',
+      message: '视频中转状态暂时无法读取；任务已保留，请稍后调用 multimodal.video.get 查询，不要重新提交生成请求',
+      details: { provider_job_id: 'job-a', retryable: true, next_action: 'multimodal.video.get' },
+    })
+    expect(mapped?.message).not.toContain('relay.internal')
+    expect(mapped?.message).not.toContain('do-not-expose')
+    expect(mapped?.details).toEqual({ provider_job_id: 'job-a', retryable: true, next_action: 'multimodal.video.get' })
+    expect(f.archive).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['MODEL_PROVIDER_REQUEST_FAILED', { provider_outcome: 'failed' }],
+    ['MODEL_USAGE_SETTLEMENT_PENDING', {}],
+    ['MODEL_PROVIDER_OUTCOME_UNKNOWN', {}],
+  ])('normalizes sensitive recognized provider DomainError %s', async (code, rawDetails) => {
+    const f = runtime()
+    const sensitive = 'https://relay.internal/status?api_key=do-not-expose'
+    const normalized = new DomainError(String(code), 'safe normalized provider diagnostic', 503, {
+      ...rawDetails,
+      ...(code === 'MODEL_PROVIDER_REQUEST_FAILED' ? { provider_outcome: 'failed' } : {}),
+      ...(code === 'MODEL_PROVIDER_REQUEST_FAILED' ? { provider_status: 422, provider_request_id: 'provider-request-a' } : {}),
+    })
+    f.getStatus.mockRejectedValue(new DomainError(String(code), sensitive, 502, {
+      ...rawDetails,
+      authorization: 'Bearer do-not-expose',
+      provider_error_summary: sensitive,
+    }))
+    ;(f.dependencies as any).modelSettlementDomainError = (error: unknown) =>
+      (error as { code?: string }).code === code ? normalized : undefined
+
+    const result = handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)
+    const mapped = await result.then(() => undefined, error => error as DomainError)
+    expect(mapped).toBe(normalized)
+    expect(mapped?.message).not.toContain('relay.internal')
+    expect(JSON.stringify(mapped?.details)).not.toContain('do-not-expose')
+    if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
+      expect(f.persistEvent).toHaveBeenCalledWith('workspace-a', 'video_job-a', 'multimodal.video_status_observed', 1, expect.objectContaining({
+        provider_job_id: 'job-a',
+        rendering: { status: 'failed', providerJobId: 'job-a', settlementStatus: 'settled' },
+        error_code: 'MODEL_PROVIDER_REQUEST_FAILED',
+        provider_status: 422,
+        provider_request_id: 'provider-request-a',
+        next_action: 'provider 已明确拒绝该视频任务；保留失败证据，请修正请求后使用新的幂等键重试',
+      }))
+    } else {
+      expect(f.persistEvent).not.toHaveBeenCalled()
+    }
+    expect(f.archive).not.toHaveBeenCalled()
+  })
+  it('allows the caller to retry status lookup without resubmitting generation', async () => {
+    const f = runtime()
+    f.getStatus
+      .mockRejectedValueOnce(new Error('relay timeout: https://relay.internal/status?token=secret'))
+      .mockResolvedValueOnce({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-a', videoUrl: undefined })
+    ;(f.dependencies as any).modelSettlementDomainError = () => undefined
+
+    await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).rejects.toMatchObject({
+      code: 'VIDEO_PROVIDER_STATUS_FAILED',
+      details: { provider_job_id: 'job-a', retryable: true, next_action: 'multimodal.video.get' },
+    })
+    await expect(handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, f.dependencies)).resolves.toMatchObject({
+      provider_job_id: 'job-a', asset_id: 'workspace-a-asset', status: 'completed',
+    })
+
+    expect(f.getStatus).toHaveBeenNthCalledWith(1, 'job-a', f.context)
+    expect(f.getStatus).toHaveBeenNthCalledWith(2, 'job-a', f.context)
+    expect(f.getStatus).toHaveBeenCalledTimes(2)
+    expect(f.archive).toHaveBeenCalledTimes(1)
+    expect(f.persistEvent).toHaveBeenCalledTimes(1)
   })
   it('scope denial prevents any provider request', async () => {
     const f = runtime(); f.scope.mockRejectedValue(new DomainError('VIDEO_PROVIDER_SCOPE_DENIED', 'denied', 403))

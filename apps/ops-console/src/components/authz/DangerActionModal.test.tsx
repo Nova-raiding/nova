@@ -19,8 +19,8 @@ describe("DangerActionModal", () => {
     expect(source).toContain("triggerRef?.current?.focus({ preventScroll: true })");
     expect(source).toContain("errorRef.current?.focus({ preventScroll: true })");
     expect(source).toContain("afterOpenChange={(visible)");
-    expect(source).toContain('role="alert"');
-    expect(source).toContain('aria-live="assertive"');
+    expect(source).not.toContain('role="alert" aria-live="assertive"');
+    expect(source).toContain('<Alert type="error" showIcon title="操作未完成"');
     expect(source).toContain('aria-busy={loading}');
     expect(source).toContain("onReasonChange(event.target.value)");
   });

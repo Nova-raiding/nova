@@ -440,6 +440,24 @@ describe('model provider outcome mapping', () => {
     const mapped = modelSettlementDomainError({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', status: 503, providerRequestId: 'relay-503', providerIdempotencyKey: 'model-key', details: { provider_status: 503 } })
     expect(mapped).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', status: 503, details: { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, retryable: false, next_action: 'reconcile_model_request', provider_status: 503, provider_request_id: 'relay-503', provider_idempotency_key: 'model-key' } })
   })
+
+  it.each([
+    ['MODEL_PROVIDER_REQUEST_FAILED', { provider_outcome: 'failed', provider_status: 422 }, 422],
+    ['MODEL_PROVIDER_OUTCOME_UNKNOWN', { provider_outcome: 'unknown', provider_status: 503 }, 503],
+  ])('does not expose untrusted provider error summaries for %s', (code, fields, status) => {
+    const sensitiveSummary = 'https://relay.internal/status?api_key=do-not-expose Bearer bearer-secret'
+    const mapped = modelSettlementDomainError({
+      code,
+      status,
+      details: { ...fields, provider_error_summary: sensitiveSummary },
+    })
+
+    expect(mapped).toMatchObject({ code, details: fields })
+    expect(mapped?.details).not.toHaveProperty('provider_error_summary')
+    expect(JSON.stringify(mapped)).not.toContain('relay.internal')
+    expect(JSON.stringify(mapped)).not.toContain('do-not-expose')
+    expect(JSON.stringify(mapped)).not.toContain('bearer-secret')
+  })
 })
 
 describe('canonical read rollout safety', () => {

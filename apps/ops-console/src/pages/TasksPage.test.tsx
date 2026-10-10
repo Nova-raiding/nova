@@ -12,10 +12,10 @@ vi.mock("../components/stores/ProductSpreadsheetImport.js", () => ({
   ProductSpreadsheetImport: () => null,
 }));
 vi.mock("../components/tasks/AlertFiltersSection", () => ({
-  AlertFiltersSection: () => null,
+  AlertFiltersSection: () => <div data-testid="platform-alert-filters" />,
 }));
 vi.mock("../components/tasks/MarketingQueueFiltersSection", () => ({
-  MarketingQueueFiltersSection: () => null,
+  MarketingQueueFiltersSection: () => <div data-testid="marketing-queue-filters" />,
 }));
 vi.mock("../components/tasks/OperationalGovernanceSection", () => ({
   OperationalGovernanceSection: () => <div data-testid="content-governance">内容治理区</div>,
@@ -26,14 +26,18 @@ import { TasksPage } from "./TasksPage.js";
 function tasksModel(options: {
   error?: string;
   canReadCustomerContent?: boolean;
+  canReadMarketingQueue?: boolean;
   canReadPlatformMarketing?: boolean;
 } = {}) {
   return {
     authorization: {
       scope: { kind: "workspace", id: "ws-test" },
-      can: (capability: string) => capability === "marketing.summary.read" && options.canReadPlatformMarketing === true,
+      can: (capability: string) =>
+        capability === "marketing.summary.read" ? options.canReadPlatformMarketing === true
+          : capability === "marketing.queue.read" && options.canReadMarketingQueue === true,
       canAny: (capabilities: readonly string[]) => capabilities.some((capability) =>
-        capability === "marketing.queue.read" && options.canReadCustomerContent === true),
+        (capability === "marketing.queue.read" && options.canReadMarketingQueue === true)
+        || (capability === "customer.content.read" && options.canReadCustomerContent === true)),
     },
     dataSetError: () => options.error,
     loading: false,
@@ -60,11 +64,18 @@ describe("TasksPage", () => {
   });
 
   it("shows customer content governance only when its read capability is present", () => {
-    const allowed = renderToStaticMarkup(<TasksPage model={tasksModel({ canReadCustomerContent: true })} />);
+    const allowed = renderToStaticMarkup(<TasksPage model={tasksModel({ canReadCustomerContent: true, canReadMarketingQueue: true })} />);
+    const contentReadOnly = renderToStaticMarkup(<TasksPage model={tasksModel({ canReadCustomerContent: true })} />);
     const denied = renderToStaticMarkup(<TasksPage model={tasksModel({ canReadPlatformMarketing: true })} />);
 
     expect(allowed).toContain('data-testid="content-governance"');
+    expect(allowed).toContain('data-testid="marketing-queue-filters"');
+    expect(allowed).not.toContain('data-testid="platform-alert-filters"');
+    expect(contentReadOnly).toContain('data-testid="content-governance"');
+    expect(contentReadOnly).not.toContain('data-testid="marketing-queue-filters"');
     expect(denied).not.toContain('data-testid="content-governance"');
+    expect(denied).not.toContain('data-testid="marketing-queue-filters"');
+    expect(denied).toContain('data-testid="platform-alert-filters"');
     expect(denied).toContain("平台运营使用聚合治理数据");
   });
 });

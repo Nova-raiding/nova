@@ -18,11 +18,26 @@ const slaLabels: Record<SupportSlaState, string> = { on_track: "正常", at_risk
 
 type CreateForm = Omit<CreateSupportTicketCommand, "workspaceId" | "idempotencyKey">;
 
+function createFingerprint(values: CreateForm) {
+  const normalizeOptional = (value: string | undefined) => value?.trim() ?? "";
+  return JSON.stringify([
+    values.subject.trim(),
+    values.description.trim(),
+    values.priority,
+    values.customerId.trim(),
+    values.customerName.trim(),
+    normalizeOptional(values.customerEmail),
+    normalizeOptional(values.relatedTaskId),
+    normalizeOptional(values.relatedOrderId),
+    (values.tags ?? []).map(tag => tag.trim()).filter(Boolean),
+  ]);
+}
+
 export function SupportQueueSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
   const [form] = Form.useForm<CreateForm>();
-  const createIdempotencyKeyRef = useRef<string | null>(null);
+  const createIdempotencyKeyRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
   const errorRef = useRef<HTMLDivElement>(null);
 
@@ -34,8 +49,13 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
     if (model.mutating) return;
     setCreateError("");
     const values = await form.validateFields();
-    createIdempotencyKeyRef.current ??= crypto.randomUUID();
-    await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: createIdempotencyKeyRef.current });
+    const fingerprint = createFingerprint(values);
+    let intent = createIdempotencyKeyRef.current;
+    if (intent?.fingerprint !== fingerprint) {
+      intent = { fingerprint, idempotencyKey: crypto.randomUUID() };
+      createIdempotencyKeyRef.current = intent;
+    }
+    await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: intent.idempotencyKey });
     createIdempotencyKeyRef.current = null;
     form.resetFields();
     setCreateOpen(false);

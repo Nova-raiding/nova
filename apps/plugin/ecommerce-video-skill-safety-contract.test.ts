@@ -11,6 +11,17 @@ const videoReferences = ['video_guide.md', 'video_templates.md'].map(file => ({
 }))
 
 describe('ecommerce video skill capability and fact boundaries', () => {
+  it('does not ask for price unless the merchant wants it shown in the script', () => {
+    const intakeStart = source.indexOf('### 阶段1：任务启动')
+    const intakeEnd = source.indexOf('\n### 阶段2：需求定义', intakeStart)
+    const intake = source.slice(intakeStart, intakeEnd)
+
+    expect(marketplace).toBe(source)
+    expect(intake).toContain('价格不是脚本必需资料')
+    expect(intake).toContain('只有用户要求脚本展示价格时，才询问并核验当前有效价格')
+    expect(intake).not.toMatch(/商品基本信息（名称、品类、价格、卖点）/u)
+  })
+
   it('keeps examples explicitly fictional and production/analytics claims text-only', () => {
     expect(marketplace).toBe(source)
     expect(source).toContain('以下仅展示脚本结构')

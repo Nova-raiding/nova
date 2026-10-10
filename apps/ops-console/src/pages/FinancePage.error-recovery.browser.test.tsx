@@ -34,7 +34,7 @@ describe("FinancePage search recovery", () => {
             import { App } from 'antd';
             import { createAuthorizationProjection } from '/src/authz/authorization.ts';
             import { FinancePage } from '/src/pages/FinancePage.tsx';
-            const session = { actor_id: 'fixture-operator', workspace_id: '', roles: ['platform_ops'], workbench: 'platform', scope: { type: 'platform' }, capabilities: ['billing.platform.read'] };
+            const session = { actor_id: 'fixture-operator', workspace_id: '', roles: ['platform_ops'], workbench: 'platform', scope: { type: 'platform' }, capabilities: ['billing.platform.read', 'billing.export'] };
             const model = {
               opsSession: session,
               authorization: createAuthorizationProjection(session, true),
@@ -78,6 +78,7 @@ describe("FinancePage search recovery", () => {
     page.setDefaultTimeout(10_000);
     const unexpectedRequests: string[] = [];
     const searchCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const exportCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
     try {
       await page.route("**/*", async route => {
         const url = new URL(route.request().url());
@@ -95,6 +96,14 @@ describe("FinancePage search recovery", () => {
         let rpc: { id?: string | number | null; method?: string; params?: Record<string, unknown> };
         try { rpc = request.postDataJSON() as typeof rpc; }
         catch { unexpectedRequests.push("malformed JSON-RPC"); await route.fulfill({ status: 400, body: "bad JSON-RPC" }); return; }
+        if (rpc.method === "ops.finance.export") {
+          exportCalls.push({ method: rpc.method, params: rpc.params ?? {} });
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result: {
+            exportId: "export-1", fileName: "finance-search.csv", contentType: "text/csv; charset=utf-8",
+            csv: "id\nrecord-2", rowCount: 5_000, truncated: true, snapshotAt: "2026-10-10T00:00:00.000Z",
+          } }) });
+          return;
+        }
         if (rpc.method !== "ops.finance.search") {
           unexpectedRequests.push(rpc.method ?? "missing RPC method");
           await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "fixture blocks unexpected RPC calls" }) });
@@ -108,9 +117,13 @@ describe("FinancePage search recovery", () => {
               id: "record-1", kind: "recharge_order", workspaceId: "ws-1", status: "paid",
               occurredAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z",
               version: "v1", label: "旧筛选充值", redacted: true,
-            }] : [],
+            }] : [{
+              id: "record-2", kind: "recharge_order", workspaceId: "ws-1", status: "paid",
+              occurredAt: "2026-10-10T00:00:00.000Z", updatedAt: "2026-10-10T00:00:00.000Z",
+              version: "v2", label: "恢复后的充值", redacted: true,
+            }],
             summary: {
-              totalRecords: searchCalls.length === 1 ? 1 : 0, rechargeOrderCny: 10, subscriptionOrderCny: 0,
+              totalRecords: 1, rechargeOrderCny: 10, subscriptionOrderCny: 0,
               subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {},
               walletCreditCny: 0, walletDebitCny: 0, walletNetCny: 0,
               providerCostCny: 0, customerChargeCny: 10, usageUnits: 0,
@@ -150,13 +163,21 @@ describe("FinancePage search recovery", () => {
       await page.getByText("record-1", { exact: true }).waitFor();
       expect(await page.getByLabel("关键词").inputValue()).toBe("  order-42  ");
       await searchError.getByRole("button", { name: "重试财务检索" }).click();
-      await page.getByText("当前筛选条件下没有财务记录", { exact: true }).waitFor();
+      await page.getByText("record-2", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "导出当前筛选" }).click();
+      const exportNotice = page.getByRole("status").filter({ hasText: "财务导出已截断" });
+      await exportNotice.waitFor({ state: "visible" });
+      expect(await exportNotice.textContent()).toContain("前 5,000 条记录");
+      expect(await exportNotice.textContent()).toContain("缩小筛选条件");
 
       expect(searchCalls).toEqual([
         { method: "ops.finance.search", params: { limit: "20" } },
         { method: "ops.finance.search", params: { text: "order-42", limit: "20" } },
         { method: "ops.finance.search", params: { text: "order-42", limit: "20" } },
       ]);
+      expect(exportCalls).toEqual([{
+        method: "ops.finance.export", params: { text: "order-42", snapshot_at: "2026-10-10T00:00:00.000Z", limit: "20" },
+      }]);
       expect(unexpectedRequests).toEqual([]);
     } finally {
       await page.close();

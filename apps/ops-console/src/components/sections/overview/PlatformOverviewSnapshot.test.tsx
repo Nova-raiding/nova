@@ -8,7 +8,7 @@ import { PlatformOverviewSnapshot } from "./PlatformOverviewSnapshot.js";
 const unresolvedDirectory: WorkspaceDirectoryPage = { items: [], offset: 0, limit: 20, hasMore: false };
 
 const model = (overrides: Record<string, unknown> = {}) => ({
-  workspaceDirectory: { total: 0, merchantWorkspaceCount: 0 },
+  workspaceDirectory: { total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
   platformFinanceSummary: undefined,
   platformMonthlyFinanceSummary: undefined,
   platformMonthlyFinanceMonth: "2026年9月",
@@ -90,8 +90,8 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "接入费总收入")).toContain("—");
     expect(tile(html, "接入费销售额")).toContain("—");
     expect(tile(html, "套餐销售额")).toContain("—");
-    expect(tile(html, "客户总数")).toContain("—");
-    expect(tile(html, "有效客户数")).toContain("—");
+    expect(tile(html, "已关联商家工作区")).toContain("—");
+    expect(tile(html, "有活跃成员的工作区")).toContain("—");
     expect(tile(html, "累计平台消耗金额")).toContain("—");
   });
 
@@ -102,7 +102,7 @@ describe("PlatformOverviewSnapshot money honesty", () => {
       platformModelUsageSummary: usage({ providerCostStatus: "verified" }),
       dataSetError: (method: string) => method === "ops.workspaces.list" || method === "ops.finance.search" || method === "ops.model-usage.summary" ? "refresh failed" : undefined,
     });
-    expect(tile(html, "客户总数")).toContain("—");
+    expect(tile(html, "已关联商家工作区")).toContain("—");
     expect(tile(html, "接入费总收入")).toContain("—");
     expect(tile(html, "套餐销售额")).toContain("—");
     expect(tile(html, "累计平台消耗金额")).toContain("—");
@@ -113,25 +113,25 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     // The seed the hook actually installs is pinned in
     // `src/hooks/useOpsConsoleModel.test.ts`.
     const html = render({ workspaceDirectory: unresolvedDirectory });
-    expect(tile(html, "客户总数")).toContain("—");
-    expect(tile(html, "客户总数")).not.toMatch(/\d/u);
-    expect(tile(html, "有效客户数")).toContain("—");
+    expect(tile(html, "已关联商家工作区")).toContain("—");
+    expect(tile(html, "已关联商家工作区")).not.toMatch(/\d/u);
+    expect(tile(html, "有活跃成员的工作区")).toContain("—");
   });
 
   it("still renders a genuine measured zero as zero", () => {
     // The unknown state must not swallow real data: a directory that reports
     // zero customers is measured, and must read as 0 rather than "—".
-    const html = render({ workspaceDirectory: { total: 0, merchantWorkspaceCount: 0, items: [], offset: 0, limit: 20, hasMore: false } });
-    expect(tile(html, "客户总数")).toContain("0");
-    expect(tile(html, "有效客户数")).toContain("0");
+    const html = render({ workspaceDirectory: { total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0, items: [], offset: 0, limit: 20, hasMore: false } });
+    expect(tile(html, "已关联商家工作区")).toContain("0");
+    expect(tile(html, "有活跃成员的工作区")).toContain("0");
   });
 
   it("does not invent a gifted-customer count the server never returned", () => {
     // `total - merchantWorkspaceCount` was a derived number presented as a
     // measurement; the directory query carries no gifted semantics at all.
-    const html = render({ workspaceDirectory: { total: 3, merchantWorkspaceCount: 3, items: [], offset: 0, limit: 20, hasMore: false } });
-    expect(tile(html, "客户总数")).toContain("3");
-    expect(tile(html, "有效客户数")).toContain("3");
+    const html = render({ workspaceDirectory: { total: 3, merchantWorkspaceCount: 3, activeMemberWorkspaceCount: 2, items: [], offset: 0, limit: 20, hasMore: false } });
+    expect(tile(html, "已关联商家工作区")).toContain("3");
+    expect(tile(html, "有活跃成员的工作区")).toContain("2");
     expect(tile(html, "赠送客户数")).toContain("—");
     expect(tile(html, "赠送客户数")).not.toMatch(/\d/u);
   });
@@ -222,15 +222,15 @@ describe("PlatformOverviewSnapshot money honesty", () => {
 
   it("does not map unsupported subscription workspace counts onto customer counts", () => {
     const html = render({
-      workspaceDirectory: { total: 18, merchantWorkspaceCount: 18, items: [], offset: 0, limit: 20, hasMore: false },
+      workspaceDirectory: { total: 18, merchantWorkspaceCount: 18, activeMemberWorkspaceCount: 15, items: [], offset: 0, limit: 20, hasMore: false },
       platformMonthlyFinanceSummary: {
         onboardingOrderWorkspaceCount: 9,
         onboardingOrderCount: 13,
         subscriptionOrderWorkspaceCount: 7,
       },
     });
-    expect(tile(html, "客户总数")).toContain("18");
-    expect(tile(html, "有效客户数")).toContain("18");
+    expect(tile(html, "已关联商家工作区")).toContain("18");
+    expect(tile(html, "有活跃成员的工作区")).toContain("15");
     expect(tile(html, "接入客户数")).toContain("9");
     expect(tile(html, "接入费销售额")).toContain("—");
     expect(tile(html, "套餐销量")).toContain("—");

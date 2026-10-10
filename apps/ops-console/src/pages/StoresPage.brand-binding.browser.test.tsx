@@ -40,7 +40,7 @@ describe("StoresPage brand-store binding browser flow", () => {
             import { App } from 'antd';
             import { StoresPage } from '/src/pages/StoresPage.tsx';
 
-            const store = { platform: 'jd', accountId: 'jd-store-unbound', label: '待读授权店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 3 };
+            const store = { platform: 'jd', accountId: 'jd:store-unbound', label: '待读授权店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 3 };
             const revokedStore = { platform: 'tmall', accountId: 'tmall-revoked', label: '已撤销店铺', state: 'revoked', dataMode: 'official_api', readable: false, writeEnabled: false, revision: 2 };
             const initialBrand = { id: 'brand-scope-1', title: '隔离品牌', revision: 7, platforms: [] };
             const boundBrand = { ...initialBrand, platforms: [{ id: 'brand-scope-1:jd', platform: 'jd', title: '京东', stores: [{ id: 'bound-jd-store', accountId: store.accountId }] }] };
@@ -60,10 +60,10 @@ describe("StoresPage brand-store binding browser flow", () => {
                 storeDirectory: [store, revokedStore],
                 brandNavigation: brands,
                 platformBrandUnitSummary: undefined,
-                canPlatformOps: false,
+                canPlatformOps: true,
                 automationPolicies: [], automationPolicy: undefined, automationScan: undefined,
                 automationScope: '', selectedAutomationStore: undefined, canQueue: false,
-                workspaceDirectory: { items: [] },
+                workspaceDirectory: { items: [{ workspaceId: 'ws-brand-scope', enterpriseName: '隔离工作区', status: 'active' }] },
                 load: async () => {
                   window.__brandBindingState.loads += 1;
                   setBrands([boundBrand]);
@@ -128,14 +128,54 @@ describe("StoresPage brand-store binding browser flow", () => {
       await expect.poll(() => page.evaluate(() => (window as any).__brandBindingState.loads)).toBe(1);
       expect(requests).toEqual([{
         method: "brand-unit.bind-store",
-        params: { brand_id: "brand-scope-1", platform: "jd", account_id: "jd-store-unbound", expected_revision: "7", reason: "运营台绑定品牌与已授权平台店铺" },
+        params: { brand_id: "brand-scope-1", platform: "jd", account_id: "jd:store-unbound", expected_revision: "7", reason: "运营台绑定品牌与已授权平台店铺" },
         workspaceHeader: "ws-brand-scope",
         workbenchHeader: "workspace",
       }]);
 
       await page.getByLabel("隔离品牌待绑定店铺").click();
-      await expect.poll(async () => page.getByText("待读授权店铺（jd-store-unbound）", { exact: true }).count()).toBe(0);
-      expect(await page.getByText("jd-store-unbound", { exact: true }).count()).toBeGreaterThan(0);
+      await expect.poll(async () => page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).count()).toBe(0);
+      expect(await page.getByText("jd:store-unbound", { exact: true }).count()).toBeGreaterThan(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("registers a credential-free store through the page RPC with the chosen workspace scope", async () => {
+    const page = await openPage();
+    const requests: BindRequest[] = [];
+    await page.route(`${baseUrl}/api/mcp`, async route => {
+      const request = route.request();
+      const body = request.postDataJSON() as { id: string; method: string; params: Record<string, string> };
+      requests.push({
+        method: body.method,
+        params: body.params,
+        workspaceHeader: request.headers()["x-workspace-id"],
+        workbenchHeader: request.headers()["x-ops-workbench"],
+      });
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        jsonrpc: "2.0", id: body.id, result: {
+          connection: { mode: "manual_store_record", token_state: "manually_registered", credential_free: true, authorization_receipt: null },
+          applies_to_store_boundary: true,
+        },
+      }) });
+    });
+
+    try {
+      await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "登记人工店铺" });
+      await dialog.locator("#manual-store-workspace").click();
+      await page.getByText("隔离工作区 · ws-brand-scope", { exact: true }).click();
+      await dialog.locator("#manual-store-platform").click();
+      await page.getByText("淘宝", { exact: true }).last().click();
+      await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("manual-store-route");
+      await dialog.getByLabel("登记理由", { exact: true }).fill("验证运营台实际登记路由");
+      await dialog.getByRole("button", { name: "确认登记", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "人工店铺已登记" }).waitFor();
+      expect(requests).toEqual([{
+        method: "ops.platform.store.record.create",
+        params: { workspace_id: "ws-brand-scope", platform: "taobao", account_id: "manual-store-route", reason: "验证运营台实际登记路由" },
+        workspaceHeader: "ws-brand-scope",
+        workbenchHeader: "workspace",
+      }]);
     } finally { await page.close(); }
   }, 45_000);
 
@@ -158,7 +198,7 @@ describe("StoresPage brand-store binding browser flow", () => {
       await page.getByRole("button", { name: "绑定店铺", exact: true }).click();
       const brandSection = page.locator(".brand-tree-card");
       await brandSection.getByRole("alert").getByText("brand revision conflict", { exact: true }).waitFor();
-      const selectedStore = brandSection.getByText("待读授权店铺（jd-store-unbound）", { exact: true });
+      const selectedStore = brandSection.getByText("待读授权店铺（jd:store-unbound）", { exact: true });
       expect(await selectedStore.count()).toBe(1);
       expect(await selectedStore.isVisible()).toBe(true);
       expect(await page.evaluate(() => (window as any).__brandBindingState.loads)).toBe(0);
@@ -179,9 +219,9 @@ describe("StoresPage brand-store binding browser flow", () => {
 async function chooseUnboundStore(page: Page) {
   const select = page.getByLabel("隔离品牌待绑定店铺");
   await select.click();
-  await page.getByText("待读授权店铺（jd-store-unbound）", { exact: true }).waitFor();
+      await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).waitFor();
   expect(await page.getByText("已撤销店铺（tmall-revoked）", { exact: true }).count()).toBe(0);
-  await page.getByText("待读授权店铺（jd-store-unbound）", { exact: true }).click();
+      await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).click();
 }
 
 declare global {

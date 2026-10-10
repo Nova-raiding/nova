@@ -77,6 +77,9 @@ describe("platform support reply recovery after reload", () => {
       }, { intent });
       await page.goto(`${baseUrl}/__platform-support-recovery-test`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       await page.getByRole("button", { name: "查询并核实原回复" }).waitFor();
+      await page.getByText("目标企业：ws-1", { exact: true }).waitFor();
+      await page.getByText(/原企业 ws-1；原工单 ticket-1/u).waitFor();
+      expect(await page.getByLabel("选择支持目标企业").getAttribute("disabled")).not.toBeNull();
       await page.getByRole("button", { name: "查询并核实原回复" }).click();
       const input = page.getByLabel("平台支持回复正文");
       await input.fill(body);

@@ -53,6 +53,13 @@ const renderLibrary = (props: { baseUrl?: string; accounts: never[] | null; prod
 const renderRecycleBin = (baseUrl?: string) => renderToStaticMarkup(createElement(MaterialRecycleBinWorkspace, { baseUrl }))
 
 describe('the material library may not claim a catalogue it did not read', () => {
+  it('offers a mounted retry after the server asset list fails', () => {
+    const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    expect(appSource).toContain('setAssetReadAttempt((attempt) => attempt + 1)')
+    expect(appSource).toContain('重新读取素材')
+    expect(appSource).toContain('assetsLoading ?')
+  })
+
   it('states no count when no API is configured, and shows no material card', () => {
     // The shipped defect, verbatim: with the API fully disconnected the page
     // still read 「找到 8 项素材」 and rendered eight cards.

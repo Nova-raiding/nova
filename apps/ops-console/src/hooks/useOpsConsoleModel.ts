@@ -443,6 +443,20 @@ export function automationPolicyUpdateParams(
   };
 }
 
+export async function revokeStoreAuthorization(input: {
+  canUpdate: boolean;
+  revoke: () => Promise<unknown>;
+  onSuccess: () => void;
+  refresh: () => Promise<unknown>;
+}): Promise<void> {
+  if (!input.canUpdate) throw new Error("当前会话为只读，缺少平台运营权限");
+  await input.revoke();
+  input.onSuccess();
+  // Revocation is already committed. Refresh errors are represented by the
+  // page's dataset error state and must not make the confirmation look failed.
+  void input.refresh().catch(() => undefined);
+}
+
 export class IdempotencyOperationKeys {
   private readonly keys = new Map<string, string>();
 
@@ -1604,22 +1618,15 @@ export function useOpsConsoleModel() {
     }
   };
   const revokeStore = async (row: StoreDirectory) => {
-    if (!authorization.can("store.connection.update")) {
-      message.error("当前会话为只读，缺少平台运营权限");
-      return;
-    }
-    try {
-      await rpc("platform.revoke", {
+    await revokeStoreAuthorization({
+      canUpdate: authorization.can("store.connection.update"),
+      revoke: () => rpc("platform.revoke", {
         platform: row.platform,
         account_id: row.accountId,
-      });
-      message.success("店铺授权已撤销");
-      await load();
-    } catch (cause) {
-      message.error(
-        cause instanceof Error ? cause.message : "店铺授权撤销失败",
-      );
-    }
+      }),
+      onSuccess: () => message.success("店铺授权已撤销"),
+      refresh: load,
+    });
   };
   const saveMember = async (values: {
     externalSubject: string;

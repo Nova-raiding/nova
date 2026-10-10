@@ -1,6 +1,6 @@
 ---
 name: six-platform-public-import
-description: 从京东、淘宝、天猫、拼多多、小红书或抖音的公开商品链接提取商品资料，并导入 Store Nova 待审核知识库；不读取 Cookie、不绕过登录、不执行店铺同步或发布。
+description: 仅在 merchant-marketing 主入口完成商家身份与当前工作区核验后，作为受限步骤处理京东、淘宝、天猫、拼多多、小红书或抖音的公开商品资料并导入待审核草稿；不是独立业务入口，不读取 Cookie、不绕过登录、不执行店铺同步或发布。
 metadata:
   short-description: 六平台公开商品链接导入
 ---
@@ -8,6 +8,8 @@ metadata:
 # 六平台公开商品链接导入
 
 用于商家提供商品公开链接或商品资料，并希望将可核验资料沉淀到 Store Nova 知识库的场景。公开链接只是来源线索；是否能读取页面取决于当前 ChatGPT 宿主实际提供的网页读取工具。
+
+本技能不是独立业务入口。只能由 `merchant-marketing` 主入口在核验当前商家身份、管理员预分配工作区并通过只读 `onboarding.status` 确认绑定后路由调用；缺少或不匹配时立即停止，不尝试导入。调用 `catalog.import` 前还必须按主流程取得本轮 `workspace.interactive.confirm` 写许可。待审核草稿不豁免身份、工作区或交互写许可。
 
 ## 支持范围
 

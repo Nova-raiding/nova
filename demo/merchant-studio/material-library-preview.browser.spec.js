@@ -59,6 +59,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   const restoreRequests = []
   const purgeRequests = []
   const cancelPurgeRequests = []
+  let assetListReadCount = 0
   const trashRecord = (id, name, state = {}) => ({
     asset: { id, workspaceId, name, mimeType: 'image/png', sizeBytes: validPng.byteLength,
       sha256: 'c'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
@@ -97,6 +98,13 @@ test('downloads, decodes, and renders server-backed material previews in the rea
       } })) })
     }
     if (path === '/api/v1/assets' || path === '/api/v1/assets/') {
+      assetListReadCount += 1
+      if (assetListReadCount === 1) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
+          request_id: 'material-preview-list-unavailable',
+          error: { code: 'TEMPORARY_UNAVAILABLE', message: '素材列表暂时不可用' },
+        }) })
+      }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
         items: [
           { id: validAssetId, workspaceId, name: '真实解码样图.png', mimeType: 'image/png', sizeBytes: validPng.byteLength,
@@ -180,6 +188,11 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     await page.goto(`${studioUrl}/merchant/products?section=knowledge`, { waitUntil: 'domcontentloaded' })
     const workspace = page.getByTestId('material-library-workspace')
     await expect(workspace).toBeVisible()
+    await expect(workspace.locator('.material-empty[role="alert"]')).toContainText('素材读取失败')
+    const retryAssetRead = workspace.getByRole('button', { name: '重新读取素材' })
+    await retryAssetRead.click()
+    await expect(workspace.locator('.material-empty[role="alert"]')).toHaveCount(0)
+    await expect.poll(() => assetListReadCount).toBe(2)
 
     const validCard = workspace.locator('article').filter({ hasText: '真实解码样图.png' })
     const renderedThumbnail = validCard.locator('.material-card-open img')

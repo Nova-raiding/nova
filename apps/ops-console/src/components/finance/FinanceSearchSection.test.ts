@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
-import { FinanceSearchSection, parseFinanceWorkspaceIdFilter } from "./FinanceSearchSection.js";
+import { FinanceSearchSection, financeStatusTagColor, parseFinanceWorkspaceIdFilter } from "./FinanceSearchSection.js";
 import { financeDetailAttributeLabel, financeDetailAttributeValue, financeRecordCostEvidence } from "./FinanceDetailDrawer.js";
 
 function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSearchController {
@@ -17,6 +17,13 @@ function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSe
 const render = (value: FinanceSearchController) => renderToStaticMarkup(createElement(FinanceSearchSection, { controller: value }));
 
 describe("FinanceSearchSection", () => {
+  it("keeps failed status tone consistent with case-insensitive status labels", () => {
+    expect(financeStatusTagColor("failed")).toBe("red");
+    expect(financeStatusTagColor("FAILED")).toBe("red");
+    expect(financeStatusTagColor("Manual_Attention")).toBe("red");
+    expect(financeStatusTagColor("paid")).toBe("blue");
+  });
+
   it("labels the workspace filter as IDs and parses only ID tokens", () => {
     const html = render(controller());
     expect(html).toContain('placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔"');

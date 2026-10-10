@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Select, Space, message } from "antd";
+import { Alert, Button, Card, Checkbox, DatePicker, Form, Input, Modal, Select, Space, message } from "antd";
 import { CloseOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OpsPage } from "../components/OpsPage.js";
@@ -136,6 +136,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [acceptanceChecks, setAcceptanceChecks] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [createDraftDirty, setCreateDraftDirty] = useState(false);
+  const [leaveCreateConfirmOpen, setLeaveCreateConfirmOpen] = useState(false);
   // The workbench switch confirmation only fires for a form that registered
   // itself as dirty. Without a live registrant the guard could never arm and a
   // half-filled customer profile was discarded without any prompt, so the one
@@ -473,6 +474,24 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       throw cause;
     }
   };
+  const discardCreatePage = () => {
+    createForm.resetFields();
+    setUploadedContractName("");
+    setUploadedContractFile(undefined);
+    if (contractFileInput.current) contractFileInput.current.value = "";
+    setIntegrationChecks([]);
+    setAcceptanceChecks([]);
+    setCreateDraftDirty(false);
+    setLeaveCreateConfirmOpen(false);
+    setCreatePage(false);
+  };
+  const leaveCreatePage = () => {
+    if (!createDraftDirty) {
+      discardCreatePage();
+      return;
+    }
+    setLeaveCreateConfirmOpen(true);
+  };
   const workspaceToolbar = <Space wrap>
     <Select
       aria-label="客户交付目标企业工作区"
@@ -546,7 +565,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         </div>
         {mutationError ? <div ref={createErrorRef} className="customer-delivery-create-error" tabIndex={-1}><Alert type="error" showIcon title="创建客户失败" description={mutationError} /></div> : null}
         <div className="customer-delivery-create-actions">
-          <Button disabled={creating} onClick={() => { setCreateDraftDirty(false); setCreatePage(false); }}>返回客户建档</Button>
+          <Button disabled={creating} aria-haspopup="dialog" aria-expanded={leaveCreateConfirmOpen} onClick={leaveCreatePage}>返回客户建档</Button>
           <Space>
             <Button type="primary" htmlType="submit" form="customer-create-form" loading={creating}>{creating ? "正在创建" : "创建客户"}</Button>
           </Space>
@@ -620,6 +639,16 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         operatorActorId={model.opsSession?.actor_id}
         operatorName={accountLabel(model.opsSession)}
       />}
+      <Modal
+        title="放弃未保存的客户建档？"
+        open={leaveCreateConfirmOpen}
+        okText="放弃并返回"
+        cancelText="继续填写"
+        onCancel={() => setLeaveCreateConfirmOpen(false)}
+        onOk={discardCreatePage}
+      >
+        当前填写内容和勾选尚未保存。放弃后需要重新填写。
+      </Modal>
     </OpsPage>
   );
 }

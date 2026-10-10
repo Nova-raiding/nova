@@ -124,7 +124,7 @@ describe("public rule draft detail UI boundary", () => {
     const initialText = await page.locator("body").innerText();
     if (!initialText.includes(rule.name)) throw new Error(`Draft list did not render. Browser text: ${initialText}`);
     await page.getByText(rule.name, { exact: true }).waitFor();
-    await page.getByText(rule.name, { exact: true }).click();
+    await page.getByRole("button", { name: `查看${rule.name}审核详情` }).click();
   }
 
   it("renders a valid rule detail and its audit history when opened", async () => {
@@ -140,6 +140,85 @@ describe("public rule draft detail UI boundary", () => {
       await expectText(page, "operator-writer");
       await expectText(page, "导入官方规则候选");
       if (pageErrors.length) throw new Error(`Unexpected browser exception: ${pageErrors.join("; ")}`);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("closes the selected review detail and clears approval credentials before reopening", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    try {
+      await openPanel(page, { rule, audit });
+      const detailCard = page.locator(".ant-card").filter({ has: page.getByText(`${rule.name} · ${rule.version}`, { exact: true }) }).last();
+      await detailCard.getByRole("textbox", { name: "审核原因" }).fill("待核对原因");
+      await detailCard.getByLabel("规则审批凭证").fill("short-lived-review-token");
+      await detailCard.getByRole("button", { name: `关闭${rule.name}审核详情` }).click();
+      await detailCard.getByText(`${rule.name} · ${rule.version}`, { exact: true }).waitFor({ state: "detached" });
+      await page.waitForFunction(expected => document.activeElement?.getAttribute("aria-label") === expected, `查看${rule.name}审核详情`);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(`查看${rule.name}审核详情`);
+
+      await page.getByRole("button", { name: `查看${rule.name}审核详情` }).click();
+      const reopened = page.locator(".ant-card").filter({ has: page.getByText(`${rule.name} · ${rule.version}`, { exact: true }) }).last();
+      await reopened.getByLabel("规则审批凭证").waitFor();
+      expect(await reopened.getByLabel("规则审批凭证").inputValue()).toBe("");
+      expect(await reopened.getByRole("textbox", { name: "审核原因" }).inputValue()).toBe("");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("offers an explicit list recovery action and never labels a failed read as an empty queue", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    await page.addInitScript(ruleValue => {
+      localStorage.setItem("ops_connection_config_v1", JSON.stringify({ apiBase: "/api", workspaceId: "ui-boundary-workspace", workbench: "platform" }));
+      window.__publicRuleListCalls = 0;
+      window.__publicRuleRpcMock = async (method: string) => {
+        if (method !== "ops.rules.public.drafts.list") throw new Error(`Unexpected RPC method: ${method}`);
+        window.__publicRuleListCalls = (window.__publicRuleListCalls ?? 0) + 1;
+        if (window.__publicRuleListCalls === 1) throw new Error("模拟的规则服务暂不可用");
+        return { items: [ruleValue] };
+      };
+    }, rule);
+    try {
+      await page.goto(`${baseUrl}/__public-rule-detail-test`);
+      const failure = page.getByRole("alert").filter({ hasText: "公共规则审核操作失败" });
+      await failure.waitFor();
+      await expectText(page, "模拟的规则服务暂不可用");
+      if (await page.getByText("当前筛选范围内没有待审核公共规则草稿", { exact: true }).count() !== 0) {
+        throw new Error("A failed draft read was presented as an empty queue");
+      }
+
+      await failure.getByRole("button", { name: "刷新审核数据" }).click();
+      await page.getByText(rule.name, { exact: true }).waitFor();
+      if (await page.getByRole("alert").filter({ hasText: "公共规则审核操作失败" }).count() !== 0) {
+        throw new Error("The stale list read error remained after recovery");
+      }
+      if (pageErrors.length) throw new Error(`Unexpected browser exception: ${pageErrors.join("; ")}`);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("keeps checksum-invalid drafts visible for review but out of batch approval", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.addInitScript(ruleValue => {
+      localStorage.setItem("ops_connection_config_v1", JSON.stringify({ apiBase: "/api", workspaceId: "ui-boundary-workspace", workbench: "platform" }));
+      window.__publicRuleRpcMock = async method => {
+        if (method === "ops.rules.public.drafts.list") return { items: [{ ...ruleValue, checksum_valid: false }] };
+        throw new Error(`Unexpected RPC method: ${method}`);
+      };
+    }, rule);
+    try {
+      await page.goto(`${baseUrl}/__public-rule-detail-test`);
+      await page.getByText(rule.name, { exact: true }).waitFor();
+      const row = page.getByRole("row", { name: new RegExp(rule.name) });
+      const selection = row.getByRole("checkbox");
+      expect(await selection.isDisabled()).toBe(true);
+      await expectText(page, "校验失败");
+      const batchButton = page.getByRole("button", { name: /一键审批选中/u });
+      expect(await batchButton.isDisabled()).toBe(true);
     } finally {
       await page.close();
     }
@@ -189,6 +268,7 @@ async function expectText(page: Page, text: string) {
 
 declare global {
   interface Window {
+    __publicRuleListCalls?: number;
     __publicRuleRpcMock?: (method: string, params?: unknown, options?: unknown) => Promise<unknown>;
   }
 }

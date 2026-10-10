@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
-import { buildPublicRuleBatchApprovalParams, buildPublicRuleDraftListParams, buildPublicRuleStatusParams, canReviewPublicRuleDraft, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
+import { buildPublicRuleBatchApprovalParams, buildPublicRuleDraftListParams, buildPublicRuleStatusParams, canReviewPublicRuleDraft, isPublicRuleApprovalTimestamp, parsePublicRuleDraftList, PublicRuleDraftReviewPanel } from "./PublicRuleDraftReviewPanel.js";
 
 function authorization(scope: "platform" | "workspace", capabilities: string[]): AuthorizationProjection {
   const allowed = new Set(capabilities);
@@ -27,6 +27,15 @@ describe("public platform rule draft review", () => {
   it("uses cursor pagination with a bounded page size", () => {
     expect(buildPublicRuleDraftListParams("pinduoduo")).toEqual({ platform: "pinduoduo", limit: "20" });
     expect(buildPublicRuleDraftListParams("", "cursor-page-2")).toEqual({ limit: "20", cursor: "cursor-page-2" });
+  });
+
+  it("requires a real ISO 8601 timestamp with an explicit timezone for approval", () => {
+    expect(isPublicRuleApprovalTimestamp("2026-10-09T08:00:00.000Z")).toBe(true);
+    expect(isPublicRuleApprovalTimestamp("2026-10-09T08:00:00+08:00")).toBe(true);
+    expect(isPublicRuleApprovalTimestamp("2026-02-31T08:00:00Z")).toBe(false);
+    expect(isPublicRuleApprovalTimestamp("2026-10-09T08:60:00Z")).toBe(false);
+    expect(isPublicRuleApprovalTimestamp("2026-10-09T08:00:00")).toBe(false);
+    expect(isPublicRuleApprovalTimestamp("approval time")).toBe(false);
   });
 
   it("requires platform read and update plus verified pending evidence to approve", () => {

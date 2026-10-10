@@ -48,6 +48,11 @@ export function memberActions(session: MemberSession, member: Member) {
   }
 }
 
+export function preferredInviteRole(session: MemberSession, current?: MemberRole): MemberRole | null {
+  const roles = (session.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && role in roleLabels)
+  return current && roles.includes(current) ? current : roles[0] ?? null
+}
+
 export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWorkspaceChange }: { baseUrl: string; account: MerchantAuthAccount; activeWorkspaceId?: string | null; onWorkspaceChange?: (workspaceId: string) => void }) {
   const [localWorkspaceId, setLocalWorkspaceId] = useState(account.workspaceIds.length === 1 ? account.workspaceIds[0] ?? '' : '')
   const selectedWorkspaceId = activeWorkspaceId ?? localWorkspaceId
@@ -66,7 +71,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   const [nextRole, setNextRole] = useState<MemberRole>('operator')
   const [subject, setSubject] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [inviteRole, setInviteRole] = useState<MemberRole>('operator')
+  const [inviteRole, setInviteRole] = useState<MemberRole | null>(null)
   const [inviteReason, setInviteReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -80,6 +85,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
       const currentSession = await requestMcp<MemberSession>(baseUrl, 'ops.session', {}, selectedWorkspaceId)
       if (!requestGate.current.isCurrent(token)) return
       setSession(currentSession)
+      setInviteRole((current) => preferredInviteRole(currentSession, current ?? undefined))
       if (!memberSessionScope(currentSession, account, selectedWorkspaceId)) {
         setPage(null)
         setError('当前登录会话没有可验证的商家工作区范围，请重新登录后重试。')
@@ -104,10 +110,21 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   }, [account, baseUrl, selectedWorkspaceId])
 
   useEffect(() => {
+    // A workspace switch starts a new member context. Drop the prior page and
+    // any invite draft so stale data or a partially completed invitation can
+    // never look like it belongs to the newly selected workspace.
+    requestGate.current.invalidate(selectedWorkspaceId)
+    setSession(null)
+    setPage(null)
     setAction(null)
     setNotice('')
-  }, [selectedWorkspaceId])
-  useEffect(() => { void load(); return () => requestGate.current.invalidate() }, [load])
+    setSubject('')
+    setDisplayName('')
+    setInviteReason('')
+    setInviteRole(null)
+    void load()
+    return () => requestGate.current.invalidate()
+  }, [load, selectedWorkspaceId])
   const workspaceId = session ? memberSessionScope(session, account, selectedWorkspaceId) : null
   const assignableRoles = (session?.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && role in roleLabels)
   const canManage = Boolean(workspaceId && page && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage') && assignableRoles.length)
@@ -140,7 +157,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   const invite = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const normalized = subject.trim()
-    if (!canManage || !normalized || inviteReason.trim().length < 4 || !assignableRoles.includes(inviteRole)) return
+    if (!canManage || !normalized || inviteReason.trim().length < 4 || !inviteRole || !assignableRoles.includes(inviteRole)) return
     void runMutation('ops.member.upsert', { external_subject: normalized, display_name: displayName.trim(), role: inviteRole, status: 'invited', reason: inviteReason.trim() }, `已邀请 ${displayName.trim() || normalized}。`)
   }
 
@@ -170,16 +187,16 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
         {page.items.map((member) => {
           const allowed = session ? memberActions(session, member) : { changeRole: false, suspend: false, reactivate: false }
           return <tr key={member.id}><td>{member.displayName || member.externalSubject}<small className="muted">{member.displayName ? ` · ${member.externalSubject}` : ''}</small></td><td>{roleLabels[member.role] ?? member.role}</td><td>{statusLabels[member.status] ?? member.status}</td><td>
-            {allowed.changeRole && <button type="button" onClick={() => { setAction({ kind: 'role', member }); setNextRole(member.role); setReason('') }}>改角色</button>}
-            {allowed.suspend && <button type="button" onClick={() => { setAction({ kind: 'suspend', member }); setReason('') }}>停用</button>}
-            {allowed.reactivate && <button type="button" onClick={() => { setAction({ kind: 'reactivate', member }); setReason('') }}>恢复</button>}
+            {allowed.changeRole && <button type="button" aria-label={`调整 ${member.displayName || member.externalSubject} 的角色`} onClick={() => { setAction({ kind: 'role', member }); setNextRole(member.role); setReason('') }}>改角色</button>}
+            {allowed.suspend && <button type="button" aria-label={`停用 ${member.displayName || member.externalSubject}`} onClick={() => { setAction({ kind: 'suspend', member }); setReason('') }}>停用</button>}
+            {allowed.reactivate && <button type="button" aria-label={`恢复 ${member.displayName || member.externalSubject}`} onClick={() => { setAction({ kind: 'reactivate', member }); setReason('') }}>恢复</button>}
             {!allowed.changeRole && !allowed.suspend && !allowed.reactivate && <span className="muted">仅查看</span>}
           </td></tr>
         })}
       </tbody></table>}
       <div><button type="button" onClick={() => void load(Math.max(0, page.offset - pageSize))} disabled={page.offset === 0 || saving}>上一页</button> <button type="button" onClick={() => void load(page.offset + pageSize)} disabled={!page.hasMore || saving}>下一页</button></div>
     </>}
-    {canManage && <form onSubmit={invite} aria-label="邀请工作区成员"><h2>邀请成员</h2><label>成员登录账号<input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="例如：member@example.com 或平台账号" aria-describedby="merchant-member-invite-account-help" autoComplete="off" required /></label><small id="merchant-member-invite-account-help" className="muted">填写对方登录商家工作台使用的账号；系统会按此账号关联成员记录。</small><label>显示名<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>角色<select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as MemberRole)}>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label><label>邀请原因<input value={inviteReason} onChange={(event) => setInviteReason(event.target.value)} minLength={4} required /></label><button type="submit" disabled={saving || loading || !subject.trim() || inviteReason.trim().length < 4}>邀请成员</button></form>}
+    {canManage && <form onSubmit={invite} aria-label="邀请工作区成员"><h2>邀请成员</h2><label>成员登录账号<input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="例如：member@example.com 或平台账号" aria-describedby="merchant-member-invite-account-help" autoComplete="off" required /></label><small id="merchant-member-invite-account-help" className="muted">填写对方登录商家工作台使用的账号；系统会按此账号关联成员记录。</small><label>显示名<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>角色<select value={inviteRole ?? ''} onChange={(event) => setInviteRole(event.target.value as MemberRole)} required><option value="" disabled>请选择角色</option>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label><label>邀请原因<input value={inviteReason} onChange={(event) => setInviteReason(event.target.value)} minLength={4} required /></label><button type="submit" disabled={saving || loading || !subject.trim() || !inviteRole || inviteReason.trim().length < 4}>邀请成员</button></form>}
     {action && <form onSubmit={submitAction} aria-label="成员变更"><h2>{action.kind === 'role' ? '调整角色' : action.kind === 'suspend' ? '停用成员' : '恢复成员'} · {action.member.displayName || action.member.externalSubject}</h2>{action.kind === 'role' && <label>新角色<select value={nextRole} onChange={(event) => setNextRole(event.target.value as MemberRole)}>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>}<label>操作原因<input value={reason} onChange={(event) => setReason(event.target.value)} minLength={4} required /></label><button type="button" onClick={() => setAction(null)}>取消</button><button type="submit" disabled={saving || reason.trim().length < 4}>确认{action.kind === 'role' ? '改角色' : action.kind === 'suspend' ? '停用' : '恢复'}</button></form>}
   </section>
 }

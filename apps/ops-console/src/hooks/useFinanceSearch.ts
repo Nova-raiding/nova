@@ -28,6 +28,7 @@ export interface FinanceSearchController {
   detailError?: string;
   exporting: boolean;
   exportError?: string;
+  exportNotice?: { truncated: boolean; message: string };
   search(query?: Partial<FinanceSearchQuery>): Promise<void>;
   loadMore(): Promise<void>;
   openDetail(record: FinanceSearchRecord): Promise<void>;
@@ -87,6 +88,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
   const [detailError, setDetailError] = useState<string>();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string>();
+  const [exportNotice, setExportNotice] = useState<FinanceSearchController["exportNotice"]>();
   const searchRequests = useRef(new LatestFinanceRequest());
   const detailRequests = useRef(new LatestFinanceRequest());
   const exportRequests = useRef(new LatestFinanceRequest());
@@ -101,6 +103,7 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
       exportRequests.current.cancel();
       setExporting(false);
       setExportError(undefined);
+      setExportNotice(undefined);
     }
     append ? setLoadingMore(true) : setLoading(true);
     setError(undefined);
@@ -154,11 +157,17 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
 
   const downloadCsv = useCallback(async () => {
     if (loading || resultsStale) return;
-    setExporting(true); setExportError(undefined);
+    setExporting(true); setExportError(undefined); setExportNotice(undefined);
     const request = exportRequests.current.begin();
     try {
       const exported = await client.exportCsv({ ...query, cursor: undefined, snapshotAt: page?.snapshotAt }, request.signal);
       if (!exportRequests.current.isCurrent(request.id)) return;
+      setExportNotice({
+        truncated: exported.truncated,
+        message: exported.truncated
+          ? `财务导出已截断：文件包含前 ${exported.rowCount.toLocaleString()} 条记录（服务端上限 5,000 条），筛选结果可能还有更多记录。请缩小筛选条件后重新导出。`
+          : `财务导出完成：已导出 ${exported.rowCount.toLocaleString()} 条记录。`,
+      });
       const url = URL.createObjectURL(new Blob([exported.csv], { type: exported.contentType }));
       const anchor = document.createElement("a");
       anchor.href = url; anchor.download = exported.fileName; anchor.click();
@@ -191,8 +200,8 @@ export function useFinanceSearch(client: FinanceSearchClient, initialQuery: Fina
     setPage(undefined); setRecords([]); setLoading(false); setLoadingMore(false); setError(undefined);
     setResultsStale(false);
     setSelected(undefined); setDetail(undefined); setDetailLoading(false); setDetailError(undefined);
-    setExporting(false); setExportError(undefined);
+    setExporting(false); setExportError(undefined); setExportNotice(undefined);
   }, [autoLoad, runSearch]);
 
-  return { query, page, records, resultsStale, loading, loadingMore, error, selected, detail, detailLoading, detailError, exporting, exportError, search, loadMore, openDetail, retryDetail, closeDetail, downloadCsv };
+  return { query, page, records, resultsStale, loading, loadingMore, error, selected, detail, detailLoading, detailError, exporting, exportError, exportNotice, search, loadMore, openDetail, retryDetail, closeDetail, downloadCsv };
 }

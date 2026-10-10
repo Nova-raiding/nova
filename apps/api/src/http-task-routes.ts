@@ -201,7 +201,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
   if (req.method === 'GET' && taskTimelineMatch) {
     const task = scopeTask(req, taskTimelineMatch[1]!)
     const requestedLimit = url.searchParams.get('limit')
-    return send(res, 200, task.workspaceId, await taskTimeline(task.workspaceId, task.id, requestedLimit ? Number(requestedLimit) : 100), null, req)
+    return send(res, 200, task.workspaceId, await taskTimeline(task.workspaceId, task.id, url.searchParams.has('limit') ? Number(requestedLimit) : 100), null, req)
   }
   const feedbackMatch = path.match(/^\/v1\/tasks\/([^/]+)\/feedback$/)
   if (req.method === 'GET' && feedbackMatch) {

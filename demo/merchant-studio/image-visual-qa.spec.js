@@ -42,6 +42,7 @@ const product = {
 async function openVisualPage() {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  context.setDefaultTimeout(5_000)
   const page = await context.newPage()
   const generated = []
   // Keep the fixture self-contained: every uninteresting read returns a valid
@@ -140,6 +141,21 @@ test('audits image purpose/size choices, validation error focus, and the generat
       count: '1',
     })
     expect(generated[0].idempotency_key).toContain('1024x4096')
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('canceling the image generation confirmation closes it without creating a task', async () => {
+  const { browser, context, page, generated } = await openVisualPage()
+  try {
+    await page.getByRole('button', { name: /生成图片/ }).click({ timeout: 5000 })
+    const dialog = page.getByRole('dialog', { name: /为「视觉 QA 商品」生成图片/ })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: '取消' }).click()
+    await expect(dialog).toHaveCount(0)
+    expect(generated).toHaveLength(0)
   } finally {
     await context.close()
     await browser.close()

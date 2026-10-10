@@ -109,7 +109,7 @@ describe('installed e-commerce image/video workflow contract', () => {
     expect(videoSkill).toContain('所有镜头时长之和严格等于用户指定总时长')
     expect(videoSkill).toContain('不读取或分析图片附件、不构建知识图谱、不查询竞品/行业数据')
     expect(videoSkill).toContain('不从常识、示例或图片外观推断商品事实')
-    expect(videoSkill).toContain('只有实际数据源返回了可核验结果才可引用')
+    expect(videoSkill).toContain('若 `merchant-marketing` 已通过获授权的数据源完成相关工作并实际返回可核验结论，本技能可注明来源后引用')
     expect(marketplaceVideoSkill).toBe(videoSkill)
     expect(storyboardSkill).toContain('This skill produces text, never a rendered video.')
     expect(storyboardSkill).toContain('generic creative text, not provider-validated parameters, an executable request, or evidence that a video renderer accepts them')

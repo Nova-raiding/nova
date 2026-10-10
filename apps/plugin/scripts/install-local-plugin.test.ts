@@ -30,6 +30,7 @@ function setup(sourceRoot = source, { marketplaceSourceRoot }: { marketplaceSour
 const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_CODEX_CALLS,JSON.stringify(args)+'\\n')
 if(args.join(' ')==='plugin marketplace list --json'){
+ if(process.env.FAKE_INVALID_LIST_AFTER_ADD==='1'&&fs.existsSync(process.env.FAKE_ADD_OCCURRED_FILE)){process.stdout.write('{not-json');process.exit(0)}
  const root=fs.existsSync(process.env.FAKE_ACTIVE_MARKETPLACE)?fs.readFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,'utf8'):null
  process.stdout.write(JSON.stringify({marketplaces:root?[{name:'merchant-local-test',root,marketplaceSource:{sourceType:'local',source:root}}]:[]}));process.exit(0)
 }
@@ -37,6 +38,7 @@ if(args[0]==='plugin'&&args[1]==='marketplace'&&args[2]==='add'){
  if(process.env.FAKE_UNKNOWN_ON_ADD==='1'){fs.writeFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,process.env.FAKE_UNKNOWN_ROOT);process.stderr.write('simulated unexpected registration');process.exit(2)}
  if(process.env.FAKE_FAIL_ADD_BEFORE==='1'){process.stderr.write('simulated marketplace add failure before mutation');process.exit(2)}
  fs.writeFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,args[3])
+ if(process.env.FAKE_INVALID_LIST_AFTER_ADD==='1')fs.writeFileSync(process.env.FAKE_ADD_OCCURRED_FILE,'yes')
  if(process.env.FAKE_FAIL_ADD_AFTER==='1'){process.stderr.write('simulated marketplace add failure after mutation');process.exit(2)}
  process.stdout.write('{"ok":true}\\n');process.exit(0)
 }
@@ -58,7 +60,7 @@ process.stderr.write('unexpected fake Codex command');process.exit(2)
   return {
     root, localSource, marketplacePlugin, fakeCodex, installed, calls, activeMarketplace,
     env: { ...process.env, FAKE_CODEX_CALLS: calls, FAKE_INSTALLED: installed, FAKE_SOURCE_ROOT: marketplacePlugin,
-      FAKE_ACTIVE_MARKETPLACE: activeMarketplace },
+      FAKE_ACTIVE_MARKETPLACE: activeMarketplace, FAKE_ADD_OCCURRED_FILE: resolve(root, 'marketplace-add-observed.txt') },
   }
 }
 
@@ -89,6 +91,24 @@ describe('direct local plugin install runtime build', () => {
       expect(codexCommands(fixture).some(command => command.slice(0, 3).join(' ') === 'plugin marketplace add')).toBe(true)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 180_000)
+
+  it('rejects a marketplace plugin path that escapes its canonical plugins directory', () => {
+    const fixture = setup()
+    try {
+      const escapedPlugin = resolve(fixture.root, 'escaped-plugin')
+      cpSync(fixture.marketplacePlugin, escapedPlugin, { recursive: true })
+      writeFileSync(resolve(fixture.localSource, 'marketplace.json'), JSON.stringify({
+        name: 'merchant-local-test',
+        plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: '../escaped-plugin' } }],
+      }))
+
+      const result = runInstall(fixture)
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('local marketplace source for merchant-marketing must resolve to')
+      expect(existsSync(fixture.calls)).toBe(false)
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
 
   it.skipIf(process.platform !== 'darwin')('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
     const fixture = setup()
@@ -202,6 +222,29 @@ describe('direct local plugin install runtime build', () => {
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 30_000)
 
+  it('leaves registry state untouched when marketplace listing becomes unreadable after add', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: { ...fixture.env, FAKE_INVALID_LIST_AFTER_ADD: '1' }, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('LOCAL_PLUGIN_MARKETPLACE_ADD_STATE_UNKNOWN')
+      expect(result.stderr).toContain('LOCAL_PLUGIN_REGISTRY_ROLLBACK_FAILED')
+      expect(result.stderr).toContain('inspect with codex plugin marketplace list --json before manually removing merchant-local-test')
+      expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(fixture.localSource)
+      expect(existsSync(fixture.installed)).toBe(false)
+      expect(codexCommands(fixture)).toEqual([
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'add', fixture.localSource, '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+      ])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
   it('rolls back a partial cache and its newly added registry while preserving the install error', () => {
     const fixture = setup()
     try {
@@ -215,6 +258,31 @@ describe('direct local plugin install runtime build', () => {
       expect(existsSync(fixture.installed)).toBe(false)
       expect(existsSync(fixture.activeMarketplace)).toBe(false)
       expect(rollbackDirectories(fixture)).toEqual([])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
+  it('removes an install whose command succeeds but whose cached bridge fails verification', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: { ...fixture.env, FAKE_CORRUPT_INSTALL: '1' }, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('installed local plugin differs from its source package')
+      expect(existsSync(fixture.installed)).toBe(false)
+      expect(existsSync(fixture.activeMarketplace)).toBe(false)
+      expect(rollbackDirectories(fixture)).toEqual([])
+      expect(codexCommands(fixture)).toEqual([
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'add', fixture.localSource, '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'add', 'merchant-marketing@merchant-local-test', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'remove', 'merchant-local-test', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+      ])
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 30_000)
 

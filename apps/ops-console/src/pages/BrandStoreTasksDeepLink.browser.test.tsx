@@ -139,4 +139,26 @@ describe("brand store task route deep link", () => {
       await page.close();
     }
   }, 60_000);
+
+  it("removes a rejected store link from the address while preserving unrelated query context", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__brand-store-task-route?platform=taobao&accountId=store-1&testAccount=__none__&task_id=task-7&campaign=spring`);
+      await page.waitForFunction(() => (window as any).__routeLoads?.length === 1, undefined, { timeout: 20_000 });
+      await settle(page);
+
+      const address = new URL(page.url());
+      expect(address.searchParams.get("campaign")).toBe("spring");
+      expect(address.searchParams.has("platform")).toBe(false);
+      expect(address.searchParams.has("accountId")).toBe(false);
+      expect(address.searchParams.get("testAccount")).toBe("__none__");
+      expect(address.searchParams.get("task_id")).toBe("task-7");
+      const filters = await page.evaluate(() => (window as any).__routeFilters);
+      const loads = await page.evaluate(() => (window as any).__routeLoads);
+      expect(filters).toEqual([{ state: "failed", platform: undefined, accountId: undefined, taskId: "task-7" }]);
+      expect(loads).toEqual([{ queueFilters: { state: "failed", platform: undefined, accountId: undefined, taskId: "task-7" } }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });

@@ -35,6 +35,7 @@ const files = [
   "src/components/finance/FinanceSearchSection.advanced-filter.browser.test.tsx",
   "src/pages/FinancePage.error-recovery.browser.test.tsx",
   "src/components/rules/RuleSyncStatusSection.retry.browser.test.tsx",
+  "src/components/rules/PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx",
   "src/components/stores/StoreDirectorySection.boundary-result.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.registration-error.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.revoke-confirmation.browser.test.tsx",
@@ -67,11 +68,19 @@ const files = [
   "src/pages/StoragePage.error.browser.test.tsx",
   "src/components/storage/StorageReconciliationSection.paging.browser.test.tsx",
   "src/pages/StoresPage.brand-binding.browser.test.tsx",
+  "src/pages/StoresPage.route.browser.test.tsx",
   "src/pages/SupportPage.error.browser.test.tsx",
+  "src/pages/SupportPage.platform-route.browser.test.tsx",
   "src/pages/customer-delivery-session-loss.e2e.test.ts",
 ]
+const requestedFiles = process.argv.slice(2)
+const unknownFiles = requestedFiles.filter(file => !files.includes(file))
+if (unknownFiles.length) {
+  throw new Error(`Unknown Ops browser test path(s): ${unknownFiles.join(", ")}`)
+}
+const filesToRun = requestedFiles.length ? requestedFiles : files
 
-for (const file of files) {
+for (const file of filesToRun) {
   // This real Chromium/Vite harness compiles the page on its first navigation.
   // Keep its tenant/permission assertions in the browser lane and give each
   // navigation a bounded browser budget instead of the five-second unit limit.

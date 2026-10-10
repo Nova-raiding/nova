@@ -26,6 +26,10 @@ const statusLabel: Record<string, string> = {
   refunded: "已退款", settled: "已结算", pending_cost: "待成本核验", consumed: "已消耗", paid: "已支付", pending: "待处理", failed: "失败", manual_attention: "待人工处理",
 };
 const readableStatus = (value: string) => statusLabel[value.toLowerCase()] ?? value;
+export const financeStatusTagColor = (value: string) => {
+  const normalized = value.toLowerCase();
+  return normalized === "failed" || normalized === "manual_attention" ? "red" : "blue";
+};
 const money = (value: number | undefined, precision = 2) => value === undefined ? "—" : `¥${value.toFixed(precision)}`;
 
 export function FinanceSearchSection({ controller, canExport = false, showProviderStatementStatus = true, compactSummary = false }: FinanceSearchSectionProps) {
@@ -63,7 +67,7 @@ export function FinanceSearchSection({ controller, canExport = false, showProvid
     { title: "类型", dataIndex: "kind", width: 120, fixed: "left", render: (kind: FinanceRecordKind) => <Tag>{kindLabel[kind]}</Tag> },
     { title: "企业主体", key: "enterprise", width: 220, render: (_value, record) => <EnterpriseIdentity name={record.enterpriseName} workspaceId={record.workspaceId} /> },
     { title: "记录", key: "record", width: 240, render: (_value, record) => <Space orientation="vertical" size={0}><Typography.Text ellipsis={{ tooltip: record.id }} code>{record.id}</Typography.Text>{record.reference ? <Typography.Text type="secondary" ellipsis={{ tooltip: record.reference }}>引用：{record.reference}</Typography.Text> : null}</Space> },
-    { title: "状态", dataIndex: "status", width: 130, render: value => <Tag color={value === "failed" || value === "manual_attention" ? "red" : "blue"}>{readableStatus(value)}</Tag> },
+    { title: "状态", dataIndex: "status", width: 130, render: value => <Tag color={financeStatusTagColor(value)}>{readableStatus(value)}</Tag> },
     { title: "金额", dataIndex: "amountCny", width: 110, align: "right", render: value => money(value) },
     { title: "成本 / 客户计费", key: "cost", width: 190, align: "right", render: (_value, record) => <Space orientation="vertical" size={0}><Typography.Text type="secondary">成本 {financeRecordCostEvidence(record.kind, record.providerCostCny)}</Typography.Text><Typography.Text>计费 {financeRecordCostEvidence(record.kind, record.customerChargeCny)}</Typography.Text></Space> },
     { title: "发生时间", dataIndex: "occurredAt", width: 180, render: value => new Date(value).toLocaleString() },
@@ -125,6 +129,7 @@ export function FinanceSearchSection({ controller, canExport = false, showProvid
         <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={retrySearch}>重试</Button>} role="alert" aria-live="assertive" aria-atomic="true" />
       </div>}
       {controller.exportError && <Alert type="error" showIcon title="财务导出失败" description={controller.exportError} role="alert" />}
+      {controller.exportNotice ? <Alert type={controller.exportNotice.truncated ? "warning" : "success"} showIcon role="status" aria-live="polite" title={controller.exportNotice.message} /> : null}
 
       {!initialLoadFailed ? <><Row gutter={[12, 12]} aria-label="财务检索汇总">
         <Col xs={12} lg={summaryColSpan}><Statistic title="记录数" value={summaryNumber(summary?.totalRecords)} /></Col>

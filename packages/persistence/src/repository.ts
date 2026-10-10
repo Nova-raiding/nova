@@ -117,6 +117,12 @@ export interface OutboxClaimOptions {
   snapshotEntityTypes?: readonly string[]
 }
 
+// Outcome writes without a token are reserved for unclaimed/reconciled rows.
+// Call lockOutboxRow before the conditional UPDATE so its clock_timestamp()
+// check runs after any row-lock wait; UPDATE may qualify before waiting.
+const outboxOutcomeLeasePredicate = `(($3::text IS NULL AND lease_token IS NULL AND lease_until IS NULL)
+              OR ($3::text IS NOT NULL AND lease_token = $3 AND lease_until > clock_timestamp()))`
+
 export class TenantScopeError extends Error { constructor() { super('workspace scope is required') } }
 
 export class OutboxEventNotFoundError extends Error {
@@ -125,6 +131,14 @@ export class OutboxEventNotFoundError extends Error {
     super('outbox event not found')
     this.name = 'OutboxEventNotFoundError'
   }
+}
+
+async function lockOutboxRow(client: SqlClient, workspaceId: string, id: string): Promise<void> {
+  const result = await client.query<{ id: string }>(
+    'SELECT id FROM outbox_events WHERE workspace_id = $1 AND id = $2 FOR UPDATE',
+    [workspaceId, id],
+  )
+  if (!result.rows[0]) throw new OutboxEventNotFoundError()
 }
 
 export class InMemoryOutbox {
@@ -326,10 +340,12 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     const scope = requireWorkspaceScope(workspaceId)
     if (!id) throw new Error('outbox event id is required')
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
             SET published_at = COALESCE(published_at, $3::timestamptz), lease_token = NULL, lease_until = NULL
           WHERE workspace_id = $1 AND id = $2
+            AND (published_at IS NOT NULL OR (unknown_at IS NULL AND lease_token IS NULL AND lease_until IS NULL))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at`,
         [scope, id, publishedAt],
       )
@@ -483,7 +499,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                 attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
            FROM outbox_events
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL AND unknown_at IS NULL
-            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())
+            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, clock_timestamp())
           LIMIT 1`,
         [scope, id, leaseToken, now],
       )
@@ -498,11 +514,13 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     if (!leaseToken) throw new OutboxEventNotFoundError()
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('leaseMs must be a positive integer')
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET lease_until = GREATEST($4::timestamptz, now()) + ($5 * interval '1 millisecond')
-          WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL AND unknown_at IS NULL
-            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())
+            SET lease_until = GREATEST($4::timestamptz, clock_timestamp()) + ($5 * interval '1 millisecond')
+          WHERE workspace_id = $1 AND id = $2
+            AND published_at IS NULL AND unknown_at IS NULL
+            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, clock_timestamp())
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken, now, leaseMs],
@@ -515,6 +533,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
   async recordFailure(workspaceId: string, id: string, failure: OutboxFailure, nextAttemptAt: string, leaseToken?: string): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         // This attempt was already counted by claimPending; incrementing again
         // here would spend the retry budget twice as fast as configured.
@@ -525,7 +544,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL
-            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
+            AND ${outboxOutcomeLeasePredicate}
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, nextAttemptAt, JSON.stringify(failure)],
@@ -538,6 +557,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
   async deadLetter(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
             SET last_error = COALESCE($4::jsonb, '{}'::jsonb) || '{"terminal":true}'::jsonb,
@@ -545,7 +565,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL
-            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
+            AND ${outboxOutcomeLeasePredicate}
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, JSON.stringify(failure)],
@@ -558,14 +578,16 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
   async markUnknown(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET unknown_at = COALESCE(unknown_at, now()),
+            SET unknown_at = COALESCE(unknown_at, clock_timestamp()),
                 last_error = $4::jsonb,
                 lease_token = NULL,
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
-            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
+            AND unknown_at IS NULL
+            AND ${outboxOutcomeLeasePredicate}
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, JSON.stringify(failure)],
@@ -602,12 +624,12 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
   async ack(workspaceId: string, id: string, leaseToken?: string, publishedAt = new Date().toISOString()): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
+      await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
             SET published_at = COALESCE(published_at, $4::timestamptz), lease_token = NULL, lease_until = NULL
           WHERE workspace_id = $1 AND id = $2
-            AND (published_at IS NOT NULL OR $3::text IS NULL
-              OR (lease_token = $3 AND lease_until > now()))
+            AND (published_at IS NOT NULL OR (unknown_at IS NULL AND ${outboxOutcomeLeasePredicate}))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, publishedAt],

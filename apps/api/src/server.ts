@@ -15615,20 +15615,17 @@ export function modelSettlementDomainError(error: unknown) {
     const providerStatus = Number.isInteger(sourceStatus) && sourceStatus >= 400 && sourceStatus <= 599 ? sourceStatus : details.provider_status
     const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
     const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
-    const providerErrorSummary = typeof details.provider_error_summary === 'string' && details.provider_error_summary.trim() ? details.provider_error_summary.trim().slice(0, 500) : undefined
     return new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型中转请求结果暂时无法确认；已转入后台自动核对，当前任务不会自动重试或重复扣费', 503, {
       provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, retryable: false,
       next_action: 'reconcile_model_request',
       ...(Number.isInteger(providerStatus) ? { provider_status: providerStatus } : {}),
       ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
       ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
-      ...(providerErrorSummary ? { provider_error_summary: providerErrorSummary } : {}),
     })
   }
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
     const source = error as { details?: unknown; status?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; retryable?: unknown; retryAfterMs?: unknown }
     const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
-    const summary = typeof details.provider_error_summary === 'string' && details.provider_error_summary.trim() ? details.provider_error_summary.trim().slice(0, 500) : undefined
     const status = Number.isInteger(source.status) ? Number(source.status) : details.provider_status
     const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
     const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
@@ -15642,7 +15639,6 @@ export function modelSettlementDomainError(error: unknown) {
       ...(Number.isInteger(status) ? { provider_status: status } : {}),
       ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
       ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
-      ...(summary ? { provider_error_summary: summary } : {}),
       ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
       ...(retryAfterSeconds !== undefined ? { retry_after_seconds: retryAfterSeconds } : {}),
     })

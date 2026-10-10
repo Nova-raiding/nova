@@ -102,7 +102,7 @@ describe("public rule platform filter during mutation", () => {
       await filter.click();
       await page.getByText("拼多多", { exact: true }).last().click();
       await page.getByText(rule.name, { exact: true }).waitFor();
-      await page.getByText(rule.name, { exact: true }).click();
+      await page.getByRole("button", { name: `查看${rule.name}审核详情` }).click();
       await page.getByRole("textbox", { name: "审核原因" }).fill("依据已核对，拒绝此草稿");
       await page.getByRole("button", { name: "拒绝并归档" }).click();
       await page.waitForFunction(() => Boolean(window.__ruleStatusResolve));

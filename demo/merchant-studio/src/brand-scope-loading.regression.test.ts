@@ -45,4 +45,16 @@ describe('workspace brand settings read gate', () => {
     expect(app).toContain('disabled={scopedBrandLoading} onChange={(next) => { setSeriesBrands')
     expect(app).toContain('disabled={scopedBrandLoading} onEnabledChange=')
   })
+
+  it('offers retry from the brand workspace and single-image brand entry points', () => {
+    expect(app).toContain('重试读取品牌配置')
+    expect(app).toContain('setScopedBrandReadAttempt((attempt) => attempt + 1)')
+    expect(app).toContain('}, [baseUrl, activeStoreId, scopedBrandReadAttempt])')
+  })
+
+  it('closes the series manager with a visible action or Escape and returns focus to its opener', () => {
+    expect(app).toContain('aria-label="关闭系列管理" onClick={closeSeriesManager}')
+    expect(app).toContain("if (event.key === 'Escape')")
+    expect(app).toContain('seriesManagerTriggerRef.current?.focus({ preventScroll: true })')
+  })
 })

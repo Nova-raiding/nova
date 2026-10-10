@@ -31,16 +31,17 @@ describe("platform rule activation form validation", () => {
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { RuleCenterSection } from '/src/components/tasks/RuleCenterSection.tsx';
+            window.__ruleStatusUpdates = [];
             const model = {
               canRules: true,
               ruleMutationKey: undefined,
               rules: [{
                 id: 'public_rule_1', packId: 'jd-pack', name: '标题规则', version: '1.0', status: 'draft', lifecycleStatus: 'draft',
-                scope: 'platform', scopeValue: 'jd', targetId: 'jd', revision: 1, activationEligible: true,
+                scope: location.search.includes('workspace') ? 'workspace' : 'platform', scopeValue: 'jd', targetId: 'jd', revision: 1, activationEligible: true,
                 source: { kind: 'official', trust: 'verified', reference: 'https://rule.jd.com/rule/list.action', checkedAt: '2026-10-01T00:00:00.000Z', createdBy: 'signed-rule-sync' },
                 createdBy: 'signed-rule-sync',
               }],
-              updateRuleStatus: async () => true,
+              updateRuleStatus: async (row, status) => { window.__ruleStatusUpdates.push({ packId: row.packId, status }); return true; },
               publishRuleDraft: async () => true,
             };
             createRoot(document.getElementById('root')).render(React.createElement(App, null,
@@ -106,4 +107,44 @@ describe("platform rule activation form validation", () => {
       expect(pageErrors).toEqual([]);
     } finally { await page.close(); }
   }, 30_000);
+
+  it("confirms lifecycle changes with their scope and lets the operator cancel without writing", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    try {
+      await page.goto(`${baseUrl}/__rule-activation-validation-test`);
+      page.setDefaultTimeout(5_000);
+      await page.getByRole("button", { name: "标记过期" }).click();
+      const confirmation = page.getByRole("dialog", { name: "确认标记过期？" });
+      await confirmation.getByText("将对所有商家应用", { exact: false }).waitFor({ timeout: 5_000 });
+      await confirmation.locator(".ant-modal-confirm-btns button").first().click();
+      await page.waitForTimeout(500);
+      expect(await page.evaluate(() => window.__ruleStatusUpdates)).toEqual([]);
+
+      await page.getByRole("button", { name: "停用" }).click();
+      const disableConfirmation = page.getByRole("dialog", { name: "确认停用？" });
+      await disableConfirmation.getByRole("button", { name: "确认停用" }).click();
+      await page.waitForFunction(() => window.__ruleStatusUpdates?.length === 1, { timeout: 5_000 });
+      expect(await page.evaluate(() => window.__ruleStatusUpdates)).toEqual([{ packId: "jd-pack", status: "inactive" }]);
+      expect(pageErrors).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("identifies workspace scope in the lifecycle confirmation", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.goto(`${baseUrl}/__rule-activation-validation-test?scope=workspace`);
+      await page.getByRole("button", { name: "标记过期" }).click();
+      const confirmation = page.getByRole("dialog", { name: "确认标记过期？" });
+      await confirmation.getByText("将对当前工作区应用", { exact: false }).waitFor();
+      await confirmation.getByRole("button", { name: "取消" }).click();
+    } finally { await page.close(); }
+  }, 30_000);
 });
+
+declare global {
+  interface Window {
+    __ruleStatusUpdates?: Array<{ packId: string; status: string }>;
+  }
+}

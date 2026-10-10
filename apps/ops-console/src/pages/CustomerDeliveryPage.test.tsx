@@ -487,7 +487,35 @@ describe("customer delivery read-only desktop interaction", () => {
       // registrant `shouldConfirmWorkbenchTransition` can never return true.
       await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("客户建档表单");
       await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
+      expect(await page.getByRole("button", { name: "返回客户建档", exact: true }).getAttribute("aria-expanded")).toBe("true");
+      await page.getByRole("dialog").filter({ hasText: "当前填写内容和勾选尚未保存" })
+        .getByRole("button", { name: "放弃并返回", exact: true }).click();
       await expect.poll(() => page.getByTestId("dirty-labels").innerText()).toBe("");
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("asks before leaving a dirty customer creation form and restores the form when canceled", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await prepare(page, { write: true });
+      await page.getByRole("button", { name: "新建客户", exact: true }).click();
+      const companyName = page.getByLabel("公司名称", { exact: true });
+      await companyName.fill("尚未保存的客户");
+      await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
+      expect(await page.getByRole("button", { name: "返回客户建档", exact: true }).getAttribute("aria-expanded")).toBe("true");
+
+      const confirmation = page.getByRole("dialog").filter({ hasText: "当前填写内容和勾选尚未保存" });
+      await confirmation.waitFor();
+      await confirmation.getByRole("button", { name: "继续填写", exact: true }).click();
+      expect(await companyName.inputValue()).toBe("尚未保存的客户");
+      expect(await page.getByRole("button", { name: "创建客户", exact: true }).count()).toBe(1);
+
+      await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
+      await page.getByRole("dialog").filter({ hasText: "当前填写内容和勾选尚未保存" })
+        .getByRole("button", { name: "放弃并返回", exact: true }).click();
+      await page.getByRole("button", { name: "新建客户", exact: true }).waitFor();
+      await page.getByRole("button", { name: "新建客户", exact: true }).click();
+      expect(await page.getByLabel("公司名称", { exact: true }).inputValue()).toBe("");
     } finally { await page.close(); }
   }, 45_000);
 

@@ -12,11 +12,10 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const directoryReadFailed = Boolean(model.dataSetError("ops.workspaces.list"));
   const financeReadFailed = Boolean(model.dataSetError("ops.finance.search"));
   const usageReadFailed = Boolean(model.dataSetError("ops.model-usage.summary"));
-  // The directory is requested with merchant_only=true. Its total is therefore
-  // the number of workspaces linked to active merchant accounts, not every
-  // platform workspace. The separate merchantWorkspaceCount headline is
-  // counted globally and duplicates this number for the unfiltered overview.
+  // The directory is requested with merchant_only=true, so this total means
+  // workspaces linked to active merchant accounts, not every platform workspace.
   const linkedMerchantWorkspaceCount = directoryReadFailed ? undefined : model.workspaceDirectory.total;
+  const activeMemberWorkspaceCount = directoryReadFailed ? undefined : model.workspaceDirectory.activeMemberWorkspaceCount;
   // The server returns no gifted-customer semantics (the directory query is
   // merchant-only and exposes no grant marker), so the previous
   // `total - merchantWorkspaceCount` subtraction was an invented metric. It is
@@ -58,7 +57,7 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
     return matches.length ? matches.reduce((total, count) => total + count, 0) : undefined;
   };
   const metric = (title: string, value: string | number | undefined, unit: string, tone = "") => (
-    <article className={`ops-dashboard-metric ${tone}`} key={title}>
+    <article className={`ops-dashboard-metric ${tone}`} key={title} aria-label={`${title}：${value === undefined ? "未知" : value} ${unit}`}>
       <span className="ops-dashboard-metric-label">{title}</span>
       <strong>{value === undefined ? "—" : value} <small>{unit}</small></strong>
     </article>
@@ -72,7 +71,7 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
         <div className="ops-dashboard-current-month">当前月份：<strong>{dashboardMonth}</strong></div>
       </section>
       <section className="ops-dashboard-panel-grid">
-        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("客户总数", directoryReadFailed ? undefined : model.workspaceDirectory.total, "家", "primary")}{metric("有效客户数", linkedMerchantWorkspaceCount, "家", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
+        <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("已关联商家工作区", linkedMerchantWorkspaceCount, "个", "primary")}{metric("有活跃成员的工作区", activeMemberWorkspaceCount, "个", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
         <article className="ops-dashboard-panel"><header><div><h3>{dashboardMonth === "—" ? "本月" : dashboardMonth}经营数据</h3></div><small>本月</small></header><div className="ops-dashboard-monthly-groups">
           <section><h4>接入月度</h4><div className="ops-dashboard-metric-list">{metric("接入客户数", monthlyFinance?.onboardingOrderWorkspaceCount, "家", "primary")}{metric("接入费销售额", monthlyFinance?.onboardingOrderCny, "元", "revenue")}</div></section>
           <section><h4>套餐月度</h4><div className="ops-dashboard-metric-list">{metric("套餐销量", monthlyBundleCount, "单")}{metric("套餐销售额", monthlyFinance?.subscriptionOrderCny, "元", "revenue")}{metric("2000 版本销量", skuOrdersFor(["sku-monthly-basic", "monthly-basic", "monthly_basic", "basic", "sku-monthly-2000"]), "单")}{metric("5000 版本销量", skuOrdersFor(["sku-monthly-growth", "monthly-growth", "monthly_growth", "growth", "sku-monthly-5000"]), "单")}</div></section>
