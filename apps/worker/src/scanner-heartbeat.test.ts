@@ -6,6 +6,80 @@ import type { ScannerHeartbeat } from '../../../packages/workers/src/scanner-hea
 import { EICAR_SELF_TEST_BYTES, ScannerHeartbeatController } from './scanner-heartbeat.js'
 
 describe('scanner heartbeat controller', () => {
+  it('does not install its polling timer if stop races the initial probe', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-stop-race-'))
+    let releaseProbe!: () => void
+    let probeStarted!: () => void
+    const probeEntered = new Promise<void>(resolve => { probeStarted = resolve })
+    const probeGate = new Promise<void>(resolve => { releaseProbe = resolve })
+    const timer = vi.spyOn(globalThis, 'setInterval')
+    const controller = new ScannerHeartbeatController({
+      instanceId: 'scan-stop-race', readyFile: join(directory, 'ready'),
+      scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected' as const, target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) },
+      redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => '2026-08-30T09:58:00.000Z' },
+      thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 },
+      intervalMs: 5_000, callbackConfigured: true,
+      dependencyProbe: async () => { probeStarted(); await probeGate; return { databaseReady: true, apiReady: true } },
+      queueProbe: async () => ({ backlog: 0, deadLetter: 0 }),
+      now: () => new Date('2026-08-30T10:00:00.000Z'),
+    })
+
+    try {
+      const starting = controller.start()
+      await probeEntered
+      const stopping = controller.stop()
+      releaseProbe()
+      await Promise.all([starting, stopping])
+      expect(timer).not.toHaveBeenCalled()
+    } finally {
+      timer.mockRestore()
+    }
+  })
+
+  it('revokes scan admission after stop even when the last heartbeat was healthy', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-stop-admission-'))
+    const publish = vi.fn(async () => undefined)
+    const controller = new ScannerHeartbeatController({
+      instanceId: 'scan-stop-admission', readyFile: join(directory, 'ready'),
+      scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected' as const, target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) },
+      redis: { publish, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => '2026-08-30T09:58:00.000Z' },
+      thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 },
+      intervalMs: 5_000, callbackConfigured: true,
+      dependencyProbe: async () => ({ databaseReady: true, apiReady: true }),
+      queueProbe: async () => ({ backlog: 0, deadLetter: 0 }),
+      now: () => new Date('2026-08-30T10:00:00.000Z'),
+    })
+
+    await controller.start()
+    expect(controller.canProcessScans()).toBe(true)
+    await controller.stop()
+    expect(controller.canProcessScans()).toBe(false)
+    await expect(controller.tick()).rejects.toMatchObject({ code: 'SCANNER_HEARTBEAT_STOPPED' })
+    expect(publish).toHaveBeenCalledOnce()
+    await expect(stat(join(directory, 'ready'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('revokes cached scan admission when a later heartbeat cannot publish', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-publish-failure-'))
+    const publish = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('redis publish unavailable'))
+    const controller = new ScannerHeartbeatController({
+      instanceId: 'scan-publish-failure', readyFile: join(directory, 'ready'),
+      scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected' as const, target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) },
+      redis: { publish, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => '2026-08-30T09:58:00.000Z' },
+      thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 },
+      intervalMs: 5_000, callbackConfigured: true,
+      dependencyProbe: async () => ({ databaseReady: true, apiReady: true }),
+      queueProbe: async () => ({ backlog: 0, deadLetter: 0 }),
+      now: () => new Date('2026-08-30T10:00:00.000Z'),
+    })
+
+    await controller.tick()
+    expect(controller.canProcessScans()).toBe(true)
+    await expect(controller.tick()).rejects.toThrow('redis publish unavailable')
+    expect(controller.canProcessScans()).toBe(false)
+    await expect(stat(join(directory, 'ready'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('requires real callback acceptance for readiness even after execution admission opens', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-bootstrap-'))
     const readyFile = join(directory, 'ready')

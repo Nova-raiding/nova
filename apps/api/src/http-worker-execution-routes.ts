@@ -27,11 +27,12 @@ interface HttpWorkerExecutionDependencies {
   isProduction: () => boolean
   serializedWorkerAuthorizationSnapshot: (snapshot: WorkerAuthorizationSnapshot) => Record<string, unknown>
   publishMediaPayload: (workspaceId: string, job: PublishJob) => Promise<unknown>
+  readBody: () => Promise<Record<string, unknown>>
   send: (res: ServerResponse, status: number, workspaceId: string, data: unknown, error: null, req: IncomingMessage) => true
 }
 
 export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: HttpWorkerExecutionDependencies): Promise<boolean> {
-  const { service, requireWorkerCredentialAuthorization, resolveWorkspace, recheckCustomerDeliveryScan, workerEventOperations, requiresStrictAuth, recheckWorkerGenerationKnowledge, requiresWorkerActorAuthorization, recheckWorkerCommercialAccess, serializedWorkerCommercialRecheck, recheckWorkerAuthorizationSnapshot, enrichRequestObservation, assertCanonicalTaskScopeForAction, isProduction, serializedWorkerAuthorizationSnapshot, publishMediaPayload, send } = deps
+  const { service, requireWorkerCredentialAuthorization, resolveWorkspace, recheckCustomerDeliveryScan, workerEventOperations, requiresStrictAuth, recheckWorkerGenerationKnowledge, requiresWorkerActorAuthorization, recheckWorkerCommercialAccess, serializedWorkerCommercialRecheck, recheckWorkerAuthorizationSnapshot, enrichRequestObservation, assertCanonicalTaskScopeForAction, isProduction, serializedWorkerAuthorizationSnapshot, publishMediaPayload, readBody, send } = deps
   const persistence = deps.persistence()
   const workerExecutionCheckMatch = path.match(/^\/v1\/worker-events\/([^/]+)\/execution-check$/)
   const publishExecutionCheckMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/execution-check$/)
@@ -130,14 +131,50 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     const commercialRecheck = await recheckWorkerCommercialAccess(publishEvent, commercialSnapshot)
     return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck, commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
   }
-  const publishMediaMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/media$/)
+  const publishMediaMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/media(?:\/lifecycle)?$/)
   if (req.method === 'GET' && publishMediaMatch) {
     await requireWorkerCredentialAuthorization(req)
+    if (path.endsWith('/lifecycle')) {
+      if (!['publish','all'].includes(deps.workerRole(req) ?? '')) throw new DomainError(ERROR_CODES.FORBIDDEN, '媒体生命周期读取只允许已验证签名的 publish worker', 403)
+      const workspaceId = resolveWorkspace(req)
+      const job = service.assertPublishExecutionAllowed({ workspaceId, publishJobId: publishMediaMatch[1]! })
+      const key = url.searchParams.get('media_idempotency_key') ?? ''
+      const eventId = url.searchParams.get('event_id') ?? ''
+      if (!persistence.publishMediaOrphans || !key || !eventId) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_UNAVAILABLE', '媒体恢复记录或绑定参数不可用', 503)
+      const event = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === eventId)
+      if (!event || event.eventType !== 'publish.requested' || event.aggregateId !== job.id) throw new DomainError('PUBLISH_MEDIA_EVENT_INVALID', '媒体回执未绑定当前发布任务事件', 403)
+      const selected = job.selectedVisuals.find(item => key === `${job.id}:media:${item.visualRef}`)
+      if (!selected) throw new DomainError('PUBLISH_MEDIA_SELECTION_MISMATCH', '媒体幂等键与已选视觉不匹配', 403)
+      const record = await persistence.publishMediaOrphans.getByKey(workspaceId, job.id, key)
+      if (record && (record.eventId !== eventId || record.sha256 !== selected.sha256 || record.role !== selected.role)) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '保存的媒体回执与当前视觉快照不匹配', 409)
+      return send(res, 200, workspaceId, { media_lifecycle: record ?? null }, null, req)
+    }
     const workspaceId = resolveWorkspace(req)
     const job = service.assertPublishExecutionAllowed({ workspaceId, publishJobId: publishMediaMatch[1]! })
     await assertCanonicalTaskScopeForAction(service.getTask(job.taskId))
     if (!job.selectedVisuals.length) return send(res, 200, workspaceId, { job_id: job.id, media: [] }, null, req)
     return send(res, 200, workspaceId, { job_id: job.id, media: await publishMediaPayload(workspaceId, job) }, null, req)
+  }
+  if (req.method === 'POST' && publishMediaMatch && path.endsWith('/media/lifecycle')) {
+    await requireWorkerCredentialAuthorization(req)
+    if (!['publish','all'].includes(deps.workerRole(req) ?? '')) throw new DomainError(ERROR_CODES.FORBIDDEN, '媒体生命周期回执只允许已验证签名的 publish worker', 403)
+    const workspaceId = resolveWorkspace(req)
+    const job = service.assertPublishExecutionAllowed({ workspaceId, publishJobId: publishMediaMatch[1]! })
+    const body = await readBody()
+    const eventId = typeof body.event_id === 'string' ? body.event_id : ''
+    const key = typeof body.media_idempotency_key === 'string' ? body.media_idempotency_key : ''
+    const event = persistence.outbox && eventId ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === eventId) : undefined
+    if (!event || event.eventType !== 'publish.requested' || event.aggregateId !== job.id) throw new DomainError('PUBLISH_MEDIA_EVENT_INVALID', '媒体回执未绑定当前发布任务事件', 403)
+    if (!persistence.publishMediaOrphans) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_UNAVAILABLE', '发布媒体恢复记录仓储不可用', 503)
+    const selected = job.selectedVisuals.find(item => item.visualRef === body.visual_ref)
+    if (!selected || selected.sha256 !== body.sha256 || selected.role !== body.role || !job.accountId || !job.platform || body.platform !== job.platform || body.account_id !== job.accountId) throw new DomainError('PUBLISH_MEDIA_SELECTION_MISMATCH', '媒体回执与当前发布任务的已选视觉不匹配', 403)
+    if (key !== `${job.id}:media:${selected.visualRef}`) throw new DomainError('PUBLISH_MEDIA_IDEMPOTENCY_KEY_INVALID', '媒体幂等键与已选视觉不匹配', 400)
+    const state = body.state
+    if (!['intent','uploaded','orphaned','retained','unknown','deleted'].includes(String(state))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '媒体生命周期状态无效', 400)
+    const receipt = body.receipt && typeof body.receipt === 'object' && !Array.isArray(body.receipt) ? body.receipt as Record<string, unknown> : undefined
+    if (state === 'uploaded' && (!receipt || receipt.platform !== job.platform || receipt.visualRef !== selected.visualRef || receipt.role !== selected.role || receipt.sha256 !== selected.sha256 || typeof receipt.mediaId !== 'string' || !receipt.mediaId.trim() || (receipt.url !== undefined && (typeof receipt.url !== 'string' || !receipt.url.trim())))) throw new DomainError('PUBLISH_MEDIA_RECEIPT_INVALID', '上传回执缺少平台、视觉、SHA 或有效媒体标识证据', 400)
+    const record = await persistence.publishMediaOrphans.transition({ workspaceId, publishJobId: job.id, eventId, mediaIdempotencyKey: key, platform: job.platform, accountId: job.accountId, visualRef: selected.visualRef, role: selected.role, sha256: selected.sha256, state: state as import('../../../packages/persistence/src/publish-media-orphan-repository.js').PublishMediaState, ...(receipt ? { receipt } : {}), ...(typeof body.reason === 'string' ? { reason: body.reason.slice(0, 256) } : {}) })
+    return send(res, 200, workspaceId, { media_lifecycle: record }, null, req)
   }
   return false
 }

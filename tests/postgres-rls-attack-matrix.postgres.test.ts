@@ -141,6 +141,39 @@ describe("PostgreSQL RLS cross-scope attack matrix", () => {
         }
       }
 
+      // Workspace identity is transaction-local. A pooled connection that
+      // served workspace A must not carry that identity into its next
+      // transaction if a caller forgets to set scope before querying.
+      const reusedClient = await app.connect();
+      try {
+        await reusedClient.query("BEGIN");
+        await reusedClient.query(
+          "SELECT set_config('app.workspace_id', 'rls_matrix_ws_a', true)",
+        );
+        const scopedListing = await reusedClient.query(
+          "SELECT id FROM product_listings ORDER BY id",
+        );
+        expect(scopedListing.rows).toEqual([
+          { id: "rls_matrix_listing_a" },
+        ]);
+        await reusedClient.query("COMMIT");
+
+        await reusedClient.query("BEGIN");
+        const unscopedListing = await reusedClient.query(
+          "SELECT id FROM product_listings ORDER BY id",
+        );
+        expect(
+          unscopedListing.rows,
+          "pooled connection retained a prior transaction's workspace identity",
+        ).toEqual([]);
+        await reusedClient.query("COMMIT");
+      } catch (error) {
+        await reusedClient.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        reusedClient.release();
+      }
+
       // A forged workspace_id must be rejected by WITH CHECK, even when the
       // caller knows valid foreign keys from the other tenant.
       const brandAttackClient = await app.connect();

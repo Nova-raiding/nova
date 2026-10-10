@@ -10,6 +10,27 @@ import { pathToFileURL } from 'node:url'
 const CALLBACK_PATH = '/merchant-mcp-callback'
 const fail = code => new Error(`LOCAL_PLUGIN_LOGIN_${code}`)
 
+export function localPluginLoginFailureMessage(code) {
+  return ({
+    ARGUMENTS_INVALID: '命令参数无效。请运行 login.sh --help 查看用法。',
+    TARGET_INVALID: '服务地址或工作区 ID 无效。请使用 https 服务地址和平台分配的 ws_... 工作区 ID。',
+    MACOS_REQUIRED: '此登录脚本只支持 macOS；Windows 请运行 login.cmd。',
+    WINDOWS_REQUIRED: '此登录脚本只支持 Windows；macOS 请运行 login.sh。',
+    PACKAGE_MISMATCH: '插件安装包文件版本不一致。请重新安装同一版本的完整插件包。',
+    INSTALLATION_PROOF_INVALID: '安装实例校验信息不完整或已过期。请从当前插件安装器重新发起绑定。',
+    REQUEST_ID_INVALID: '一次性连接请求无效或已过期。请重新发起本地插件绑定。',
+    CREDENTIAL_IPC_UNAVAILABLE: '系统钥匙串辅助进程不可用。请关闭其他安装器窗口后，在图形终端重新运行 login.sh。',
+    KEYCHAIN_VERIFY_FAILED: '凭据写入后的钥匙串读取校验失败。请检查钥匙串权限，并重新运行 login.sh。',
+    EXCHANGE_REJECTED: '服务器拒绝了授权。请在浏览器确认商家账号和工作区后重新运行登录脚本。',
+    RESPONSE_INVALID: '授权服务返回的数据无法验证，凭据未确认可用。请检查网络后重新发起登录。',
+    ACK_FAILED: '本地凭据可能已保存，但服务端未确认安装实例。请从当前安装器重新发起绑定。',
+    TIMEOUT: '等待浏览器授权超时。请重新运行登录脚本并在浏览器完成确认。',
+    CANCELLED: '本地插件登录已取消。需要使用时可重新运行登录脚本。',
+    CANCEL_REVOKE_FAILED: '登录取消后的临时凭据撤销未获确认。请联系平台管理员检查会话后再登录。',
+    FAILED: '登录流程未完成。请检查网络、浏览器和系统凭据库后重试；令牌等敏感信息不会输出。',
+  })[code] ?? '登录流程未完成。请运行登录脚本的 --help 查看用法，检查网络和系统凭据库后重试。'
+}
+
 function callbackPage(nonce) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>绑定 Store Nova</title>
@@ -236,7 +257,7 @@ function configureLaunchd(target) {
 
 async function main() {
   const args = process.argv.slice(2)
-  if (args.length === 1 && args[0] === '--help') {
+  if (args.includes('--help')) {
     process.stdout.write('用法: node scripts/login-local-macos.mjs --base-url https://yxsona.com --workspace ws_xxx [--request-id <一次性请求标识>] [--no-open]\n在商家浏览器登录并确认后，凭据写入系统钥匙串；不需要 ChatGPT OAuth 或插件市场上架。\n')
     return
   }
@@ -322,5 +343,9 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(error => { process.stderr.write(`${/^LOCAL_PLUGIN_LOGIN_[A-Z_]+$/u.test(error?.message) ? error.message : 'LOCAL_PLUGIN_LOGIN_FAILED'}\n`); process.exitCode = 1 })
+  main().catch(error => {
+    const code = /^LOCAL_PLUGIN_LOGIN_([A-Z_]+)$/u.exec(error?.message ?? '')?.[1] ?? 'FAILED'
+    process.stderr.write(`LOCAL_PLUGIN_LOGIN_${code}: ${localPluginLoginFailureMessage(code)}\n`)
+    process.exitCode = 1
+  })
 }

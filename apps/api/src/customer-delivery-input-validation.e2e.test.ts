@@ -200,6 +200,23 @@ describe('customer delivery input validation over loopback HTTP', () => {
   })
 
   describe('remaining storage and draft boundary regressions', () => {
+    it.each([
+      ['offset', 'not-a-number'], ['offset', '1.5'], ['offset', '-1'], ['offset', '9007199254740992'],
+      ['limit', '0'], ['limit', '1.5'], ['limit', '101'], ['limit', '1e2'],
+    ])('rejects invalid delivery-list pagination %s=%s at the API boundary', async (key, value) => {
+      const rejected = await call('ops.customer-delivery.list', { [key as string]: value })
+      expect(rejected.status, JSON.stringify(rejected.body)).toBe(400)
+      expect(rejected.body.error?.code).toBe('INVALID_REQUEST')
+      expect(rejected.body.data).toBeNull()
+      expect(await currentDelivery()).toEqual(delivery)
+    })
+
+    it.each(['1.5', 'not-a-number', '-1', '9007199254740992'])('rejects malformed expected revision %s before mutation', async expected_revision => {
+      await rejectedWithoutMutation('ops.customer-delivery.update', {
+        delivery_id: delivery.id, expected_revision, patch_json: JSON.stringify({ companyName: '不应保存' }),
+      }, 400, 'INVALID_REQUEST')
+    })
+
     it.each(['A', '企'])('enforces the existing 200-character company limit for %s profile updates', async character => {
       const saved = successful(await call<CustomerDelivery>('ops.customer-delivery.update', {
         ...mutationParams(), patch_json: JSON.stringify({ companyName: character.repeat(200) }),

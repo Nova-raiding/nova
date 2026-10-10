@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
+import { localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
 
 const fail = code => new Error(`LOCAL_PLUGIN_LOGIN_${code}`)
 
@@ -15,6 +15,10 @@ function configureWindowsSession(target, run = execFileSync) {
 }
 
 export async function main(args = process.argv.slice(2), dependencies = {}) {
+  if (args.includes('--help')) {
+    process.stdout.write('用法: node scripts/login-local-windows.mjs --base-url https://yxsona.com --workspace ws_xxx [--request-id <一次性请求标识>] [--no-open]\n在商家浏览器登录并确认后，凭据写入 Windows Credential Manager；不需要 ChatGPT OAuth 或插件市场上架。\n')
+    return
+  }
   const options = new Map()
   for (let index = 0; index < args.length; index++) {
     const key = args[index]
@@ -40,7 +44,8 @@ export async function main(args = process.argv.slice(2), dependencies = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(error => {
-    process.stderr.write(`${/^LOCAL_PLUGIN_LOGIN_[A-Z_]+$/u.test(error?.message) ? error.message : 'LOCAL_PLUGIN_LOGIN_FAILED'}\n`); process.exitCode = 1
+  main().then(result => { if (result) process.stdout.write(`${JSON.stringify(result)}\n`) }).catch(error => {
+    const code = /^LOCAL_PLUGIN_LOGIN_([A-Z_]+)$/u.exec(error?.message ?? '')?.[1] ?? 'FAILED'
+    process.stderr.write(`LOCAL_PLUGIN_LOGIN_${code}: ${localPluginLoginFailureMessage(code)}\n`); process.exitCode = 1
   })
 }

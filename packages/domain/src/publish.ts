@@ -61,17 +61,22 @@ export const confirmPublish = (
   runtime: DomainRuntime,
   existingByToken: ReadonlyMap<string, PublishJob>,
 ): Result<PublishJob> => {
-  const existing = existingByIdempotency.get(input.idempotencyKey)
-  if (existing) {
-    const sameIntent = existing.taskId === input.taskId && existing.contentVersionId === input.contentVersionId && existing.confirmationHash === input.confirmationHash && existing.remoteSnapshotHash === input.remoteSnapshotHash
-    return sameIntent ? ok(existing) : err('PUBLISH_IDEMPOTENCY_CONFLICT', 'idempotency key is already bound to another publish intent')
-  }
+  if (!token.value) return err('PUBLISH_CONFIRMATION_REQUIRED', 'a one-time confirmation token is required')
   if (token.workspaceId !== input.workspaceId || token.taskId !== input.taskId || token.contentVersionId !== input.contentVersionId || token.confirmationHash !== input.confirmationHash || token.remoteSnapshotHash !== input.remoteSnapshotHash) {
     return err('PUBLISH_CONFIRMATION_STALE', 'confirmation token does not match the current content or remote snapshot')
   }
+  const existing = existingByIdempotency.get(input.idempotencyKey)
+  if (existing) {
+    // Idempotency maps are normally workspace-scoped by their repository, but
+    // the domain contract must remain safe when given a shared map. Include
+    // tenant and platform scope before returning an existing job.
+    const sameIntent = existing.workspaceId === input.workspaceId && existing.platform === token.platform
+      && existing.taskId === input.taskId && existing.contentVersionId === input.contentVersionId
+      && existing.confirmationHash === input.confirmationHash && existing.remoteSnapshotHash === input.remoteSnapshotHash
+    return sameIntent ? ok(existing) : err('PUBLISH_IDEMPOTENCY_CONFLICT', 'idempotency key is already bound to another publish intent')
+  }
   if (existingByToken.has(token.value)) return err('PUBLISH_CONFIRMATION_REPLAYED', 'confirmation token has already been consumed')
   if (!input.workspaceId || !input.idempotencyKey.trim()) return err('PUBLISH_CONFIRMATION_REQUIRED', 'workspace and idempotency key are required')
-  if (!token.value) return err('PUBLISH_CONFIRMATION_REQUIRED', 'a one-time confirmation token is required')
   if (runtime.now() >= token.expiresAt) return err('PUBLISH_CONFIRMATION_EXPIRED', 'confirmation token has expired')
   return ok(Object.freeze({
     id: runtime.nextId('publish'), workspaceId: input.workspaceId, taskId: input.taskId, contentVersionId: input.contentVersionId,

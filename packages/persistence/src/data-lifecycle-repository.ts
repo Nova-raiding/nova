@@ -73,8 +73,15 @@ export class PostgresDataLifecycleRepository implements DataLifecycleRepository 
         if (deletionIntent(existing.rows[0]) !== deletionIntent(input)) throw new DataDeletionIdempotencyConflictError()
         return existing.rows[0]
       }
-      const result = await client.query<DataDeletionRequest>(`INSERT INTO workspace_data_deletion_requests (id, workspace_id, scope, reason, requested_by, grace_period_days, scheduled_for, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,now() + ($6::text || ' days')::interval,$7) RETURNING ${projection}`, [randomUUID(), input.workspaceId, input.scope, input.reason, input.requestedBy, input.gracePeriodDays, input.idempotencyKey])
-      return result.rows[0]!
+      const result = await client.query<DataDeletionRequest>(`INSERT INTO workspace_data_deletion_requests (id, workspace_id, scope, reason, requested_by, grace_period_days, scheduled_for, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,now() + ($6::text || ' days')::interval,$7) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING ${projection}`, [randomUUID(), input.workspaceId, input.scope, input.reason, input.requestedBy, input.gracePeriodDays, input.idempotencyKey])
+      if (result.rows[0]) return result.rows[0]
+
+      // A concurrent request may have inserted the same workspace/key after
+      // the initial lookup. Resolve that winner exactly like an ordinary replay.
+      const raced = await client.query<DataDeletionRequest>(`SELECT ${projection} FROM workspace_data_deletion_requests WHERE workspace_id=$1 AND idempotency_key=$2`, [input.workspaceId, input.idempotencyKey])
+      if (!raced.rows[0]) throw new Error('DATA_DELETION_REQUEST_IDEMPOTENCY_REPLAY_NOT_FOUND')
+      if (deletionIntent(raced.rows[0]) !== deletionIntent(input)) throw new DataDeletionIdempotencyConflictError()
+      return raced.rows[0]
     })
   }
   async list(workspaceId: string, limit = 100) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<DataDeletionRequest>(`SELECT ${projection} FROM workspace_data_deletion_requests WHERE workspace_id=$1 ORDER BY requested_at DESC,id DESC LIMIT $2`, [workspaceId, Math.min(500, Math.max(1, limit))])).rows) }

@@ -1,12 +1,10 @@
-import { Alert } from "antd";
+import { Alert, Button } from "antd";
 import { ModelMarkupPanel } from "../components/finance/ModelMarkupPanel";
 import { OpsPage } from "../components/OpsPage";
-import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
+import type { OpsDomainPageProps } from "../navigation/opsPageRegistry.js";
 import { visibleModelsPageSections } from "./modelsPageVisibility.js";
 
-interface ModelsPageProps { model: OpsConsoleModel; }
-
-export function ModelsPage({ model }: ModelsPageProps) {
+export function ModelsPage({ model, onNavigate }: OpsDomainPageProps) {
   const sections = visibleModelsPageSections(model.canModelMarkup);
 
   return (
@@ -15,6 +13,7 @@ export function ModelsPage({ model }: ModelsPageProps) {
       title="模型计费设置"
       description="模型状态与用量已归入平台总览；这里保留旧链接并直达唯一可编辑的计费倍率。"
       nextStep="调整倍率前确认成本证据与变更原因；历史账单不会回溯重算。"
+      actions={<Button onClick={() => onNavigate("overview")}>查看平台总览</Button>}
     >
       <Alert
         className="ops-models-merged-alert"

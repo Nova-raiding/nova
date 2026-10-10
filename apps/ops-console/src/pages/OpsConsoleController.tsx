@@ -4,7 +4,7 @@ import { OpsHeader } from "../components/OpsHeader";
 import { PlatformOpsLoginPage } from "../components/PlatformOpsLogin.js";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { useOpsNavigation } from "../navigation/useOpsNavigation";
+import { pushOpsNavigationEntry, replaceOpsNavigationEntry, useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { abortOpsRequests, hasOpsConnection, managedOpsSession, passwordOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
@@ -32,6 +32,12 @@ export function domainHydrationPermissions(
   };
 }
 
+export function accessDeniedGrantedCapabilities(
+  authorization: Pick<AuthorizationProjection, "source" | "capabilities">,
+): string[] | undefined {
+  return authorization.source === "server" ? Array.from(authorization.capabilities).sort() : undefined;
+}
+
 export function commitOpsWorkbenchTransition(
   next: OpsWorkbench,
   pushHistory: boolean,
@@ -45,8 +51,8 @@ export function commitOpsWorkbenchTransition(
     abort: () => abortOpsRequests(),
     persist: setOpsWorkbenchContext,
     location: window.location,
-    push: (url) => window.history.pushState(null, "", url),
-    replace: (url) => window.history.replaceState(null, "", url),
+    push: pushOpsNavigationEntry,
+    replace: replaceOpsNavigationEntry,
   },
   prepare?: () => unknown,
 ) {
@@ -242,7 +248,7 @@ function Dashboard({
     const currentDomainUrl = urlForDomain(window.location, activeDomain);
     const currentLocation = new URL(currentDomainUrl, window.location.origin);
     const currentUrl = urlForWorkbench(currentLocation, activeWorkbench);
-    window.history.replaceState(null, "", currentUrl);
+    replaceOpsNavigationEntry(currentUrl);
     const blockedWarning = popstateWorkbenchWarning(targetWorkbench, activeWorkbench);
     if (blockedWarning) {
       // The restored history entry points at a workbench this console cannot
@@ -252,12 +258,14 @@ function Dashboard({
       return true;
     }
     onWorkbenchChange(targetWorkbench, false, () => {
-      window.history.replaceState(null, "", targetUrl);
+      replaceOpsNavigationEntry(targetUrl);
       commit();
-    }, () => window.history.replaceState(null, "", currentUrl));
+    }, () => replaceOpsNavigationEntry(currentUrl));
     return true;
   };
-  const { activeDomain, navigate: navigateToRoute, navigateWithQuery } = useOpsNavigation({ onPopstate: deferredPopstate });
+  const { requestTransition: requestUnsavedTransition } = useUnsavedChangesState();
+  const beforeNavigate = (transition: { commit(): void; cancel?(): void }) => requestUnsavedTransition(transition);
+  const { activeDomain, navigate: navigateToRoute, navigateWithQuery } = useOpsNavigation({ onPopstate: deferredPopstate, beforeNavigate });
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
   const sessionDataSetError = model.dataSetError("ops.session");
@@ -451,7 +459,7 @@ function Dashboard({
               reasonCode={accessDeniedReasonCode(sessionErrorEvidence)}
               decisionId={sessionAccessDeniedEvidence.decisionId}
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
-              grantedCapabilities={Array.from(model.authorization.capabilities).sort()}
+              grantedCapabilities={accessDeniedGrantedCapabilities(model.authorization)}
               onBack={accessDeniedReturnDomain ? () => navigateToDomain(accessDeniedReturnDomain) : undefined}
               backLabel={accessDeniedReturnDomain
                 ? `返回${mainItems.find((item) => item.domain === accessDeniedReturnDomain)?.label ?? "可访问页面"}`
@@ -481,7 +489,13 @@ function OpsConsoleControllerContent() {
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
   const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean; prepare?: () => unknown; cancel?: () => unknown }>();
-  const { clearAll: clearUnsavedChanges, labels: unsavedLabels } = useUnsavedChangesState();
+  const {
+    clearAll: clearUnsavedChanges,
+    labels: unsavedLabels,
+    pendingTransition,
+    cancelTransition,
+    confirmTransition,
+  } = useUnsavedChangesState();
 
   const commitWorkbench = (next: OpsWorkbench, pushHistory: boolean, prepare?: () => unknown) => {
     if (next === activeWorkbench && contextReady) return;
@@ -538,6 +552,22 @@ function OpsConsoleControllerContent() {
       >
         <span id="ops-workbench-switch-warning" role="alert">
           {pendingWorkbench ? workbenchSwitchWarning(activeWorkbench, pendingWorkbench.next, unsavedLabels) : ""}
+        </span>
+      </Modal>
+      <Modal
+        open={Boolean(pendingTransition)}
+        title="放弃未保存内容并离开？"
+        aria-describedby="ops-route-unsaved-warning"
+        okText="放弃并继续"
+        cancelText="继续编辑"
+        okButtonProps={{ danger: true }}
+        onCancel={cancelTransition}
+        onOk={confirmTransition}
+      >
+        <span id="ops-route-unsaved-warning" role="alert">
+          {pendingTransition
+            ? `离开当前页面将清除未保存内容：${pendingTransition.labels.join("、")}。该内容无法恢复。`
+            : ""}
         </span>
       </Modal>
     </OpsAntAppBoundary>

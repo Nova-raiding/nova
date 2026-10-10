@@ -190,10 +190,14 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     grantForm.resetFields();
   };
 
-  const loadRoles = async () => {
+  const loadRoles = async (): Promise<boolean> => {
     const subjectIdentity = subjectIdentityId.trim();
-    if (!subjectIdentity) return;
+    if (!subjectIdentity) return false;
     const requestId = ++roleRequestRef.current;
+    // Once a refresh starts, the previous revision is no longer safe to use.
+    // Keep assignment fail-closed until this exact target has been re-read.
+    setRoles(undefined);
+    setRolesTarget(undefined);
     setRoleLoading(true);
     setRoleLoadError(undefined);
     try {
@@ -201,9 +205,12 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
       if (requestId === roleRequestRef.current && subjectIdentity === subjectIdentityId.trim()) {
         setRoles(result);
         setRolesTarget(result?.subject_identity_id ?? subjectIdentity);
+        return Boolean(result && result.subject_identity_id === subjectIdentity);
       }
+      return false;
     } catch (error) {
       if (requestId === roleRequestRef.current && subjectIdentity === subjectIdentityId.trim()) setRoleLoadError(error);
+      return false;
     } finally {
       if (requestId === roleRequestRef.current) setRoleLoading(false);
     }
@@ -213,6 +220,12 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     const workspaceId = targetWorkspaceId.trim();
     if (!subjectIdentity || !workspaceId) return;
     const requestId = ++grantRequestRef.current;
+    // A grant list carries the authorization revision used by revoke and
+    // issue. Once a refresh begins, do not leave those actions enabled against
+    // the old snapshot while the server is resolving the current revision.
+    setGrants(undefined);
+    setGrantsTarget(undefined);
+    setPendingRevocation(undefined);
     setGrantLoading(true);
     setGrantLoadError(undefined);
     try {
@@ -239,6 +252,19 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
 
   const submitRevocation = async () => {
     if (!pendingRevocation || revocationSubmitting) return;
+    const snapshotIsCurrent = pendingRevocation.kind === "role"
+      ? canManageRoles
+        && currentRoles?.authorization_revision === pendingRevocation.authorizationRevision
+        && currentRoles.assignments.some(item => item.id === pendingRevocation.role.id && item.revision === pendingRevocation.role.revision)
+      : canManageGrants
+        && currentGrants?.authorization_revision === pendingRevocation.authorizationRevision
+        && currentGrants.grants.some(item => item.id === pendingRevocation.grant.id && item.revision === pendingRevocation.grant.revision);
+    if (!snapshotIsCurrent) {
+      const nextError = "当前权限或授权修订已变化，请关闭确认框并重新读取后再操作。";
+      setRevocationError(nextError);
+      message.error(nextError);
+      return;
+    }
     if (revocationReason.trim().length < 3) {
       const nextError = "撤销原因至少需要 3 个字符";
       setRevocationError(nextError);
@@ -341,7 +367,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             explains what it is instead of implying a typed name authorises. */}
         <details className="ops-jit-approval-note"><summary>审批证据来自令牌 · 查看校验规则</summary><p>审批证据来自平台签发给审批人本人的令牌。服务端从请求头解析身份并绑定目标商家；表单中的姓名仅作记录，身份不一致时会拒绝签发。</p></details>
         <Form className="ops-jit-issue-form" form={grantForm} layout="vertical" aria-label="签发 JIT 授权" onFinish={async (values) => {
-            if (grantSubmitting) return;
+            if (!canManageGrants || grantSubmitting || grantLoading || !currentGrants) return;
             setGrantSubmitting(true);
             setGrantSubmitError(undefined);
             const capabilities = parseGrantCapabilities(values.capabilities);
@@ -381,7 +407,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             } })]}><Input aria-label="到期时间（读≤15m / 写≤5m）" aria-describedby="jit-expiry-help" /></Form.Item><span id="jit-expiry-help" className="sr-only">只读权限最多 15 分钟，写入权限最多 5 分钟</span></Col>
             <Col xs={24} md={12} xl={12}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input aria-label="授权原因" /></Form.Item></Col>
           </Row>
-          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
+          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || grantLoading || !currentGrants || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
         </Form></div></>}
         <Table<Grant> size="small" rowKey="id" loading={grantLoading} dataSource={currentGrants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
           { title: "状态", render: (_value, row) => {
@@ -413,9 +439,14 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles || !currentRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row, authorizationRevision: currentRoles!.authorization_revision }, event.currentTarget)}>撤销</Button> },
         ]} />
         {canManageRoles && <>
-          <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
+          <OpsPageError error={roleSubmitError} onRetry={async () => {
+            // A failed assignment may be an authorization-revision conflict.
+            // Refresh the target first so the next explicit submit carries a
+            // current revision instead of repeating the stale request.
+            if (await loadRoles()) setRoleSubmitError(undefined);
+          }} />
           <Form form={roleForm} layout="inline" aria-label="分配平台角色" onFinish={async (values) => {
-            if (roleSubmitting) return;
+            if (!canManageRoles || roleSubmitting || roleLoading || !currentRoles) return;
             setRoleSubmitting(true);
             setRoleSubmitError(undefined);
             try {
@@ -432,7 +463,8 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder={assignableRoles.length ? "选择平台角色" : "等待服务端角色策略"} disabled={!assignableRoles.length} style={{ width: 190 }} options={assignableRoles.map(value => ({ value, label: platformRoleLabels[value] ?? value }))} /></Form.Item>
           <Form.Item name="expires_at" label="到期时间"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
           <Form.Item name="reason" label="分配原因" rules={[{ required: true, min: 3 }]}><Input placeholder="说明工单或业务原因" style={{ width: 220 }} /></Form.Item>
-          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
+          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || roleLoading || !currentSubject || !currentRoles}>分配角色</Button>
+          {!currentRoles && <Typography.Text type="secondary" role="status">请先读取当前分配，确认最新修订后再分配角色。</Typography.Text>}
         </Form></>}
       </Space>
     </section> : null}

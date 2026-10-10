@@ -774,6 +774,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const demoEvaluationRegrantGuard = await readFile(new URL('./migrations/268_demo_evaluation_regrant_guard.sql', import.meta.url), 'utf8')
   const merchantActivationStatusAcl = await readFile(new URL('./migrations/269_merchant_activation_status_acl.sql', import.meta.url), 'utf8')
   const catalogBatchImportIdempotency = await readFile(new URL('./migrations/270_catalog_batch_import_idempotency.sql', import.meta.url), 'utf8')
+  const cashReturnReceiptScope = await readFile(new URL('./migrations/271_cash_return_receipt_scope.sql', import.meta.url), 'utf8')
+  const publishMediaOrphanOutbox = await readFile(new URL('./migrations/272_publish_media_orphan_outbox.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1045,6 +1047,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 268, name: 'demo_evaluation_regrant_guard', sql: demoEvaluationRegrantGuard },
     { version: 269, name: 'merchant_activation_status_acl', sql: merchantActivationStatusAcl },
     { version: 270, name: 'catalog_batch_import_idempotency', sql: catalogBatchImportIdempotency },
+    { version: 271, name: 'cash_return_receipt_scope', sql: cashReturnReceiptScope },
+    { version: 272, name: 'publish_media_orphan_outbox', sql: publishMediaOrphanOutbox },
   ]
 }
 

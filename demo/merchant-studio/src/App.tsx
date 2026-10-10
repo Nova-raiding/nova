@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import './capability.css'
 import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'
+import { MaterialRightsControl } from './MaterialRightsControl'
 import { CommercialNotificationPanel } from './CommercialNotificationPanel'
 import { CommercialPointLedger } from './CommercialGiftDetails'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
@@ -36,6 +37,7 @@ import {
 } from './catalog-data'
 import { DetailDecisionContract } from './DetailDecisionContract'
 import { ProductSpreadsheetImport } from './ProductSpreadsheetImport'
+import { isSellingPointProofRequiredError, productFactConfirmationBlockers } from './product-fact-confirmation'
 import { ProductKnowledgeReadback } from './knowledge-document-status'
 import {
   formatMaterialFileSize,
@@ -295,6 +297,7 @@ import {
   merchantNavigationPage,
   merchantRiskDestination,
   merchantRouteFromLocation,
+  urlForMerchantCatalogProduct,
   urlForMerchantCatalogSearch,
   urlForMerchantCatalogProductList,
   urlForMerchantCatalogStore,
@@ -319,8 +322,10 @@ import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBa
 import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
 import { resolveRuleContext, resolveRuleExecutionState, shouldShowSelectedCategory } from './rule-context.js'
 import { resolveDataConsistency } from './data-consistency.js'
+import { canApproveReviewedContent, contentApprovalBlockerMessage } from './content-approval-readiness.js'
+import { imageJobForRoute, isImageJobRequestCurrent, updateVisualRefsForRoute, visualRefsForRoute } from './image-generation-job-route-state.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
-import { resolveProductAssetRelation } from './product-assets.js'
+import { productAssetGenerationBlockers, resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
@@ -341,6 +346,8 @@ import {
   resolveAssetPrimaryAction,
   resolveAssetPrimaryStatus,
   resolveAssetSecondaryStatus,
+  rightsConfirmationPayload,
+  rightsScopeForConfirmation,
 } from './asset-status.js'
 
 type Page = MerchantPage
@@ -1151,6 +1158,11 @@ function Topbar({
       <div>
         <h1>{titles[page]}</h1>
       </div>
+      <form className="search-box topbar-search" role="search" aria-label="商品全局搜索" onSubmit={(event) => { event.preventDefault(); onSearch() }}>
+        <Search size={16} aria-hidden="true" />
+        <input aria-label="全局搜索商品" placeholder="搜索商品或平台" value={searchQuery} onChange={(event) => onSearchQuery(event.target.value)} />
+        <button type="submit" aria-label="搜索商品">搜索</button>
+      </form>
       <div className="topbar-actions">
         {(account?.workspaceIds.length ?? 0) > 1 && <Select
           aria-label="按工作区 ID 切换当前商家工作区"
@@ -3096,7 +3108,7 @@ function PointUsageChart({ items, label }: { items: PointUsageItem[]; label: str
   )
 }
 
-export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, notificationTarget }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; onOpenSupport: () => void; notificationTarget?: CommercialNotification | null }) {
+export function FinanceOverview({ baseUrl, billing, account, activeWorkspaceId, onOpenSupport, notificationTarget }: { baseUrl: string; billing: BillingStatus | null; account: MerchantAuthAccount | null; activeWorkspaceId: string | null; onOpenSupport: () => void; notificationTarget?: CommercialNotification | null }) {
   const [usageRange, dispatchUsageRange] = useReducer(financeUsageRangeReducer, initialFinanceUsageRangeState)
   const { draft: draftUsageRange, applied: appliedUsageRange } = usageRange
   const rangePending = financeUsageRangeHasPendingChanges(usageRange)
@@ -3234,7 +3246,7 @@ export function FinanceOverview({ baseUrl, billing, account, onOpenSupport, noti
         <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
         <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? UNREAD_METRIC : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : '服务端未返回储存配额，当前不显示用量。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
-      <CommercialPurchaseCenter baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
+      <CommercialPurchaseCenter key={`${account?.id ?? 'unbound'}:${activeWorkspaceId ?? 'unselected'}`} baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} workspaceId={activeWorkspaceId ?? ''} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
       <CommercialPointLedger entries={statementEntries} unavailableMessage={statementNote} partial={statementTruncated || statementUnreadable > 0} />
       <section className="finance-panel finance-usage-panel">
         <div className="finance-panel-heading"><div><span className="section-kicker">CREATIVE POINTS</span><h3>创意点消耗趋势</h3><p>默认展示当月每日数据，也可查询日期或月份区间。</p>{rangePending && <p className="finance-range-pending" role="status">日期范围已修改，点击“查询”后应用。</p>}{usageRangeError && <p className="finance-range-pending" role="alert">{usageRangeError}</p>}</div><form className="finance-range-search" onSubmit={(event) => { event.preventDefault(); if (financeUsageRangeError(draftUsageRange)) return; dispatchUsageRange({ type: 'apply' }) }}><label><span>查询方式</span><Select className="finance-query-select" classNames={{ popup: { root: 'finance-query-menu' } }} value={draftUsageRange.mode} options={[{ value: 'day', label: '按日期' }, { value: 'month', label: '按月份' }]} onChange={(value) => dispatchUsageRange({ type: 'set-mode', mode: value })} /></label><label><span>开始{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.start ? dayjs(draftUsageRange.start).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-start', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><i>至</i><label><span>结束{draftUsageRange.mode === 'day' ? '日期' : '月份'}</span><DatePicker className="finance-date-picker" classNames={{ popup: { root: 'finance-date-picker-popup' } }} locale={zhCN} picker={draftUsageRange.mode === 'day' ? 'date' : 'month'} value={draftUsageRange.end ? dayjs(draftUsageRange.end).locale('zh-cn') : null} format={draftUsageRange.mode === 'day' ? 'YYYY/MM/DD' : 'YYYY/MM'} placeholder={draftUsageRange.mode === 'day' ? '年 / 月 / 日' : '年 / 月'} allowClear onChange={(date) => dispatchUsageRange({ type: 'set-end', value: date ? date.format(draftUsageRange.mode === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM') : '' })} /></label><button className="primary" type="submit">查询</button><button className="secondary" type="button" onClick={resetUsage}>重置</button></form></div>
@@ -4019,17 +4031,16 @@ function AssetLibrary({
     setBrandMessage('')
     try {
       const saved = await updateAssetRights(baseUrl, asset.id, {
-        rights_status: 'approved',
-        rights_scope: rightsScope,
-        usage_scopes: ['commercial', 'ai_generation'],
-        ai_modification_allowed: false,
+        ...rightsConfirmationPayload(rightsScope),
       })
       setAssets(
         (current) =>
           current?.map((item) => (item.id === saved.id ? saved : item)) ?? null,
       )
       setBrandMessage(
-        `已确认“${saved.name}”的商用权益；如需改图，仍需单独确认 AI 修改许可。`,
+        saved.rightsScope === 'internal_only' || saved.rightsScope === 'limited_use'
+          ? `已记录“${saved.name}”的${saved.rightsScope === 'internal_only' ? '内部使用' : '受限使用'}范围；当前不会进入 AI 商用生成。补充明确授权后可重新调整。`
+          : `已确认“${saved.name}”的商用权益；如需改图，仍需单独确认 AI 修改许可。`,
       )
       setRightsAsset(null)
     } catch (cause) {
@@ -4138,7 +4149,7 @@ function AssetLibrary({
     }
     if (action.kind === 'confirm_rights') {
       setRightsAsset(asset)
-      setRightsScope(asset.rightsScope ?? 'commercial_authorized')
+      setRightsScope(rightsScopeForConfirmation(asset))
       setAssetDialogError('')
       return
     }
@@ -4900,7 +4911,7 @@ function AssetLibrary({
                 onClick={() => void confirmRights()}
                 disabled={Boolean(assetAction)}
               >
-                确认权益
+                保存权益范围
               </button>
             </>
           }
@@ -4920,7 +4931,7 @@ function AssetLibrary({
                 <option value="internal_only">仅内部使用</option>
               </select>
             </label>
-            <small>本次不授予 AI 修改许可；改图仍需单独确认。</small>
+            <small>“受限使用”和“仅内部使用”不会被保存为商用或 AI 生成授权。若要用于生成，请先确认你持有的明确商用授权。AI 改图许可仍需单独确认。</small>
             {assetDialogError && (
               <ErrorNotice message={assetDialogError} compact />
             )}
@@ -5049,6 +5060,7 @@ function ProductAssetRelationDialog({
   const relation = product
     ? resolveProductAssetRelation(product, assets)
     : { boundIds: [], matchedAssets: [], missingAssetIds: [] }
+  const generationBlockers = productAssetGenerationBlockers(relation)
   const selectableAssets = assets.filter(
     (asset) =>
       !relation.boundIds.includes(asset.id) && asset.scanStatus === 'clean',
@@ -5111,7 +5123,7 @@ function ProductAssetRelationDialog({
           <button
             className="secondary"
             onClick={() => product && onContinue(product)}
-            disabled={!product || loading || Boolean(error) || Boolean(saveError)}
+            disabled={!product || loading || Boolean(error) || Boolean(saveError) || generationBlockers.length > 0}
           >
             使用已绑定素材继续生成
           </button>
@@ -5185,6 +5197,11 @@ function ProductAssetRelationDialog({
                 : '当前没有规范商品映射或店铺刊登关系；请由平台运营完成标准链核验。'}
             </span>
           </div>
+          {generationBlockers.length > 0 && (
+            <div className="inline-error" role="status" data-testid="product-asset-generation-blocked">
+              {generationBlockers.join(' ')}
+            </div>
+          )}
           {relation.boundIds.length === 0 && (
             <div className="empty-inline">
               <FolderOpen size={16} />
@@ -5464,7 +5481,7 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, onCatalogQueryChange, onCatalogStoreOpen, onCatalogStoreSelection, onCatalogProductList, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; onCatalogQueryChange: (query: string) => void; onCatalogStoreOpen: (store: { platform: MerchantPlatformId; accountId: string }) => void; onCatalogStoreSelection: () => void; onCatalogProductList: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, onCatalogQueryChange, onCatalogStoreOpen, onCatalogStoreSelection, onCatalogProductOpen, onCatalogProductList, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; onCatalogQueryChange: (query: string) => void; onCatalogStoreOpen: (store: { platform: MerchantPlatformId; accountId: string }) => void; onCatalogStoreSelection: () => void; onCatalogProductOpen: (product: { platform: MerchantPlatformId; accountId: string; productId: string }) => void; onCatalogProductList: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(initialCatalogContext?.platform ?? null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(initialCatalogContext?.accountId ?? null)
@@ -5662,7 +5679,6 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     setSelectedPlatform(store.platformId)
     setSelectedStoreId(store.id)
     setSelectedProductId(null)
-    setCatalogQuery('')
     onCatalogStoreOpen({ platform: store.platformId as MerchantPlatformId, accountId: store.id })
     setCatalogAddedTime('all')
     setCatalogSort('default')
@@ -5677,9 +5693,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     onCatalogStoreSelection()
   }
   const openProduct = (productId: string) => {
+    if (!selectedStore || !storeProducts.some((product) => product.id === productId)) return
     setSelectedProductId(productId)
     setSelectedMediaIndex(0)
     setSelectedSkuIndex(0)
+    onCatalogProductOpen({ platform: selectedStore.platformId as MerchantPlatformId, accountId: selectedStore.id, productId })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const submitCatalogImageGeneration = async () => {
@@ -6049,7 +6067,7 @@ const materialBrandFromScope = (value?: { color?: string; persona?: string; sell
   logoAssetId: value?.logoAssetId, documentAssetId: value?.documentAssetId,
 })
 
-export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded, scopeKey = 'unscoped' }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void; scopeKey?: string }) {
+export function MaterialBrandFields({ value, onChange, label, logoLabel, leadingCard, baseUrl, assets = [], onAssetUploaded, scopeKey = 'unscoped', disabled = false }: { value: MaterialBrandSettings; onChange: (next: MaterialBrandSettings) => void; label: string; logoLabel?: string; leadingCard?: ReactNode; baseUrl?: string; assets?: AssetMetadata[]; onAssetUploaded?: (asset: AssetMetadata, kind: 'logo' | 'document', file: File) => void; scopeKey?: string; disabled?: boolean }) {
   const logoInputId = useId()
   const assetInputId = useId()
   // Upload responses may arrive after the merchant edits another field. Keep
@@ -6111,7 +6129,7 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
       setAssetUploading('')
     }
   }
-  return <div className={`material-brand-fields${leadingCard ? ' has-leading-card' : ''}${logoLabel ? ' has-store-card' : ''}`}>
+  return <fieldset disabled={disabled} aria-busy={disabled} className={`material-brand-fields${leadingCard ? ' has-leading-card' : ''}${logoLabel ? ' has-store-card' : ''}`} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, width: '100%' }}>
     {leadingCard}
     <div className="material-brand-logo-field">
       <span>{logoLabel ?? `${label} Logo`}{value.logoAssetId ? ` · 已引用素材 ${value.logoFileName || value.logoAssetId}` : ''}</span>
@@ -6123,7 +6141,7 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
     {(assetUploadStatus || assetUploadError) && <small className={`material-brand-analysis-status ${assetUploadError ? 'error' : 'uploaded'}`} role={assetUploadError ? 'alert' : 'status'}>{assetUploadError || assetUploadStatus}</small>}
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>用户画像</span></div><textarea aria-label={`${label}用户画像`} value={value.persona} onChange={(event) => onChange({ ...value, persona: event.target.value })} placeholder="例如：25–35 岁、关注设计感与使用效率的城市职场人" /></div>
     <div className="material-brand-text-field"><div className="material-brand-field-heading"><span>品牌卖点</span></div><textarea aria-label={`${label}品牌卖点`} value={value.sellingPoints} onChange={(event) => onChange({ ...value, sellingPoints: event.target.value })} placeholder="例如：原创设计、耐用材质、礼赠友好" /></div>
-  </div>
+  </fieldset>
 }
 
 /** Keep the brand scope hierarchy visible when the API has no readable store.
@@ -6143,7 +6161,7 @@ export function BrandScopeUnavailableRow({ number, label, description, status }:
   </article>
 }
 
-export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel, assets = [], baseUrl, brandLogoPreviews = {} }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string; assets?: AssetMetadata[]; baseUrl?: string; brandLogoPreviews?: Record<string, string> }) {
+export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, context, transitionLabel, assets = [], baseUrl, brandLogoPreviews = {}, disabled = false }: { value: MaterialBrandSettings; label: string; enabled: boolean; onEnabledChange?: (enabled: boolean) => void; context?: { label: string; value: string }; transitionLabel?: string; assets?: AssetMetadata[]; baseUrl?: string; brandLogoPreviews?: Record<string, string>; disabled?: boolean }) {
   // Asset IDs and metadata come from the authenticated workspace asset read.
   const [serverLogoPreview, setServerLogoPreview] = useState('')
   const logoAsset = assets.find((asset) => asset.id === value.logoAssetId)
@@ -6169,8 +6187,8 @@ export function MaterialBrandOutput({ value, label, enabled, onEnabledChange, co
   const documentAsset = assets.find((asset) => asset.id === value.documentAssetId)
   const logoAssetReady = isUsableBrandAsset(logoAsset)
   const documentAssetReady = isUsableBrandAsset(documentAsset)
-  return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '待保存启用' : '待保存停用'}的配置`}>
-    <div className="material-brand-output-heading"><span>品牌档案</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
+  return <aside className={`material-brand-output${enabled ? '' : ' disabled'}${transitionLabel ? ' switching' : ''}`} aria-label={`${label}${enabled ? '待保存启用' : '待保存停用'}的配置`} aria-busy={disabled}>
+    <div className="material-brand-output-heading"><span>品牌档案</span><strong>当前品牌资产</strong>{onEnabledChange ? <div className="material-brand-output-switch" aria-label={`${label}保存后启用状态`}><button type="button" className={enabled ? 'active' : ''} disabled={disabled} onClick={() => onEnabledChange(true)}>启用{label}</button><button type="button" className={!enabled ? 'active' : ''} disabled={disabled} onClick={() => onEnabledChange(false)}>停用{label}</button></div> : <small className="material-brand-output-live">保存后用于新任务</small>}</div>
     <div className={`material-brand-output-card${context ? ' has-context' : ''}`} style={{ '--brand-preview-color': colorFacts.value || 'transparent' } as CSSProperties}>
       {context && <div className="material-brand-output-context"><span>{context.label}</span><strong>{context.value}</strong></div>}
       <div className="material-brand-output-item material-brand-output-logo"><span>品牌 Logo</span><div>{logoFacts.picked ? <><img src={logoPreviewUrl} alt={`${label} Logo 预览`} /><small>{value.logoAssetId ? `${logoAsset?.name ?? value.logoFileName ?? value.logoAssetId} · ${logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}` : logoFacts.label}</small></> : logoAsset ? <><ImageIcon size={24} /><small>{logoAsset.name} · {logoAssetReady ? '素材已就绪' : '已上传，待素材检查'}</small></> : <><ImageIcon size={24} /><small>{value.logoAssetId ? `已引用素材 ${value.logoAssetId}，等待服务端读取` : BRAND_UNCONFIGURED}</small></>}</div></div>
@@ -6367,7 +6385,10 @@ function recycleDaysRemaining(expiresAt: string) {
 export function recycleExpiryLabel(expiresAt: string) {
   const expiry = new Date(expiresAt).getTime()
   if (!Number.isFinite(expiry)) return '到期时间无效'
-  return expiry <= Date.now() ? '已过期' : `剩余 ${recycleDaysRemaining(expiresAt)} 天`
+  const expiryDate = new Date(expiry).toLocaleDateString('zh-CN')
+  return expiry <= Date.now()
+    ? `${expiryDate} 到期（已过期）`
+    : `保留至 ${expiryDate}（剩余 ${recycleDaysRemaining(expiresAt)} 天）`
 }
 
 function MaterialCategoryDropdown({
@@ -6853,6 +6874,7 @@ export function MaterialLibraryWorkspace({
   // The upload is a server write now, so it has a busy state and its own error
   // line: 确认上传 may not close on a refusal.
   const [uploadBusy, setUploadBusy] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number; accepted: number; failed: number } | null>(null)
   const [uploadError, setUploadError] = useState('')
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const ownedUploadPreviewUrls = useRef(new Set<string>())
@@ -7034,6 +7056,7 @@ export function MaterialLibraryWorkspace({
       return { ...item, ...(materialPreviews[item.id] ? { previewUrl: materialPreviews[item.id] } : {}), ...(assignedSeries ? { series: assignedSeries.name } : {}) }
     }),
   ]
+  const remoteAssetById = useMemo(() => new Map((remoteAssets ?? []).map((asset) => [asset.id, asset])), [remoteAssets])
   const visibleMaterials = activeMaterials.filter((item) => {
     const matchesCategory = category === '全部' || item.category === category
     const matchesSeries = series === '全部' || item.series === series
@@ -7313,6 +7336,7 @@ export function MaterialLibraryWorkspace({
     uploadControllerRef.current = controller
     const isCurrentOperation = () => uploadMountedRef.current && uploadOperationIdRef.current === operationId
     const incoming = pendingFiles.map((item) => item.file)
+    setUploadProgress({ completed: 0, total: incoming.length, accepted: 0, failed: 0 })
     setUploadBusy(true)
     setUploadError('')
     const { accepted, acceptedFiles, failures } = await uploadMaterialFiles({
@@ -7320,6 +7344,7 @@ export function MaterialLibraryWorkspace({
       upload: (file, signal) => uploadAsset(baseUrl, file, uploadCategory, signal),
       labels: { category: uploadCategory, series: uploadSeries },
       signal: controller.signal,
+      onProgress: setUploadProgress,
       // Register immediately so unmount cleanup owns each URL. If the component
       // has already left, dispose the URL before returning it to the helper.
       previewUrlFor: (file) => {
@@ -7521,9 +7546,10 @@ export function MaterialLibraryWorkspace({
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
         {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy || scopedBrandLoading} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandLoading ? '正在读取品牌配置…' : scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandLoading ? '切换范围时暂不可保存，正在读取最新服务端配置…' : scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span></div>}
+        {scopedBrandLoading && <p role="status" aria-live="polite">正在读取当前工作区的最新品牌配置；读取完成前暂不可编辑。</p>}
         <article className="material-brand-row material-image-brand-row">
-          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" scopeKey={`image:${currentStorageScopeKey}:${detailMaterial.id}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
-        <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+          <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" scopeKey={`image:${currentStorageScopeKey}:${detailMaterial.id}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} disabled={scopedBrandLoading} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+        <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} disabled={scopedBrandLoading} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
       {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => { setDetailPreviewOpen(false); window.requestAnimationFrame(() => detailPreviewTriggerRef.current?.focus({ preventScroll: true })) }}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
@@ -7552,19 +7578,20 @@ export function MaterialLibraryWorkspace({
           <div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>资产应用原则：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div>
         </div>
         {stores.length === 0 && !scopedBrandRead && <p className="material-brand-no-store" role={accountsError ? 'alert' : 'status'}>{noReadableStoreReason}</p>}
+        {scopedBrandLoading && <p role="status" aria-live="polite">正在读取当前工作区的最新品牌配置；读取完成前暂不可编辑。</p>}
         <div className="material-brand-stack">
           {scopedBrandRead && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" scopeKey={`global:${currentStorageScopeKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setGlobalBrand(next); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
-            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} onEnabledChange={(enabled) => { setGlobalBrandEnabled(enabled); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>01</span><div><strong>全局配置</strong><small>本页所有系列与图片的预览默认值</small></div></div><MaterialBrandFields value={globalBrand} label="全局" scopeKey={`global:${currentStorageScopeKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} disabled={scopedBrandLoading} onChange={(next) => { setGlobalBrand(next); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
+            <MaterialBrandOutput value={effectiveGlobalBrand} label="全局配置" enabled={globalBrandEnabled} disabled={scopedBrandLoading} onEnabledChange={(enabled) => { setGlobalBrandEnabled(enabled); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" scopeKey={`store:${currentStorageScopeKey}:${activeStoreId}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setStoreBrands((current) => ({ ...current, [activeStoreId]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} disabled={scopedBrandBusy} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
-            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} onEnabledChange={(enabled) => { setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>02</span><div><strong>店铺配置</strong><small>覆盖全局配置并应用到当前店铺</small></div></div><MaterialBrandFields value={activeStoreBrand} label={activeStore.name} logoLabel="店铺 Logo" scopeKey={`store:${currentStorageScopeKey}:${activeStoreId}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} disabled={scopedBrandLoading} onChange={(next) => { setStoreBrands((current) => ({ ...current, [activeStoreId]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card material-brand-store-card"><span className="material-brand-store-label">选择店铺</span><MaterialCategoryDropdown ariaLabel="选择配置店铺" value={activeStoreId} disabled={scopedBrandBusy || scopedBrandLoading} options={stores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchBrandStore} /></div>} /></div>
+            <MaterialBrandOutput value={effectiveStoreBrand} label="店铺配置" enabled={activeStoreBrandEnabled} disabled={scopedBrandLoading} onEnabledChange={(enabled) => { setStoreBrandEnabled((current) => ({ ...current, [activeStoreId]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前店铺', value: activeStore.name }} transitionLabel={storeBrandTransition} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="02" label="店铺配置" description="覆盖全局配置并应用到当前店铺" status={noReadableStoreReason} />}
           {scopedBrandRead && stores.length > 0 && <article className="material-brand-row">
-            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} scopeKey={`series:${currentStorageScopeKey}:${activeSeriesKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card"><div className="material-brand-series-current"><span>当前系列</span><MaterialCategoryDropdown ariaLabel="选择品牌配置系列" value={activeBrandSeries} options={availableSeries.map((name) => ({ value: name, label: name }))} onChange={setActiveBrandSeries} /></div><button type="button" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)} disabled={!scopedBrandRead || activeStoreId === 'unclassified'}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>系列保存到当前店铺</strong></div><label><span>新系列名称</span><div><input value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createBrandSeries() }} placeholder="例如：秋冬新品" /><button type="button" onClick={() => void createBrandSeries()} disabled={!newSeriesName.trim() || !scopedBrandRead}>创建</button></div></label></div>}</div>} /></div>
-            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
+            <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>03</span><div><strong>系列配置</strong><small>覆盖店铺配置并应用于当前系列</small></div></div><MaterialBrandFields value={activeSeriesBrand} label={activeBrandSeries} scopeKey={`series:${currentStorageScopeKey}:${activeSeriesKey}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} disabled={scopedBrandLoading} onChange={(next) => { setSeriesBrands((current) => ({ ...current, [activeSeriesKey]: next })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} leadingCard={<div className="material-brand-series-card"><div className="material-brand-series-current"><span>当前系列</span><MaterialCategoryDropdown ariaLabel="选择品牌配置系列" value={activeBrandSeries} disabled={scopedBrandLoading} options={availableSeries.map((name) => ({ value: name, label: name }))} onChange={setActiveBrandSeries} /></div><button type="button" aria-expanded={seriesManagerOpen} onClick={() => setSeriesManagerOpen((current) => !current)} disabled={!scopedBrandRead || activeStoreId === 'unclassified' || scopedBrandLoading}><Boxes size={14} />管理系列</button>{seriesManagerOpen && <div className="material-brand-series-manager" role="dialog" aria-label="管理系列"><div><span>系列管理</span><strong>系列保存到当前店铺</strong></div><label><span>新系列名称</span><div><input value={newSeriesName} onChange={(event) => setNewSeriesName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createBrandSeries() }} placeholder="例如：秋冬新品" disabled={scopedBrandLoading} /><button type="button" onClick={() => void createBrandSeries()} disabled={!newSeriesName.trim() || !scopedBrandRead || scopedBrandLoading}>创建</button></div></label></div>}</div>} /></div>
+            <MaterialBrandOutput value={effectiveSeriesBrand} label="系列配置" enabled={activeSeriesBrandEnabled} disabled={scopedBrandLoading} onEnabledChange={(enabled) => { setSeriesBrandEnabled((current) => ({ ...current, [activeSeriesKey]: enabled })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前系列', value: activeBrandSeries }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
           {scopedBrandRead && <article className="material-brand-row material-brand-single-row">
@@ -7586,7 +7613,7 @@ export function MaterialLibraryWorkspace({
 
           <div className="material-toolbar">
             <div className="material-toolbar-filters">
-              <label className="material-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材名称、分类或格式" /></label>
+              <label className="material-search"><Search size={16} /><input aria-label="搜索素材名称、分类或格式" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材名称、分类或格式" />{query && <button type="button" aria-label="清空素材搜索" onClick={() => setQuery('')}><X size={14} /></button>}</label>
               <div className="material-store-filter"><span>店铺</span><MaterialCategoryDropdown ariaLabel="店铺筛选" value={activeStoreId} options={materialStores.map((store) => ({ value: store.id, label: store.name }))} onChange={switchStore} searchable searchPlaceholder="搜索店铺" /></div>
               <div className="material-series-filter"><span>系列</span><MaterialCategoryDropdown ariaLabel="系列筛选" value={series} options={[{ value: '全部', label: '全部系列' }, ...availableSeries.map((item) => ({ value: item, label: item }))]} onChange={(value) => { setSeries(value); setSelectedIds([]) }} /></div>
               <div className="material-category-filter"><span>素材分类</span><MaterialCategoryDropdown ariaLabel="素材分类筛选" value={category} options={materialStoreCategories.map((item) => ({ value: item, label: item }))} onChange={(value) => { setCategory(value as '全部' | StoreMaterialCategory); setSelectedIds([]) }} /></div>
@@ -7616,7 +7643,14 @@ export function MaterialLibraryWorkspace({
                       <label><span>素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的素材分类`} value={item.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} disabled={!item.assetId} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(item.id, { category: value as StoreMaterialCategory }) }} /></label>
                       <label><span>所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${item.name}的所属系列`} value={item.series} options={availableSeries.map((value) => ({ value, label: value }))} disabled={!item.assetId || !scopedBrandRead || activeStoreId === 'unclassified'} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(item.id, { series: value }) }} /></label>
                     </div>
-                    <div className="material-card-actions"><a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a></div>
+                    <div className="material-card-actions">
+                      {item.assetId && remoteAssetById.get(item.assetId) && <MaterialRightsControl
+                        asset={remoteAssetById.get(item.assetId)!}
+                        baseUrl={baseUrl}
+                        onSaved={(updated) => setRemoteAssets((current) => current?.map((asset) => asset.id === updated.id ? updated : asset) ?? current)}
+                      />}
+                      <a href={materialDownloadHref(item, baseUrl)} download={item.name} onClick={(event) => { if (!item.assetId) return; event.preventDefault(); void downloadMaterial(item) }}><Download size={14} />下载</a>
+                    </div>
                   </article>
                 )
               })}
@@ -7637,7 +7671,7 @@ export function MaterialLibraryWorkspace({
           testId="material-upload-dialog"
           actions={<>
             <button type="button" className="catalog-asset-cancel" disabled={uploadBusy} onClick={closeUploadDialog}>取消</button>
-            <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries || uploadBusy} onClick={() => { void confirmUpload() }}><Upload size={15} />{uploadBusy ? '正在上传…' : `确认上传${pendingFiles.length ? `（${pendingFiles.length}）` : ''}`}</button>
+            <button type="button" className="material-upload-confirm" disabled={!pendingFiles.length || !uploadSeries || uploadBusy} onClick={() => { void confirmUpload() }}><Upload size={15} />{uploadBusy ? `正在上传${uploadProgress ? `（${uploadProgress.completed}/${uploadProgress.total}）` : '…'}` : `确认上传${pendingFiles.length ? `（${pendingFiles.length}）` : ''}`}</button>
           </>}
         >
           <div className="material-upload-dialog">
@@ -7664,6 +7698,7 @@ export function MaterialLibraryWorkspace({
               }) : <div><ImageIcon size={30} /><strong>尚未选择素材</strong><span>点击上方按钮，可一次选择或继续追加图片、Excel 和文档。</span></div>}
             </div>
             <p className="material-upload-note">{uploadCategory === '品牌资料' ? '文件与素材分类写入当前工作区的服务端素材库；店铺归属与系列按服务端记录管理。上传文件仍需完成安全与权益确认后才能使用。' : `文件与“${uploadCategory}”分类写入当前工作区素材服务${uploadSeries ? `；“${uploadSeries}”系列归属按服务端店铺记录管理` : ''}；服务端未接受的文件不会出现在素材库中。`}</p>
+            {uploadBusy && uploadProgress && <p className="material-upload-progress" role="status" aria-live="polite" data-testid="material-upload-progress">上传进度：{uploadProgress.completed}/{uploadProgress.total}，已成功 {uploadProgress.accepted}，失败 {uploadProgress.failed}</p>}
             {uploadError && <p className="material-download-error" role="alert" data-testid="material-upload-error">{uploadError}</p>}
             {pendingPreviewIndex !== null && pendingPreviews[pendingPreviewIndex] && <button type="button" className="material-upload-lightbox" aria-label="关闭素材预览" onClick={() => { setPendingPreviewIndex(null); window.requestAnimationFrame(() => pendingPreviewTriggerRef.current?.focus({ preventScroll: true })) }}><span>{pendingPreviews[pendingPreviewIndex].file.type.startsWith('image/') ? <img src={pendingPreviews[pendingPreviewIndex].url} alt={pendingPreviews[pendingPreviewIndex].file.name} /> : <span className="material-upload-video-preview"><FileText size={52} /></span>}<strong>{pendingPreviews[pendingPreviewIndex].file.name}</strong><small>点击任意位置关闭</small></span></button>}
           </div>
@@ -7864,6 +7899,10 @@ export function Products({
   const [relationProductId, setRelationProductId] = useState('')
   const [canonicalFreshness, setCanonicalFreshness] = useState<'fresh' | 'expired' | 'unknown'>('unknown')
   const productListRef = useRef<HTMLElement>(null)
+  const updateProductQuery = (value: string) => {
+    setQuery(value)
+    window.history.replaceState(null, '', urlForMerchantCatalogSearch(window.location, value))
+  }
   const imageModelReady = modelStatusRead && modelStatus?.state === 'ready' && modelStatus.capabilities?.image_generation !== false
   const imageModelBlocker = !baseUrl
     ? '尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。'
@@ -8581,7 +8620,7 @@ export function Products({
             <span className="sr-only">搜索商品</span>
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => updateProductQuery(e.target.value)}
               placeholder="搜索商品或平台"
             />
           </label>
@@ -8678,7 +8717,7 @@ export function Products({
               <button
                 className="clear-filters"
                 onClick={() => {
-                  setQuery('')
+                  updateProductQuery('')
                   setPlatformFilter('all')
                   setAccountFilter('')
                   setProductFilter('all')
@@ -9600,8 +9639,18 @@ function ProductDetailPreview({
               ).map((filter) => (
                 <button
                   key={filter}
+                  type="button"
                   className={moduleFilter === filter ? 'active' : ''}
+                  tabIndex={moduleFilter === filter ? 0 : -1}
                   onClick={() => setModuleFilter(filter)}
+                  onKeyDown={(event) =>
+                    handleTabKeyDown(
+                      event,
+                      Object.keys(moduleLabels) as Array<keyof typeof moduleLabels>,
+                      moduleFilter,
+                      setModuleFilter,
+                    )
+                  }
                   role="tab"
                   aria-selected={moduleFilter === filter}
                 >
@@ -9745,8 +9794,12 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
   </section>
 }
 
-function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: string }) {
-  const [job, setJob] = useState<ImageGenerationJob | null>(null)
+function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: string; jobId: string; workspaceId: string | null }) {
+  const routeScopeId = `${workspaceId ?? 'unselected'}:${jobId}`
+  const [jobSnapshot, setJobSnapshot] = useState<{ routeJobId: string; job: ImageGenerationJob } | null>(null)
+  const job = imageJobForRoute(jobSnapshot, routeScopeId)
+  const routeJobIdRef = useRef(routeScopeId)
+  routeJobIdRef.current = routeScopeId
   const [error, setError] = useState('')
   const [configurationError, setConfigurationError] = useState(false)
   const [loading, setLoading] = useState(Boolean(baseUrl))
@@ -9754,7 +9807,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set())
   const [imageReloads, setImageReloads] = useState<Record<string, number>>({})
   const [candidatePage, setCandidatePage] = useState(1)
-  const [selectedVisualRefs, setSelectedVisualRefs] = useState<string[]>([])
+  const [visualSelection, setVisualSelection] = useState({ routeJobId: routeScopeId, refs: [] as string[] })
+  const selectedVisualRefs = visualRefsForRoute(visualSelection, routeScopeId)
   const [selectionReason, setSelectionReason] = useState('人工确认候选图并进入内容版本审阅')
   const [selectionState, setSelectionState] = useState<'idle' | 'submitting' | 'succeeded' | 'failed'>('idle')
   const [selectionMessage, setSelectionMessage] = useState('')
@@ -9772,16 +9826,19 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   useEffect(() => {
     if (!baseUrl) { setLoading(false); return }
     let active = true
+    const requestedRouteJobId = routeScopeId
+    const requestedFetchJobId = currentJobId
     let timer: number | undefined
     let shouldPoll = true
+    const isCurrent = () => active && isImageJobRequestCurrent(requestedRouteJobId, routeJobIdRef.current)
     const read = async () => {
       try {
         setLoading(true)
-        const next = await fetchImageGenerationJob(baseUrl, currentJobId)
+        const next = await fetchImageGenerationJob(baseUrl, requestedFetchJobId)
         shouldPoll = shouldPollImageJob(next)
-        if (active) {
+        if (isCurrent()) {
           retryErrorFocusRequestedRef.current = false
-          setJob(next)
+          setJobSnapshot({ routeJobId: requestedRouteJobId, job: next })
           setError('')
           setConfigurationError(false)
           pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'success')
@@ -9792,18 +9849,18 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
         // forever makes an invalid URL look like a healthy loading state.
         shouldPoll = !(apiError.status === 404 || ['GENERATION_JOB_NOT_FOUND', 'IMAGE_GENERATION_JOB_NOT_FOUND'].includes(apiError.code ?? ''))
         pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'error')
-        if (active) {
+        if (isCurrent()) {
           setConfigurationError(isImageGenerationConfigurationError(cause))
           setError(describeApiError(cause))
         }
       } finally {
-        if (active) {
+        if (isCurrent()) {
           // A terminal read must clear the busy state too; otherwise the
           // stopped poll leaves the panel permanently busy and disables its
           // recovery/refresh controls.
           setLoading(false)
         }
-        if (active && shouldPoll) {
+        if (isCurrent() && shouldPoll) {
           // One scheduled read at a time prevents a slow API response from
           // creating overlapping requests. Hidden tabs still re-check at a
           // low cadence and immediately recover when the tab is visible.
@@ -9813,9 +9870,18 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     }
     void read()
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer) }
-  }, [baseUrl, currentJobId, reload, job?.state])
+  }, [baseUrl, jobId, workspaceId, routeScopeId, currentJobId, reload, job?.state])
+  useEffect(() => {
+    setCandidatePage(1)
+    setVisualSelection({ routeJobId: routeScopeId, refs: [] })
+    setSelectionReason('人工确认候选图并进入内容版本审阅')
+    setSelectionState('idle')
+    setSelectionMessage('')
+    setSelectionNotice('')
+    setSelectedContentVersionId('')
+    setRetrying(false)
+  }, [routeScopeId])
   useEffect(() => { setCandidatePage(1) }, [currentJobId])
-  useEffect(() => { setSelectedContentVersionId('') }, [currentJobId])
   useEffect(() => {
     if (error && !loading && (!job || retryErrorFocusRequestedRef.current)) {
       retryErrorFocusRequestedRef.current = false
@@ -9840,21 +9906,28 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       setSelectionNotice('最多选择 6 张候选图，请先取消一张再继续。')
       return
     }
-    setSelectedVisualRefs(current => current.includes(visualRef) ? current.filter(item => item !== visualRef) : [...current, visualRef])
+    setVisualSelection(current => updateVisualRefsForRoute(current, routeScopeId, refs => refs.includes(visualRef) ? refs.filter(item => item !== visualRef) : [...refs, visualRef]))
     setSelectionNotice('')
     setSelectionState('idle'); setSelectionMessage('')
   }
   const submitVisualSelection = async () => {
-    if (!baseUrl || !job?.taskId || !job.contentVersionId || !selectedVisualRefs.length) return
+    if (selectionState === 'succeeded' || !baseUrl || !job?.taskId || !job.contentVersionId || !selectedVisualRefs.length) return
+    const submittedRouteJobId = routeScopeId
+    const submittedRefs = [...selectedVisualRefs]
+    const submittedJobId = job.jobId
+    const isCurrent = () => isImageJobRequestCurrent(submittedRouteJobId, routeJobIdRef.current)
     setSelectionState('submitting'); setSelectionMessage('')
     try {
       const versions = await fetchContentVersions(baseUrl, job.taskId)
+      if (!isCurrent()) return
       const current = versions.find(version => version.id === job.contentVersionId)
       if (!current) throw new Error('当前内容版本不存在或已变化，请返回任务页刷新')
-      const selected = await selectVisualCandidates(baseUrl, current.id, selectedVisualRefs, current.revision, selectionReason.trim(), `merchant-studio-visual-selection-${job.jobId}-${current.revision}`)
+      const selected = await selectVisualCandidates(baseUrl, current.id, submittedRefs, current.revision, selectionReason.trim(), `merchant-studio-visual-selection-${submittedJobId}-${current.revision}`)
+      if (!isCurrent()) return
       setSelectedContentVersionId(selected.content_version_id)
       setSelectionState('succeeded'); setSelectionMessage(`已提交 ${selected.visualSelection.count} 张候选，生成新的待审核内容版本 ${selected.content_version_id}。`)
     } catch (cause) {
+      if (!isCurrent()) return
       setSelectionState('failed')
       setSelectionMessage(describeApiError(cause))
       window.requestAnimationFrame(() => selectionErrorRef.current?.focus())
@@ -9877,13 +9950,17 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   }
   const retrySafeImageJob = async () => {
     if (!baseUrl || !job || !imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction?.allowed })) return
+    const submittedRouteJobId = routeScopeId
+    const submittedJobId = job.jobId
+    const isCurrent = () => isImageJobRequestCurrent(submittedRouteJobId, routeJobIdRef.current)
     setRetrying(true)
-    try { const next = await retryImageGeneration(baseUrl, job.jobId, job.revision); setJob(current => current ? { ...current, jobId: next.job_id, state: next.state, archiveState: 'pending', errorCode: null, errorMessage: null } : current); setReload(value => value + 1) }
+    try { const next = await retryImageGeneration(baseUrl, submittedJobId, job.revision); if (!isCurrent()) return; setJobSnapshot(current => { const routed = imageJobForRoute(current, submittedRouteJobId); return routed ? { routeJobId: submittedRouteJobId, job: { ...routed, jobId: next.job_id, state: next.state, archiveState: 'pending', errorCode: null, errorMessage: null } } : current }); setReload(value => value + 1) }
     catch (cause) {
+      if (!isCurrent()) return
       retryErrorFocusRequestedRef.current = true
       setError(describeApiError(cause))
     }
-    finally { setRetrying(false) }
+    finally { if (isCurrent()) setRetrying(false) }
   }
   if (!baseUrl) return <div ref={imageJobConfigurationErrorRef} className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-title" aria-describedby="image-job-config-description">
     <strong id="image-job-config-title">图片任务暂不可用</strong>
@@ -9914,12 +9991,12 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       const selected = selectedVisualRefs.includes(visualRef)
       return <figure key={visualRef} className={`${gate?.selectable ? 'candidate-ready' : 'candidate-blocked'}${selected ? ' candidate-selected' : ''}`}>
         {failed ? <div className="image-candidate-fallback" role="alert" aria-labelledby={`candidate-image-error-${index}`}><span id={`candidate-image-error-${index}`}>候选图片读取失败，当前任务状态和候选门禁仍保留。</span><button className="text-button image-candidate-retry" type="button" onClick={() => { setFailedImages(current => { const next = new Set(current); next.delete(visualRef); return next }); setImageReloads(current => ({ ...current, [visualRef]: (current[visualRef] ?? 0) + 1 })) }} aria-label={`重新读取图片候选 ${index + 1}`} aria-describedby={`candidate-image-error-${index}`}>重新读取</button></div> : <img key={`${visualRef}-${imageReloads[visualRef] ?? 0}`} src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} {...imageCandidateLoading(candidatePageData.page, visibleIndex)} decoding="async" onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
-        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting'} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
+        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting' || selectionState === 'succeeded'} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
       </figure>
     })}</div>
       {candidatePageData.pageCount > 1 && <nav className="image-candidate-pagination" aria-label="图片候选分页"><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page - 1)} disabled={candidatePageData.page === 1}>上一页</button><span aria-live="polite">第 {candidatePageData.page} / {candidatePageData.pageCount} 页 · 共 {candidatePageData.total} 张候选</span><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page + 1)} disabled={candidatePageData.page === candidatePageData.pageCount}>下一页</button></nav>}
     </> : null}
-    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
+    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting' || selectionState === 'succeeded'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || selectionState === 'succeeded' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
     {job?.nextAction && <div className="info-notice" role={job.reconciliationRequired || imageGenerationNeedsReconciliation(job.executionState) ? 'alert' : 'status'}><ShieldCheck size={16} /><span>{imageGenerationNeedsReconciliation(job.executionState) ? '模型结果尚未确认；请先对账，系统不会再次生成或扣费。' : `下一步：${job.nextAction.label}`}</span>{job.nextAction.type === 'review_error' && job.nextAction.allowed && <button className="text-button" type="button" onClick={focusImageError}>查看失败原因</button>}{imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction.allowed }) && !job.reconciliationRequired && ['IMAGE_GENERATION_NOT_CONFIGURED', 'IMAGE_GENERATION_PRE_PROVIDER_FAILED'].includes(job.errorCode ?? '') && <button className="text-button" type="button" onClick={() => void retrySafeImageJob()} disabled={retrying}>{retrying ? '重试入队中…' : '安全重试'}</button>}</div>}
     <div className="action-row"><button className="secondary-button" type="button" onClick={() => { setError(''); setFailedImages(new Set()); setReload(value => value + 1) }} disabled={loading} aria-label="刷新图片任务状态" aria-describedby="image-job-refresh-hint"><RefreshCw size={15} aria-hidden="true" />刷新任务状态</button><span id="image-job-refresh-hint" className="sr-only">刷新期间按钮不可重复操作，当前状态和候选不会被清空。</span>{imageGenerationProviderCallStarted(job?.executionState) && <span className="muted-note">Provider 已进入提交链路，结果未收口前禁止重复生成。</span>}{isTerminal && job?.images?.length ? <span className="muted-note">候选仍需单独通过人工审核和内容版本选择，生成完成不等于可发布。</span> : null}</div>
   </section>
@@ -9928,6 +10005,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
 function TaskWorkspace({
   openPublish,
   baseUrl,
+  workspaceId,
   target,
   onContext,
   onSelectTarget,
@@ -9937,6 +10015,7 @@ function TaskWorkspace({
 }: {
   openPublish: () => void
   baseUrl?: string
+  workspaceId: string | null
   target?: Target
   onContext: (context: TaskContext | null) => void
   onSelectTarget: (target: Target) => void
@@ -10043,6 +10122,7 @@ function TaskWorkspace({
   >(null)
   const [operation, setOperation] = useState('')
   const [error, setError] = useState('')
+  const [factConfirmationError, setFactConfirmationError] = useState('')
   const [taskCreationAttempted, setTaskCreationAttempted] = useState(false)
   const [createdTaskGroup, setCreatedTaskGroup] = useState<{ mode: 'split_by_platform' | 'split_by_sku'; taskGroupId?: string; tasks: Task[]; matchesPlan: boolean } | null>(null)
   const taskCreationIntentKey = useRef<{ scope: string; key: string } | null>(null)
@@ -10060,6 +10140,7 @@ function TaskWorkspace({
     baseUrl && targetProductId && taskComposerReadyScope !== taskComposerScope,
   )
   const targetTitle = target?.title ?? '轻云防晒外套 2026'
+  const factProofBlockers = productFactConfirmationBlockers(product?.sellingPoints)
   const topLevelDraft = evidenceSafeTopLevelContent(content?.body)
   const directionsData = resolveTaskDirections({
     baseUrl,
@@ -10074,6 +10155,19 @@ function TaskWorkspace({
   const warningFindings = findings.filter(
     (item) => item.severity === 'warning',
   ).length
+  const approvalBlockerMessage = contentApprovalBlockerMessage({
+    hasContent: Boolean(content),
+    reviewStatus,
+    blockingFindings,
+  })
+  const approvalControlEnabled = canApproveReviewedContent({
+    hasContent: Boolean(content),
+    reviewStatus,
+    blockingFindings,
+    operationActive: Boolean(operation),
+    loading,
+    alreadyApproved: approved,
+  })
   const reviewScore =
     !content || reviewStatus !== 'succeeded'
       ? '—'
@@ -10514,7 +10608,7 @@ function TaskWorkspace({
       })
   }
   const approve = (checked: boolean) => {
-    if (reviewStatus !== 'succeeded') return
+    if (reviewStatus !== 'succeeded' || blockingFindings > 0) return
     if (!checked || !baseUrl || !task || !content) {
       setApproved(checked)
       return
@@ -10854,6 +10948,7 @@ function TaskWorkspace({
       question.id === 'confirm_facts' ? '已确认商品事实准确' : answerValue
     setOperation('保存补充信息中…')
     setError('')
+    if (question.id === 'confirm_facts') setFactConfirmationError('')
     answerTask(baseUrl, task.id, { [question.id]: value }, task.version)
       .then((next) => {
         const nextQuestions = next.missingQuestions ?? []
@@ -10873,7 +10968,13 @@ function TaskWorkspace({
           )?.focus(),
         )
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => {
+        if (question.id === 'confirm_facts' && isSellingPointProofRequiredError(cause)) {
+          setFactConfirmationError(describeApiError(cause))
+          return
+        }
+        setError(describeApiError(cause))
+      })
       .finally(() => setOperation(''))
   }
   useEffect(() => {
@@ -11059,7 +11160,7 @@ function TaskWorkspace({
   if (!target)
     return (
       <div className="page-stack">
-        {imageJobId && <ImageGenerationJobPanel baseUrl={baseUrl} jobId={imageJobId} />}
+        {imageJobId && <ImageGenerationJobPanel baseUrl={baseUrl} jobId={imageJobId} workspaceId={workspaceId} />}
         {!imageJobId && <ImageGenerationJobDiscovery baseUrl={baseUrl} />}
         <section className="page-intro">
           <div>
@@ -11969,13 +12070,23 @@ function TaskWorkspace({
                           返回商品列表分别选择
                         </button>
                       ) : question.id === 'confirm_facts' ? (
-                        <button
-                          className="primary"
-                          onClick={() => submitAnswer(question)}
-                          disabled={Boolean(operation) || !task}
-                        >
-                          {task ? '确认商品事实准确' : '先创建任务再确认事实'}
-                        </button>
+                        <>
+                          <button
+                            className="primary"
+                            onClick={() => submitAnswer(question)}
+                            disabled={Boolean(operation) || !task || factProofBlockers.length > 0}
+                            aria-describedby={factProofBlockers.length || factConfirmationError ? 'product-fact-proof-recovery' : undefined}
+                          >
+                            {task ? '确认商品事实准确' : '先创建任务再确认事实'}
+                          </button>
+                          {(factProofBlockers.length > 0 || factConfirmationError) && <div id="product-fact-proof-recovery" className="error-notice" role="alert">
+                            <strong>核心卖点证据尚未满足确认条件</strong>
+                            <p>{factConfirmationError || '至少一条核心卖点缺少来源素材，或证明状态仍未确认；服务端会阻止商品事实确认。'}</p>
+                            {factProofBlockers.length > 0 && <ul>{factProofBlockers.map((point) => <li key={point.id}>{point.text || point.id}：{point.sourceIds.length ? `证明状态为${point.proofStatus}` : '缺少来源素材'}</li>)}</ul>}
+                            <p>本任务页没有安全的卖点证据编辑控件。请先返回商品目录定位这件商品，联系工作区管理员在受支持的商品事实维护入口补齐来源素材并将证明状态改为“已确认”；完成后重新打开任务读取最新商品事实，再确认。</p>
+                            <button className="secondary-button" type="button" onClick={onBackToProducts}>返回商品目录定位商品</button>
+                          </div>}
+                        </>
                       ) : (
                         <>
                           <input
@@ -12729,19 +12840,15 @@ function TaskWorkspace({
                     checked={approved}
                     onChange={(e) => approve(e.target.checked)}
                     disabled={
-                      Boolean(operation) ||
-                      loading ||
-                      approved ||
-                      !content ||
-                      reviewStatus !== 'succeeded'
+                      !approvalControlEnabled
                     }
                   />
                   <span>
                     <b>我已核对事实、规则和最终内容</b>
                     <small>
-                      {reviewStatus === 'succeeded' && content
+                      {approvalBlockerMessage ?? (reviewStatus === 'succeeded' && content
                         ? `批准后会锁定内容 v${content.version}；发布仍需二次确认。`
-                        : '服务端检查完成后才可批准。'}
+                        : '服务端检查完成后才可批准。')}
                     </small>
                   </span>
                 </label>
@@ -12903,7 +13010,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
   })
   const rows = rulesData.items
   const categories = categoriesData.items
-  const ruleSource = `${({ offline_demo: '离线演示规则', loading: '正在读取 API 规则', api_error: 'API 规则读取失败', api_empty: 'API 已连接 · 暂无规则数据', api_ready: '已连接 API · 管理员发布数据' } as const)[rulesData.mode]} · 当前作用域：${platform === 'all' ? '全部平台' : platformNames[platform]}${target ? ` · ${target.storeName && target.accountId ? `${target.storeName} · 店铺身份已确认` : '店铺身份待确认'}` : ''}`
+  const ruleSource = `${({ offline_demo: '离线演示规则', loading: '正在读取 API 规则', api_error: 'API 规则读取失败', api_empty: 'API 已连接 · 暂无规则数据', api_ready: '已连接 API · 管理员发布数据' } as const)[rulesData.mode]} · 当前规则平台：${platform === 'all' ? '全部平台' : platformNames[platform]}${target ? ` · 商品所属店铺：${platformNames[target.platform]} · ${target.storeName && target.accountId ? `${target.storeName} · 身份已确认` : '店铺身份待确认'}` : ''}`
   const categorySource = (
     {
       offline_demo: '离线演示类目',
@@ -14013,7 +14120,7 @@ export default function App() {
   const searchProducts = () => {
     const query = globalSearch.trim()
     if (!query) return
-    navigateTo('products', { searchQuery: query, clearContext: true })
+    navigateTo('products', { entry: 'products', searchQuery: query, clearContext: true })
   }
   const handleMerchantLogout = async () => {
     if (!apiBaseUrl) return
@@ -14251,7 +14358,7 @@ export default function App() {
                     onOpenTransactionIssue={openRiskIssue}
                   />
                 )}
-                {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
+                {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} account={authAccount} activeWorkspaceId={activeWorkspaceId} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
                 {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} activeWorkspaceId={activeWorkspaceId} onWorkspaceChange={switchMerchantWorkspace} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (
@@ -14270,14 +14377,17 @@ export default function App() {
                         window.history.replaceState(null, '', urlForMerchantCatalogSearch(window.location, query))
                       }}
                       onCatalogStoreOpen={(store) => {
-                        setGlobalSearch('')
                         setCatalogContext(store)
-                        window.history.replaceState(null, '', urlForMerchantCatalogStore(window.location, store))
+                        window.history.replaceState(null, '', urlForMerchantCatalogStore(window.location, store, globalSearch))
                       }}
                       onCatalogStoreSelection={() => {
                         setGlobalSearch('')
                         setCatalogContext((current) => current?.platform ? { platform: current.platform } : undefined)
                         window.history.replaceState(null, '', urlForMerchantCatalogStoreSelection(window.location))
+                      }}
+                      onCatalogProductOpen={(product) => {
+                        setCatalogContext(product)
+                        window.history.replaceState(null, '', urlForMerchantCatalogProduct(window.location, product))
                       }}
                       onCatalogProductList={() => {
                         setCatalogContext((current) => current ? {
@@ -14315,6 +14425,7 @@ export default function App() {
                   <TaskWorkspace
                     openPublish={openPublish}
                     baseUrl={apiBaseUrl}
+                    workspaceId={activeWorkspaceId}
                     target={target}
                     onContext={setTaskContext}
                     onSelectTarget={(next) =>

@@ -4,6 +4,20 @@ import type { CanonicalProductReadMode } from '../../../packages/application/src
 import type { ApiPersistence } from './server.js'
 
 type Params = Record<string, unknown>
+
+function parseExpectedVersion(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !/^\d+$/u.test(value)) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是非负安全整数', 400)
+  }
+  const version = Number(value)
+  if (!Number.isSafeInteger(version)) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是非负安全整数', 400)
+  }
+  return version
+}
+
+export const catalogProductUpdateInternals = { parseExpectedVersion }
 export interface CatalogProductUpdateDependencies {
   service: Pick<MerchantService, 'products' | 'updateProductSku' | 'updateProductFacts'>
   brandUnits: NonNullable<ApiPersistence['brandUnits']>
@@ -48,8 +62,7 @@ export async function handleCatalogProductUpdate(method: 'catalog.sku.update' | 
       const images = parseImages()
       const attributes = parseJsonObject('attributes_json')
       if (!priceProvided && !stockProvided && typeof params.name !== 'string' && images === undefined && attributes === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '至少提供一个 SKU 修改字段', 400)
-      const expectedVersion = typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined
-      if (params.expected_version !== undefined && expectedVersion === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是非负整数', 400)
+      const expectedVersion = parseExpectedVersion(params.expected_version)
       const product = service.updateProductSku({ workspaceId, productId, skuId, ...(typeof params.name === 'string' ? { name: params.name } : {}), ...(priceProvided ? { price } : {}), ...(stockProvided ? { stock } : {}), ...(images !== undefined ? { images } : {}), ...(attributes !== undefined ? { attributes } : {}), ...(expectedVersion !== undefined ? { expectedVersion } : {}) })
       let canonicalScope: Record<string, unknown> | undefined
       if (readControl.mode === 'canonical_read' && canonicalBefore) {
@@ -109,8 +122,7 @@ export async function handleCatalogProductUpdate(method: 'catalog.sku.update' | 
       const priceProvided = typeof params.price === 'string' && params.price.trim().length > 0
       const price = priceProvided ? Number(params.price) : undefined
       if (priceProvided && (!Number.isFinite(price) || price! < 0)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'price 必须是有效的非负数字', 400)
-      const expectedVersion = typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined
-      if (params.expected_version !== undefined && expectedVersion === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是非负整数', 400)
+      const expectedVersion = parseExpectedVersion(params.expected_version)
       if (typeof params.title !== 'string' && typeof params.category !== 'string' && images === undefined && attributes === undefined && sellingPoints === undefined && typeof params.store_differentiation !== 'string' && !priceProvided) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '至少提供一个商品事实修改字段', 400)
       const product = service.updateProductFacts({ workspaceId, productId, ...(typeof params.title === 'string' ? { title: params.title } : {}), ...(typeof params.category === 'string' ? { category: params.category } : {}), ...(images !== undefined ? { images } : {}), ...(attributes !== undefined ? { attributes } : {}), ...(sellingPoints !== undefined ? { sellingPoints } : {}), ...(typeof params.store_differentiation === 'string' ? { storeDifferentiation: params.store_differentiation } : {}), ...(priceProvided ? { price } : {}), ...(expectedVersion !== undefined ? { expectedVersion } : {}) })
       let canonicalScope: Record<string, unknown> | undefined

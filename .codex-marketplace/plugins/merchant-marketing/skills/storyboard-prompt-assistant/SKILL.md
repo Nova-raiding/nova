@@ -9,6 +9,8 @@ description: Convert concepts, scripts, ad copy, product ideas, rough stories, o
 
 Use this skill to turn ideas, scripts, copy, or rough concepts into usable video storyboard prompts. The output is text only. Do not call video generation tools.
 
+Prompts and shot tables from this skill are generic creative text, not provider-validated parameters, an executable request, or evidence that a video renderer accepts them. For a Store Nova render request, return to `merchant-marketing`: confirm the requested deliverable and storyboard, check the current MCP `tools/list`, then use its supported video request/query path and pass all workspace, permission, relay, cost, settlement, archive, and scan gates. A storyboard alone never means rendering started or succeeded.
+
 ## When To Use
 
 Use when the user asks for:
@@ -21,7 +23,7 @@ Use when the user asks for:
 
 For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text, or when the user explicitly requests a standalone text storyboard. Treat Store Nova's confirmed product facts and MCP result as authoritative; do not invent product claims or replace a rendered-video request with storyboard text.
 
-Boundary: If the user wants single-image prompt optimization, use `generation-prompt-builder` or `gpt-image-assistant`. If the user only wants general pre-writing advice, use `prompt-preflight-advice`.
+Boundary: For Store Nova product images, return to `merchant-marketing`. For other e-commerce image work, use `ecommerce-image-workflow` only when it is actually available in the current environment; otherwise use supported tools or state the limitation. For standalone generic image generation or editing, use `imagegen` when available; otherwise state the limitation. Answer general pre-writing questions directly.
 
 ## Modes
 
@@ -41,7 +43,7 @@ If the user did not specify a mode:
 
 1. Preserve the user's plot, product facts, brand constraints, and intended emotion.
 2. Do not remove plot points without permission.
-3. For AI-video shots, default each shot to 2-6 seconds unless the user specifies a platform or duration rule.
+3. For AI-video shots, use 2-6 seconds as an adjustable creative default only when the user has not specified total duration, shot rhythm, slow reveal, or other narrative intent; user instructions and verified platform rules take priority.
 4. Avoid impossible overloaded shots. Split actions when one shot contains too many beats.
 5. Use concrete visual language: subject, action, environment, lighting, shot scale, camera movement, pace, and transition.
 6. Do not add platform-specific parameters, seeds, model IDs, or unsupported flags unless requested.
@@ -72,11 +74,10 @@ If key information is missing but a useful first pass is possible, make a reason
 
 ## Duration Strategy
 
-- For AI video, default each shot to **2-6 seconds**, preferably 3-5 seconds.
-- If the user gives total duration, split it into shots and keep the shot durations adding up to the total when possible.
-- If the total duration does not divide cleanly, adjust shot durations within 2-6 seconds and explain the tradeoff in one sentence.
-- Avoid shots shorter than 2 seconds unless they are flash cuts, trailer impact beats, or explicitly requested.
-- Avoid shots longer than 6 seconds unless the user asks for a one-take shot or the platform supports long shots.
+- User-specified total duration, shot rhythm, slow reveal, and other narrative intent take priority; verified platform rules also apply.
+- If the user has not specified shot lengths, use **2-6 seconds** (preferably 3-5 seconds) as an adjustable creative default, not a compliance or rendering gate.
+- If the user gives total duration, split it into shots whose durations add up to that total; adapt shot lengths to the user's narrative intent rather than forcing every shot into 2-6 seconds.
+- Shorter than 2 seconds or longer than 6 seconds can be used when the user's requested pacing or story calls for it, subject to verified platform rules.
 - Trailer or promo climax sections can use denser shorter shots; setup sections can use longer establishing shots.
 
 ## Global Style Lock

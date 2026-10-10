@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { UNRESOLVED_WORKSPACE_DIRECTORY, operationsAuditExportParams, operationsAuditExportPayload } from "./useOpsConsoleModel.js";
+import { UNRESOLVED_WORKSPACE_DIRECTORY, automationPolicyUpdateParams, operationsAuditExportParams, operationsAuditExportPayload } from "./useOpsConsoleModel.js";
 import { validateMcpRequest } from "../../../../packages/contracts/src/mcp.js";
 
 const modelSource = () => readFile(new URL("./useOpsConsoleModel.ts", import.meta.url), "utf8");
@@ -93,5 +93,21 @@ describe("operations audit export", () => {
   it("refuses the mismatched filename/content response instead of downloading undefined", () => {
     expect(() => operationsAuditExportPayload({ filename: "audit.csv", content: "source" }))
       .toThrowError("运营审计导出未返回 CSV 内容，请稍后重试");
+  });
+});
+
+describe("automation policy MCP request contract", () => {
+  it("persists sync enablement only with the selected explicit store scope", () => {
+    const params = automationPolicyUpdateParams(
+      { platform: "taobao", account_id: "store-7" },
+      { enabled: true, syncEnabled: true, frequencyMinutes: 30, retryLimit: 2 } as never,
+      true,
+      "运营台保存店铺自动同步策略",
+    );
+    const result = validateMcpRequest({ jsonrpc: "2.0", id: "auto-sync", method: "automation.policy.update", params });
+
+    expect(result.valid).toBe(true);
+    expect(params).toMatchObject({ platform: "taobao", account_id: "store-7", sync_enabled: "true", enabled: "true" });
+    expect(params).not.toHaveProperty("workspace_id");
   });
 });

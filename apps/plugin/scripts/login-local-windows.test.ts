@@ -3,6 +3,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { main } from './login-local-windows.mjs'
 
 describe('Windows local plugin login', () => {
+  it('prints actionable help without loading Windows credential or session services', async () => {
+    let printed = ''
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      printed += String(chunk)
+      return true
+    })
+    try {
+      // The packaged login.cmd prepends --base-url before forwarding user args.
+      await expect(main(['--base-url', 'https://yxsona.com', '--help'], { platform: 'linux' })).resolves.toBeUndefined()
+      expect(printed).toContain('login-local-windows.mjs --base-url https://yxsona.com --workspace ws_xxx')
+      expect(printed).toContain('Windows Credential Manager')
+      expect(printed).toContain('不需要 ChatGPT OAuth')
+    } finally { output.mockRestore() }
+  })
+
   it('prints the authorization URL and completes the callback in --no-open mode', async () => {
     let printed = ''
     let stored = false

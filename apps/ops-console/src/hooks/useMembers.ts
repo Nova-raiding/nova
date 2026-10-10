@@ -45,8 +45,32 @@ export function createMembersClient(call: RpcCall = rpcForWorkspace): MembersCli
     if (!Array.isArray(page.items) || typeof page.total !== "number") throw failure("MEMBERS_PAGE_INVALID", "成员列表分页响应无效");
     return { items: page.items, total: page.total, offset: page.offset ?? offset, limit: page.limit ?? limit, hasMore: page.hasMore ?? ((page.offset ?? offset) + (page.limit ?? limit) < page.total) };
   };
+  const findAcrossPages = async (workspaceId: string, externalSubject: string): Promise<WorkspaceMember | undefined> => {
+    const pageSize = 100;
+    const seenOffsets = new Set<number>();
+    let offset = 0;
+    let expectedTotal: number | undefined;
+    for (;;) {
+      if (seenOffsets.has(offset)) throw failure("MEMBERS_PAGE_INVALID", "成员列表分页位置重复，已停止操作");
+      seenOffsets.add(offset);
+      const page = await list(workspaceId, { offset, limit: pageSize });
+      if (!Number.isSafeInteger(page.total) || page.total < 0 || !Number.isSafeInteger(page.offset) || page.offset !== offset || !Number.isSafeInteger(page.limit) || page.limit < 1) {
+        throw failure("MEMBERS_PAGE_INVALID", "成员列表分页响应无效，已停止操作");
+      }
+      if (expectedTotal === undefined) expectedTotal = page.total;
+      else if (page.total !== expectedTotal) throw failure("MEMBERS_PAGE_CHANGED", "成员列表在分页期间发生变化，请刷新后重试");
+      const match = page.items.find((item) => item.externalSubject === externalSubject);
+      if (match) return match;
+      if (!page.hasMore) return undefined;
+      const nextOffset = page.offset + page.items.length;
+      if (page.items.length === 0 || nextOffset <= offset || nextOffset > 1_000_000) {
+        throw failure("MEMBERS_PAGE_INVALID", "成员列表分页不完整，已停止操作");
+      }
+      offset = nextOffset;
+    }
+  };
   const assertFresh = async (workspaceId: string, member: WorkspaceMember) => {
-    const current = (await list(workspaceId, { limit: 100 })).items.find((item) => item.externalSubject === member.externalSubject);
+    const current = await findAcrossPages(workspaceId, member.externalSubject);
     if (!current || current.revision !== member.revision) throw failure("MEMBER_REVISION_CONFLICT", "成员信息已变化，请刷新后重试");
   };
   const upsert = (
@@ -65,7 +89,7 @@ export function createMembersClient(call: RpcCall = rpcForWorkspace): MembersCli
   return {
     list,
     invite: async (workspaceId, input) => {
-      if ((await list(workspaceId, { limit: 100 })).items.some((item) => item.externalSubject === input.externalSubject)) throw failure("MEMBER_ALREADY_EXISTS", "该用户已经是当前工作区成员，请使用角色调整操作");
+      if (await findAcrossPages(workspaceId, input.externalSubject)) throw failure("MEMBER_ALREADY_EXISTS", "该用户已经是当前工作区成员，请使用角色调整操作");
       return upsert(workspaceId, { ...input, status: "invited" }, input.reason);
     },
     changeRole: async (workspaceId, member, role, reason) => {

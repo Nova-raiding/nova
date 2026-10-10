@@ -116,9 +116,12 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
             type="error"
             showIcon
             title={<span id="support-queue-error-title">工单队列读取失败</span>}
-            description={initialLoadFailed
-              ? "当前空列表不代表没有工单；请修复连接或权限后重新加载。"
-              : "已保留上一次成功读取的工单，修复连接或权限后可重新加载。"}
+            description={<>
+              {model.error ? <span>{model.error} </span> : null}
+              {initialLoadFailed
+                ? "当前空列表不代表没有工单；请修复连接或权限后重新加载。"
+                : "已保留上一次成功读取的工单，修复连接或权限后可重新加载。"}
+            </>}
             action={<Button htmlType="button" aria-label="刷新工单" style={{ minHeight: 44 }} onClick={() => void model.reload()}>刷新工单</Button>}
           />
         </div>
@@ -133,14 +136,15 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
         locale={{ emptyText: <Empty description="暂无符合条件的客服工单" /> }}
         scroll={{ x: 980 }}
         onRow={ticket => ({
-          onClick: () => { if (!ticket.aggregate) void model.selectTicket(ticket.id); },
-          onKeyDown: event => { if (!ticket.aggregate && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void model.selectTicket(ticket.id); } },
-          tabIndex: 0,
-          role: "button",
-          "aria-label": `打开工单 ${ticket.ticketNumber} ${ticket.subject}`,
+          onClick: event => {
+            const target = event.target;
+            const interactive = target instanceof Element ? target.closest("button, a, input, textarea, select, [role='button']") : null;
+            if (interactive && interactive !== event.currentTarget) return;
+            if (!ticket.aggregate) void model.selectTicket(ticket.id);
+          },
         })}
         columns={[
-          { title: "工单", dataIndex: "ticketNumber", fixed: "left", width: 190, render: (value, ticket) => <Space orientation="vertical" size={0}><Typography.Text strong>{value}</Typography.Text><Typography.Text type="secondary">{ticket.subject}</Typography.Text></Space> },
+          { title: "工单", dataIndex: "ticketNumber", fixed: "left", width: 190, render: (value, ticket) => <Space orientation="vertical" size={0}>{ticket.aggregate ? <Typography.Text strong>{value}</Typography.Text> : <Button type="link" aria-label={`打开工单 ${ticket.ticketNumber} ${ticket.subject}`} style={{ minHeight: 32, height: "auto", padding: 0, fontWeight: 600, textAlign: "left", whiteSpace: "normal" }} onClick={() => void model.selectTicket(ticket.id)}>{value}</Button>}<Typography.Text type="secondary">{ticket.subject}</Typography.Text></Space> },
           { title: "客户", width: 180, render: (_, ticket) => <Space orientation="vertical" size={0}><span>{ticket.aggregate ? "平台聚合" : ticket.customerName}</span><Typography.Text type="secondary">{ticket.aggregate ? `${ticket.count ?? 0} 条` : ticket.customerId}</Typography.Text></Space> },
           { title: "状态", dataIndex: "status", width: 120, render: value => <Tag>{statusLabels[value as SupportTicketStatus]}</Tag> },
           { title: "优先级", dataIndex: "priority", width: 100, render: value => <Tag color={priorityColors[value as SupportTicketPriority]}>{priorityLabels[value as SupportTicketPriority]}</Tag> },

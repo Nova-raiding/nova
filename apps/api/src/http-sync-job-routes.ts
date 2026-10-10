@@ -63,24 +63,36 @@ export async function handleSyncJobRoute(req: IncomingMessage, _res: ServerRespo
     const workspaceId = deps.resolveWorkspace()
     const input = await deps.readBody()
     const job = deps.service.getSyncJob(workspaceId, progressMatch[1]!)
+    // Validate the callback contract before terminal/replay fast paths so a
+    // malformed worker payload is never acknowledged as successful.
+    const pageNumber = input.page_number
+    if (typeof pageNumber !== 'number' || !Number.isSafeInteger(pageNumber) || pageNumber < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'page_number 无效', 400)
+    if (!Array.isArray(input.items)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items 必须是数组', 400)
+    const rawItems: unknown[] = input.items
+    const invalidItemIndex = rawItems.findIndex(item => !isObject(item))
+    if (invalidItemIndex !== -1) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, `items[${invalidItemIndex}] 必须是对象`, 400, { field: `items[${invalidItemIndex}]` })
+    }
     deps.enrichRequestObservation(job.id)
     if (['succeeded', 'partial', 'failed'].includes(job.state)) { deps.send(200, workspaceId, job); return true }
-    const pageNumber = Number(input.page_number)
-    if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'page_number 无效', 400)
+    // Worker JSON contract sends an integer number. Do not coerce strings or
+    // booleans: a malformed value such as "1e2" must not advance the cursor.
     if (pageNumber <= job.pages) { deps.send(200, workspaceId, job); return true }
-    if (!Array.isArray(input.items)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'items 必须是数组', 400)
-    const mappedItems = input.items.filter(isObject).map(item => ({
-      remoteId: typeof item.remoteId === 'string' ? item.remoteId : typeof item.remote_id === 'string' ? item.remote_id : '',
-      title: typeof item.title === 'string' ? item.title : '',
-      sku: Array.isArray(item.sku) ? item.sku : [],
-      stock: typeof item.stock === 'number' ? item.stock : 0,
-      source: item.source === 'fixture' ? 'fixture' as const : 'official_api' as const,
-      ...(typeof item.price === 'number' ? { price: item.price } : {}),
-      ...(typeof item.category === 'string' ? { category: item.category } : {}),
-      ...(Array.isArray(item.images) ? { images: item.images.filter((value): value is string => typeof value === 'string') } : {}),
-      ...(isObject(item.attributes) ? { facts: Object.fromEntries(Object.entries(item.attributes).filter(([, value]) => typeof value === 'string' || typeof value === 'number').map(([key, value]) => [key, value as string | number])) } : {}),
-      raw: item,
-    }))
+    const mappedItems = rawItems.map(rawItem => {
+      const item = rawItem as Record<string, unknown>
+      return {
+        remoteId: typeof item.remoteId === 'string' ? item.remoteId : typeof item.remote_id === 'string' ? item.remote_id : '',
+        title: typeof item.title === 'string' ? item.title : '',
+        sku: Array.isArray(item.sku) ? item.sku : [],
+        stock: typeof item.stock === 'number' ? item.stock : 0,
+        source: item.source === 'fixture' ? 'fixture' as const : 'official_api' as const,
+        ...(typeof item.price === 'number' ? { price: item.price } : {}),
+        ...(typeof item.category === 'string' ? { category: item.category } : {}),
+        ...(Array.isArray(item.images) ? { images: item.images.filter((value): value is string => typeof value === 'string') } : {}),
+        ...(isObject(item.attributes) ? { facts: Object.fromEntries(Object.entries(item.attributes).filter(([, value]) => typeof value === 'string' || typeof value === 'number').map(([key, value]) => [key, value as string | number])) } : {}),
+        raw: item,
+      }
+    })
     const invalidItems = mappedItems.filter(item => !item.remoteId || !item.title)
     const items = mappedItems.filter(item => item.remoteId && item.title)
     const failures = invalidItems.map(item => ({ id: `sync-failure-${job.id}-${pageNumber}-${item.remoteId || 'unknown'}`, ...(item.remoteId ? { remoteId: item.remoteId } : {}), ...(typeof input.cursor === 'string' && input.cursor ? { cursor: input.cursor } : {}), pageNumber, code: 'PRODUCT_REQUIRED_FIELD_MISSING', message: !item.remoteId ? '平台商品缺少 remote_id' : '平台商品缺少 title', raw: item.raw, retryable: true, createdAt: new Date().toISOString() }))

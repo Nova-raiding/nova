@@ -25,6 +25,14 @@ export interface McpCanonicalBackfillDependencies {
   recordOperationAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
 }
 
+function boundedOptionalNumber(params: Record<string, unknown>, camel: string, snake: string, min: number, max: number): number | undefined {
+  const value = optionalNumberValue(params, camel, snake)
+  if (value !== undefined && (value < min || value > max)) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${snake} 必须是 ${min} 到 ${max} 之间的整数`, 400)
+  }
+  return value
+}
+
 export async function handleMcpCanonicalBackfill(method: string, params: Record<string, unknown>, req: IncomingMessage, workspaceId: string, deps: McpCanonicalBackfillDependencies): Promise<unknown> {
   const { persistenceReady, getPersistence, requireOperationsRole, requestActor, recordOperationAudit } = deps
   switch (method) {
@@ -45,14 +53,25 @@ export async function handleMcpCanonicalBackfill(method: string, params: Record<
       const conflictRepository = persistence.canonicalBackfillConflicts
       const actorId = requestActor(req)
       if (method === 'ops.canonical.backfill.create') {
-        const run = await repository.create({ workspaceId, dryRun: aliasValue(params, 'dryRun', 'dry_run') === true || aliasValue(params, 'dryRun', 'dry_run') === 'true', ...(optionalNumberValue(params, 'batchLimit', 'batch_limit') === undefined ? {} : { batchLimit: optionalNumberValue(params, 'batchLimit', 'batch_limit') }), createdBy: actorId, reason: requiredStringValue(params, 'reason') })
+        const batchLimit = boundedOptionalNumber(params, 'batchLimit', 'batch_limit', 1, 5000)
+        const run = await repository.create({ workspaceId, dryRun: aliasValue(params, 'dryRun', 'dry_run') === true || aliasValue(params, 'dryRun', 'dry_run') === 'true', ...(batchLimit === undefined ? {} : { batchLimit }), createdBy: actorId, reason: requiredStringValue(params, 'reason') })
         await recordOperationAudit({ workspaceId, actorId, action: 'canonical.backfill.create', resourceType: 'canonical_backfill_run', resourceId: run.id, before: {}, after: run as unknown as Record<string, unknown>, reason: run.reason })
         return (run)
       }
       const runId = optionalStringValue(params, 'runId', 'run_id')
       if (method === 'ops.canonical.backfill.conflicts.list') {
         if (!conflictRepository) throw new DomainError('CANONICAL_BACKFILL_CONFLICT_REPOSITORY_UNAVAILABLE', 'canonical backfill 冲突队列未配置', 503)
-        return (await conflictRepository.list({ workspaceId, ...(runId ? { runId } : {}), ...(optionalStringValue(params, 'status') ? { status: optionalStringValue(params, 'status') as 'open' | 'claimed' | 'resolved' | 'dismissed' } : {}), ...(optionalNumberValue(params, 'limit') === undefined ? {} : { limit: optionalNumberValue(params, 'limit') }) }))
+        const rawStatus = params.status
+        if (rawStatus !== undefined && rawStatus !== null && rawStatus !== '' && typeof rawStatus !== 'string') {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 open、claimed、resolved 或 dismissed', 400)
+        }
+        if (typeof rawStatus === 'string' && rawStatus.trim() === '' && rawStatus.length > 0) {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 不能为空白字符', 400)
+        }
+        const status = optionalStringValue(params, 'status')
+        if (status && !['open', 'claimed', 'resolved', 'dismissed'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 open、claimed、resolved 或 dismissed', 400)
+        const limit = boundedOptionalNumber(params, 'limit', 'limit', 1, 500)
+        return (await conflictRepository.list({ workspaceId, ...(runId ? { runId } : {}), ...(status ? { status: status as 'open' | 'claimed' | 'resolved' | 'dismissed' } : {}), ...(limit === undefined ? {} : { limit }) }))
       }
       if (method === 'ops.canonical.backfill.conflict.claim' || method === 'ops.canonical.backfill.conflict.resolve') {
         const conflictId = requiredStringValue(params, 'conflictId', 'conflict_id')
@@ -63,7 +82,8 @@ export async function handleMcpCanonicalBackfill(method: string, params: Record<
         if (!conflictRepository) throw new DomainError('CANONICAL_BACKFILL_CONFLICT_REPOSITORY_UNAVAILABLE', 'canonical backfill 冲突队列未配置', 503)
         let conflict
         try {
-          const status = requiredStringValue(params, 'status') as 'resolved' | 'dismissed'
+          const status = action === 'resolve' ? requiredStringValue(params, 'status') : undefined
+          if (status && status !== 'resolved' && status !== 'dismissed') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 resolved 或 dismissed', 400)
           if (action === 'resolve' && status === 'resolved') {
             if (!persistence.canonicalBackfillRemediation) throw new DomainError('CANONICAL_BACKFILL_REMEDIATION_UNAVAILABLE', 'canonical backfill 商品事实修复未配置', 503)
             if (optionalStringValue(params, 'remediationType', 'remediation_type') !== 'set_legacy_brand') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'resolved 仅支持 set_legacy_brand 修复类型', 400)
@@ -78,7 +98,7 @@ export async function handleMcpCanonicalBackfill(method: string, params: Record<
           } else {
             conflict = action === 'claim'
             ? await conflictRepository.claim({ workspaceId, id: conflictId, expectedRevision, assigneeId: actorId })
-            : await conflictRepository.resolve({ workspaceId, id: conflictId, expectedRevision, status, assigneeId: actorId, resolutionNote: requiredStringValue(params, 'resolutionNote', 'resolution_note') })
+            : await conflictRepository.resolve({ workspaceId, id: conflictId, expectedRevision, status: status as 'resolved' | 'dismissed', assigneeId: actorId, resolutionNote: requiredStringValue(params, 'resolutionNote', 'resolution_note') })
           }
         } catch (error) {
           if (error instanceof CanonicalBackfillConflictRevisionConflictError) throw new DomainError('CANONICAL_BACKFILL_CONFLICT_REVISION_CONFLICT', 'canonical backfill 冲突已被其他操作更新，请刷新后重试', 409, { conflict_id: conflictId, expected_revision: expectedRevision })

@@ -28,6 +28,7 @@ export function assetDisplayProjection(asset: AssetMetadata & { readiness?: Retu
   if (asset.parseStatus !== 'succeeded') return { ...base, primaryStatus: 'awaiting_parse', label: '正在读取内容', nextAction: { method: 'asset.parse', label: '读取素材内容', allowed: true } }
   if (asset.rightsStatus === 'rejected' || asset.rightsScope === 'unusable') return { ...base, primaryStatus: 'rights_blocked', label: '使用权益受限', nextAction: { method: 'asset.rights.update', label: '重新确认使用权', allowed: true } }
   if (asset.rightsStatus !== 'approved') return { ...base, primaryStatus: 'awaiting_rights', label: '等待确认使用权', nextAction: { method: 'asset.rights.update', label: '确认商用权益', allowed: true } }
+  if (asset.rightsScope === 'internal_only' || asset.rightsScope === 'limited_use') return { ...base, primaryStatus: 'rights_blocked', label: asset.rightsScope === 'internal_only' ? '仅限内部使用' : '使用范围受限', nextAction: { method: 'asset.rights.update', label: '调整权益范围', allowed: true } }
   if (!asset.factsConfirmedBy || !asset.factsConfirmedAt) return { ...base, primaryStatus: 'awaiting_facts_confirmation', label: '等待核对素材事实', nextAction: { method: 'asset.facts.confirm', label: '核对素材事实', allowed: true } }
   return { ...base, primaryStatus: 'ready', label: '可以用于当前任务', nextAction: null }
 }

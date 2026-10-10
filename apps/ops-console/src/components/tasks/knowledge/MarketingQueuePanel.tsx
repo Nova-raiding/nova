@@ -194,6 +194,9 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
   const revisionErrorRef = useRef<HTMLDivElement>(null);
 
   const openSupportTicket = (input: { kind: string; taskId: string; state: string; detail: string }) => {
+    // Keep one key for this confirmation's entire lifetime. A timeout may hide
+    // a successful create; retrying the same dialog must replay the same write.
+    const idempotencyKey = crypto.randomUUID();
     Modal.confirm({
       title: "将异常转为客服工单？",
       content: `系统会在当前工作区创建客服工单，并关联任务 ${input.taskId}。客服可继续分配负责人、沟通并跟踪 SLA。`,
@@ -212,7 +215,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
             customerName: `工作区 ${model.opsWorkspaceId}`,
             relatedTaskId: input.taskId,
             tags: ["task-queue", input.kind, input.state],
-            idempotencyKey: crypto.randomUUID(),
+            idempotencyKey,
           });
           message.success("客服工单已创建，已关联当前任务");
         } catch (error) {

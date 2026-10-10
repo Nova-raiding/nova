@@ -410,11 +410,37 @@ export function prepareAutomationScopeLoad(
     setScan: (value: AutomationScan | undefined) => void;
   },
 ): Record<string, string> {
+  const row = scope
+    ? stores.find((item) => `${item.platform}:${item.accountId}` === scope && item.readable && item.state !== "revoked")
+    : undefined;
+  if (scope && !row) throw new Error("所选店铺不可读或已撤销；请刷新店铺目录后重新选择");
   clear.setScope(scope);
   clear.setPolicy(undefined);
   clear.setScan(undefined);
-  const row = stores.find((item) => `${item.platform}:${item.accountId}` === scope);
   return row ? { platform: row.platform, account_id: row.accountId } : {};
+}
+
+export function automationPolicyUpdateParams(
+  scope: Record<string, string>,
+  current: AutomationPolicy | undefined,
+  enabled: boolean,
+  reason: string,
+): Record<string, string> {
+  const hasWindow = Boolean(current?.windowStart || current?.windowEnd);
+  return {
+    ...scope,
+    enabled: String(enabled),
+    sync_enabled: String(current?.syncEnabled ?? false),
+    frequency_minutes: String(current?.frequencyMinutes ?? 60),
+    retry_limit: String(current?.retryLimit ?? 2),
+    ...(hasWindow
+      ? {
+          window_start: current?.windowStart ?? "",
+          window_end: current?.windowEnd ?? "",
+        }
+      : { clear_window: "true" }),
+    reason,
+  };
 }
 
 export class IdempotencyOperationKeys {
@@ -596,8 +622,8 @@ export function useOpsConsoleModel() {
   // must not say "尚未刷新" while it is displaying rows a full load just read.
   const [alertsLoadedAt, setAlertsLoadedAt] = useState<Date>();
   const [deletionRequests, setDeletionRequests] = useState<
-    DataDeletionRequest[]
-  >([]);
+    DataDeletionRequest[] | undefined
+  >();
   const [modelStatus, setModelStatus] = useState<ModelStatus>();
   const [modelStatusLoading, setModelStatusLoading] = useState(true);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -774,7 +800,7 @@ export function useOpsConsoleModel() {
     setNotifications([]);
     setAlertNotificationReadiness(undefined);
     setAlertsLoadedAt(undefined);
-    setDeletionRequests([]);
+    setDeletionRequests(undefined);
     setModelStatus(undefined);
     setRules([]);
     setRuleSyncStatuses([]);
@@ -1374,15 +1400,19 @@ export function useOpsConsoleModel() {
     setModelMarkupReason("");
   }, [canModelMarkup]);
   const selectedAutomationStore = storeDirectory.find(
-    (row) => `${row.platform}:${row.accountId}` === automationScope,
+    (row) => `${row.platform}:${row.accountId}` === automationScope && row.readable && row.state !== "revoked",
   );
-  const automationScopeParams = (): Record<string, string> =>
-    selectedAutomationStore
+  const automationScopeParams = (): Record<string, string> => {
+    if (automationScope && !selectedAutomationStore) {
+      throw new Error("所选店铺不可读或已撤销；自动化操作已阻止，请刷新店铺目录后重新选择");
+    }
+    return selectedAutomationStore
       ? {
           platform: selectedAutomationStore.platform,
           account_id: selectedAutomationStore.accountId,
         }
       : {};
+  };
 
   const updateRuleStatus = async (
     row: Rule,
@@ -2760,11 +2790,17 @@ export function useOpsConsoleModel() {
   }, [canModelMarkup, modelStatus, opsSession?.actor_id]);
   const loadAutomationScope = async (scope: string) => {
     const requestId = ++automationScopeRequestRef.current;
-    const params = prepareAutomationScopeLoad(scope, storeDirectory, {
-      setScope: setAutomationScope,
-      setPolicy: setAutomationPolicy,
-      setScan: setAutomationScan,
-    });
+    let params: Record<string, string>;
+    try {
+      params = prepareAutomationScopeLoad(scope, storeDirectory, {
+        setScope: setAutomationScope,
+        setPolicy: setAutomationPolicy,
+        setScan: setAutomationScan,
+      });
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "自动化店铺作用域无效");
+      return;
+    }
     try {
       const [policy, scan] = await Promise.all([
         rpc("automation.policy.get", params),
@@ -2794,21 +2830,7 @@ export function useOpsConsoleModel() {
     }
     const current = automationPolicy;
     try {
-      const hasWindow = Boolean(current?.windowStart || current?.windowEnd);
-      const result = await rpc("automation.policy.update", {
-        ...automationScopeParams(),
-        enabled: String(enabled),
-        sync_enabled: String(current?.syncEnabled ?? false),
-        frequency_minutes: String(current?.frequencyMinutes ?? 60),
-        retry_limit: String(current?.retryLimit ?? 2),
-        ...(hasWindow
-          ? {
-              window_start: current?.windowStart ?? "",
-              window_end: current?.windowEnd ?? "",
-            }
-          : { clear_window: "true" }),
-        reason,
-      });
+      const result = await rpc("automation.policy.update", automationPolicyUpdateParams(automationScopeParams(), current, enabled, reason));
       setAutomationPolicy((result as { policy: AutomationPolicy }).policy);
       message.success(enabled ? "自动化策略已保存并开启" : "自动化运营已暂停");
       await loadAutomationScope(automationScope);

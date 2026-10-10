@@ -122,39 +122,64 @@ export class ClamAvScanner {
     if (response !== 'PONG') throw protocolError(`clamd PING returned ${JSON.stringify(response)} instead of "PONG"`)
   }
 
-  async version(): Promise<string> {
-    const response = await this.request(async socket => { await write(socket, Buffer.from('zVERSION\0', 'ascii')) })
+  async version(signal?: AbortSignal): Promise<string> {
+    const response = await this.request(async socket => { await write(socket, Buffer.from('zVERSION\0', 'ascii')) }, signal)
     if (!/^ClamAV [^/\s]+\/\d+\/[\x20-\x7e]+$/.test(response)) {
       throw protocolError(`clamd returned a malformed VERSION response: ${JSON.stringify(response)}`)
     }
     return response
   }
 
-  async scan(input: Buffer | Uint8Array | Readable): Promise<ClamAvScanResult> {
-    const response = await this.request(async socket => {
-      await write(socket, Buffer.from('zINSTREAM\0', 'ascii'))
-      try {
-        for await (const sourceChunk of normalizeInput(input)) {
-          const chunk = Buffer.from(sourceChunk)
-          for (let offset = 0; offset < chunk.length; offset += this.chunkSizeBytes) {
-            const body = chunk.subarray(offset, Math.min(offset + this.chunkSizeBytes, chunk.length))
-            const header = Buffer.allocUnsafe(4)
-            header.writeUInt32BE(body.length)
-            await write(socket, header)
-            await write(socket, body)
-          }
-        }
-      } catch (cause) {
-        if (cause instanceof ClamAvScannerError) throw cause
-        throw new ClamAvScannerError('CLAMAV_INPUT_ERROR', 'failed to read scan input', cause)
+  async scan(input: Buffer | Uint8Array | Readable, signal?: AbortSignal): Promise<ClamAvScanResult> {
+    const abortInput = () => {
+      if (!Buffer.isBuffer(input) && !(input instanceof Uint8Array) && !input.destroyed) {
+        // The request Promise owns the abort reason. Emitting it as a Readable
+        // error can be unhandled if cancellation wins the race before
+        // `for await` subscribes to the stream.
+        input.destroy()
       }
-      await write(socket, Buffer.alloc(4))
-    })
-    return parseClamAvScanResponse(response)
+    }
+    if (signal?.aborted) {
+      // No async iterator has subscribed to a Readable yet, so destroy without
+      // an error event and preserve the original abort reason as the result.
+      if (!Buffer.isBuffer(input) && !(input instanceof Uint8Array) && !input.destroyed) input.destroy()
+      signal.throwIfAborted()
+    }
+    signal?.addEventListener('abort', abortInput, { once: true })
+    try {
+      const response = await this.request(async socket => {
+        signal?.throwIfAborted()
+        await write(socket, Buffer.from('zINSTREAM\0', 'ascii'))
+        try {
+          for await (const sourceChunk of normalizeInput(input)) {
+            signal?.throwIfAborted()
+            const chunk = Buffer.from(sourceChunk)
+            for (let offset = 0; offset < chunk.length; offset += this.chunkSizeBytes) {
+              const body = chunk.subarray(offset, Math.min(offset + this.chunkSizeBytes, chunk.length))
+              const header = Buffer.allocUnsafe(4)
+              header.writeUInt32BE(body.length)
+              await write(socket, header)
+              await write(socket, body)
+            }
+          }
+        } catch (cause) {
+          if (cause instanceof ClamAvScannerError) throw cause
+          throw new ClamAvScannerError('CLAMAV_INPUT_ERROR', 'failed to read scan input', cause)
+        }
+        await write(socket, Buffer.alloc(4))
+      }, signal)
+      return parseClamAvScanResponse(response)
+    } finally {
+      signal?.removeEventListener('abort', abortInput)
+    }
   }
 
-  private request(send: (socket: Socket) => Promise<void>): Promise<string> {
+  private request(send: (socket: Socket) => Promise<void>, signal?: AbortSignal): Promise<string> {
     return new Promise<string>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(signal.reason ?? new DOMException('The operation was aborted', 'AbortError'))
+        return
+      }
       const socket = createConnection({ host: this.host, port: this.port })
       const chunks: Buffer[] = []
       let responseBytes = 0
@@ -164,6 +189,7 @@ export class ClamAvScanner {
         if (settled) return
         settled = true
         clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
         socket.removeAllListeners()
         socket.destroy()
         if (error) reject(error)
@@ -174,6 +200,8 @@ export class ClamAvScanner {
         finish(new ClamAvScannerError('CLAMAV_TIMEOUT', `clamd operation timed out after ${this.timeoutMs}ms`))
       }, this.timeoutMs)
       timer.unref?.()
+      const abort = () => finish(signal?.reason ?? new DOMException('The operation was aborted', 'AbortError'))
+      signal?.addEventListener('abort', abort, { once: true })
 
       socket.on('connect', () => {
         send(socket).catch(cause => {

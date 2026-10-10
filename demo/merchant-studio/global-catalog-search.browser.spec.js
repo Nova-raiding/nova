@@ -78,6 +78,114 @@ test('catalog search filters fixture rows and persists the query in the route', 
     await search.fill('无匹配商品')
     await expect(page.getByText('没有找到符合条件的商品', { exact: true })).toBeVisible()
     await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('无匹配商品')
+
+    await search.fill('轻云')
+    const productCard = page.locator('.catalog-product-card').filter({ hasText: '轻云咖啡机' })
+    await productCard.click()
+    await expect(page.getByRole('heading', { name: '轻云咖啡机' })).toBeVisible()
+    await expect.poll(() => {
+      const url = new URL(page.url())
+      return [url.searchParams.get('product_id'), url.searchParams.get('platform'), url.searchParams.get('account_id')]
+    }).toEqual(['product-global-search-1', 'jd', accountId])
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '轻云咖啡机' })).toBeVisible()
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('a catalog query deep link restores its search and matching rows after reload', async () => {
+  const browser = await chromium.launch({ headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  const page = await context.newPage()
+
+  await page.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname.replace(/^\/api/u, '')
+    let data = { items: [], total: 0, limit: 50, offset: 0 }
+    if (pathname === '/v1/auth/session') {
+      data = { account: { id: 'global-search-user', login: 'global-search@example.invalid', accountType: 'merchant', status: 'active', workspaceIds: [workspaceId] } }
+    } else if (pathname === '/v1/auth/mcp-token') {
+      data = { access_token: 'global-search-fixture-token', refresh_token: 'global-search-fixture-refresh', expires_in: 300, workspace_id: workspaceId }
+    } else if (pathname === '/healthz') {
+      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
+    } else if (pathname === '/v1/platform-accounts') {
+      data = { items: [{ platform: 'jd', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'manual_upload', accountId, storeName: '全局搜索验收店' }] }
+    } else if (pathname === '/v1/products') {
+      data = { items: products, total: products.length, limit: 50, offset: 0 }
+    } else if (pathname === '/mcp') {
+      const method = route.request().postDataJSON()?.method
+      data = { result: method === 'workspace.metrics'
+        ? { stores: [], productSummary: { total: products.length, lowStock: 0, missingImages: 0 }, riskItems: [], taskFunnel: {}, riskSummary: { total: 0, returned: 0, truncated: false } }
+        : method === 'platform.model.status'
+          ? { state: 'ready', capabilities: { image_generation: false } }
+          : {} }
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
+  })
+
+  try {
+    await page.goto(`${studioUrl}/merchant/products?section=products&platform=jd&account_id=${accountId}&q=${encodeURIComponent('轻云')}`, { waitUntil: 'domcontentloaded' })
+    const search = page.getByRole('textbox', { name: '搜索商品名称或关键词' })
+    await expect(search).toHaveValue('轻云')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(search).toHaveValue('轻云')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('a catalog deep link opens the requested product and rejects a cross-store product id', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+  const page = await context.newPage()
+  const deepLinkProduct = { ...products[0], id: 'product-deep-link', title: '深链商品咖啡机' }
+  const wrongStoreProduct = { ...products[1], id: 'product-other-store', accountId: 'another-store', title: '其他店铺商品' }
+
+  await page.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname.replace(/^\/api/u, '')
+    let data = { items: [], total: 0, limit: 50, offset: 0 }
+    if (pathname === '/v1/auth/session') {
+      data = { account: { id: 'global-search-user', login: 'global-search@example.invalid', accountType: 'merchant', status: 'active', workspaceIds: [workspaceId] } }
+    } else if (pathname === '/v1/auth/mcp-token') {
+      data = { access_token: 'global-search-fixture-token', refresh_token: 'global-search-fixture-refresh', expires_in: 300, workspace_id: workspaceId }
+    } else if (pathname === '/healthz') {
+      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
+    } else if (pathname === '/v1/platform-accounts') {
+      data = { items: [{ platform: 'jd', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'manual_upload', accountId, storeName: '全局搜索验收店' }] }
+    } else if (pathname === '/v1/products') {
+      data = { items: [deepLinkProduct, wrongStoreProduct], total: 2, limit: 50, offset: 0 }
+    } else if (pathname === '/mcp') {
+      const method = route.request().postDataJSON()?.method
+      data = { result: method === 'workspace.metrics'
+        ? { stores: [], productSummary: { total: 2, lowStock: 0, missingImages: 0 }, riskItems: [], taskFunnel: {}, riskSummary: { total: 0, returned: 0, truncated: false } }
+        : method === 'platform.model.status'
+          ? { state: 'ready', capabilities: { image_generation: false } }
+          : {} }
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
+  })
+
+  try {
+    await page.goto(`${studioUrl}/merchant/products?section=products&platform=jd&account_id=${accountId}&product_id=${deepLinkProduct.id}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '深链商品咖啡机' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '其他店铺商品' })).toHaveCount(0)
+    await page.getByRole('button', { name: '返回商品列表' }).click()
+    await expect(page.getByRole('textbox', { name: '搜索商品名称或关键词' })).toBeVisible()
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('深链商品咖啡机')
+
+    await page.goto(`${studioUrl}/merchant/products?section=products&platform=jd&account_id=${accountId}&product_id=${wrongStoreProduct.id}`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '深链商品咖啡机' })).toHaveCount(0)
+    await expect(page.getByRole('textbox', { name: '搜索商品名称或关键词' })).toBeVisible()
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('深链商品咖啡机')
   } finally {
     await context.close()
     await browser.close()

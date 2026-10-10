@@ -2,6 +2,7 @@ import { Button, Card, Input, Select, Space } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { platformLabels, platforms } from "../../types/ops";
 import { queueStateLabel } from "./knowledge/MarketingQueuePanel.js";
+import { updatePlatformFilter } from "./platformFilter.js";
 
 interface MarketingQueueFiltersSectionProps {
   model: OpsConsoleModel;
@@ -34,7 +35,7 @@ export function MarketingQueueFiltersSection({
           style={{ width: 150 }}
           value={queueFilters.platform}
           onChange={(value) =>
-            setQueueFilters((current) => ({ ...current, platform: value }))
+            setQueueFilters((current) => updatePlatformFilter(current, value, storeDirectory))
           }
           options={platforms.map((platform) => ({
             value: platform,
@@ -50,7 +51,7 @@ export function MarketingQueueFiltersSection({
           onChange={(value) =>
             setQueueFilters((current) => ({ ...current, accountId: value }))
           }
-          options={storeDirectory.map((store) => ({
+          options={storeDirectory.filter((store) => !queueFilters.platform || store.platform === queueFilters.platform).map((store) => ({
             value: store.accountId,
             label: `${store.label} · ${platformLabels[store.platform]}`,
           }))}

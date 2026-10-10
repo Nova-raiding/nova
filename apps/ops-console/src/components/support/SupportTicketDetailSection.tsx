@@ -48,6 +48,16 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
   }, [actionError, model.error]);
 
   if (model.detailLoading) return <Card className="ops-support-detail" title="工单详情" aria-busy="true"><Spin description="正在加载工单详情"><div role="status" aria-live="polite" style={{ minHeight: 160 }}>正在加载工单详情</div></Spin></Card>;
+  if (!model.selected && model.detailError) return <Card className="ops-support-detail" title="工单详情">
+    <Alert
+      type="error"
+      showIcon
+      role="alert"
+      title="工单详情读取失败"
+      description={model.detailError.message}
+      action={<Button style={{ minHeight: 44 }} onClick={() => void model.selectTicket(model.detailError!.ticketId)}>重新加载工单详情</Button>}
+    />
+  </Card>;
   if (!model.selected) return <Card className="ops-support-detail" title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
   const { ticket, events } = model.selected;
   const sla = ticket.sla;

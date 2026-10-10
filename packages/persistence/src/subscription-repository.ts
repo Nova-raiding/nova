@@ -276,7 +276,9 @@ export class MemorySubscriptionRepository implements SubscriptionRepository {
           item.workspaceId === workspaceId &&
           (!actorId || item.createdByActorId === actorId),
       )
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      // `created_at` can tie for orders inserted in the same transaction.
+      // Keep the bounded list stable and aligned with the Postgres key order.
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
       .slice(0, Math.min(100, Math.max(1, limit)));
   }
   async markPaid(input: {
@@ -442,7 +444,7 @@ export class PostgresSubscriptionRepository implements SubscriptionRepository {
     requireWorkspaceScope(workspaceId);
     return withWorkspaceTransaction(this.pool, workspaceId, async (client) => {
       const result = await client.query<SubscriptionOrder>(
-        `SELECT id, workspace_id AS "workspaceId", order_no AS "orderNo", plan_code AS "planCode", plan_name AS "planName", billing_cycle AS "billingCycle", price_cny::float8 AS "priceCny", payment_amount_cny::float8 AS "paymentAmountCny", included_stores AS "includedStores", included_tasks AS "includedTasks", coupon_code AS "couponCode", addon_codes AS "addonCodes", source_channel AS "sourceChannel", status, payment_provider AS "paymentProvider", payment_url AS "paymentUrl", provider_trade_id AS "providerTradeId", created_by_actor_id AS "createdByActorId", idempotency_key AS "idempotencyKey", created_at AS "createdAt", paid_at AS "paidAt" FROM workspace_subscription_orders WHERE workspace_id=$1 AND ($3::text IS NULL OR created_by_actor_id=$3) ORDER BY created_at DESC LIMIT $2`,
+        `SELECT id, workspace_id AS "workspaceId", order_no AS "orderNo", plan_code AS "planCode", plan_name AS "planName", billing_cycle AS "billingCycle", price_cny::float8 AS "priceCny", payment_amount_cny::float8 AS "paymentAmountCny", included_stores AS "includedStores", included_tasks AS "includedTasks", coupon_code AS "couponCode", addon_codes AS "addonCodes", source_channel AS "sourceChannel", status, payment_provider AS "paymentProvider", payment_url AS "paymentUrl", provider_trade_id AS "providerTradeId", created_by_actor_id AS "createdByActorId", idempotency_key AS "idempotencyKey", created_at AS "createdAt", paid_at AS "paidAt" FROM workspace_subscription_orders WHERE workspace_id=$1 AND ($3::text IS NULL OR created_by_actor_id=$3) ORDER BY created_at DESC,id DESC LIMIT $2`,
         [workspaceId, Math.min(100, Math.max(1, limit)), actorId ?? null],
       );
       return result.rows;

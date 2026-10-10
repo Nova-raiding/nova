@@ -19,14 +19,15 @@ const envelope = (data, error = null) => ({
   error,
 })
 
-const task = ({ id, productId = products[0].id, platform = 'taobao', skuId }) => ({
+const task = ({ id, productId = products[0].id, platform = 'taobao', skuId, state = 'queued', version = 1, selectedDirectionId }) => ({
   id,
   workspaceId,
   productId,
   platform,
   accountId: platform === 'jd' ? 'store-jd' : 'store-taobao',
-  state: 'queued',
-  version: 1,
+  state,
+  version,
+  ...(selectedDirectionId ? { selectedDirectionId } : {}),
   createdAt: '2026-10-01T00:00:00.000Z',
   ...(skuId ? { answers: { sku_id: skuId } } : {}),
 })
@@ -48,7 +49,7 @@ const understandingFor = (mode) => {
   }
 }
 
-async function openApp(path, { mode = 'split_by_platform', creationStatus = 202, holdProductRestore = false } = {}) {
+async function openApp(path, { mode = 'split_by_platform', creationStatus = 202, holdProductRestore = false, creativeJourney = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(10_000)
@@ -56,9 +57,15 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
   const apiCalls = []
   const taskPageQueries = []
   const taskRequestBodies = []
+  const generationRequests = []
+  const directionSelectionRequests = []
+  const planConfirmationRequests = []
+  const reviewRequests = []
   const unmockedApiCalls = []
   const unexpectedNetworkRequests = []
   let productFetchCount = 0
+  let generationTask = task({ id: 'task-creative', state: 'ready_for_direction', version: 1 })
+  let generatedContent = null
   let releaseProductRestore = () => {}
   let markProductRestorePending = () => {}
   const productRestorePending = new Promise((resolve) => { markProductRestorePending = resolve })
@@ -99,6 +106,36 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
       return product ? json(product) : json(null, 404, { code: 'NOT_FOUND', message: 'Fixture product not found' })
     }
     if (apiPath === '/v1/tasks/understand') return json(understandingFor(mode))
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/directions') {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        directionSelectionRequests.push({ method: route.request().method(), body })
+        generationTask = { ...generationTask, state: 'direction_selected', version: generationTask.version + 1, selectedDirectionId: body?.direction_id }
+        return json(generationTask)
+      }
+      return json([{ id: 'direction-hero', name: '突出核心功能', coreIdea: '围绕已确认的产品事实组织清晰卖点。', structure: '问题—特点—收益', copyDirection: '简洁说明', visualDirection: '真实场景', sellingPoints: ['耐用结构'], fitReason: '与确认事实一致', risk: '' }])
+    }
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/plan/confirm') {
+      planConfirmationRequests.push({ method: route.request().method(), body: route.request().postDataJSON() })
+      generationTask = { ...generationTask, state: 'plan_confirmed', version: generationTask.version + 1 }
+      return json(generationTask)
+    }
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/content-jobs') {
+      generationRequests.push({ method: route.request().method(), body: route.request().postData(), idempotencyKey: route.request().headers()['idempotency-key'] })
+      generatedContent = {
+        id: 'content-creative-1', taskId: 'task-creative', version: 1, revision: 1,
+        body: { title: '耐用收纳盒｜轻松整理日常用品', detail: '依据已确认的商品资料编写的本地浏览器 fixture 草稿。', sellingPoints: ['耐用结构'], modules: [] },
+        factVersionIds: ['product:product-taobao:v1'], ruleVersionIds: [], state: 'review_required',
+      }
+      return json({ id: 'generation-job-creative', taskId: 'task-creative', state: 'succeeded', contentVersionId: generatedContent.id })
+    }
+    if (creativeJourney && apiPath === '/v1/generation-jobs/generation-job-creative') return json({ id: 'generation-job-creative', taskId: 'task-creative', state: 'succeeded', contentVersionId: generatedContent?.id })
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/content-versions') return json(generatedContent ? [generatedContent] : [])
+    if (creativeJourney && (apiPath === '/v1/tasks/task-creative/feedback' || apiPath === '/v1/tasks/task-creative/timeline')) return json([])
+    if (creativeJourney && apiPath === '/v1/content-versions/content-creative-1/review') {
+      reviewRequests.push({ method: route.request().method(), body: route.request().postData() })
+      return json({ findings: [], categories: [{ id: 'facts', name: '商品事实', status: 'passed', findingCount: 0, summary: 'fixture review passed' }], blocking: false })
+    }
     if (apiPath === '/v1/task-requests') {
       taskRequestBodies.push(route.request().postDataJSON())
       if (creationStatus === 409) return json(null, 409, { code: 'TASK_REQUEST_SCOPE_CHANGED', message: '商品或 SKU 范围与已确认的执行计划不一致；任务未创建，请重新分析并确认范围' })
@@ -120,14 +157,14 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
       return json({ items, total: filtered.length, limit, offset })
     }
     const taskMatch = apiPath.match(/^\/v1\/tasks\/([^/]+)$/u)
-    if (taskMatch) return json(task({ id: decodeURIComponent(taskMatch[1]) }))
+    if (taskMatch) return json(creativeJourney && taskMatch[1] === 'task-creative' ? generationTask : task({ id: decodeURIComponent(taskMatch[1]) }))
     if (apiPath.startsWith('/v1/workspaces/')) return json({ items: [] })
     unmockedApiCalls.push({ method: route.request().method(), path: apiPath })
     return json(null, 501, { code: 'UNMOCKED_FIXTURE_API', message: `Unmocked fixture API request: ${apiPath}` })
   })
 
   await page.goto(`${studioUrl}${path}`, { waitUntil: 'domcontentloaded' })
-  return { browser, context, page, apiCalls, taskPageQueries, taskRequestBodies, unmockedApiCalls, unexpectedNetworkRequests, waitForProductRestore: () => productRestorePending, releaseProductRestore: () => releaseProductRestore() }
+  return { browser, context, page, apiCalls, taskPageQueries, taskRequestBodies, generationRequests, directionSelectionRequests, planConfirmationRequests, reviewRequests, unmockedApiCalls, unexpectedNetworkRequests, waitForProductRestore: () => productRestorePending, releaseProductRestore: () => releaseProductRestore() }
 }
 
 
@@ -236,6 +273,44 @@ test('a scope-changed 409 leaves task creation blocked and exposes no child task
     await expect(page.getByRole('link', { name: /任务 task-(taobao|jd)/u })).toHaveCount(0)
     expect(taskRequestBodies).toHaveLength(1)
     expect(apiCalls.filter((call) => call.path === '/v1/task-requests' && call.method === 'POST')).toHaveLength(1)
+    expect(unmockedApiCalls).toEqual([])
+    expect(unexpectedNetworkRequests).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('a selected creative direction must be confirmed before content generation, then the local draft enters review', async () => {
+  const { browser, context, page, generationRequests, directionSelectionRequests, planConfirmationRequests, reviewRequests, apiCalls, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
+  try {
+    await expect(page.getByRole('heading', { name: '任务协作线程' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '突出核心功能' })).toBeVisible()
+    const generate = page.getByRole('button', { name: '确认制作方案并生成' })
+    await expect(generate).toBeDisabled()
+    await page.getByRole('button', { name: /突出核心功能/u }).click()
+    await expect(page.getByRole('button', { name: /突出核心功能/u })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByText(/确认制作方案后才会产生生成任务/u)).toBeVisible()
+    await expect(generate).toBeEnabled()
+    expect(generationRequests).toEqual([])
+
+    await generate.click()
+
+    await expect(page.getByRole('heading', { name: '耐用收纳盒｜轻松整理日常用品' }).first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: '可以进入人工确认' })).toBeVisible()
+    await expect(page.getByText('fixture review passed')).toBeVisible()
+    await expect(page.getByTestId('task-workflow-stepper')).toContainText('内容审核')
+    await expect.poll(() => generationRequests).toHaveLength(1)
+    expect(generationRequests[0].method).toBe('POST')
+    expect(generationRequests[0].idempotencyKey).toBeTruthy()
+    expect(generationRequests[0].body).toBeNull()
+    expect(directionSelectionRequests).toEqual([{ method: 'POST', body: { direction_id: 'direction-hero' } }])
+    expect(planConfirmationRequests).toEqual([{ method: 'POST', body: { expected_version: 2 } }])
+    expect(reviewRequests).toEqual([{ method: 'GET', body: null }])
+    expect(apiCalls.some((call) => call.path === '/v1/tasks/task-creative/plan/confirm' && call.method === 'POST')).toBe(true)
+    expect(apiCalls.some((call) => call.path === '/v1/tasks/task-creative/directions' && call.method === 'POST')).toBe(true)
+    expect(apiCalls.some((call) => call.path === '/v1/tasks/task-creative/content-jobs' && call.method === 'POST')).toBe(true)
+    expect(apiCalls.some((call) => call.path === '/v1/content-versions/content-creative-1/review')).toBe(true)
     expect(unmockedApiCalls).toEqual([])
     expect(unexpectedNetworkRequests).toEqual([])
   } finally {

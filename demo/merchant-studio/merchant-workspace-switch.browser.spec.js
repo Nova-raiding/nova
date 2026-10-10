@@ -23,14 +23,23 @@ async function openRoute(page, pathname) {
 }
 
 async function chooseWorkspace(page, label, workspaceId) {
-  const selector = page.getByLabel(label)
+  const selector = page.getByRole('combobox', { name: label, exact: true })
   await expect(selector).toBeVisible()
-  const selection = selector.locator('xpath=..').locator('.ant-select-selection-item')
-  const current = (await selection.textContent().catch(() => ''))?.trim() ?? ''
-  await selector.click()
-  if (current !== workspaceId) await selector.press(!current || current === workspaceA ? 'ArrowDown' : 'ArrowUp')
+  const selectRoot = selector.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " ant-select ")]')
+  const selection = selector.locator('xpath=..')
+  const current = label === '选择当前商家工作区 ID' ? '' : ((await selection.textContent().catch(() => ''))?.trim() ?? '')
+  await selectRoot.locator('.ant-select-content').click({ force: true, timeout: 5_000 })
+  await expect(selector).toHaveAttribute('aria-expanded', 'true', { timeout: 5_000 })
+  if (!current) await selector.press('Home')
+  else if (!current.includes(workspaceId)) await selector.press(workspaceId === workspaceA ? 'ArrowUp' : 'ArrowDown')
   await selector.press('Enter')
-  await expect(selection).toHaveText(workspaceId)
+  if (label === '选择当前商家工作区 ID') {
+    await expect(page.locator('.app-shell')).toBeVisible()
+    const activeSelector = page.getByRole('combobox', { name: '按工作区 ID 切换当前商家工作区', exact: true })
+    await expect(activeSelector.locator('xpath=..')).toContainText(workspaceId)
+  } else {
+    await expect(selection).toContainText(workspaceId)
+  }
 }
 
 test('merchant workspace selector binds A to B to A requests and clears old tenant UI state', async ({ page }, testInfo) => {
@@ -63,7 +72,7 @@ test('merchant workspace selector binds A to B to A requests and clears old tena
   const loginResponse = page.waitForResponse(response => response.url().endsWith('/v1/auth/login'))
   if (!await page.locator('.app-shell').isVisible().catch(() => false)) await loginButton.click()
   expect((await loginResponse).status()).toBe(200)
-  await chooseWorkspace(page, '选择当前商家工作区', workspaceA)
+  await chooseWorkspace(page, '选择当前商家工作区 ID', workspaceA)
 
   await openRoute(page, '/merchant/members')
   const memberTable = page.getByRole('table', { name: '工作区成员列表' })
@@ -78,7 +87,7 @@ test('merchant workspace selector binds A to B to A requests and clears old tena
   const aMemberRow = page.getByRole('row').filter({ hasText: 'A 工作区专属成员' })
   await aMemberRow.getByRole('button', { name: '改角色' }).click()
   await expect(page.getByRole('form', { name: '成员变更' })).toBeVisible()
-  await chooseWorkspace(page, '切换当前商家工作区', workspaceB)
+  await chooseWorkspace(page, '按工作区 ID 切换当前商家工作区', workspaceB)
   await expect(page).toHaveURL(/\/merchant\/overview$/u)
   await expect(page.getByRole('form', { name: '成员变更' })).toHaveCount(0)
   await expect(page).not.toHaveURL(/old-workspace-search-marker/u)
@@ -87,7 +96,7 @@ test('merchant workspace selector binds A to B to A requests and clears old tena
   await expect(memberTable).toContainText('B 工作区专属成员', { timeout: 30_000 })
   await expect(memberTable).not.toContainText('A 工作区专属成员')
 
-  await chooseWorkspace(page, '切换当前商家工作区', workspaceA)
+  await chooseWorkspace(page, '按工作区 ID 切换当前商家工作区', workspaceA)
   await expect(page).toHaveURL(/\/merchant\/overview$/u)
   await openRoute(page, '/merchant/members')
   await expect(memberTable).toContainText('A 工作区专属成员', { timeout: 30_000 })

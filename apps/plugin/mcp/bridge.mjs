@@ -207,8 +207,15 @@ const MAX_REMOTE_RESPONSE_BYTES = 36 * 1024 * 1024
 const MAX_SESSION_ARTIFACT_BYTES = 250 * 1024 * 1024
 const MAX_SESSION_ARTIFACT_FILES = 100
 const INTERACTIVE_WRITE_TTL_MS = 15 * 60 * 1000
-const ASSET_SCAN_POLL_TIMEOUT_MS = Math.min(30_000, Math.max(100, Number(process.env.MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS ?? 12_000)))
-const ASSET_SCAN_POLL_INTERVAL_MS = Math.min(2_000, Math.max(25, Number(process.env.MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS ?? 400)))
+const boundedEnvironmentInteger = (name, fallback, minimum, maximum) => {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return fallback
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value)) return fallback
+  return Math.min(maximum, Math.max(minimum, value))
+}
+const ASSET_SCAN_POLL_TIMEOUT_MS = boundedEnvironmentInteger('MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS', 12_000, 100, 30_000)
+const ASSET_SCAN_POLL_INTERVAL_MS = boundedEnvironmentInteger('MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS', 400, 25, 2_000)
 let sessionArtifactDirectory
 let sessionArtifactBytes = 0
 let sessionArtifactFiles = 0
@@ -3393,9 +3400,21 @@ async function callRemote(method, params) {
   // Content and image providers legitimately take 90-120 seconds. Keep the
   // desktop bridge alive longer than the provider boundary so it can return
   // the settled result instead of reporting a false timeout after billing.
-  const timeoutMs = Number(process.env.MERCHANT_MCP_TIMEOUT_MS ?? 360000)
-  const maxAttempts = Math.max(1, Number(process.env.MERCHANT_MCP_RETRY_ATTEMPTS ?? 5))
-  const retryDelayMs = Math.max(50, Number(process.env.MERCHANT_MCP_RETRY_DELAY_MS ?? 200))
+  const readPositiveInteger = (name, fallback, { minimum = 1, maximum = Number.MAX_SAFE_INTEGER } = {}) => {
+    const raw = process.env[name]
+    if (raw === undefined || raw === '') return fallback
+    if (!/^[0-9]+$/u.test(raw)) {
+      throw Object.assign(new Error(`${name} must be a positive integer`), { code: 'MCP_TRANSPORT_CONFIGURATION_INVALID' })
+    }
+    const value = Number(raw)
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+      throw Object.assign(new Error(`${name} is outside the supported range`), { code: 'MCP_TRANSPORT_CONFIGURATION_INVALID' })
+    }
+    return value
+  }
+  const timeoutMs = readPositiveInteger('MERCHANT_MCP_TIMEOUT_MS', 360000, { maximum: 2_147_483_647 })
+  const maxAttempts = readPositiveInteger('MERCHANT_MCP_RETRY_ATTEMPTS', 5, { maximum: 10 })
+  const retryDelayMs = readPositiveInteger('MERCHANT_MCP_RETRY_DELAY_MS', 200, { minimum: 50, maximum: 2_147_483_647 })
   // A very small timeout is useful in boundary tests, but Node may need one
   // event-loop turn to establish the local connection. Give that first write
   // a bounded startup window so it cannot be aborted before the API receives
@@ -4025,14 +4044,14 @@ async function handle(request) {
     return jsonRpcError(null, -32600, 'JSON-RPC 请求格式无效')
   }
   const hasId = Object.prototype.hasOwnProperty.call(request, 'id')
+  const validId = !hasId || typeof request.id === 'string' || (typeof request.id === 'number' && Number.isSafeInteger(request.id))
+  if (!validId) return jsonRpcError(null, -32600, 'JSON-RPC 请求格式无效')
   if (request.jsonrpc !== '2.0') return jsonRpcError(hasId ? request.id : null, -32600, 'JSON-RPC 请求格式无效')
   if (typeof request.method !== 'string' || !request.method.trim()) return jsonRpcError(hasId ? request.id : null, -32600, 'JSON-RPC method 必须是非空字符串')
   // JSON-RPC notifications never receive responses, including notifications
   // this bridge does not currently act on (for example cancellation events).
   if (!hasId) return null
-  const validId = request.id === null || typeof request.id === 'string' || (typeof request.id === 'number' && Number.isFinite(request.id))
-  const id = validId ? request.id : null
-  if (!validId) return jsonRpcError(id, -32600, 'JSON-RPC 请求格式无效')
+  const id = request.id
   if (request.params !== undefined && (!request.params || typeof request.params !== 'object' || Array.isArray(request.params))) return jsonRpcError(id, -32602, 'JSON-RPC params 必须是对象')
   if (request.method === 'notifications/initialized') return null
   if (request.method === 'ping') return jsonRpc(id, {})

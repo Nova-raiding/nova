@@ -68,6 +68,34 @@ function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+/** Return true when a status payload makes any metering claim, even if that
+ * claim is malformed and parseRelayUsage therefore rejects the whole receipt.
+ * A prior settlement may cover a status response that omits usage entirely;
+ * it must not hide a new malformed or contradictory provider claim. */
+function hasExplicitVideoMeteringClaim(payload: unknown): boolean {
+  const root = record(payload) ? payload : undefined
+  const data = root && record(root.data) ? root.data : undefined
+  const nestedData = data && record(data.data) ? data.data : undefined
+  const result = data && record(data.result) ? data.result : undefined
+  const metadata = root && record(root.metadata) ? root.metadata : undefined
+  const envelopeNodes = [root, data, nestedData, result, metadata].filter(record)
+  const malformedExplicitUsage = envelopeNodes.some(node =>
+    Object.prototype.hasOwnProperty.call(node, 'usage') && !record(node.usage))
+  const usage = [root?.usage, data?.usage, nestedData?.usage, result?.usage, metadata?.usage]
+    .filter(record)
+  const nodes = [...usage, ...envelopeNodes]
+  const keys = [
+    'prompt_tokens', 'promptTokens', 'input_tokens', 'inputTokens',
+    'completion_tokens', 'completionTokens', 'output_tokens', 'outputTokens',
+    'total_tokens', 'totalTokens', 'cost_cny', 'costCny', 'actual_cost_cny',
+    'actualCostCny', 'currency', 'cost_currency', 'costCurrency',
+    'duration_seconds', 'durationSeconds', 'duration', 'output_video_duration',
+    'outputVideoDuration', 'video_seconds', 'videoSeconds', 'video_duration',
+    'videoDuration',
+  ]
+  return malformedExplicitUsage || nodes.some(node => keys.some(key => Object.prototype.hasOwnProperty.call(node, key)))
+}
+
 function httpsUrl(value: unknown): string | undefined {
   return typeof value === 'string' && /^https:\/\//u.test(value) ? value : undefined
 }
@@ -304,7 +332,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
       const usage = parseRelayUsage(payload, billingHeaders, defaults)
       // A prior durable settlement can cover a status read that omits usage,
       // but cannot override new, explicitly contradictory metering evidence.
-      if (usage?.metadata?.usage_observed !== true) return billingContext.settlementVerified && usage?.metadata?.duration_evidence_invalid !== true
+      if (usage?.metadata?.usage_observed !== true) return billingContext.settlementVerified && !hasExplicitVideoMeteringClaim(payload)
         ? { ...parsed, settlementStatus: 'settled' }
         : { status: 'queued', providerJobId: jobId, settlementStatus: 'pending_receipt' }
       const sink = this.options.usageSink

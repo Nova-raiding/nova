@@ -57,9 +57,26 @@ describe('customer delivery platform authorization and API flow', () => {
 
   it('denies a workspace operator from invoking platform customer delivery methods', async () => {
     const base = await start()
+    // Use the workspace granted to the merchant token so denial proves the
+    // platform-only method scope, rather than only a cross-workspace mismatch.
+    const targetWorkspace = 'ws_delivery_authz'
+    const before = await call<{ items: Array<{ id: string; companyName: string }> }>(base, 'customer-delivery-platform-token', 'ops.customer-delivery.list', { target_workspace_id: targetWorkspace })
+    expect(before.response.status).toBe(200)
+    const beforeRows = before.body.data?.result.items ?? []
     const denied = await call(base, 'customer-delivery-workspace-token', 'ops.customer-delivery.list', { target_workspace_id: 'ws_delivery_authz' })
     expect(denied.response.status).toBe(403)
     expect(denied.body.error?.code).toBe('FORBIDDEN')
+
+    const deniedCreate = await call(base, 'customer-delivery-workspace-token', 'ops.customer-delivery.create', {
+      target_workspace_id: targetWorkspace,
+      company_name: '不应由商家权限创建的交付档案',
+    })
+    expect(deniedCreate.response.status).toBe(403)
+    expect(deniedCreate.body.error?.code).toBe('FORBIDDEN')
+    const after = await call<{ items: Array<{ id: string; companyName: string }> }>(base, 'customer-delivery-platform-token', 'ops.customer-delivery.list', { target_workspace_id: targetWorkspace })
+    expect(after.response.status).toBe(200)
+    expect(after.body.data?.result.items).toEqual(beforeRows)
+    expect(after.body.data?.result.items).not.toContainEqual(expect.objectContaining({ companyName: '不应由商家权限创建的交付档案' }))
   })
 
   it('rejects a missing or conflicting target workspace before dispatch', async () => {
@@ -99,6 +116,19 @@ describe('customer delivery platform authorization and API flow', () => {
       checklist_key: 'system_integration',
       item_key: '插件账号',
       completed: 'yes',
+      expected_revision: '1',
+    })
+    expect(invalid.response.status).toBe(400)
+    expect(invalid.body.error?.code).toBe('INVALID_REQUEST')
+  })
+
+  it.each(['yes', '1', 1, null])('rejects invalid training completion value %j before repository dispatch', async completed => {
+    const base = await start()
+    const invalid = await call(base, 'customer-delivery-platform-token', 'ops.customer-delivery.training.complete', {
+      target_workspace_id: `ws_delivery_authz_${Date.now()}`,
+      delivery_id: 'delivery_missing',
+      completed,
+      evidence_refs_json: '[]',
       expected_revision: '1',
     })
     expect(invalid.response.status).toBe(400)

@@ -74,7 +74,7 @@ test.afterEach(async ({}, testInfo) => {
   expect(unexpectedApiRequests, 'all browser API requests must use an explicit fixture').toEqual([])
 })
 
-async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false, detailDelayMs = 0 } = {}) {
+async function installApiRoutes(page, { jobs = [], detail, details, retryJob, imageFailureOnce = false, detailDelayMs = 0, detailDelayByJob = {} } = {}) {
   unexpectedApiRequests = []
   // Unmodeled API calls fail closed instead of receiving an empty success that
   // could hide an endpoint or contract change.
@@ -103,7 +103,8 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
   }))
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'postgres', ready: true } })),
+    // All server-facing responses in this UI exercise are intercepted below.
+    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'fixture', ready: true } })),
   }))
   await page.route('**/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}
@@ -124,9 +125,13 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
   }))
   await page.route('**/v1/publish-jobs*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) }))
   await page.route('**/v1/image-generation-jobs/*', async route => {
-    if (detailDelayMs) await new Promise(resolve => setTimeout(resolve, detailDelayMs))
-    if (!detail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null)) })
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(detail)) })
+    const requestJobId = new URL(route.request().url()).pathname.split('/').pop()
+    const responseDetail = details?.[requestJobId] ?? detail
+    const configuredDelay = detailDelayByJob[requestJobId]
+    const delayMs = Array.isArray(configuredDelay) ? (configuredDelay.shift() ?? 0) : configuredDelay ?? detailDelayMs
+    if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs))
+    if (!responseDetail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null)) })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(responseDetail)) })
   })
   let imageFailed = false
   await page.route('**/candidate-1.webp', route => {
@@ -281,7 +286,49 @@ test('submits the reasoned candidate choice and exposes the next review step', a
     await submit.focus(); await page.keyboard.press('Enter')
     await expect(page.locator('.image-selection-panel .info-notice[role="status"]')).toContainText('已提交 1 张候选')
     await expect(page.getByRole('button', { name: '进入新版本审核' })).toBeVisible()
+    // The selection created a new review version. The original image job is
+    // now a stale editing context, so it must not accept another mutation.
+    await expect(checkbox).toBeDisabled()
+    await expect(page.getByLabel('选图原因（必填）')).toBeDisabled()
+    await expect(submit).toBeDisabled()
     expect(selectionRequest).toBeTruthy()
+  } finally {
+    await context.close(); await browser.close()
+  }
+})
+
+test('switching deep-linked image jobs drops old candidates and ignores the late response', async () => {
+  const jobA = baseJob({ job_id: 'job_image_a', product_id: 'product_a', outputs: [output({ visual_ref: 'visual_a', asset_id: 'asset_a' })], images: ['https://assets.example.test/candidate-1.webp'] })
+  const jobB = baseJob({ job_id: 'job_image_b', product_id: 'product_b', outputs: [output({ visual_ref: 'visual_b', asset_id: 'asset_b' })], images: ['https://assets.example.test/candidate-1.webp'] })
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_a', {
+    details: { job_image_a: jobA, job_image_b: jobB },
+    detailDelayByJob: { job_image_a: [0, 900] },
+  })
+  const requestedJobs = []
+  page.on('request', request => {
+    const match = request.url().match(/\/v1\/image-generation-jobs\/([^/?]+)/)
+    if (match) requestedJobs.push(match[1])
+  })
+  try {
+    await expect(page.getByText(/任务 job_image_a · 商品 product_a/)).toBeVisible({ timeout: 15_000 })
+    const checkbox = page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })
+    await checkbox.check({ force: true })
+    await expect(page.getByText('已选择 1 张候选')).toBeAttached()
+    const aReadCountBeforeRefresh = requestedJobs.filter(id => id === 'job_image_a').length
+    await page.getByRole('button', { name: '刷新图片任务状态' }).click()
+    await expect.poll(() => requestedJobs.filter(id => id === 'job_image_a').length).toBeGreaterThan(aReadCountBeforeRefresh)
+    await page.waitForTimeout(50)
+    await page.evaluate(() => {
+      window.history.pushState(null, '', `${window.location.pathname}?image_job=job_image_b`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect(page.getByText(/任务 job_image_b · 商品 product_b/)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })).not.toBeChecked()
+    await expect.poll(() => requestedJobs).toContain('job_image_b')
+    await expect(page.getByText(/任务 job_image_a · 商品 product_a/)).toHaveCount(0)
+    await page.waitForTimeout(1_000)
+    await expect(page.getByText(/任务 job_image_b · 商品 product_b/)).toBeVisible()
+    await expect(page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })).not.toBeChecked()
   } finally {
     await context.close(); await browser.close()
   }

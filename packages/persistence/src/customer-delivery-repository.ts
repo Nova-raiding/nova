@@ -104,6 +104,7 @@ export interface CustomerDeliveryListInput {
   query?: string;
   projectOwner?: string;
   supportOwner?: string;
+  archivedOnly?: boolean;
 }
 export interface CustomerDeliveryPage {
   items: CustomerDelivery[];
@@ -235,9 +236,11 @@ export function normalizeCustomerDeliveryListInput(input: CustomerDeliveryListIn
   const query = input.query?.trim() ?? "";
   const projectOwner = input.projectOwner?.trim() ?? "";
   const supportOwner = input.supportOwner?.trim() ?? "";
+  const archivedOnly = input.archivedOnly ?? false;
+  if (typeof archivedOnly !== "boolean") throw new CustomerDeliveryError("INVALID_INPUT", "客户交付归档筛选参数无效");
   if ([query, projectOwner, supportOwner].some(value => value.length > 200 || /[\u0000-\u001f\u007f]/u.test(value)))
     throw new CustomerDeliveryError("INVALID_INPUT", "客户交付筛选参数无效");
-  return { workspaceId, offset, limit, query, projectOwner, supportOwner };
+  return { workspaceId, offset, limit, query, projectOwner, supportOwner, archivedOnly };
 }
 export function customerDeliveryEvidenceRefs(value: unknown): string[] {
   if (!Array.isArray(value) || value.some(ref => typeof ref !== "string" || !ref.trim())) return [];
@@ -391,9 +394,9 @@ export class MemoryCustomerDeliveryRepository implements CustomerDeliveryReposit
       throw new CustomerDeliveryError("REVISION_CONFLICT", "账号绑定正在保存，请刷新后重试");
   }
   async list(input: CustomerDeliveryListInput) {
-    const { workspaceId, offset, limit, query, projectOwner, supportOwner } = normalizeCustomerDeliveryListInput(input);
+    const { workspaceId, offset, limit, query, projectOwner, supportOwner, archivedOnly } = normalizeCustomerDeliveryListInput(input);
     const rows = [...this.rows.values()]
-      .filter((x) => x.workspaceId === workspaceId && !x.archivedAt)
+      .filter((x) => x.workspaceId === workspaceId && (archivedOnly ? Boolean(x.archivedAt) : !x.archivedAt))
       .filter((x) => !query || x.companyName.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
       .filter((x) => !projectOwner || x.projectOwner === projectOwner)
       .filter((x) => !supportOwner || x.supportOwner === supportOwner)
@@ -1276,17 +1279,17 @@ export class PostgresCustomerDeliveryRepository implements CustomerDeliveryRepos
     );
   }
   async list(input: CustomerDeliveryListInput) {
-    const { workspaceId, offset, limit, query, projectOwner, supportOwner } = normalizeCustomerDeliveryListInput(input);
+    const { workspaceId, offset, limit, query, projectOwner, supportOwner, archivedOnly } = normalizeCustomerDeliveryListInput(input);
     const page = await withWorkspaceTransaction(this.pool, workspaceId, async c => {
       const total = Number((await c.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL
-           AND ($2='' OR strpos(lower(company_name),lower($2))>0) AND ($3='' OR project_owner=$3) AND ($4='' OR support_owner=$4) /* delivery_evidence_list_count */`,
-        [workspaceId, query, projectOwner, supportOwner])).rows[0]?.count ?? 0);
+        `SELECT count(*)::text AS count FROM workspace_customer_deliveries WHERE workspace_id=$1 AND (($2 AND archived_at IS NOT NULL) OR (NOT $2 AND archived_at IS NULL))
+           AND ($3='' OR strpos(lower(company_name),lower($3))>0) AND ($4='' OR project_owner=$4) AND ($5='' OR support_owner=$5) /* delivery_evidence_list_count */`,
+        [workspaceId, archivedOnly, query, projectOwner, supportOwner])).rows[0]?.count ?? 0);
       const ids = (await c.query<{ id: string }>(
-        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND archived_at IS NULL
-           AND ($2='' OR strpos(lower(company_name),lower($2))>0) AND ($3='' OR project_owner=$3) AND ($4='' OR support_owner=$4)
-         ORDER BY updated_at DESC,id DESC LIMIT $5 OFFSET $6 /* delivery_evidence_list_ids */`,
-        [workspaceId, query, projectOwner, supportOwner, limit, offset])).rows;
+        `SELECT id FROM workspace_customer_deliveries WHERE workspace_id=$1 AND (($2 AND archived_at IS NOT NULL) OR (NOT $2 AND archived_at IS NULL))
+           AND ($3='' OR strpos(lower(company_name),lower($3))>0) AND ($4='' OR project_owner=$4) AND ($5='' OR support_owner=$5)
+         ORDER BY updated_at DESC,id DESC LIMIT $6 OFFSET $7 /* delivery_evidence_list_ids */`,
+        [workspaceId, archivedOnly, query, projectOwner, supportOwner, limit, offset])).rows;
       return { ids, total };
     });
     const result: CustomerDelivery[] = [];

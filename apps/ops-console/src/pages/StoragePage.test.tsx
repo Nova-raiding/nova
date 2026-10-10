@@ -70,4 +70,23 @@ describe("StoragePage platform reconciliation list", () => {
     expect(markup).not.toContain("当前会话没有平台存储对账读取权限");
     expect(markup).toContain("暂无可验证的对象清单对账结果");
   });
+
+  it("shows one actionable error when the reconciliation read fails", () => {
+    const markup = renderToStaticMarkup(<StoragePage model={model(["storage.reconciliation.read"], {
+      authorization: createAuthorizationProjection({
+        actor_id: "platform-viewer",
+        workspace_id: "",
+        workbench: "platform",
+        scope: { type: "platform" },
+        roles: [],
+        workspace_granted: true,
+        capabilities: ["storage.reconciliation.read"],
+      }, true),
+      dataSetError: vi.fn(() => "对账服务暂时不可用"),
+    })} />);
+
+    expect(markup.match(/对账结果加载失败/g)).toHaveLength(1);
+    expect(markup.match(/重试加载对账结果/g)).toHaveLength(1);
+    expect(markup).toContain("对账服务暂时不可用");
+  });
 });

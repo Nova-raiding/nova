@@ -15,6 +15,7 @@ import { createOutboxHandler, createWorkerProjection } from './handler.js'
 import { connectRedisQueue, createRedisCredentialRefreshLock, createRedisRelayQuotaStore, DEFAULT_QUEUE_MAX_DEPTH } from './redis-transport.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError } from '../../../packages/application/src/connector-runtime.js'
 import { createVaultCredentialProviderFromEnv } from '../../../packages/connectors/src/index.js'
+import type { MediaUploadInput, MediaUploadReceipt } from '../../../packages/connectors/src/types.js'
 import { readBoundedResponseText } from '../../../packages/connectors/src/bounded-response.js'
 import type { PublishHandlerResult } from '../../../packages/workers/src/publish-adapter.js'
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
@@ -1301,6 +1302,32 @@ export async function fetchPublishMedia(input: { apiBaseUrl: string; apiToken: s
   })
 }
 
+export function publishMediaLifecycleClient(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; platform: string; accountId: string; workerId?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const base = input.apiBaseUrl.replace(/\/$/u, '')
+  const path = `/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/media/lifecycle`
+  const headers = { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret,input.workerId ?? resolveWorkerId()) : {}) }
+  const assertOk = async (response: Response) => { if (!response.ok) throw new Error(`publish media lifecycle API returned ${response.status}`); return await parseWorkerApiJson(response) as { data?: { media_lifecycle?: Record<string, unknown> | null } } }
+  return {
+    getReceipt: async (media: MediaUploadInput): Promise<MediaUploadReceipt | undefined> => {
+      const url = `${base}${path}?event_id=${encodeURIComponent(input.event.id)}&media_idempotency_key=${encodeURIComponent(media.idempotencyKey)}`
+      const response = await fetchWorkerApi(input.fetcher ?? fetch, url, { headers, redirect: 'error', signal: input.signal })
+      const record = (await assertOk(response)).data?.media_lifecycle
+      if (!record) return undefined
+      if (record.state === 'intent' || record.state === 'unknown') throw new Error('publish media upload outcome is unknown; manual recovery is required before retry')
+      if (record.state === 'orphaned' || record.state === 'deleted') throw new Error(`publish media is ${String(record.state)} and cannot be silently reused`)
+      if (record.state !== 'uploaded' && record.state !== 'retained') return undefined
+      if (record.workspaceId !== input.event.workspaceId || record.publishJobId !== input.event.aggregateId || record.eventId !== input.event.id || record.mediaIdempotencyKey !== media.idempotencyKey || record.platform !== input.platform || record.accountId !== input.accountId || record.visualRef !== media.visualRef || record.role !== media.role || record.sha256 !== media.sha256) throw new Error('persisted publish media lifecycle record is out of scope')
+      const receipt = record.receipt
+      if (!isObject(receipt) || receipt.platform !== input.platform || receipt.visualRef !== media.visualRef || receipt.role !== media.role || receipt.sha256 !== media.sha256 || typeof receipt.mediaId !== 'string' || !receipt.mediaId.trim() || (receipt.url !== undefined && (typeof receipt.url !== 'string' || !receipt.url.trim())) || (receipt.simulated !== undefined && typeof receipt.simulated !== 'boolean')) throw new Error('persisted publish media receipt is malformed or out of scope')
+      return receipt as unknown as MediaUploadReceipt
+    },
+    transition: async (value: { media: MediaUploadInput; state: 'intent' | 'uploaded' | 'orphaned' | 'retained' | 'unknown' | 'deleted'; receipt?: MediaUploadReceipt; reason?: string }) => {
+      const response = await fetchWorkerApi(input.fetcher ?? fetch, `${base}${path}`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ event_id: input.event.id, media_idempotency_key: value.media.idempotencyKey, platform: input.platform, account_id: input.accountId, visual_ref: value.media.visualRef, role: value.media.role, sha256: value.media.sha256, state: value.state, ...(value.receipt ? { receipt: value.receipt } : {}), ...(value.reason ? { reason: value.reason } : {}) }), redirect: 'error', signal: input.signal })
+      await assertOk(response)
+    },
+  }
+}
+
 async function syncExecutionContext(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; signingSecret?: string; signal?: AbortSignal }) {
   const path = `/v1/sync-jobs/${encodeURIComponent(input.event.aggregateId)}/execution-context`
   const response = await fetchWorkerApi(fetch, `${input.apiBaseUrl.replace(/\/$/, '')}${path}`, {
@@ -2226,9 +2253,9 @@ export async function executeAssetScan(input: {
   input.signal?.throwIfAborted()
   const scanner = input.scanner ?? createClamAvScanner({ host: input.clamavHost, port: input.clamavPort, timeoutMs: input.clamavTimeoutMs })
   const startedAt = input.now?.() ?? new Date()
-  const version = await scanner.version()
+  const version = await scanner.version(input.signal)
   const versionEvidence = assertClamAvExecutionAdmission(version, { now: startedAt, definitionsMaxAgeSeconds: input.definitionsMaxAgeSeconds ?? 86_400 })
-  const scanned = await scanner.scan(body)
+  const scanned = await scanner.scan(body, input.signal)
   if (scanned.status === 'error') throw Object.assign(new Error(`clamd scan error: ${scanned.message}`), { code: 'CLAMAV_SCAN_ERROR', retryable: true })
   const now = input.now?.() ?? new Date()
   const receiptId = `scan_${createHash('sha256').update(`${input.event.id}\0${sourceRevision}\0${actualSha}`).digest('hex')}`
@@ -2484,7 +2511,14 @@ export async function refreshScanQueueMetrics(input: {
  * every slow cycle again, which is the restart loop #29 fixed. No production
  * path passes it.
  */
-export async function runWorker(config: WorkerConfig, pool: Pool, options: { readyFileHeartbeatIntervalMs?: number; redisClientFactory?: (url: string) => RedisClientType } = {}): Promise<void> {
+export async function runWorker(config: WorkerConfig, pool: Pool, options: {
+  readyFileHeartbeatIntervalMs?: number
+  redisClientFactory?: (url: string) => RedisClientType
+  /** Test seam for exercising the scan role without opening a Redis connection. */
+  redisQueueConnectionFactory?: () => Promise<Awaited<ReturnType<typeof connectRedisQueue>>>
+  /** Test seam for exercising scan-role startup without a ClamAV service. */
+  clamavScannerFactory?: (options: { host: string; port: number; timeoutMs: number }) => Pick<ClamAvScanner, 'version' | 'scan' | 'ping'>
+} = {}): Promise<void> {
   const modelEnvironment: Record<string, string | undefined> = { ...process.env, NODE_ENV: config.environment }
   const relayQuotaStore = config.environment === 'production' && (config.role === 'generation' || config.role === 'all')
     ? createRedisRelayQuotaStore(process.env.REDIS_URL, {
@@ -2505,7 +2539,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   // `redisClientFactory` is the same seam the transports already accept, threaded
   // through so the loop's own evidence can drive it with a socket that never
   // answers. No production path passes it.
-  const redisConnection = process.env.REDIS_URL?.trim() ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth, ...(options.redisClientFactory ? { clientFactory: options.redisClientFactory } : {}) }) : undefined
+  const redisConnection = options.redisQueueConnectionFactory
+    ? await options.redisQueueConnectionFactory()
+    : process.env.REDIS_URL?.trim()
+      ? await connectRedisQueue(process.env.REDIS_URL.trim(), { maxDepth: config.queueMaxDepth, ...(options.redisClientFactory ? { clientFactory: options.redisClientFactory } : {}) })
+      : undefined
   const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL, options.redisClientFactory ? { clientFactory: options.redisClientFactory } : {})
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
@@ -2620,7 +2658,8 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
   const clamavHost = process.env.CLAMAV_HOST?.trim() || '127.0.0.1'
   const clamavPort = positiveInt(process.env.CLAMAV_PORT, 3310, 'CLAMAV_PORT')
   const clamavTimeoutMs = positiveInt(process.env.ASSET_SCANNER_TIMEOUT_MS, 90_000, 'ASSET_SCANNER_TIMEOUT_MS')
-  const clamavReadiness = scanRoleEnabled ? createClamAvScanner({ host: clamavHost, port: clamavPort, timeoutMs: Math.min(clamavTimeoutMs, 10_000) }) : undefined
+  const clamavOptions = { host: clamavHost, port: clamavPort, timeoutMs: Math.min(clamavTimeoutMs, 10_000) }
+  const clamavReadiness = scanRoleEnabled ? (options.clamavScannerFactory ?? createClamAvScanner)(clamavOptions) : undefined
   if (scanRoleEnabled && !redisConnection) throw new Error('scan worker requires REDIS_URL for distributed heartbeat and readiness evidence')
   const publishRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal): Promise<PublishHandlerResult> => {
     signal?.throwIfAborted()
@@ -2655,6 +2694,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: { rea
             context: { workspaceId: event.workspaceId, accountId, ...(currentExecution ? { credentialRef: currentExecution.credentialRef } : {}), ...workerTraceContext(event), signal },
             fields,
             ...(media?.length ? { media } : {}),
+            ...(media?.length && config.apiBaseUrl && config.apiToken ? { mediaLifecycle: publishMediaLifecycleClient({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, platform: String(platform), accountId, ...(config.workerId ? { workerId: config.workerId } : {}), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }) } : {}),
             ...(remoteId ? { remoteId } : {}),
             // A platform may commit just before transport cancellation.
             // Preserve this stable key for an uncertain committed write.

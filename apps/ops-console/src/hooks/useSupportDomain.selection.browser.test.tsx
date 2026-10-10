@@ -55,7 +55,7 @@ describe("support ticket selection failure", () => {
               };
               const model = useSupportDomain(client, 'ws_test');
               return React.createElement('main', null,
-                React.createElement('output', { 'data-testid': 'selection-state' }, JSON.stringify({ selected: model.selected?.ticket.id || null, detailLoading: model.detailLoading, error: model.error })),
+                React.createElement('output', { 'data-testid': 'selection-state' }, JSON.stringify({ selected: model.selected?.ticket.id || null, detailLoading: model.detailLoading, error: model.error, detailError: model.detailError || null })),
                 React.createElement('button', { onClick: () => void model.selectTicket('ticket-good') }, '选择正常工单'),
                 React.createElement('button', { onClick: () => void model.selectTicket('ticket-broken') }, '选择读取失败工单'),
                 React.createElement(SupportTicketDetailSection, { model, canMutate: true }));
@@ -96,7 +96,7 @@ describe("support ticket selection failure", () => {
       await expect.poll(async () => JSON.parse((await state.textContent()) || "{}")).toMatchObject({ selected: "ticket-good", detailLoading: false });
 
       await page.getByRole("button", { name: "选择读取失败工单" }).click();
-      await expect.poll(async () => JSON.parse((await state.textContent()) || "{}")).toMatchObject({ selected: null, detailLoading: false, error: "工单详情读取失败" });
+      await expect.poll(async () => JSON.parse((await state.textContent()) || "{}")).toMatchObject({ selected: null, detailLoading: false, error: "", detailError: { ticketId: "ticket-broken", message: "工单详情读取失败" } });
     } finally { await page.close(); }
   }, 30_000);
 

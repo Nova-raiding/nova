@@ -10,6 +10,13 @@ const base: CustomerDeliveryRecord = {
 };
 
 describe("customer delivery completion", () => {
+  it("exposes a restore action only in the archived-record view", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection records={[base]} archivedView onRestore={async () => undefined} />);
+    expect(html).toContain("恢复记录");
+    expect(html).toContain("归档记录只支持恢复，不开放档案编辑。");
+    const emptyHtml = renderToStaticMarkup(<CustomerDeliverySection records={[]} archivedView onRestore={async () => undefined} />);
+    expect(emptyHtml).toContain("暂无已归档客户交付记录");
+  });
   it("keeps operator identity readable when an account name is unavailable", () => {
     expect(deliveryOperatorLabel({ updatedByActorId: " actor-42 " }, "actor-42", "运营账号")).toBe("运营账号");
     expect(deliveryOperatorLabel({ updatedByActorId: "actor-42" }, "other", "运营账号")).toBe("内部身份：actor-42");

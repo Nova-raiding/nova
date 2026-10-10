@@ -32,7 +32,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { ISOLATED_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
 import { ISOLATED_REDIS_TEST_FILES } from '../vitest.redis.config.js'
 import { PG16_MIGRATION_TEST_FILES } from '../scripts/pg16-migration-test-entrypoint.js'
@@ -103,10 +103,19 @@ export function defaultSuiteTestFiles(root: string): string[] {
 
 /** Test paths named literally in a `package.json` script. */
 export function packageScriptTestFiles(root: string): Set<string> {
-  const scripts = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
   const files = new Set<string>()
-  for (const command of Object.values(scripts)) {
-    for (const match of command.matchAll(TEST_PATH_IN_COMMAND)) files.add(match[1]!)
+  // The root default suite and Ops workspace are the Vitest test-script
+  // entrypoints represented in this ledger. Other packages use scripts for
+  // build tooling and nested package managers, whose command strings are not
+  // paths relative to their manifest directory.
+  for (const manifest of ['package.json', 'apps/ops-console/package.json']) {
+    const packageDirectory = dirname(manifest)
+    const scripts = (JSON.parse(readFileSync(join(root, manifest), 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {}
+    for (const command of Object.values(scripts)) {
+      for (const match of command.matchAll(TEST_PATH_IN_COMMAND)) {
+        files.add(join(packageDirectory, match[1]!).replaceAll('\\', '/').replace(/^(?:\.\/)+/u, ''))
+      }
+    }
   }
   return files
 }
@@ -197,9 +206,13 @@ export function globMatches(pattern: string, file: string): boolean {
 }
 
 function literalList(source: string, key: string): string[] {
-  const match = new RegExp(`${key}\\s*:\\s*(\\[[^\\]]*\\]|'[^']*')`, 'u').exec(source)
+  // Read the complete property expression up to the next top-level config
+  // property. Configs may select literal arrays through an environment-based
+  // conditional; collecting all literal alternatives keeps the ledger aware
+  // of both supported modes without evaluating arbitrary JavaScript.
+  const match = new RegExp(`${key}\\s*:\\s*([\\s\\S]*?)(?=,\\s*(?:testDir|testMatch|testIgnore|workers|webServer|use|reporter|projects)\\s*:|\\n\\s*\\})`, 'u').exec(source)
   if (!match) return []
-  return [...match[1]!.matchAll(/'([^']*)'/gu)].map(item => item[1]!)
+  return [...match[1]!.matchAll(/['"]([^'"]*)['"]/gu)].map(item => item[1]!)
 }
 
 /**

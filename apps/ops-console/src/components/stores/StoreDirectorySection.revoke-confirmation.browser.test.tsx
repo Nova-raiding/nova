@@ -67,7 +67,8 @@ describe("store authorization revoke confirmation", () => {
   }, 60_000);
 
   it("requires exactly one confirmation and sends exactly one revoke request", async () => {
-    const page = await browser!.newPage();
+    const context = await browser!.newContext();
+    const page = await context.newPage();
     let revokeRequests = 0;
     await page.route("**/__store-revoke", async route => {
       revokeRequests += 1;
@@ -83,6 +84,32 @@ describe("store authorization revoke confirmation", () => {
       await dialog.waitFor({ state: "detached" });
       expect(await page.evaluate(() => (window as any).__storeConfirmCount)).toBe(1);
       expect(revokeRequests).toBe(1);
-    } finally { await page.close(); }
+    } finally { await context.close(); }
+  }, 45_000);
+
+  it("keeps the target and explains a failed revoke so the operator can retry", async () => {
+    const context = await browser!.newContext();
+    const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    let revokeRequests = 0;
+    await page.route("**/__store-revoke", async route => {
+      revokeRequests += 1;
+      await route.fulfill({ status: revokeRequests === 1 ? 503 : 200, body: "{}", contentType: "application/json" });
+    });
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      await page.getByRole("button", { name: "撤销", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      await dialog.getByRole("button", { name: "确认撤销", exact: true }).click();
+      await dialog.getByRole("alert").getByText("revoke failed", { exact: true }).waitFor();
+      expect(await dialog.getByText("撤销回归店铺", { exact: false }).count()).toBe(1);
+      const confirm = dialog.getByRole("button", { name: "确认撤销", exact: true });
+      await confirm.waitFor({ state: "visible" });
+      await confirm.click();
+      await dialog.waitFor({ state: "detached" });
+      expect(revokeRequests).toBe(2);
+      expect(pageErrors).toEqual([]);
+    } finally { await context.close(); }
   }, 45_000);
 });

@@ -124,6 +124,52 @@ describe('ClamAvScanner clamd protocol', () => {
     await expect(scanner.ping()).rejects.toMatchObject({ code: 'CLAMAV_TIMEOUT' })
   })
 
+  it('rejects an in-flight scan when the durable worker lease is cancelled', async () => {
+    let connected!: () => void
+    const accepted = new Promise<void>(resolve => { connected = resolve })
+    const endpoint = await clamd(socket => {
+      connected()
+    })
+    const controller = new AbortController()
+    const reason = new Error('durable lease lost')
+    const scan = new ClamAvScanner(endpoint).scan(Buffer.from('untrusted content'), controller.signal)
+    await accepted
+    controller.abort(reason)
+    await expect(scan).rejects.toBe(reason)
+  })
+
+  it('destroys a Readable when an in-flight durable lease is cancelled', async () => {
+    let connected!: () => void
+    const accepted = new Promise<void>(resolve => { connected = resolve })
+    const endpoint = await clamd(socket => { connected() })
+    const controller = new AbortController()
+    const reason = new Error('durable lease lost')
+    let destroyed = false
+    const input = new Readable({
+      read() {},
+      destroy(error, callback) { destroyed = true; callback(error) },
+    })
+    const scan = new ClamAvScanner(endpoint).scan(input, controller.signal)
+    await accepted
+    controller.abort(reason)
+    await expect(scan).rejects.toBe(reason)
+    expect(destroyed).toBe(true)
+  })
+
+  it('destroys a Readable without connecting when its lease was already cancelled', async () => {
+    const endpoint = await clamd(() => { throw new Error('an aborted scan must not connect') })
+    const controller = new AbortController()
+    const reason = new Error('durable lease already lost')
+    let destroyed = false
+    const input = new Readable({
+      read() {},
+      destroy(error, callback) { destroyed = true; callback(error) },
+    })
+    controller.abort(reason)
+    await expect(new ClamAvScanner(endpoint).scan(input, controller.signal)).rejects.toBe(reason)
+    expect(destroyed).toBe(true)
+  })
+
   it('rejects oversized and unterminated responses', async () => {
     const oversized = await clamd(socket => socket.end('123456789\0'))
     await expect(new ClamAvScanner({ ...oversized, maxResponseBytes: 8 }).ping()).rejects.toMatchObject({ code: 'CLAMAV_RESPONSE_TOO_LARGE' })

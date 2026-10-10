@@ -315,7 +315,7 @@ describe('确认上传 writes to the server', () => {
     )
     // A real slice, so a moved marker fails loudly instead of asserting over "".
     expect(upload.length).toBeGreaterThan(500)
-    expect(upload).toContain('uploadAsset(baseUrl, file, uploadCategory)')
+    expect(upload).toContain('uploadAsset(baseUrl, file, uploadCategory, signal)')
     expect(upload).toContain('uploadMaterialFiles(')
     expect(upload).toContain('acceptedFiles')
     expect(upload).toContain('acceptedPendingMaterialIds(pendingFiles, acceptedFiles)')

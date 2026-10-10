@@ -230,7 +230,7 @@ export function OpsHeader({
           }
         }}
       >
-        {platformLoginError ? <Alert showIcon type="error" title="登录或退出失败" description={platformLoginError} /> : null}
+        {platformLoginError ? <Alert showIcon type="error" title="平台运营账号登录失败" description={platformLoginError} /> : null}
         <Space orientation="vertical" size="middle" className="full-width">
           <label className="ops-connection-field">
             <span>平台运营账号</span>

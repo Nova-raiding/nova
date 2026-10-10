@@ -48,6 +48,7 @@ export function StoreDirectorySection({
   const [savingAlias, setSavingAlias] = useState(false);
   const [revokingKey, setRevokingKey] = useState<string>();
   const [revokeTarget, setRevokeTarget] = useState<StoreDirectory>();
+  const [revokeError, setRevokeError] = useState("");
   const [registerOpen, setRegisterOpen] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [manualWorkspaceId, setManualWorkspaceId] = useState("");
@@ -76,8 +77,15 @@ export function StoreDirectorySection({
   };
   const confirmRevoke = async () => {
     if (!revokeTarget) return;
-    await revoke(revokeTarget);
-    setRevokeTarget(undefined);
+    setRevokeError("");
+    try {
+      await revoke(revokeTarget);
+      setRevokeTarget(undefined);
+    } catch (error) {
+      setRevokeError(error instanceof Error && error.message.trim()
+        ? error.message
+        : "撤销授权失败，请检查权限和网络后重试。");
+    }
   };
   const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
   const representedStoreCount = storeDirectory.reduce((total, store) => total + (store.aggregate === true && Number.isSafeInteger(store.count) && (store.count ?? 0) >= 0 ? store.count! : 1), 0);
@@ -216,7 +224,7 @@ export function StoreDirectorySection({
                   style={{ minHeight: 44 }}
                   loading={revokingKey === `${row.platform}:${row.accountId}`}
                   disabled={!canPlatformOps || row.aggregate === true || row.state === "revoked" || Boolean(revokingKey)}
-                  onClick={() => setRevokeTarget(row)}
+                  onClick={() => { setRevokeError(""); setRevokeTarget(row); }}
                 >
                   撤销
                 </Button>
@@ -284,12 +292,13 @@ export function StoreDirectorySection({
         cancelText="取消"
         {...confirmPolicyPropsFor("store.revoke")}
         confirmLoading={Boolean(revokingKey)}
-        onCancel={() => { if (!revokingKey) setRevokeTarget(undefined); }}
+        onCancel={() => { if (!revokingKey) { setRevokeTarget(undefined); setRevokeError(""); } }}
         onOk={() => void confirmRevoke()}
       >
         <Typography.Paragraph>
           将撤销 {revokeTarget?.label ?? "该店铺"} 的平台授权，后续同步和发布会停止；如需继续使用，必须重新授权。该操作会写入审计记录。
         </Typography.Paragraph>
+        {revokeError ? <Alert role="alert" type="error" showIcon title="撤销授权失败" description={revokeError} /> : null}
       </Modal>
     </Card>
   );

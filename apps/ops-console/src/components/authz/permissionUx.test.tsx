@@ -262,7 +262,13 @@ describe("desktop permission UX", () => {
       scope={{ kind: "workspace", id: "ws_1" }}
       grantedCapabilities={[]}
     />);
-    expect(empty).toContain("当前会话没有被授予任何运营能力");
+    expect(empty).toContain("服务端当前没有向此会话授予运营能力");
+    const unknown = renderToStaticMarkup(<PermissionSelfView
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+    />);
+    expect(unknown).toContain("服务端尚未返回当前会话的能力列表");
+    expect(unknown).not.toContain("没有向此会话授予运营能力");
   });
 
   it("does not render duplicate or malformed obligations in a 403 summary", () => {

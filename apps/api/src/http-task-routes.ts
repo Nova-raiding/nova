@@ -52,6 +52,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+export function optionalExpectedVersion(input: JsonObject): number | undefined {
+  if (!Object.prototype.hasOwnProperty.call(input, 'expected_version')) return undefined
+  const value = input.expected_version
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new DomainError('EXPECTED_VERSION_INVALID', 'expected_version 必须是正安全整数', 400)
+  }
+  return value
+}
+
 export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResponse, path: string, url: URL, dependencies: HttpTaskRouteDependencies): Promise<boolean> {
   const { service, body, resolveWorkspace, required, header, supportedPlatforms: SUPPORTED_PLATFORMS, resolveProductTaskAccount, requireProductionTaskStore, isProduction, fixtureMode, resolveTaskWriteBrands, requireEnabledPlatform, resolveCanonicalTaskEntries, assignTaskWriteBrands, persistSnapshot, persistEvent, persistTaskGroup, enforceTaskRequestCandidates, taskUnderstandingProductIds, requireProductionRequestStores, scopeTask, taskCreationBrand, enforceProductBrandAccess, resolveCanonicalTaskScope, persistTaskAnswerFactConfirmation, paginationRequest, taskTimeline, requestActor, taskFeedbackEventPayload, projectCanonicalTaskForRead, assertCanonicalTaskScopeForAction, recordOperationAudit } = dependencies
   const persistGroup = async (input: { workspaceId: string; tasks: Task[]; groupId?: string; replayed?: boolean; events?: Array<{ aggregateId: string; eventType: string; sequence: number; payload: Record<string, unknown> }> }) => {
@@ -176,7 +185,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const taskAnswers = input.answers as Record<string, string | number | boolean | string[]>
     const answeredProductId = typeof taskAnswers.product_id === 'string' && taskAnswers.product_id.trim() ? taskAnswers.product_id.trim() : task.productId
     const factsConfirmedBefore = service.products.get(answeredProductId)?.factsConfirmed === true
-    const answered = service.answerTask(task.workspaceId, task.id, taskAnswers, typeof input.expected_version === 'number' ? input.expected_version : undefined)
+    const answered = service.answerTask(task.workspaceId, task.id, taskAnswers, optionalExpectedVersion(input))
     await persistSnapshot(task.workspaceId, 'task', answered, answered as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, task.id, 'task.answers_submitted', answered.version, { task_id: task.id, input_snapshot_id: answered.inputSnapshotId, answers: answered.answers, missing_questions: answered.missingQuestions })
     await persistTaskAnswerFactConfirmation({ workspaceId: task.workspaceId, productId: answered.productId, factsConfirmedBefore, confirmationRequested: taskAnswers.confirm_facts === true })
@@ -229,7 +238,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
   if (req.method === 'POST' && directionMatch) {
     const task = scopeTask(req, directionMatch[1]!)
     const input = await body(req)
-    const selected = service.selectDirection(directionMatch[1]!, required(input, 'direction_id'), typeof input.expected_version === 'number' ? input.expected_version : undefined)
+    const selected = service.selectDirection(directionMatch[1]!, required(input, 'direction_id'), optionalExpectedVersion(input))
     await persistSnapshot(task.workspaceId, 'task', selected, selected as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, selected.id, 'task.direction_selected', selected.version, { task_id: selected.id, direction_id: selected.selectedDirectionId ?? null })
     return send(res, 200, task.workspaceId, selected, null, req)
@@ -240,7 +249,7 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     await assertCanonicalTaskScopeForAction(task)
     const input = await body(req)
     const priceImpactConfirmed = input.price_impact_confirmed === true || input.price_impact_confirmed === 'true'
-    const confirmed = service.confirmProductionPlan(task.workspaceId, task.id, requestActor(req, typeof input.actor_id === 'string' && input.actor_id.trim() ? input.actor_id.trim() : 'merchant'), typeof input.expected_version === 'number' ? input.expected_version : undefined, priceImpactConfirmed)
+    const confirmed = service.confirmProductionPlan(task.workspaceId, task.id, requestActor(req, typeof input.actor_id === 'string' && input.actor_id.trim() ? input.actor_id.trim() : 'merchant'), optionalExpectedVersion(input), priceImpactConfirmed)
     await persistSnapshot(task.workspaceId, 'task', confirmed, confirmed as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, confirmed.id, 'task.plan_confirmed', confirmed.version, { task_id: confirmed.id, plan_id: confirmed.productionPlan?.id ?? null, actor_id: confirmed.productionPlan?.confirmedBy ?? null })
     await recordOperationAudit({ workspaceId: task.workspaceId, actorId: confirmed.productionPlan?.confirmedBy ?? requestActor(req), action: 'task.plan_confirmed', resourceType: 'task', resourceId: confirmed.id, before: { state: task.state, version: task.version }, after: { state: confirmed.state, version: confirmed.version, plan_id: confirmed.productionPlan?.id ?? null }, reason: '确认生产方案' })

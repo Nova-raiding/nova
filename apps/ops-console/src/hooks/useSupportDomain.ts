@@ -31,6 +31,11 @@ export interface SupportDetailRefreshError {
   message: string;
 }
 
+export interface SupportDetailError {
+  ticketId: string;
+  message: string;
+}
+
 export interface SupportDomainClient {
   list(input: {
     workspaceId: string;
@@ -79,6 +84,7 @@ export interface SupportDomainModel {
   detailLoading: boolean;
   mutating: boolean;
   error: string;
+  detailError?: SupportDetailError;
   detailRefreshError?: SupportDetailRefreshError;
   hasMore: boolean;
   scanTruncated?: boolean;
@@ -128,6 +134,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  const [detailError, setDetailError] = useState<SupportDetailError>();
   const [detailRefreshError, setDetailRefreshError] = useState<SupportDetailRefreshError>();
   const [report, setReport] = useState<SupportSlaMonthlyReport>();
   const [reportLoading, setReportLoading] = useState(false);
@@ -211,9 +218,9 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     // Do not leave an earlier ticket visible if this selection fails. Once
     // loading ends, a stale detail would otherwise look like the clicked row.
     setSelected(undefined);
+    setDetailError(undefined);
     setDetailRefreshError(undefined);
     setDetailLoading(true);
-    setError("");
     try {
       const detail = await client.get(workspaceId, ticketId);
       if (isCurrentSupportRequest(request, detailRequest.current, requestWorkspaceId, workspaceRef.current)) {
@@ -221,7 +228,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
         setSelected(detail);
       }
     } catch (cause) {
-      if (isCurrentSupportRequest(request, detailRequest.current, requestWorkspaceId, workspaceRef.current)) setError(errorMessage(cause));
+      if (isCurrentSupportRequest(request, detailRequest.current, requestWorkspaceId, workspaceRef.current)) setDetailError({ ticketId, message: errorMessage(cause) });
     } finally {
       if (isCurrentSupportRequest(request, detailRequest.current, requestWorkspaceId, workspaceRef.current)) setDetailLoading(false);
     }
@@ -455,6 +462,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     correctionRequest.current += 1;
     setTickets([]);
     setSelected(undefined);
+    setDetailError(undefined);
     setDetailRefreshError(undefined);
     setCursor(undefined);
     setScanTruncated(false);
@@ -478,9 +486,9 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   }, [reload]);
 
   return {
-    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, detailRefreshError, report, reportLoading, reportStale, reportError,
+    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, detailError, detailRefreshError, report, reportLoading, reportStale, reportError,
     hasMore: Boolean(cursor), scanTruncated, setFilters, reload, loadMore, selectTicket,
-    clearSelection: () => { detailRequest.current += 1; setSelected(undefined); setDetailRefreshError(undefined); },
+    clearSelection: () => { detailRequest.current += 1; setSelected(undefined); setDetailError(undefined); setDetailRefreshError(undefined); },
     create, assign, transition, comment,
     loadReport, correction, correctionDecision, correctionLoading, createCorrection, decideCorrection,
   };

@@ -2,12 +2,13 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("SupportPage desktop loading and error contract", () => {
-  it("focuses the recoverable error summary and exposes stable screen-reader relationships", async () => {
+  it("keeps queue errors in one focused recovery surface", async () => {
     const source = await readFile(new URL("./SupportPage.tsx", import.meta.url), "utf8");
+    const queue = await readFile(new URL("../components/support/SupportQueueSection.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('import { OpsPageError } from "../components/OpsPageError.js"');
-    expect(source).toContain('<OpsPageError error={model.error ?? ""} onRetry={() => void model.reload()} />');
-    expect(source).toContain("onRetry={() => void model.reload()}");
+    expect(source).not.toContain("OpsPageError");
+    expect(queue).toContain('title={<span id="support-queue-error-title">工单队列读取失败</span>}');
+    expect(queue).toContain('aria-label="刷新工单"');
   });
 
   it("keeps the page aligned with the queue's initial-load distinction", async () => {

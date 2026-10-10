@@ -37,6 +37,11 @@ describe("customer delivery client", () => {
     vi.mocked(rpc).mockResolvedValue({ items: [], total: 21, offset: 0, limit: 20, hasMore: false, project_owner_options: [], support_owner_options: [] });
     await expect(customerDeliveryClient.list({ targetWorkspaceId: "workspace-1" })).rejects.toThrow("分页");
   });
+  it("requests archived rows using the same explicit workspace-scoped list contract", async () => {
+    vi.mocked(rpc).mockResolvedValue({ items: [delivery], total: 1, offset: 0, limit: 20, hasMore: false, project_owner_options: [], support_owner_options: [] });
+    await customerDeliveryClient.list({ targetWorkspaceId: "workspace-1", archivedOnly: true });
+    expect(rpc).toHaveBeenCalledWith("ops.customer-delivery.list", { target_workspace_id: "workspace-1", archived_only: "true", offset: "0", limit: "20" }, { signal: undefined });
+  });
   it("requires server owner option arrays and preserves empty arrays as empty", () => {
     expect(parseCustomerDeliveryList(deliveryPage([]))).toMatchObject({ projectOwnerOptions: [], supportOwnerOptions: [] });
     expect(() => parseCustomerDeliveryList({ ...deliveryPage([]), project_owner_options: undefined })).toThrow("分页");

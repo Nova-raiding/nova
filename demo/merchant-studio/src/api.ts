@@ -561,6 +561,8 @@ export interface Product {
   /** Read-only relationship returned by the product API; the Studio never edits this locally. */
   sourceAssetIds?: string[]
   attributes?: Record<string, string>
+  /** Structured merchant claims and their proof status, returned by the product read. */
+  sellingPoints?: Array<{ id: string; text: string; proofStatus: 'pending' | 'confirmed' | 'rejected'; sourceIds: string[] }>
   skus?: Array<{ id: string; name: string; price?: number; stock?: number; images?: string[]; attributes?: Record<string, string> }>
   canonical_scope?: { verification_status: 'verified' | 'legacy_only' | 'conflict' | 'blocked'; read_mode?: 'legacy_shadow' | 'dual_verify' | 'canonical_read'; canonical_product_id?: string | null; brand_id?: string | null; listing_id?: string | null; listing_count?: number }
 }

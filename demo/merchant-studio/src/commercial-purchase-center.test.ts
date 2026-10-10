@@ -1,12 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeCommercialFirstCheckout, normalizeCommercialCatalog, normalizeCommercialPurchaseOrder, normalizeCommercialSubscription, selectMerchantCatalogItems, type CommercialCatalogItem, type CommercialSubscriptionPortfolio } from './api'
-import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialRecoveryOrderIds, commercialTargetPriceChanged, openCommercialCurrentPlanFromNotification } from './CommercialPurchaseCenter'
+import { canConfirmCommercialOrder, commercialOrdersToConfirm, commercialPurchaseAction, commercialRecoveryOrderIds, commercialTargetPriceChanged, commercialPurchaseWorkspaceStorageKey, legacyCommercialRecoveryDisposition, CommercialPurchaseCenter, openCommercialCurrentPlanFromNotification } from './CommercialPurchaseCenter'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 const item: CommercialCatalogItem = { id: 'sku-basic', sku_code: 'basic', name: '基础', type: 'monthly', visibility: 'public', version: 2, price_label: '¥2000.00', price_fen: 200000, cycle_label: '每月', benefits_summary: '5000点', benefits: [], approval_state: 'approved', valid_from: null, valid_to: null, unresolved: [], checksum: 'sha', executable: true, plan_family: 'standard', tier_rank: 1 }
 const empty: CommercialSubscriptionPortfolio = { schema_version: 'commercial.subscription.v1', status: 'available', onboarding_qualified: false, current: null, future: [], packs: [], history: [], orders: [] }
 const period = { id: 'e1', sourceOrderId: 'o1', skuCode: 'basic', catalogVersionId: 'v2', periodStart: '2026-11-01T00:00:00.000Z', periodEnd: '2026-12-01T00:00:00.000Z', periodStatus: 'scheduled', resolvedBenefits: [], executable: true, plan_family: 'standard', tier_rank: 1 }
 
 describe('commercial purchase decisions are based on verified contracts', () => {
+  it('isolates purchase recovery keys by the selected workspace', () => {
+    const first = commercialPurchaseWorkspaceStorageKey('/api', 'merchant-1:ws-a,ws-b', 'ws-a')
+    const second = commercialPurchaseWorkspaceStorageKey('/api', 'merchant-1:ws-a,ws-b', 'ws-b')
+    expect(first).not.toBe(second)
+    expect(first).toContain(':ws-a')
+    expect(second).toContain(':ws-b')
+  })
+  it('migrates an old recovery record only when the account had exactly one matching workspace', () => {
+    const legacy = JSON.stringify({ orderIds: ['order-1'] })
+    expect(legacyCommercialRecoveryDisposition('merchant-1:ws-a', 'ws-a', legacy)).toBe('migrate')
+    expect(legacyCommercialRecoveryDisposition('merchant-1:ws-a,ws-b', 'ws-a', legacy)).toBe('block')
+    expect(legacyCommercialRecoveryDisposition('merchant-1:ws-a,ws-b', 'ws-b', legacy)).toBe('block')
+    expect(legacyCommercialRecoveryDisposition('merchant-1:ws-a', 'ws-a', null)).toBe('none')
+  })
+  it('fails closed without a selected workspace and does not render purchase actions', () => {
+    const markup = renderToStaticMarkup(createElement(CommercialPurchaseCenter, {
+      baseUrl: '/api', workspaceKey: 'merchant-1:ws-a,ws-b', workspaceId: '', onOpenSupport: () => {},
+    }))
+    expect(markup).toContain('请先选择已授权工作区')
+    expect(markup).not.toContain('购买套餐')
+    expect(markup).not.toContain('确认待付款')
+  })
   it('opens the current-plan and upgrade view from a purchase-result notification and rereads current facts', () => {
     let activeTab = 'orders'
     let requestReload: ((current: number) => number) | undefined

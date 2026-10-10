@@ -53,6 +53,8 @@ export interface CustomerDeliveryRecord {
   acceptanceItems?: string[];
   trainingCompletedAt?: string;
   revision?: number;
+  archivedAt?: string | null;
+  archivedByActorId?: string | null;
   createdAt?: string;
   createdByActorId?: string;
   updatedByActorId?: string;
@@ -303,10 +305,14 @@ export function CustomerDeliverySection({
   onAssetGet,
   onAssetOpen,
   onArchive,
+  archivedView = false,
+  onRestore,
+  loading = false,
   operatorActorId,
   operatorName,
   onAccountList,
   onAccountBind,
+  onAccountRefresh,
   total = records.length,
   page = 1,
   pageSize = 20,
@@ -345,10 +351,14 @@ export function CustomerDeliverySection({
   onAssetGet?: (record: CustomerDeliveryRecord, assetRef: string, purpose: CustomerDeliveryAssetPurpose, signal: AbortSignal) => Promise<CustomerDeliveryAsset>;
   onAssetOpen?: (record: CustomerDeliveryRecord, assetRef: string, purpose: "contract", mode: "open" | "download") => Promise<void>;
   onArchive?: (record: CustomerDeliveryRecord) => Promise<void>;
+  archivedView?: boolean;
+  onRestore?: (record: CustomerDeliveryRecord) => Promise<void>;
+  loading?: boolean;
   operatorActorId?: string;
   operatorName?: string;
   onAccountList?: (input: { search?: string; cursor?: string }, signal: AbortSignal) => Promise<CustomerDeliveryAccountPage>;
   onAccountBind?: (record: CustomerDeliveryRecord, account: CustomerDeliveryAccount, reason: string, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
+  onAccountRefresh?: (record: CustomerDeliveryRecord, signal: AbortSignal) => Promise<CustomerDeliveryRecord>;
   total?: number;
   page?: number;
   pageSize?: number;
@@ -684,15 +694,25 @@ export function CustomerDeliverySection({
       },
       {
         title: "操作",
-        width: 112,
+        width: archivedView ? 140 : 112,
         align: "center" as const,
         fixed: "right" as const,
-        render: (_: unknown, row: CustomerDeliveryRecord) => (
-          <Button size="small" disabled={disabled} onClick={() => void openDetails(row)}>查看详情</Button>
-        ),
+        render: (_: unknown, row: CustomerDeliveryRecord) => archivedView && onRestore ? (
+          <Button size="small" type="primary" disabled={disabled || loading} onClick={() => Modal.confirm({
+            title: `恢复“${row.companyName}”客户交付记录？`,
+            content: "恢复后记录会重新出现在当前企业的客户交付列表中。",
+            okText: "确认恢复",
+            cancelText: "取消",
+            focusable: { autoFocusButton: "cancel" },
+            onOk: async () => {
+              if (disabled || readOnly) return;
+              await onRestore(row);
+            },
+          })}>恢复记录</Button>
+        ) : <Button size="small" disabled={disabled || loading} onClick={() => void openDetails(row)}>查看详情</Button>,
       },
     ],
-    [onTrainingSave, openDetails, disabled, page, pageSize],
+    [onTrainingSave, openDetails, disabled, page, pageSize, archivedView, onRestore, loading, readOnly],
   );
   const contractUploadRequest = detailRequest.current;
   const contractUploadScope = selected ? `${selected.id}:profile:${contractUploadRequest}` : "";
@@ -702,7 +722,7 @@ export function CustomerDeliverySection({
       extra={
         <Space wrap>
           {headerActions}
-          <Button
+          {archivedView ? <Typography.Text type="secondary">归档记录只支持恢复，不开放档案编辑。</Typography.Text> : <Button
             type="primary"
             disabled={disabled || readOnly}
             onClick={() => {
@@ -713,7 +733,7 @@ export function CustomerDeliverySection({
             }}
           >
             新建客户
-          </Button>
+          </Button>}
         </Space>
       }
     >
@@ -784,6 +804,7 @@ export function CustomerDeliverySection({
           tableLayout="fixed"
           columns={columns}
           dataSource={onFiltersChange ? records : filteredRecords}
+          loading={loading}
           pagination={{
             current: page,
             pageSize,
@@ -796,7 +817,7 @@ export function CustomerDeliverySection({
           locale={{
             emptyText: (records?.length ?? 0) > 0
               ? "没有符合筛选条件的客户"
-              : "暂无客户交付档案；请先创建客户档案",
+              : archivedView ? "暂无已归档客户交付记录" : "暂无客户交付档案；请先创建客户档案",
           }}
         />
       </div>
@@ -848,7 +869,7 @@ export function CustomerDeliverySection({
             }}
             onClose={() => { detailsRequest.current++; setPendingProfileRecord(undefined); setDetailsRecord(undefined); }}
           />
-          {!readOnly && onSave ? (
+          {!archivedView && !readOnly && onSave ? (
             <div style={{ marginTop: 16 }}>
               <Button size="small" disabled={disabled || saving} onClick={() => {
                 const record = detailsRecord;
@@ -863,7 +884,7 @@ export function CustomerDeliverySection({
           ) : null}
           </>
         ) : null}
-            {detailsRecord && onArchive && !readOnly && !disabled ? (
+            {detailsRecord && !archivedView && onArchive && !readOnly && !disabled ? (
           <div style={{ marginTop: 24, textAlign: "right" }}>
             <Button
               danger
@@ -912,6 +933,7 @@ export function CustomerDeliverySection({
               disabled={readOnly || disabled || loadingStep || saving || uploading}
               onList={onAccountList}
               onBind={onAccountBind}
+              onRefresh={onAccountRefresh}
               onBusyChange={setBindingAccount}
               onBound={(record) => {
                 setSelected((current) => current?.id === record.id ? {

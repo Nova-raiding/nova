@@ -152,7 +152,7 @@ class EvidenceTransactionClient extends RecordingClient {
     if (text.startsWith('SELECT') && text.includes('FROM workspace_customer_deliveries')) {
       if (text.includes('delivery_evidence_list_ids'))
         return result(this.row.workspace_id === values[0]
-          && (!text.includes('archived_at IS NULL') || !this.row.archived_at) ? [{ id: this.row.id }] : [])
+          && (Boolean(values[1]) ? Boolean(this.row.archived_at) : !this.row.archived_at) ? [{ id: this.row.id }] : [])
       if (text.includes('FOR UPDATE') && !text.includes('delivery_evidence_recheck') && this.lockedBodyChange) {
         const change = this.lockedBodyChange
         this.lockedBodyChange = undefined
@@ -790,6 +790,17 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     expect(await repo.list({ workspaceId: 'ws_page', query: 'alp' })).toMatchObject({ total: 1, items: [expect.objectContaining({ companyName: 'Alpha' })] })
   })
 
+  it('lists archived deliveries only inside the explicitly selected workspace', async () => {
+    const repo = new MemoryCustomerDeliveryRepository()
+    const archived = await repo.create({ workspaceId: 'ws_archived_list', companyName: 'Archived A', actorId: 'creator' })
+    await repo.update({ workspaceId: archived.workspaceId, id: archived.id, actorId: 'operator', expectedRevision: archived.revision, patch: { archivedAt: '2026-09-15T12:00:00.000Z' } })
+    await repo.create({ workspaceId: 'ws_archived_list', companyName: 'Active A', actorId: 'creator' })
+    const other = await repo.create({ workspaceId: 'ws_archived_other', companyName: 'Other tenant', actorId: 'creator' })
+    await repo.update({ workspaceId: other.workspaceId, id: other.id, actorId: 'operator', expectedRevision: other.revision, patch: { archivedAt: '2026-09-15T12:00:00.000Z' } })
+    await expect(repo.list({ workspaceId: 'ws_archived_list' })).resolves.toMatchObject({ total: 1, items: [expect.objectContaining({ companyName: 'Active A' })] })
+    await expect(repo.list({ workspaceId: 'ws_archived_list', archivedOnly: true })).resolves.toMatchObject({ total: 1, items: [expect.objectContaining({ companyName: 'Archived A', archivedAt: '2026-09-15T12:00:00.000Z' })] })
+  })
+
   it('archives records recoverably and permits a replacement with the same company name', async () => {
     const repo = new MemoryCustomerDeliveryRepository()
     const original = await repo.create({ workspaceId: 'ws_archive', companyName: 'Acme', actorId: 'creator' })
@@ -804,8 +815,15 @@ describe('MemoryCustomerDeliveryRepository audit and lifecycle', () => {
     client.row.archived_at = '2026-09-15T12:00:00.000Z'
     const result = await new PostgresCustomerDeliveryRepository(new RecordingPool(client)).list({ workspaceId: 'ws_pg' })
     expect(result.items).toEqual([])
-    expect(client.calls.find(call => call.text.includes('delivery_evidence_list_ids'))?.text)
-      .toContain('archived_at IS NULL')
+    const listQuery = client.calls.find(call => call.text.includes('delivery_evidence_list_ids'))
+    expect(listQuery?.text).toContain('archived_at IS NOT NULL')
+    expect(listQuery?.values).toEqual(['ws_pg', false, '', '', '', 20, 0])
+    const archivedClient = new EvidenceTransactionClient()
+    archivedClient.row.archived_at = '2026-09-15T12:00:00.000Z'
+    const archivedResult = await new PostgresCustomerDeliveryRepository(new RecordingPool(archivedClient)).list({ workspaceId: 'ws_pg', archivedOnly: true })
+    expect(archivedResult.items).toHaveLength(1)
+    expect(archivedClient.calls.find(call => call.text.includes('delivery_evidence_list_ids'))?.values)
+      .toEqual(['ws_pg', true, '', '', '', 20, 0])
   })
 
   it('loads only distinct scoped PostgreSQL owner names with one query and no evidence reads', async () => {

@@ -117,7 +117,9 @@ function startBridge(input: { baseUrl: string; workspaceId: string; tokenSource:
       MERCHANT_MCP_REFRESH_TOKEN: '',
       MERCHANT_STRICT_AUTH: 'true',
       MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
-      MERCHANT_MCP_RETRY_ATTEMPTS: '0',
+      // Keep the fixture within transport bounds and bound each tool call to
+      // one request attempt.
+      MERCHANT_MCP_RETRY_ATTEMPTS: '1',
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -266,6 +268,17 @@ describe('local stdio → loopback API merchant content workflow gates', { timeo
       for (const [index, [name, args]] of sequence.entries()) {
         const response = await callTool(bridge, 21 + index, name, args)
         expect(response.result, name).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CREDENTIAL_SOURCE_INVALID' } })
+        expect(response.result.structuredContent.recovery, name).toMatchObject({
+          state: 'credential_unavailable',
+          user_action_required: true,
+          resume_message: '完全重启 ChatGPT 后在新对话中重试',
+          next_action: {
+            target: 'local_plugin_login',
+            workspace_id: 'ws_missing_credential_fixture',
+          },
+        })
+        expect(response.result.content[0].text, name).toContain('重新运行本地登录并完成浏览器授权')
+        expect(response.result.content[0].text, name).toContain('本次未向后端发送请求')
       }
       expect(requests).toEqual([])
       expect(fakeProvider.calls).toBe(0)

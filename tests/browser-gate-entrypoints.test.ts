@@ -105,6 +105,24 @@ const MERCHANT_TASK_QUEUE_SPECS = [spec('task-queue-split-flow.spec.js')]
 const MERCHANT_IMAGE_GENERATION_SPECS = [spec('image-generation-desktop.spec.js')]
 const MERCHANT_WORKSPACE_SWITCH_SPECS = ['demo/merchant-studio/merchant-workspace-switch.browser.spec.js']
 const MERCHANT_CATALOG_READ_RETRY_SPECS = ['demo/merchant-studio/catalog-read-retry.browser.spec.js']
+const MERCHANT_SESSION_RETRY_SPECS = ['demo/merchant-studio/merchant-session-retry.browser.spec.js']
+const MERCHANT_RECYCLE_BIN_SPECS = ['demo/merchant-studio/material-recycle-bin.browser.spec.js']
+const MERCHANT_GLOBAL_CATALOG_SEARCH_SPECS = [
+  'demo/merchant-studio/global-catalog-search.browser.spec.js',
+  'demo/merchant-studio/topbar-global-search.browser.spec.js',
+].sort()
+const MERCHANT_COMMERCIAL_PURCHASE_SPECS = ['demo/merchant-studio/commercial-purchase-center.browser.spec.js']
+const MERCHANT_STORE_REGISTRATION_SPECS = ['demo/merchant-studio/manual-store-registration.browser.spec.js']
+const MERCHANT_URL_ROUTE_MATRIX_SPECS = ['demo/merchant-studio/url-direct-route-matrix.browser.spec.js']
+const MERCHANT_OVERVIEW_JOURNEY_SPECS = [
+  'demo/merchant-studio/merchant-risk-destination.browser.spec.js',
+  'demo/merchant-studio/overview-finance.browser.spec.js',
+].sort()
+const MERCHANT_READ_RECOVERY_SPECS = [
+  'demo/merchant-studio/commercial-subscription-read-retry.browser.spec.js',
+  'demo/merchant-studio/delivery-readiness-recovery.browser.spec.js',
+]
+const MERCHANT_LOGIN_ONBOARDING_SPECS = ['demo/merchant-studio/merchant-login-onboarding.browser.spec.js']
 const MERCHANT_RULES_SPECS = ['demo/merchant-studio/rules-page-interactions.browser.spec.js']
 
 const OPS_MATRIX_SPECS = [spec('ops-desktop-readonly-matrix.spec.js')]
@@ -181,6 +199,41 @@ describe('browser gate entrypoints', () => {
     expect(command).not.toContain('--config')
   })
 
+  it.each([
+    ['Ops overview page', 'src/pages/OverviewPage.browser.test.tsx'],
+    ['Ops navigation', 'src/navigation/OpsNavigation.browser.test.tsx'],
+    ['Ops permission recovery', 'src/components/OpsPageError.browser.test.tsx'],
+    ['Ops commercial refund validation', 'src/components/commercial/CommercialRefundOperationsPanel.browser.test.tsx'],
+    ['Ops commercial point adjustment', 'src/components/commercial/PointAdjustmentPanel.browser.test.tsx'],
+    ['Ops support row interaction', 'src/components/support/SupportQueueSection.row-interaction.browser.test.tsx'],
+    ['Ops controller identity route', 'src/pages/OpsConsoleController.identity-route.browser.test.tsx'],
+    ['Ops refund validation', 'src/components/finance/RefundSection.validation.browser.test.tsx'],
+    ['Ops header', 'src/components/OpsHeader.test.tsx'],
+    ['Ops delivery training toggle', 'src/components/delivery/CustomerDeliveryTrainingToggle.test.tsx'],
+    ['Ops delivery upload', 'src/components/delivery/CustomerDeliveryUpload.test.tsx'],
+    ['Ops member session boundary', 'src/components/finance/MembersSection.session-boundary.test.tsx'],
+    ['Ops authorization governance', 'src/components/users/AuthorizationGovernanceSection.test.tsx'],
+    ['Ops registration applications', 'src/components/users/RegistrationApplications.test.tsx'],
+    ['Ops workspace governance', 'src/components/users/WorkspaceGovernanceSection.browser.test.tsx'],
+    ['Ops denied governance', 'src/components/users/UsersGovernanceDenied.browser.test.tsx'],
+    ['Ops alert polling boundary', 'src/hooks/alertPollingBoundary.test.tsx'],
+    ['Ops workspace directory model', 'src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx'],
+    ['Ops customer delivery page', 'src/pages/CustomerDeliveryPage.test.tsx'],
+    ['Ops customer delivery authorization workspace', 'src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts'],
+    ['Ops customer delivery workspace race', 'src/pages/customer-delivery-workspace-race.test.tsx'],
+  ])('keeps %s coverage out of the unit pass and in the dedicated Ops runner', (_label, file) => {
+    const opsPackage = JSON.parse(readFileSync(resolve(root, 'apps/ops-console/package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    const [unitCommand, browserCommand] = opsPackage.scripts.test!.split(' && ')
+    expect(unitCommand).toContain(`--exclude=${file}`)
+    expect(browserCommand).toBe('npm run test:browser')
+    expect(opsPackage.scripts['test:browser']).toBe('node scripts/run-browser-tests.mjs')
+    const browserRunner = readFileSync(resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs'), 'utf8')
+    const browserRunnerPaths = [...browserRunner.matchAll(/^\s+"(src\/[^"]+)"/gm)].map(([, path]) => path)
+    expect(browserRunnerPaths.filter(path => path === file)).toHaveLength(1)
+  })
+
   it('runs the commercial Ops Console specs through their dedicated entrypoint', () => {
     const command = script('test:browser:ops:commercial')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
@@ -241,6 +294,62 @@ describe('browser gate entrypoints', () => {
     const command = script('test:browser:merchant:catalog-read-retry')
     expect(specPathsIn(command)).toEqual(MERCHANT_CATALOG_READ_RETRY_SPECS)
     expect(command).toContain('--config=demo/merchant-studio')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('registers the local merchant session failure and retry recovery browser regression', () => {
+    const command = script('test:browser:merchant:session-retry')
+    expect(specPathsIn(command)).toEqual(MERCHANT_SESSION_RETRY_SPECS)
+    expect(command).toContain('--config=demo/merchant-studio')
+    expect(command).toContain('--workers=1')
+    expect(script('test:browser:all')).toContain('npm run test:browser:merchant:session-retry')
+  })
+
+  it('registers the support whitespace validation browser regression', () => {
+    const command = script('test:browser:ops:support-whitespace')
+    expect(command).toContain('scripts/run-safe-tests.ts')
+    expect(command).toContain('apps/ops-console/src/components/support/SupportQueueSection.whitespace-validation.browser.test.tsx')
+    expect(script('test:browser:all')).toContain('npm run test:browser:ops:support-whitespace')
+  })
+
+  it('registers the merchant manual store registration browser journey', () => {
+    const command = script('test:browser:merchant:store-registration')
+    expect(specPathsIn(command)).toEqual(MERCHANT_STORE_REGISTRATION_SPECS)
+    expect(command).toContain('MERCHANT_CATALOG_BROWSER_FIXTURE=1')
+    expect(command).toContain('MERCHANT_BROWSER_SPEC_DIR=repo')
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('registers the local merchant URL direct-route matrix', () => {
+    const command = script('test:browser:merchant:url-route-matrix')
+    expect(specPathsIn(command)).toEqual(MERCHANT_URL_ROUTE_MATRIX_SPECS)
+    expect(command).toContain('--config=demo/merchant-studio')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('registers the recycle-bin read-retry and restore browser journey', () => {
+    const command = script('test:browser:merchant:recycle-bin')
+    expect(specPathsIn(command)).toEqual(MERCHANT_RECYCLE_BIN_SPECS)
+    expect(command).toContain('--config=demo/merchant-studio')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('runs global catalog search and topbar search through a read-only isolated fixture', () => {
+    const command = script('test:browser:merchant:global-catalog-search')
+    expect(specPathsIn(command)).toEqual(MERCHANT_GLOBAL_CATALOG_SEARCH_SPECS)
+    expect(command).toContain('MERCHANT_CATALOG_BROWSER_FIXTURE=1')
+    expect(command).toContain('MERCHANT_BROWSER_SPEC_DIR=repo')
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('registers the commercial first-purchase browser journey in its isolated fixture', () => {
+    const command = script('test:browser:merchant:commercial-purchase')
+    expect(specPathsIn(command)).toEqual(MERCHANT_COMMERCIAL_PURCHASE_SPECS)
+    expect(command).toContain('MERCHANT_CATALOG_BROWSER_FIXTURE=1')
+    expect(command).toContain('MERCHANT_BROWSER_SPEC_DIR=repo')
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
     expect(command).toContain('--workers=1')
   })
 
@@ -424,8 +533,32 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    expect(all).toBe('npm run test:browser:merchant && npm run test:browser:merchant:catalog-read-retry && npm run test:browser:merchant:rules && npm run test:browser:merchant:members && npm run test:browser:merchant:workspace-switch && npm run test:browser:canonical-desktop && npm run test:browser:merchant:task-queue && npm run test:browser:merchant:brand-scope-upload-race && npm run test:browser:merchant:catalog-scope-future-date && npm run test:browser:merchant:global-catalog-search && npm run test:browser:image-generation-desktop && npm run test:browser:merchant:image-generation-isolated && npm run test:browser:material-assets && npm run test:browser:merchant:publish-history && npm run test:browser:local-mocked-states && npm run test:browser:merchant:desktop-matrix && npm run test:browser:ops && npm run test:browser:ops:commercial && npm run test:browser:ops:benefit-bundles && npm run test:browser:ops:refund && npm run test:browser:ops:matrix && npm run test:browser:ops:desktop-state && npm run test:browser:ops:account-label && npm run test:browser:ops:account-ownership && npm run test:browser:ops:template && npm run test:browser:ops:rule-upload && npm run test:browser:ops:public-rule-upload && npm run test:browser:ops:unmatched-readonly && npm run test:browser:ops:product-import && npm run test:browser:ops:mcp-request-matrix && npm run test:browser:ops:delivery-readonly && npm run test:browser:ops:manual-import && npm run test:browser:ops:delivery-contract-link && npm run test:browser:ops:delivery-account-access && npm run test:browser:ops:merchant-provision-isolated')
+    const requiredBrowserScripts = Object.keys(packageJson.scripts).filter(name => name.startsWith('test:browser:') && name !== 'test:browser:all' && name !== 'test:browser:ops:jit')
+    for (const name of requiredBrowserScripts) expect(all).toContain(`npm run ${name}`)
+    expect(all).toContain('npm run test:browser:merchant:overview-journeys')
     expect(all).not.toContain('test:browser:ops:jit')
+
+    const overview = script('test:browser:merchant:overview-journeys')
+    expect(overview).toContain('MERCHANT_OVERVIEW_BROWSER_FIXTURE=1')
+    expect(overview).toContain('MERCHANT_STUDIO_URL=http://127.0.0.1:4190')
+    expect(overview).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(overview).toContain('--workers=1')
+    expect(overview).not.toContain('https://yxsona.com')
+  })
+
+  it('runs subscription and delivery read recovery through a local merchant fixture', () => {
+    const command = script('test:browser:merchant:read-recovery')
+    expect(specPathsIn(command).sort()).toEqual([...MERCHANT_READ_RECOVERY_SPECS].sort())
+    expect(command).toContain('MERCHANT_CATALOG_BROWSER_FIXTURE=1')
+    expect(command).toContain('MERCHANT_STUDIO_URL=http://127.0.0.1:4188')
+    expect(command).toContain('--workers=1')
+  })
+
+  it('runs login and workspace onboarding in an isolated local browser fixture', () => {
+    const command = script('test:browser:merchant:login-onboarding')
+    expect(specPathsIn(command)).toEqual(MERCHANT_LOGIN_ONBOARDING_SPECS)
+    expect(command).toContain('--workers=1')
+    expect(command).not.toContain('https://yxsona.com')
   })
 
   it('runs publish history in its isolated local browser fixture', () => {
@@ -462,7 +595,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...MERCHANT_CATALOG_READ_RETRY_SPECS, ...MERCHANT_RULES_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_TASK_QUEUE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, ...OPS_DELIVERY_READONLY_SPECS, ...OPS_MANUAL_IMPORT_SPECS, ...OPS_MCP_REQUEST_MATRIX_SPECS, ...OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS, ...OPS_DELIVERY_CONTRACT_LINK_SPECS, ...OPS_DELIVERY_ACCOUNT_ACCESS_SPECS, ...OPS_MERCHANT_PROVISION_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...MERCHANT_CATALOG_READ_RETRY_SPECS, ...MERCHANT_RECYCLE_BIN_SPECS, ...MERCHANT_COMMERCIAL_PURCHASE_SPECS, ...MERCHANT_STORE_REGISTRATION_SPECS, ...MERCHANT_URL_ROUTE_MATRIX_SPECS, ...MERCHANT_OVERVIEW_JOURNEY_SPECS, ...MERCHANT_READ_RECOVERY_SPECS, ...MERCHANT_LOGIN_ONBOARDING_SPECS, ...MERCHANT_RULES_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_TASK_QUEUE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, ...OPS_DELIVERY_READONLY_SPECS, ...OPS_MANUAL_IMPORT_SPECS, ...OPS_MCP_REQUEST_MATRIX_SPECS, ...OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS, ...OPS_DELIVERY_CONTRACT_LINK_SPECS, ...OPS_DELIVERY_ACCOUNT_ACCESS_SPECS, ...OPS_MERCHANT_PROVISION_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)

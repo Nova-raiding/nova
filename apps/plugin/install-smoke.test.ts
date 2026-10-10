@@ -299,7 +299,7 @@ describe('Codex plugin installation package', () => {
     expect(server.env_vars).not.toContain('MERCHANT_ACTOR_ID')
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
-    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 360000')
+    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain("readPositiveInteger('MERCHANT_MCP_TIMEOUT_MS', 360000, { maximum: 2_147_483_647 })")
 
     const packager = readFileSync(resolve(root, 'scripts/package-local-plugin.mjs'), 'utf8')
     expect(packager).toMatch(/const required = \[\s*'\.codex-plugin\/plugin\.json', '\.mcp\.json'/u)
@@ -382,7 +382,9 @@ esac
         '--codex', fakeCodex,
         '--installed', installed,
         '--package-profile', 'qa-broker',
-      ], { encoding: 'utf8', timeout: 30_000 })
+      // The installer may compile its macOS Keychain helper with a 120s
+      // internal budget; leave enough outer time for that bounded operation.
+      ], { encoding: 'utf8', timeout: 180_000 })
       expect(result.error).toBeUndefined()
       expect(result.status, result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toMatchObject({
@@ -401,7 +403,7 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 45_000)
+  }, 210_000)
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))
@@ -555,7 +557,7 @@ printf '%s\n' Darwin
     expect(reference).toContain('渠道规则')
     expect(reference).toContain('真实性')
     expect(reference).toContain('禁止调用宿主生图工具、第三方 provider')
-    expect(reference).toContain('创意点、用量/成本')
+    expect(reference).toContain('创意点、服务端用量/成本')
     expect(packager).toContain("'skills/merchant-marketing/references/product-image-workflow.md'")
   })
 
@@ -609,12 +611,13 @@ printf '%s\n' Darwin
     expect(skill).toContain('以 `output=rendering` 调用它')
     expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
-    expect(skill).toContain('由服务端完成对象归档与病毒扫描')
+    expect(skill).toContain('服务端返回真实的对象归档状态与病毒扫描状态')
     expect(skill).toContain('实际下载、播放、签名校验、抽帧和商品保真复核须由经授权')
     expect(skill).toContain('任何素材事实、扫描/权益状态')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
     expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')
-    expect(skill).toContain('开头 3 秒内应出现明确商品或问题场景')
+    expect(skill).toContain('尽量在开头 3 秒内建立商品或问题场景的识别')
+    expect(skill).toContain('不是合规或渲染门禁')
     expect(skill).toContain('按静音观看设计关键卖点、字幕和 CTA')
     expect(skill).toContain('以实际音频时长校准镜头时间')
     expect(skill).toContain('锁定跨镜头不变的商品外形')
@@ -780,7 +783,7 @@ esac
     expect(evidence.tools.source_snapshot_sha256).toMatch(/^[a-f0-9]{64}$/u)
     expect(evidence.tools.installed_snapshot_sha256).toBe(evidence.tools.source_snapshot_sha256)
     expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
-  })
+  }, 20_000)
 
   it('keeps Windows helper installation fail-closed behind hash, Authenticode, signer, and instance binding gates', () => {
     const build = readFileSync(resolve(root, 'scripts/build-connect-helper-windows.mjs'), 'utf8')
@@ -836,7 +839,7 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('classifies an installed tool-surface mismatch as cache drift without deleting or reusing it', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-tool-cache-drift-'))

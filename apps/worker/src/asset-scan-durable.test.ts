@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MemoryAssetScanAttemptRepository } from '../../../packages/persistence/src/asset-scan-attempt-repository.js'
 import type { DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
+import { verifyAssetScanReceiptSignature, type AssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { executeAssetScan } from './main.js'
 
 function clamAvVersion(definitionsPublishedAt: Date): string {
@@ -89,6 +90,98 @@ describe('durable scanner callback', () => {
     expect(requests[1]!.headers.get('x-scanner-nonce')).not.toBe(requests[2]!.headers.get('x-scanner-nonce'))
     expect(requests[1]!.headers.get('x-scanner-workspace-signature')).not.toBe(requests[2]!.headers.get('x-scanner-workspace-signature'))
     expect((await repository.getByOutboxEvent('ws_scan', event.id))).toMatchObject({ callbackStatus: 'accepted', callbackAttempts: 2 })
+  })
+
+  it('signs and submits a malicious receipt when ClamAV reports an infected file', async () => {
+    const testNow = new Date()
+    const body = Buffer.from('infected image bytes')
+    const sha256 = createHash('sha256').update(body).digest('hex')
+    const objectKey = 'quarantine/ws_scan/asset_infected/source.png'
+    const event: DurableOutboxEvent = { id: 'evt_scan_infected', workspaceId: 'ws_scan', aggregateId: 'asset_infected', eventType: 'asset.uploaded', sequence: 1, payload: { asset_id: 'asset_infected', storage_key: objectKey, sha256, size_bytes: body.byteLength }, createdAt: testNow.toISOString() }
+    const keys = generateKeyPairSync('ed25519')
+    const privateKey = keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+    const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+    const repository = new MemoryAssetScanAttemptRepository()
+    const scanner = {
+      version: vi.fn(async () => clamAvVersion(new Date(testNow.getTime() - 60 * 60_000))),
+      scan: vi.fn(async () => ({ status: 'infected' as const, target: 'stream', signature: 'Eicar-Test-Signature', raw: 'stream: Eicar-Test-Signature FOUND' })),
+    }
+    const requests: Array<{ url: string; body?: string }> = []
+    const fetcher: typeof fetch = async (url, init) => {
+      requests.push({ url: String(url), ...(typeof init?.body === 'string' ? { body: init.body } : {}) })
+      if (String(url).endsWith('/scan-content')) return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'x-asset-source-revision': '1', 'x-asset-object-key': encodeURIComponent(objectKey) } })
+      return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
+    }
+
+    await expect(executeAssetScan({ apiBaseUrl: 'http://api:8787', apiToken: 'token', apiSigningSecret: 'secret', receiptPrivateKeyPem: privateKey, receiptKeyId: 'key-1', scannerServiceId: 'scanner', scannerInstanceId: 'replica-a', policyVersion: 'v1', clamavHost: 'clamav', clamavPort: 3310, clamavTimeoutMs: 1000, attemptRepository: repository, scanner, event, fetcher, now: () => testNow }))
+      .resolves.toMatchObject({ verdict: 'malicious', receiptId: expect.any(String) })
+
+    expect(scanner.scan).toHaveBeenCalledOnce()
+    expect(requests.map(request => request.url)).toEqual(['http://api:8787/v1/internal/assets/asset_infected/scan-content', 'http://api:8787/v1/internal/assets/asset_infected/scan-result'])
+    const submitted = JSON.parse(requests[1]!.body!) as { receipt: AssetScanReceipt; signature: string }
+    expect(submitted.receipt.scan).toMatchObject({ verdict: 'malicious', findings: ['Eicar-Test-Signature'] })
+    expect(verifyAssetScanReceiptSignature(submitted.receipt, submitted.signature, publicKey)).toBe(true)
+    expect(await repository.getByOutboxEvent('ws_scan', event.id)).toMatchObject({ callbackStatus: 'accepted', receipt: { scan: { verdict: 'malicious', findings: ['Eicar-Test-Signature'] } } })
+  })
+
+  it('keeps a clamd scan error retryable without creating an attempt or calling the result API', async () => {
+    const testNow = new Date('2026-08-30T10:00:00.000Z')
+    const body = Buffer.from('scan error image bytes')
+    const sha256 = createHash('sha256').update(body).digest('hex')
+    const objectKey = 'quarantine/ws_scan/asset_scan_error/source.png'
+    const event: DurableOutboxEvent = { id: 'evt_scan_error', workspaceId: 'ws_scan', aggregateId: 'asset_scan_error', eventType: 'asset.uploaded', sequence: 1, payload: { asset_id: 'asset_scan_error', storage_key: objectKey, sha256, size_bytes: body.byteLength }, createdAt: testNow.toISOString() }
+    const repository = new MemoryAssetScanAttemptRepository()
+    const scanner = {
+      version: vi.fn(async () => clamAvVersion(new Date(testNow.getTime() - 60 * 60_000))),
+      scan: vi.fn(async () => ({ status: 'error' as const, target: 'INSTREAM', message: 'size limit exceeded', raw: 'INSTREAM size limit exceeded ERROR' })),
+    }
+    const requests: string[] = []
+    const fetcher: typeof fetch = async url => {
+      requests.push(String(url))
+      return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'x-asset-source-revision': '1', 'x-asset-object-key': encodeURIComponent(objectKey) } })
+    }
+
+    await expect(executeAssetScan({ apiBaseUrl: 'http://api:8787', apiToken: 'token', apiSigningSecret: 'secret', receiptPrivateKeyPem: 'unused', receiptKeyId: 'key-1', scannerServiceId: 'scanner', scannerInstanceId: 'replica-a', policyVersion: 'v1', clamavHost: 'clamav', clamavPort: 3310, clamavTimeoutMs: 1000, attemptRepository: repository, scanner, event, fetcher, now: () => testNow }))
+      .rejects.toMatchObject({ code: 'CLAMAV_SCAN_ERROR', retryable: true })
+
+    expect(scanner.scan).toHaveBeenCalledOnce()
+    expect(requests).toEqual(['http://api:8787/v1/internal/assets/asset_scan_error/scan-content'])
+    expect(await repository.getByOutboxEvent('ws_scan', event.id)).toBeUndefined()
+  })
+
+  it('propagates lease cancellation through executeAssetScan and skips attempt creation and callback', async () => {
+    const testNow = new Date('2026-08-30T10:00:00.000Z')
+    const body = Buffer.from('lease-cancelled image bytes')
+    const sha256 = createHash('sha256').update(body).digest('hex')
+    const objectKey = 'quarantine/ws_scan/asset_cancelled/source.png'
+    const event: DurableOutboxEvent = { id: 'evt_scan_cancelled', workspaceId: 'ws_scan', aggregateId: 'asset_cancelled', eventType: 'asset.uploaded', sequence: 1, payload: { asset_id: 'asset_cancelled', storage_key: objectKey, sha256, size_bytes: body.byteLength }, createdAt: testNow.toISOString() }
+    const repository = new MemoryAssetScanAttemptRepository()
+    const controller = new AbortController()
+    const reason = new Error('durable lease lost')
+    let scanStarted!: () => void
+    const scanEntered = new Promise<void>(resolve => { scanStarted = resolve })
+    const scanner = {
+      version: vi.fn(async (signal?: AbortSignal) => { expect(signal).toBe(controller.signal); return clamAvVersion(new Date(testNow.getTime() - 60 * 60_000)) }),
+      scan: vi.fn(async (_input: Buffer, signal?: AbortSignal) => {
+        expect(signal).toBe(controller.signal)
+        scanStarted()
+        return await new Promise<never>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }))
+      }),
+    }
+    const requests: string[] = []
+    const fetcher: typeof fetch = async url => {
+      requests.push(String(url))
+      return new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'x-asset-source-revision': '1', 'x-asset-object-key': encodeURIComponent(objectKey) } })
+    }
+    const execution = executeAssetScan({ apiBaseUrl: 'http://api:8787', apiToken: 'token', apiSigningSecret: 'secret', receiptPrivateKeyPem: 'unused', receiptKeyId: 'key-1', scannerServiceId: 'scanner', scannerInstanceId: 'replica-a', policyVersion: 'v1', clamavHost: 'clamav', clamavPort: 3310, clamavTimeoutMs: 1000, attemptRepository: repository, scanner, event, fetcher, signal: controller.signal, now: () => testNow })
+    await scanEntered
+    controller.abort(reason)
+
+    await expect(execution).rejects.toBe(reason)
+    expect(scanner.version).toHaveBeenCalledOnce()
+    expect(scanner.scan).toHaveBeenCalledOnce()
+    expect(requests).toEqual(['http://api:8787/v1/internal/assets/asset_cancelled/scan-content'])
+    expect(await repository.getByOutboxEvent('ws_scan', event.id)).toBeUndefined()
   })
 
   it.each([

@@ -43,7 +43,7 @@ export function RulesPage({ model }: RulesPageProps) {
         error={ruleError}
         onRefresh={() => void model.loadRules()}
         canSync={model.canRules}
-        onSyncNow={() => void model.syncRulesNow()}
+        onSyncNow={model.syncRulesNow}
       />
       {platform ? <><RuleCenterSection model={model} platformOnly /><PublicRuleDraftReviewPanel authorization={model.authorization} /></> : <RuleCenterSection model={model} />}
       {!platform && <WorkspaceRuleAuditPanel

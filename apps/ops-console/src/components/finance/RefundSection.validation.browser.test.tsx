@@ -91,6 +91,7 @@ describe("refund reason form validation", () => {
       await page.getByPlaceholder("填写工单号和退款依据").fill("    ");
       await page.getByRole("button", { name: "创建退款" }).click();
       await page.getByText("请输入退款原因", { exact: true }).waitFor();
+      expect(await page.getByPlaceholder("填写工单号和退款依据").evaluate(element => element === document.activeElement)).toBe(true);
       expect(await page.getByTestId("refund-calls").textContent()).toBe("[]");
       expect(await page.locator("html").getAttribute("data-refund-calls")).toBeNull();
     } finally { await page.close(); }
@@ -127,6 +128,9 @@ describe("refund reason form validation", () => {
 });
 
 async function openRefundPage(page: Page, baseUrl: string) {
+  // The real Vite + Chromium fixture can take longer to transform under the
+  // repository's parallel browser runs; leave time for the interaction itself.
+  page.setDefaultTimeout(30_000);
   await page.addInitScript((apiBase) => {
     localStorage.setItem("ops_connection_config_v1", JSON.stringify({
       apiBase,

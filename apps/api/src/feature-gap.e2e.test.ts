@@ -471,6 +471,8 @@ describe('new commercial and operations capabilities', () => {
   it('runs scoped catalog sync from automation without publishing', async () => {
     const base = await start(); const workspaceId = `ws_auto_sync_${Date.now()}`
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'taobao-store-sync', credentialRef: `fixture-secret/taobao/${workspaceId}` })
+    const unscoped = await call(base, workspaceId, 'automation.policy.update', { enabled: 'true', sync_enabled: 'true', reason: '自动同步不得使用全工作区范围' })
+    expect(unscoped.error?.code).toBe('AUTOMATION_SYNC_SCOPE_REQUIRED')
     const updated = await call(base, workspaceId, 'automation.policy.update', { platform: 'taobao', account_id: account.id, enabled: 'true', sync_enabled: 'true', reason: '开启店铺同步和风险巡检' })
     expect(updated.error).toBeNull(); expect(updated.data.result.policy).toMatchObject({ syncEnabled: true, mode: 'scan_sync_alert_manual_retry' })
     const tick = await call(base, workspaceId, 'automation.tick', {})

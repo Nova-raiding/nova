@@ -5,7 +5,7 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 
 describe('merchant knowledge library flow wiring', () => {
   it('uses the fail-closed knowledge projection for summary counts', () => {
-    expect(app).toContain('const knowledgeCounts = countKnowledgeAssets(visibleAssets)')
+    expect(app).toContain('const knowledgeCounts = countKnowledgeAssets(searchedAssets)')
     expect(app).not.toContain("asset.parseStatus === 'succeeded' && asset.rightsStatus === 'approved'")
   })
 

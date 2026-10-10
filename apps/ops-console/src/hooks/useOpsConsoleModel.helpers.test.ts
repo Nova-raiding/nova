@@ -119,7 +119,7 @@ describe("Ops Console model helpers", () => {
 
     const params = prepareAutomationScopeLoad(
       "jd:store-1",
-      [{ platform: "jd", accountId: "store-1" } as never],
+      [{ platform: "jd", accountId: "store-1", readable: true, state: "connected" } as never],
       { setScope, setPolicy, setScan },
     );
 
@@ -129,11 +129,24 @@ describe("Ops Console model helpers", () => {
     expect(setScan).toHaveBeenCalledWith(undefined);
   });
 
-  it("uses global automation params for an empty or unknown scope", () => {
+  it("uses global automation params only for an explicit empty scope", () => {
     const clear = { setScope: vi.fn(), setPolicy: vi.fn(), setScan: vi.fn() };
 
     expect(prepareAutomationScopeLoad("", [], clear)).toEqual({});
-    expect(prepareAutomationScopeLoad("jd:missing", [], clear)).toEqual({});
+    expect(() => prepareAutomationScopeLoad("jd:missing", [], clear)).toThrow("不可读或已撤销");
+    expect(clear.setScope).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects unreadable and revoked store scopes instead of widening to workspace", () => {
+    const clear = { setScope: vi.fn(), setPolicy: vi.fn(), setScan: vi.fn() };
+    const stores = [
+      { platform: "jd", accountId: "hidden", readable: false, state: "connected" },
+      { platform: "jd", accountId: "revoked", readable: true, state: "revoked" },
+    ] as never;
+
+    expect(() => prepareAutomationScopeLoad("jd:hidden", stores, clear)).toThrow("不可读或已撤销");
+    expect(() => prepareAutomationScopeLoad("jd:revoked", stores, clear)).toThrow("不可读或已撤销");
+    expect(clear.setScope).not.toHaveBeenCalled();
   });
 
   it("reuses the idempotency key after timeout and rotates it after success", async () => {

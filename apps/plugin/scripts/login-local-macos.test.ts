@@ -3,9 +3,18 @@ import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error Native Node installer module intentionally has no build step.
-import { credentialFromResponse, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
+import { credentialFromResponse, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
 
 describe('local plugin login installer runtime', () => {
+  it.each([
+    ['TARGET_INVALID', '平台分配的 ws_... 工作区 ID'],
+    ['EXCHANGE_REJECTED', '重新运行登录脚本'],
+    ['TIMEOUT', '浏览器授权超时'],
+    ['ACK_FAILED', '本地凭据可能已保存'],
+  ])('turns login failure %s into a concrete recovery instruction', (code, guidance) => {
+    expect(localPluginLoginFailureMessage(code)).toContain(guidance)
+  })
+
   it.each(['https://u:p@example.test', 'https://example.test/?token=x', 'https://example.test/mcp', 'http://example.test', 'http://localhost:1234', ' https://example.test', 'https://example.test/#x'])('rejects unsafe target %s', base => {
     expect(() => validateLoginTarget(base, 'ws_test')).toThrow('TARGET_INVALID')
   })
@@ -255,7 +264,8 @@ describe('local plugin login installer runtime', () => {
   })
 
   it('provides a runnable help command without touching credentials', () => {
-    const result = spawnSync(process.execPath, ['apps/plugin/scripts/login-local-macos.mjs', '--help'], { encoding: 'utf8' })
+    // login.sh prepends --base-url before forwarding user arguments.
+    const result = spawnSync(process.execPath, ['apps/plugin/scripts/login-local-macos.mjs', '--base-url', 'https://yxsona.com', '--help'], { encoding: 'utf8' })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('不需要 ChatGPT OAuth')
     expect(result.stdout).toContain('--workspace')

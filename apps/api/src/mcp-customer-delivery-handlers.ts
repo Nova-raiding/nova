@@ -44,21 +44,49 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function integerValue(value: unknown, label: string, bounds: { min: number; max?: number }): number {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d+$/u.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(parsed) || parsed < bounds.min || (bounds.max !== undefined && parsed > bounds.max)) {
+    const range = bounds.max === undefined ? `不小于 ${bounds.min} 的整数` : `${bounds.min} 到 ${bounds.max} 之间的整数`
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${label} 必须是${range}`, 400)
+  }
+  return parsed
+}
+
+function optionalInteger(params: JsonObject, key: string, bounds: { min: number; max?: number }): number | undefined {
+  return params[key] === undefined ? undefined : integerValue(params[key], key, bounds)
+}
+
+function requiredInteger(params: JsonObject, camelName: string, snakeName: string, min = 1): number {
+  const value = params[camelName] ?? params[snakeName]
+  if (value === undefined || value === null || value === '') requiredStringValue(params, camelName, snakeName)
+  return integerValue(value, snakeName, { min })
+}
+
 export async function handleCustomerDeliveryMcpMethod(method: string, req: IncomingMessage, workspaceId: string, params: JsonObject, dependencies: CustomerDeliveryMcpDependencies) {
   const { repository, persistenceReady, businessPresent, result, requestActor, invokeCustomerDeliveryDomain, requiresStrictAuth, revalidateDownloadedAuthorization, hydrateWorkspaceFromPersistence, uploadAssetForMcp, loadAsset, demoUnscannedAssetsEnabled, recordOperationAudit, assertCustomerDeliveryAssetBound, requireBoundCustomerDeliveryAsset, evidenceRefs, updateCustomerDeliveryWithRequiredEvidence } = dependencies
   switch (method) {
-    case 'ops.customer-delivery.accounts.list':
-      return result(await invokeCustomerDeliveryDomain(() => repository.listBindableAccounts({ workspaceId, ...(typeof params.search === 'string' ? { search: params.search } : {}), ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}), ...(params.limit !== undefined ? { limit: Number(params.limit) } : {}) })))
+    case 'ops.customer-delivery.accounts.list': {
+      const limit = optionalInteger(params, 'limit', { min: 1, max: 50 })
+      return result(await invokeCustomerDeliveryDomain(() => repository.listBindableAccounts({ workspaceId, ...(typeof params.search === 'string' ? { search: params.search } : {}), ...(typeof params.cursor === 'string' ? { cursor: params.cursor } : {}), ...(limit !== undefined ? { limit } : {}) })))
+    }
     case 'ops.customer-delivery.account.bind':
-      return result(await invokeCustomerDeliveryDomain(() => repository.bindAccount({ workspaceId, deliveryId: requiredStringValue(params, 'delivery_id'), targetAccountId: requiredStringValue(params, 'target_account_id'), expectedRevision: Number(requiredStringValue(params, 'expected_revision')), reason: requiredStringValue(params, 'reason'), actorId: requestActor(req) })))
+      return result(await invokeCustomerDeliveryDomain(() => repository.bindAccount({ workspaceId, deliveryId: requiredStringValue(params, 'delivery_id'), targetAccountId: requiredStringValue(params, 'target_account_id'), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision'), reason: requiredStringValue(params, 'reason'), actorId: requestActor(req) })))
     case 'ops.customer-delivery.list': {
+      const offset = optionalInteger(params, 'offset', { min: 0 })
+      const limit = optionalInteger(params, 'limit', { min: 1, max: 100 })
+      if (params.archived_only !== undefined && params.archived_only !== 'true' && params.archived_only !== 'false')
+        throw new DomainError('INVALID_REQUEST', '参数 archived_only 无效', 400)
       const page = await invokeCustomerDeliveryDomain(() => repository.list({
         workspaceId,
         ...(typeof params.query === 'string' ? { query: params.query } : {}),
         ...(typeof params.project_owner === 'string' ? { projectOwner: params.project_owner } : {}),
         ...(typeof params.support_owner === 'string' ? { supportOwner: params.support_owner } : {}),
-        ...(params.offset !== undefined ? { offset: Number(params.offset) } : {}),
-        ...(params.limit !== undefined ? { limit: Number(params.limit) } : {}),
+        ...(params.archived_only === 'true' ? { archivedOnly: true } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+        ...(limit !== undefined ? { limit } : {}),
       }))
       const options = await invokeCustomerDeliveryDomain(() => repository.listOwnerOptions(workspaceId))
       return result({ ...page,
@@ -142,7 +170,7 @@ export async function handleCustomerDeliveryMcpMethod(method: string, req: Incom
       const allowed = new Set(['companyName', 'contractNumber', 'paymentStatus', 'contractRef', 'projectOwner', 'supportOwner', 'paymentDate', 'paymentEvidenceRefs', 'plannedGoLiveAt', 'customerProfileStatus', 'archivedAt'])
       if (Object.keys(parsed).some(key => !allowed.has(key))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'patch_json 包含不支持的字段', 400)
       validateCustomerDeliveryProfileValues(parsed)
-      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: parsed }))
+      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision'), patch: parsed }))
     }
     case 'ops.customer-delivery.checklist.update': {
       const checklistKey = requiredStringValue(params, 'checklistKey', 'checklist_key')
@@ -174,14 +202,14 @@ export async function handleCustomerDeliveryMcpMethod(method: string, req: Incom
           const refs = evidenceRefs(item.evidence.asset_refs, `items_json 第 ${index + 1} 项 asset_refs`)
           await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, purpose, ref)))
         }
-        return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId, checklistKey: purpose, items, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
+        return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItems!({ workspaceId, deliveryId, checklistKey: purpose, items, actorId: requestActor(req), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision') })))
       }
       if (checklistKey !== 'customer_profile') throw new DomainError(ERROR_CODES.INVALID_REQUEST, '系统接入和功能验收必须逐项更新，不能直接修改汇总状态', 400)
       if (params.completed === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 或 items_json 至少提供一个', 400)
       if (![true, false, 'true', 'false'].includes(params.completed as boolean | string)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 必须是布尔值', 400)
       const status: 'complete' | 'incomplete' = params.completed === true || params.completed === 'true' ? 'complete' : 'incomplete'
       const patch = { customerProfileStatus: status }
-      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch }))
+      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision'), patch }))
     }
     case 'ops.customer-delivery.checklist-items.list': {
       if (!repository.listChecklistItems) throw new DomainError('CUSTOMER_DELIVERY_NOT_IMPLEMENTED', '客户交付清单项读取未实现', 501)
@@ -203,14 +231,17 @@ export async function handleCustomerDeliveryMcpMethod(method: string, req: Incom
         const refs = evidenceRefs(evidence.asset_refs, 'asset_refs')
         await Promise.all(refs.map(ref => requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, checklistKey, ref)))
       }
-      return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId, checklistKey, itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed, evidence, actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')) })))
+      return result(await invokeCustomerDeliveryDomain(() => repository.updateChecklistItem!({ workspaceId, deliveryId, checklistKey, itemKey: requiredStringValue(params, 'itemKey', 'item_key'), completed, evidence, actorId: requestActor(req), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision') })))
     }
     case 'ops.customer-delivery.training.complete': {
       let rawRefs: unknown
       try { rawRefs = JSON.parse(requiredStringValue(params, 'evidenceRefsJson', 'evidence_refs_json')) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_refs_json 必须是有效 JSON 数组', 400) }
       const refs = evidenceRefs(rawRefs, '培训凭证')
+      if (params.completed !== true && params.completed !== false && params.completed !== 'true' && params.completed !== 'false') {
+        throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'completed 必须是布尔值', 400)
+      }
       const completed = params.completed === true || params.completed === 'true'
-      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: Number(requiredStringValue(params, 'expectedRevision', 'expected_revision')), patch: { trainingCompleted: completed, trainingEvidenceRefs: refs } }))
+      return result(await updateCustomerDeliveryWithRequiredEvidence({ workspaceId, id: requiredStringValue(params, 'deliveryId', 'delivery_id'), actorId: requestActor(req), expectedRevision: requiredInteger(params, 'expectedRevision', 'expected_revision'), patch: { trainingCompleted: completed, trainingEvidenceRefs: refs } }))
     }
     case 'ops.customer-delivery.videos.list': {
       const delivery = await invokeCustomerDeliveryDomain(() => repository.get(workspaceId, requiredStringValue(params, 'deliveryId', 'delivery_id')))
@@ -219,10 +250,11 @@ export async function handleCustomerDeliveryMcpMethod(method: string, req: Incom
     }
     case 'ops.customer-delivery.videos.add': {
       const assetRef = requiredStringValue(params, 'assetRef', 'asset_ref')
+      const sortOrder = optionalInteger(params, 'sort_order', { min: 0 })
       await persistenceReady
       const deliveryId = requiredStringValue(params, 'deliveryId', 'delivery_id')
       await requireBoundCustomerDeliveryAsset(workspaceId, deliveryId, 'video', assetRef)
-      return result(await invokeCustomerDeliveryDomain(() => repository.addVideo({ workspaceId, deliveryId, actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef, ...(params.sort_order !== undefined ? { sortOrder: Number(params.sort_order) } : {}) })))
+      return result(await invokeCustomerDeliveryDomain(() => repository.addVideo({ workspaceId, deliveryId, actorId: requestActor(req), title: requiredStringValue(params, 'title'), assetRef, ...(sortOrder !== undefined ? { sortOrder } : {}) })))
     }
     default: throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的 MCP 方法: ${method}`, 404)
   }

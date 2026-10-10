@@ -1,23 +1,25 @@
 # ECS demo 直接部署与上线验收
 
-适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**每项修复先提交、从精确提交构建并部署到该 Demo，然后验证该项；失败则继续修复和重新部署。**
+适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**只有本 runbook 所有前置门禁均通过后，才可提交待审查候选、从精确提交构建并部署到该唯一 Demo，再验证变更；任一门禁未通过即 STOP/NO-GO。当前 inventory 未获批准且仍有容器未分类，当前必须 STOP，不得提交为可部署候选或执行部署。**
 
 本流程只要求与本次变更相称的类型检查、单元/API 测试、桌面浏览器验收和唯一 Demo 容器健康检查；不把其他环境的发布门禁作为 Demo 验收。真实模型中转鉴权、请求、用量和成本仍须保留证据；配置或凭据缺失时 fail closed，并明确阻断对应模型能力。
 
 日常更新入口与时间预算见 [101 快速更新方案](ecs-fast-update.md)，支持只读现状检查与按组件构建。
 
+执行本 runbook 前必须先满足 [快速更新方案的 Demo inventory 与锁证据门槛](ecs-fast-update.md)：唯一 Demo 的 `release_approved` 必须为 `true`；inventory 列出的所有运行容器（包括 Demo Compose 项目之外的容器）必须有 owner 确认的分类；同一任务还须留存该 runbook 要求的既有共享锁来源、所有权、逐级目录权限和唯一 mutator 共用证明。任一项为 false、缺失或未经确认均 **STOP/NO-GO**。当前 inventory 报告 `release_approved=false` 且仍有未获 owner 确认分类的容器，因此当前不得执行本 runbook；不得以其他环境或生产门禁替代唯一 Demo 证据。
+
 ## 1. 锁定本次改动
 
 - 本地只用 `main` 分支和唯一主工作目录。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。发布前确认工作目录干净，并从已提交的精确 SHA 构建。
-- 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到 `/srv/merchant-releases/release-<sha>`。不得从带有未提交改动的共享工作目录构建镜像。记录快照 SHA、目标组件、镜像 digest 和构建结果。
-- 仅为改动的组件构建镜像。API、Ops UI、Merchant UI、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。当前快速更新适配器不覆盖 gateway/payment；这两类变更必须停止并另行完成专用候选、切流、回滚和验收方案后再部署。
+- 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到通过 101 只读状态和当前 Demo 受保护部署配置确认的候选暂存目录；不得从文档、旧环境记录或猜测中硬编码目录。不得从带有未提交改动的共享工作目录构建镜像。记录所用目录、快照 SHA、目标组件、镜像 digest 和构建结果。
+- 仅为改动的组件构建镜像。API、Ops UI、Merchant UI、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。当前快速更新适配器不覆盖 gateway/payment；这两类变更必须停止并另行完成专用候选、切流、回滚和验收方案后再部署。既有 runbook/metadata 记录的 Demo 迁移基线为 1–270，但 2026-10-10 主机观察未读取 live migration chain，故该基线尚待 DB owner 逐行核实。当前源码候选链尾为 272（metadata source=270,target=272，含新增迁移 271 和 272）。无迁移快速更新必须以 DB owner 提供的 live 完整链与目标链逐行一致为前提；核实前不能确认无迁移路径可用。当前没有已批准的 Demo 全量 migration 执行入口或窗口，任何需要应用 271/272 的候选均须停止本 runbook 与快速更新流程；不得手动运行迁移，也不得用 metadata 数字作为批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另开迁移窗口。
 - 密钥、数据库连接和部署环境只放 101 上当前 Demo 对应的受保护目录；以只读状态检查发现的现存配置为准，不硬编码过期目录、不复制到其他环境。不要让这些内容进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
 
-## 2. 更新目标服务并接管公网
+## 2. 更新目标服务并验证公网入口
 
-本次 demo 的运行配置采用 `NODE_ENV=production`（保留生产加固行为）、`DEMO_RUNTIME_MODE=true`（明确唯一 demo 部署目标）、`DEPLOYMENT_PROFILE=ecs`、`MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。健康接口的 `setup.mode` 必须报告 `demo`；若报告 `production`，说明 demo 标记丢失，停止发布并先修复受保护 Compose 配置。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
+本次 demo 的运行配置采用 `NODE_ENV=production`（保留生产加固行为）、`DEMO_RUNTIME_MODE=true`（明确唯一 demo 部署目标）、`DEPLOYMENT_PROFILE=ecs`、`MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。健康接口的 `setup.mode` 必须报告 `demo`；若报告 `production`，说明 demo 标记缺失或未生效，停止发布并先修复受保护 Compose 配置。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
 
-使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更相关的服务。API `/releasez` 读取 API 启动环境中的发布身份，因此任何新候选都必须明确更新 `api api-replica`；仅 Ops 或商家 UI 变更时沿用当前 API 镜像，仅更新其发布身份环境，再加入受影响的 `ops-ui` 或 `ui`。API 修复更新 `api api-replica` 的镜像；worker 修复按 fast-update runbook 选择完整 worker 组件并刷新 API 身份。Gateway/payment 不属于当前适配器范围，不得按本节直接部署。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得运行无服务名的 `up -d`，以免启动 ClamAV 或无关旧服务。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
+使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更相关的服务。API `/releasez` 读取 API 启动环境中的发布身份，因此任何新候选都必须明确更新 `api api-replica`；仅 Ops 或商家 UI 变更时沿用当前 API 镜像，仅更新其发布身份环境，再加入受影响的 `ops-ui` 或 `ui`。API 修复更新 `api api-replica` 的镜像；worker 修复按 fast-update runbook 选择完整 worker 组件并刷新 API 身份。Gateway/payment 不属于当前适配器范围，不得按本节直接部署。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得对整个 Compose 项目运行无服务名的 `up -d`，以免启动或重建未选服务及仅兼容声明的 `migrate` 服务；ClamAV 和 worker-scan 属于运行服务集合，未被本轮选中时必须保持其现状和容器 ID，不因本次更新重建。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
 
 公网域名和现有 gateway 配置保持不变；部署前后验证域名仍指向唯一 Demo，并对照 `/releasez` 与该项目运行镜像身份。当前流程不创建或切换 gateway，也不接管 80/443。不要用删除数据库、对象存储或容器卷掩盖问题。上传所需的持久对象目录是 `/var/lib/merchant-assets/objects`。
 

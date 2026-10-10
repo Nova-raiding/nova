@@ -10,6 +10,8 @@
 
 先执行只读现状检查：
 
+本轮唯一 Demo 的 host inventory 返回 `release_approved=false`，且存在尚无 owner 确认分类的运行容器，因此当前必须 **STOP/NO-GO**，不得归档构建、准备部署或执行部署。后续每轮只有在 inventory 对唯一 Demo 返回 `release_approved=true` 且所有观察到的容器均有 owner 确认的分类后才能继续；任一条件不满足、状态缺失或证据过期都停止，不猜分类、不把未分类容器忽略，也不以独立生产门禁替代该 Demo 条件。
+
 ```sh
 npm run deploy:101:status
 ```
@@ -48,7 +50,7 @@ sh infra/scripts/build-ecs-release-images.sh
 多个组件用空格分隔，例如 `merchant-api merchant-worker merchant-ops-ui`。该构建器保持共享构建锁、归档摘要验证、镜像标签校验与不可变 digest。未知或重复组件在调用 Docker 前拒绝。部分构建只输出 `component-images.json`，不输出完整运行清单；本 runbook 只服务唯一 Demo `merchant-demo-85575f9c`，不操作、创建或推断任何独立环境。
 
 4. 在主机受保护目录准备本轮完整 Compose、env 和回滚 Compose。未变组件保留各自实际镜像 digest 与真实提交；新组件采用刚构建的 digest。为完整实际运行集准备 release manifest 和 `/releasez` 输入，不手改版本号冒充镜像更新。配置只在 Demo 主机保存，`docker compose config` 输出可能含密钥，不能回传聊天或提交 Git。
-5. 核对运行数据库迁移链与目标代码：版本、名称、checksum 均一致才进入无迁移路径。新增迁移先完成备份、隔离恢复、前向迁移和旧版兼容验证，单独安排窗口；切勿只看迁移数字。数据库不兼容时，旧镜像不能自动回滚。
+5. 核对运行数据库迁移链与目标代码：版本、名称、checksum 均一致才进入无迁移路径。既有 runbook/metadata 记录的 Demo 基线为迁移 1–270，但 2026-10-10 主机观察未读取 live migration chain，故当前 live 基线仍待 DB owner 提供完整逐行链核实。当前源码候选链尾为 272（见 `release-metadata.json`，source=270、target=272，新增 271 和 272）；源码 metadata 不代表 Demo live chain。本仓库当前没有已批准的唯一 Demo 全量 migration 执行入口或迁移窗口；在确认 live chain 前不能批准无迁移快速更新，任何需要应用 271/272 的候选必须停止本快速更新和 `ecs-demo-direct-deploy` 流程。不得手动运行迁移，也不得把 metadata 数字当作部署批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另行开启迁移窗口。数据库不兼容时，旧镜像不能自动回滚。
 6. 必需的候选业务验收和发布证据在切流前准备齐。缺一项就列出具体缺口及修复动作，退出准备阶段，不循环重建无关镜像。
 
 ### Demo 商家 UI 混合组件身份适配
@@ -58,7 +60,7 @@ sh infra/scripts/build-ecs-release-images.sh
 输入 `schema_version=demo-component-update-input/1` 包含：
 
 - `compose_project` 与 `candidate={release_id,git_sha,source_sha256}`，来自 owner 校验的冻结归档；此适配器不替代归档提交、摘要校验。
-- `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及完整 270 行 `{version,name,checksum}` 的 `migrations`。`target_migrations` 必须逐行一致。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
+- `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及 DB owner 已核实的 live 完整迁移行 `{version,name,checksum}`。既有归档声称版本 1–270，但本轮 host probe 未读取数据库迁移链，不能把它当作已核实 live baseline。`target_migrations` 必须与核实后的 live 基线逐行一致；源码候选目前包含新增 271 和 272，本适配器不接受新增迁移链，也不执行 DDL。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
 - `baseline.runtime_services` 为当前实际 15 服务的安全投影。每项严格包含 `container_id,reference,image_id,git_sha,source_sha256,running,health,restarts,oom_killed,compose_service_sha256`；后者是 owner 已对照实际容器配置后封存的该 Compose service 的 canonical JSON SHA。Git/source 来自不可变镜像 OCI 标签，上游镜像无标签时为 `null`。不传完整 inspect、Env、Cmd 或密钥。
 - `component_images` 的精确组件键集合与 `imported_components` 的精确镜像 inspect 投影集合必须相同；每项投影包含 `reference,image_id,repo_digests,labels,os,architecture`，并绑定同一不可变引用、候选标签与 `linux/amd64`。只更新 `merchant-ui` 时也兼容旧输入字段 `imported_ui`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
 - 旧 Compose 的 API `DEMO_RUNTIME_MODE` 可缺省或为 `true`；显式设置成其他值会被拒绝。候选始终为 `api` 和 `api-replica` 设置 `DEMO_RUNTIME_MODE=true`，确保本轮更新后唯一 Demo 被健康接口识别为 Demo。原始基线 Compose 和回滚字节保持不变。
@@ -67,7 +69,7 @@ sh infra/scripts/build-ecs-release-images.sh
 
 现有宿主自有 `pilot-gateway` 可使用精确 Docker config ID 引用，但仅当 `reference === image_id` 且值为合法 `sha256:<64hex>`；其他自有服务仍必须使用 `repository@sha256`。旧 manifest 未记录 `source_sha256` 或记录 null 时，owner 仍须从当前容器所绑定的实际镜像 ID 的 `com.storenova.release.source_sha256` 标签采集该字段，同时从同一镜像采集 Git 标签；不得从候选源码、全局发布 SHA 或其他组件推断。pilot/payment 的实际镜像标签均存在合法 source SHA，应填入并输出真实 digest。所有自有镜像（含 pilot）缺少合法 Git/source 标签将被拒绝；旧 manifest 已记录非 null source 时还须逐项相等。上游 Postgres/Redis/ClamAV 无标签时仍允许显式 `null`，并绑定其原 config ID。
 
-迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，版本必须连续 1–270，checksum 必须完整 SHA256。当前 270 个真实 SQL 的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已部署链摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，仍需 owner 实读线上完整链逐行相等。
+迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，checksum 必须完整 SHA256。既有 270 行基线的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已归档摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，不能证明 live 数据库当前仍为该版本。当前源码候选链尾为 272，含 271 与 272 新迁移；只有 DB owner 提供的 live 完整链与候选目标逐行一致，才可以评估无迁移组件更新。
 
 API `/releasez` 读取启动环境，不读取 manifest 文件；因此任何组件候选都必须将 `api api-replica` 纳入明确更新/回滚服务，以刷新 API 双副本的发布身份。仅 UI 或 worker 更新时保留 API 镜像不变，只刷新其发布身份环境；API 更新才替换 API 镜像。四组件候选服务列表为 `api api-replica ops-ui ui worker-automation worker-generation worker-publish worker-reconcile worker-scan worker-sync`。不能只重启 UI 或 `docker restart` API。Payment/gateway 不在当前适配器和快速更新 runbook 的可执行范围内；遇到这两类变更应停止当前快速更新。适配器输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
 
@@ -90,11 +92,21 @@ owner 将输入输出仅保存在宿主受保护目录，并使用唯一 ECS Com
 
 ```sh
 # 在 101 执行。NEW_COMPOSE/NEW_ENV 均是已审核的完整受保护配置。
-# ECS_DEPLOY_LOCK_PATH 使用现有受保护部署配置中的同一把锁。
+# 执行前必须从宿主现有受保护部署配置和只读文件元数据证明：此路径是唯一 Demo Compose mutator 共用的既有锁，绝对 canonical、root-owned、regular non-symlink，且所在目录受保护。无法证明时立即停止；不得猜路径、创建锁文件或另开一把锁。
+# 在受保护任务证据中记录：SSH host/project；锁路径及其配置来源标识/配置摘要（不记录配置值或秘密）；锁文件的 canonical path、类型、symlink 状态、UID/mode；从锁文件所在目录到根路径的每级目录 canonical path、类型、symlink 状态、UID/mode，并确认无 group/world 写权限；所有可修改此 Demo Compose 的入口名称及各自引用同一锁路径；采集时间和复核人。来源/共享关系/任一级目录权限无法证实时停止。
 # /releasez 由 API 启动环境提供，所以任何组件候选都必须刷新 API 双副本的发布身份；非 API 变更时保留 API 镜像不变。
-# 在同一 shell 内持有 FD9，直到健康验收或回滚全部结束。
-: "${ECS_DEPLOY_LOCK_PATH:?必须使用唯一 ECS Compose mutation lock 路径}"
-exec 9>>"$ECS_DEPLOY_LOCK_PATH"
+# 这是持久交互 shell 中的命令片段，不是可在短命 SSH 命令或独立脚本中执行完即退出的步骤。
+# 保持当前 SSH shell 和 FD9 存活；后续公网/桌面验收以及必要回滚，必须在此 shell 中完成后才退出。
+# 若 shell 意外退出，锁已释放；停止后续操作，重新按锁来源和线上基线步骤取得锁并复核后再继续。
+set -eu
+: "${ECS_DEPLOY_LOCK_PATH:?必须使用宿主现有受保护部署配置中的 Demo Compose mutation lock；来源或共享范围未证实则停止}"
+if [ ! -f "$ECS_DEPLOY_LOCK_PATH" ] || [ -L "$ECS_DEPLOY_LOCK_PATH" ]; then
+  echo 'Demo deploy lock must be an existing regular non-symlink file; refusing to create or follow another path.' >&2
+  exit 1
+fi
+test "$(realpath -e -- "$ECS_DEPLOY_LOCK_PATH")" = "$ECS_DEPLOY_LOCK_PATH"
+test "$(stat -c %u -- "$ECS_DEPLOY_LOCK_PATH")" = 0
+exec 9<>"$ECS_DEPLOY_LOCK_PATH"
 flock -n 9 || exit 1
 docker compose --project-name merchant-demo-85575f9c \
   --env-file "$NEW_ENV" -f "$NEW_COMPOSE" \

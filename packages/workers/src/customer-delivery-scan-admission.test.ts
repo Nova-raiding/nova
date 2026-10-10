@@ -37,6 +37,14 @@ describe('platform customer delivery scan admission', () => {
   })
 
   it.each([
+    ['workspace_id', 'ws_other'], ['workspaceId', 'ws_other'], ['workspace_id', null],
+  ])('rejects a conflicting workspace annotation in the event payload: %s', (field, value) => {
+    const event = fixture()
+    event.payload[field] = value
+    expect(() => parseDeliveryScanAdmission(event, { now })).toThrow(expect.objectContaining({ code: 'DELIVERY_SCAN_ADMISSION_INVALID', retryable: false }))
+  })
+
+  it.each([
     ['asset.uploaded'], ['asset.generated_quarantined'], ['asset.video_quarantined'], ['asset.scan_redrive_requested'],
   ])('cannot turn merchant event %s into platform admission', eventType => {
     expect(() => parseDeliveryScanAdmission({ ...fixture(), eventType }, { now })).toThrow('delivery scan event or admission is missing')

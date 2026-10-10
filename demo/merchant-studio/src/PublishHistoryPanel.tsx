@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import {
   describeApiError,
   fetchManualPublishRecordPage,
@@ -86,6 +86,7 @@ export function ManualPublishRecordRow({ record, taskHref }: { record: ManualPub
 type HistoryKind = 'jobs' | 'manual'
 
 export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
+  const tabsId = useId().replaceAll(':', '')
   const focusJobId = new URLSearchParams(window.location.search).get('publish_job_id')?.trim()
   const [kind, setKind] = useState<HistoryKind>('jobs')
   const [jobPage, setJobPage] = useState(0)
@@ -101,7 +102,13 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
   useEffect(() => {
     const currentId = ++requestId.current
     setError('')
-    if (!baseUrl) return
+    if (!baseUrl) {
+      setLoading(false)
+      setJobs(null)
+      setFocusedJob(null)
+      setManual(null)
+      return
+    }
     setLoading(true)
     if (kind === 'jobs' && focusJobId) {
       setFocusedJob(null)
@@ -140,10 +147,22 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
     return () => { requestId.current++ }
   }, [baseUrl, kind, jobPage, manualPage, reload, focusJobId])
 
-  const page = kind === 'jobs' ? jobs : manual
-  const index = kind === 'jobs' ? jobPage : manualPage
-  const count = Math.max(1, Math.ceil((page?.total ?? 0) / MERCHANT_PUBLISH_PAGE_SIZE))
+  const tabId = (target: HistoryKind) => `${tabsId}-${target}-tab`
+  const tabPanelId = (target: HistoryKind) => `${tabsId}-${target}-panel`
   const openTask = (taskId: string) => urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId } })
+  const moveHistoryTab = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
+    const currentIndex = tabs.indexOf(event.currentTarget)
+    if (currentIndex < 0 || tabs.length === 0) return
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+    const next = tabs[nextIndex]
+    next.focus()
+    next.click()
+  }
 
   return (
     <section className="panel task-list-panel" aria-label="发布记录">
@@ -152,23 +171,35 @@ export function PublishHistoryPanel({ baseUrl }: { baseUrl?: string }) {
         <button type="button" className="secondary-button" onClick={() => setReload(value => value + 1)} disabled={!baseUrl || loading}>刷新记录</button>
       </div>
       <div className="asset-entry-tabs" role="tablist" aria-label="发布记录类型">
-        <button type="button" role="tab" aria-selected={kind === 'jobs'} onClick={() => setKind('jobs')}>发布任务</button>
-        <button type="button" role="tab" aria-selected={kind === 'manual'} onClick={() => setKind('manual')}>人工发布报告</button>
+        <button id={tabId('jobs')} type="button" role="tab" aria-controls={tabPanelId('jobs')} aria-selected={kind === 'jobs'} tabIndex={kind === 'jobs' ? 0 : -1} onKeyDown={moveHistoryTab} onClick={() => setKind('jobs')}>发布任务</button>
+        <button id={tabId('manual')} type="button" role="tab" aria-controls={tabPanelId('manual')} aria-selected={kind === 'manual'} tabIndex={kind === 'manual' ? 0 : -1} onKeyDown={moveHistoryTab} onClick={() => setKind('manual')}>人工发布报告</button>
       </div>
       {!baseUrl && <div className="info-notice" role="status">配置服务端后可读取真实发布记录。</div>}
       {baseUrl && loading && <div className="info-notice" role="status">正在读取发布记录…</div>}
       {baseUrl && !loading && error && <div className="error-notice" role="alert">{focusJobId && kind === 'jobs' ? error : `读取发布记录失败：${error}`} <button type="button" onClick={() => setReload(value => value + 1)}>重试</button>{focusJobId && kind === 'jobs' && <a className="text-button" href={urlForMerchantRoute(window.location, { page: 'task' })}>返回发布记录列表</a>}</div>}
-      {baseUrl && !loading && !error && !(kind === 'jobs' && focusJobId) && page?.total === 0 && <div className="empty-state">当前没有{kind === 'jobs' ? '发布任务' : '人工发布报告'}。</div>}
-      {baseUrl && !loading && !error && kind === 'jobs' && focusJobId && focusedJob && <PublishJobRecord job={focusedJob} taskHref={openTask(focusedJob.taskId)} focusJobId={focusJobId} />}
-      {baseUrl && !loading && !error && kind === 'jobs' && !focusJobId && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} />)}
-      {baseUrl && !loading && !error && kind === 'manual' && manual?.items.map(record => <ManualPublishRecordRow key={record.id} record={record} taskHref={openTask(record.taskId)} />)}
-      {baseUrl && !loading && !error && !(kind === 'jobs' && focusJobId) && page && page.total > 0 && <div className="task-list-pagination">
-        <span>第 {index + 1} / {count} 页，共 {page.total} 条</span>
-        <div>
-          <button type="button" onClick={() => kind === 'jobs' ? setJobPage(value => value - 1) : setManualPage(value => value - 1)} disabled={index === 0}>上一页</button>
-          <button type="button" onClick={() => kind === 'jobs' ? setJobPage(value => value + 1) : setManualPage(value => value + 1)} disabled={index + 1 >= count}>下一页</button>
-        </div>
-      </div>}
+      <div id={tabPanelId('jobs')} role="tabpanel" aria-labelledby={tabId('jobs')} tabIndex={0} hidden={kind !== 'jobs'}>
+        {baseUrl && !loading && !error && kind === 'jobs' && !focusJobId && jobs?.total === 0 && <div className="empty-state">当前没有发布任务。</div>}
+        {baseUrl && !loading && !error && kind === 'jobs' && focusJobId && focusedJob && <PublishJobRecord job={focusedJob} taskHref={openTask(focusedJob.taskId)} focusJobId={focusJobId} />}
+        {baseUrl && !loading && !error && kind === 'jobs' && !focusJobId && jobs?.items.map(job => <PublishJobRecord key={job.id} job={job} taskHref={openTask(job.taskId)} />)}
+        {baseUrl && !loading && !error && kind === 'jobs' && !focusJobId && jobs && jobs.total > 0 && <div className="task-list-pagination">
+          <span>第 {jobPage + 1} / {Math.max(1, Math.ceil(jobs.total / MERCHANT_PUBLISH_PAGE_SIZE))} 页，共 {jobs.total} 条</span>
+          <div>
+            <button type="button" onClick={() => setJobPage(value => value - 1)} disabled={jobPage === 0}>上一页</button>
+            <button type="button" onClick={() => setJobPage(value => value + 1)} disabled={jobPage + 1 >= Math.max(1, Math.ceil(jobs.total / MERCHANT_PUBLISH_PAGE_SIZE))}>下一页</button>
+          </div>
+        </div>}
+      </div>
+      <div id={tabPanelId('manual')} role="tabpanel" aria-labelledby={tabId('manual')} tabIndex={0} hidden={kind !== 'manual'}>
+        {baseUrl && !loading && !error && kind === 'manual' && manual?.total === 0 && <div className="empty-state">当前没有人工发布报告。</div>}
+        {baseUrl && !loading && !error && kind === 'manual' && manual?.items.map(record => <ManualPublishRecordRow key={record.id} record={record} taskHref={openTask(record.taskId)} />)}
+        {baseUrl && !loading && !error && kind === 'manual' && manual && manual.total > 0 && <div className="task-list-pagination">
+          <span>第 {manualPage + 1} / {Math.max(1, Math.ceil(manual.total / MERCHANT_PUBLISH_PAGE_SIZE))} 页，共 {manual.total} 条</span>
+          <div>
+            <button type="button" onClick={() => setManualPage(value => value - 1)} disabled={manualPage === 0}>上一页</button>
+            <button type="button" onClick={() => setManualPage(value => value + 1)} disabled={manualPage + 1 >= Math.max(1, Math.ceil(manual.total / MERCHANT_PUBLISH_PAGE_SIZE))}>下一页</button>
+          </div>
+        </div>}
+      </div>
     </section>
   )
 }

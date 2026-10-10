@@ -1035,6 +1035,14 @@ export function CommercialRefundOperationsPanel({ controller }: { controller: Co
     points: /^\d+$/u.test(points) ? Number(points) : NaN,
     kind: refundKind, expectedState,
   });
+  let amountFen: number | null = null;
+  let amountError = "";
+  if (amountYuan.trim()) {
+    try { amountFen = positiveCommercialFen(amountYuan); }
+    catch (error) { amountError = error instanceof Error ? error.message : "请输入有效的退款金额"; }
+  }
+  const pointsValue = /^\d+$/u.test(points) && Number.isSafeInteger(Number(points)) ? Number(points) : null;
+  const pointsError = points && pointsValue === null ? "回滚点数须为不超过安全整数上限的非负整数" : "";
   const loadedRefund = (expectedState: "requested" | "approved") => refundState.status === "ready" && workspace === controller.targetWorkspaceId
     ? matchingRefundEvent(refundState.data, refundInput(expectedState)) : null;
   const requestedRefund = loadedRefund("requested");
@@ -1081,13 +1089,13 @@ export function CommercialRefundOperationsPanel({ controller }: { controller: Co
       <Input aria-label="退款目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="退款订单 ID" placeholder="订单 ID" value={orderId} onChange={event => setOrderId(event.target.value)} />
       <Input aria-label="退款请求 ID" placeholder="退款请求 ID（幂等）" value={requestId} onChange={event => setRequestId(event.target.value)} />
-      <Input aria-label="退款金额（元）" placeholder="退款金额（元，保留两位小数）" value={amountYuan} onChange={event => setAmountYuan(event.target.value)} inputMode="decimal" />
-      <Input aria-label="回滚创意点" placeholder="回滚创意点，默认 0" value={points} onChange={event => setPoints(event.target.value)} />
+      <div style={{ minWidth: 220, display: "flex", flexDirection: "column", gap: 4 }}><label htmlFor="commercial-refund-amount">退款金额（元）</label><Input id="commercial-refund-amount" aria-label="退款金额（元）" aria-invalid={Boolean(amountError)} aria-describedby={amountError ? "commercial-refund-amount-error" : undefined} placeholder="保留两位小数" value={amountYuan} onChange={event => setAmountYuan(event.target.value)} inputMode="decimal" />{amountError ? <Typography.Text id="commercial-refund-amount-error" type="danger" role="alert">{amountError}</Typography.Text> : <Typography.Text type="secondary">请输入大于 0 的金额，最多两位小数。</Typography.Text>}</div>
+      <div style={{ minWidth: 220, display: "flex", flexDirection: "column", gap: 4 }}><label htmlFor="commercial-refund-points">回滚创意点</label><Input id="commercial-refund-points" aria-label="回滚创意点" aria-invalid={Boolean(pointsError)} aria-describedby={pointsError ? "commercial-refund-points-error" : undefined} placeholder="默认 0" value={points} onChange={event => setPoints(event.target.value)} />{pointsError ? <Typography.Text id="commercial-refund-points-error" type="danger" role="alert">{pointsError}</Typography.Text> : <Typography.Text type="secondary">请输入非负整数。</Typography.Text>}</div>
       <Select aria-label="退款类型" value={refundKind} onChange={value => setRefundKind(value)} options={[
         { value: "onboarding_pre_deployment", label: "部署前实施费" }, { value: "monthly_unused_points", label: "月费未使用点数" }, { value: "point_pack_unused_points", label: "点数包未使用点数" }, { value: "outage_compensation", label: "故障补偿" }, { value: "custom_milestone", label: "定制里程碑" },
       ]} />
       <Input aria-label="退款申请证据引用" placeholder={refundKind === "monthly_unused_points" ? "补充协议编号" : refundKind === "point_pack_unused_points" ? "到期政策编号" : refundKind === "outage_compensation" ? "事故 ID" : refundKind === "custom_milestone" ? "里程碑 ID" : "部署前自动记录 not_started"} value={requestEvidenceRef} disabled={refundKind === "onboarding_pre_deployment"} onChange={event => setRequestEvidenceRef(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountYuan || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run("requestCommercialRefund", () => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: yuanToFen(amountYuan), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
+      <Button loading={busy} disabled={!workspace || !orderId.trim() || !requestId.trim() || amountFen === null || pointsValue === null || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => { if (amountFen === null || pointsValue === null) return; void run("requestCommercialRefund", () => controller.client.requestCommercialRefund({ workspace, orderId: orderId.trim(), requestId: requestId.trim(), kind: refundKind, amountFen, pointsToRevoke: pointsValue, reason, evidenceRef: requestEvidenceRef })); }}>提交退款申请</Button>
       <Input aria-label="政策审批证据 JSON" placeholder="政策审批证据 JSON" value={policyApproval} onChange={event => setPolicyApproval(event.target.value)} />
       <Button loading={busy} disabled={!requestedRefund || !policyApprovalReady || busy} onClick={() => void run("approveCommercialRefund", async () => { await requireFreshRefund("requested"); return controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason); })}>双人审批</Button>
       <Input aria-label="外部退款凭证" placeholder="外部退款凭证 / 转账流水号" value={externalRefundId} onChange={event => setExternalRefundId(event.target.value)} />

@@ -53,7 +53,9 @@ export function planSupportSlaScan(
   // turn an inconsistent read into an SLA fact.
   const uniqueTickets = new Map<string, SlaScanTicket | undefined>()
   for (const ticket of tickets) {
-    const key = `${ticket.workspaceId}:${ticket.ticketId}`
+    // Length-prefix both parts so delimiter characters in either identifier
+    // cannot make two different tenant/ticket pairs share a dedupe bucket.
+    const key = `${ticket.workspaceId.length}:${ticket.workspaceId}:${ticket.ticketId.length}:${ticket.ticketId}`
     if (!uniqueTickets.has(key)) {
       uniqueTickets.set(key, ticket)
       continue

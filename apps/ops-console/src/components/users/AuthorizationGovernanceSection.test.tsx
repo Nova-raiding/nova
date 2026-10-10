@@ -71,7 +71,7 @@ describe("AuthorizationGovernanceSection", () => {
   it("keeps role and JIT recovery keyboard reachable while retaining form input", () => {
     expect(source).toContain('aria-label="分配平台角色"');
     expect(source).toContain('aria-label="签发 JIT 授权"');
-    expect(source).toContain('onRetry={() => roleForm.submit()}');
+    expect(source).toContain('await loadRoles();');
     expect(source).toContain('onRetry={() => grantForm.submit()}');
     expect(source).toContain('role="status"');
     expect(source).toContain("不会自动扩展到其他商家主体");
@@ -144,7 +144,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
             import { AuthorizationGovernanceSection } from '/src/components/users/AuthorizationGovernanceSection.tsx';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             const model = {
-              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage', ...(new URLSearchParams(location.search).has('matrix') ? ['authorization.role.read'] : [])].includes(capability), roles: ['ops_admin'], scope: { kind: 'platform' } },
+              authorization: { can: capability => ['authorization.grant.read', 'authorization.grant.manage', ...(new URLSearchParams(location.search).has('matrix') ? ['authorization.role.read', 'authorization.role.manage'] : [])].includes(capability), roles: ['ops_admin'], scope: { kind: 'platform' } },
               opsSession: { account_login: new URLSearchParams(location.search).get('login') || 'hyp@sn.com' },
               clearAuthorizationScopedData() {}, async load() {},
             };
@@ -327,4 +327,172 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
       expect(JSON.parse(issued[1].params.resource_scope_json)).toEqual({ workspace_ids: ["ws_jit_ui_fixture"] });
     } finally { releaseRequest?.(); await page.close(); }
   }, 45_000);
+
+  it("disables actions from a prior JIT revision while the refreshed list is pending", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1200 } });
+    let grantReads = 0;
+    let releaseRefresh: (() => void) | undefined;
+    const refreshReleased = new Promise<void>(resolve => { releaseRefresh = resolve; });
+    try {
+      await page.route(`${baseUrl}/api/mcp`, async route => {
+        const request = route.request().postDataJSON() as RpcRequest;
+        if (request.method !== "ops.authorization.grants.list") return respond(route, request, { id: "ok" });
+        grantReads += 1;
+        if (grantReads === 1) return respond(route, request, {
+          ...grantList,
+          grants: [{ id: "grant-revision-ui", accessMode: "read", workspaceId: "ws_jit_ui_fixture", capabilities: ["workspace.summary.read"], ticketRef: "INC-UI", expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), useCount: 0, maxUses: 1, revision: 3, authorizationRevision: 7 }],
+        });
+        await refreshReleased;
+        return respond(route, request, { ...grantList, authorization_revision: 8, grants: [] });
+      });
+      await page.goto(`${baseUrl}/__jit-submit-test`);
+      await page.getByRole("textbox", { name: "JIT 目标身份 ID", exact: true }).fill("subject-jit-ui");
+      await page.getByRole("textbox", { name: "JIT 目标商家主体 ID", exact: true }).fill("ws_jit_ui_fixture");
+      const firstRead = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.grants.list");
+      await page.getByRole("button", { name: "读取有效 JIT", exact: true }).click();
+      await firstRead;
+      const revoke = page.getByRole("button", { name: "立即撤销", exact: true });
+      expect(await revoke.count()).toBe(1);
+      expect(await revoke.isDisabled()).toBe(false);
+
+      const secondRead = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.grants.list").catch(() => undefined);
+      await page.getByRole("button", { name: "读取有效 JIT", exact: true }).click();
+      await expect.poll(() => grantReads).toBe(2);
+      await expect.poll(() => revoke.count()).toBe(0);
+      expect(await page.getByRole("button", { name: "签发 JIT", exact: true }).isDisabled()).toBe(true);
+      releaseRefresh!();
+      await secondRead;
+    } finally { releaseRefresh?.(); await page.close(); }
+  }, 45_000);
+
+  it("requires the latest role revision and submits that exact revision with the server role catalog", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1800 } });
+    const requests: RpcRequest[] = [];
+    let assigned = false;
+    try {
+      await page.route(`${baseUrl}/api/mcp`, async route => {
+        const request = route.request().postDataJSON() as RpcRequest;
+        requests.push(request);
+        if (request.method === "ops.authorization.matrix.get") {
+          return respond(route, request, { schema_version: 1, policy_version: "test", generated_from: "MCP_METHOD_POLICIES", method_count: 0, role_count: 1, roles: ["model_admin"], assignable_roles: ["model_admin"], items: [] });
+        }
+        if (request.method === "ops.authorization.roles.list") {
+          return respond(route, request, { subject_identity_id: "subject-role-ui", authorization_revision: 23, assignments: assigned ? [{ id: "assignment-role-ui", role: "model_admin", subject_identity_id: "subject-role-ui", revision: 1, authorization_revision: 24 }] : [] });
+        }
+        if (request.method === "ops.authorization.role.assign") {
+          assigned = true;
+          return respond(route, request, { id: "assignment-role-ui", role: "model_admin" });
+        }
+        throw new Error(`Unexpected authorization RPC: ${request.method}`);
+      });
+      await page.goto(`${baseUrl}/__jit-submit-test?matrix=1`);
+      const form = page.getByRole("form", { name: "分配平台角色", exact: true });
+      const submit = form.getByRole("button", { name: "分配角色", exact: true });
+      await page.getByRole("textbox", { name: "平台角色目标身份 ID", exact: true }).fill(" subject-role-ui ");
+      expect(await submit.isDisabled()).toBe(true);
+      await expect.poll(() => requests.filter(request => request.method === "ops.authorization.roles.list").length).toBe(0);
+      const rolesLoaded = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.roles.list");
+      await page.getByRole("button", { name: "读取当前分配", exact: true }).click();
+      await rolesLoaded;
+      expect(requests.find(request => request.method === "ops.authorization.roles.list")?.params).toMatchObject({ subject_identity_id: "subject-role-ui" });
+      expect(requests.filter(request => request.method === "ops.authorization.role.assign")).toHaveLength(0);
+      await form.locator(".ant-select").click();
+      await page.locator(".ant-select-item-option-content").filter({ hasText: "模型管理员" }).click();
+      await form.locator('input[placeholder="说明工单或业务原因"]').fill("经工单核对授权");
+      await submit.click();
+      await expect.poll(() => requests.filter(request => request.method === "ops.authorization.role.assign").length).toBe(1);
+      const assignment = requests.find(request => request.method === "ops.authorization.role.assign")!;
+      expect(assignment.params).toMatchObject({
+        subject_identity_id: "subject-role-ui",
+        role: "model_admin",
+        expected_authorization_revision: "23",
+        reason: "经工单核对授权",
+      });
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("fails closed after a role assignment error when its revision refresh fails", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1800 } });
+    const requests: RpcRequest[] = [];
+    let failRoleReads = false;
+    const stage = async <T,>(name: string, operation: () => Promise<T>, timeoutMs = 8_000): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          operation(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`stage timeout: ${name} (${timeoutMs}ms)`)), timeoutMs);
+          }),
+        ]);
+      } catch (error) {
+        throw new Error(`stage failed: ${name}`, { cause: error });
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    try {
+      await page.route(`${baseUrl}/api/mcp`, async route => {
+        const request = route.request().postDataJSON() as RpcRequest;
+        requests.push(request);
+        if (request.method === "ops.authorization.matrix.get") {
+          return respond(route, request, { schema_version: 1, policy_version: "test", generated_from: "MCP_METHOD_POLICIES", method_count: 0, role_count: 1, roles: ["model_admin"], assignable_roles: ["model_admin"], items: [] });
+        }
+        if (request.method === "ops.authorization.roles.list") {
+          if (failRoleReads) return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: "TEMPORARY_FAILURE", message: "角色读取失败" } }) });
+          return respond(route, request, { subject_identity_id: "subject-role-ui", authorization_revision: 23, assignments: [] });
+        }
+        if (request.method === "ops.authorization.role.assign") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: "TEMPORARY_FAILURE", message: "角色分配失败" } }) });
+        throw new Error(`Unexpected authorization RPC: ${request.method}`);
+      });
+      await stage("goto", () => page.goto(`${baseUrl}/__jit-submit-test?matrix=1`, { timeout: 30_000 }), 30_000);
+      const form = page.getByRole("form", { name: "分配平台角色", exact: true });
+      const submit = form.getByRole("button", { name: "分配角色", exact: true });
+      await stage("initial roles read", async () => {
+        const initialRead = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.roles.list", { timeout: 8_000 });
+        await page.getByRole("textbox", { name: "平台角色目标身份 ID", exact: true }).fill("subject-role-ui", { timeout: 8_000 });
+        await page.getByRole("button", { name: "读取当前分配", exact: true }).click({ timeout: 8_000 });
+        await initialRead;
+        await expect.poll(() => submit.isEnabled(), { timeout: 8_000 }).toBe(true);
+      });
+
+      await stage("role selection", async () => {
+        await form.locator(".ant-select").click({ timeout: 8_000 });
+        await page.locator(".ant-select-item-option-content").filter({ hasText: "模型管理员" }).click({ timeout: 8_000 });
+        await form.locator('input[placeholder="说明工单或业务原因"]').fill("经工单核对授权", { timeout: 8_000 });
+      });
+      await stage("assign response", async () => {
+        const assignmentFailure = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.role.assign", { timeout: 8_000 });
+        await submit.click({ timeout: 8_000 });
+        const assignmentResponse = await assignmentFailure;
+        const assignmentBody = await assignmentResponse.json() as { error?: { code?: string; message?: string } };
+        expect(assignmentBody.error?.code).toBe("TEMPORARY_FAILURE");
+        expect(assignmentBody.error?.message).toBe("角色分配失败");
+        expect(requests.filter(request => request.method === "ops.authorization.role.assign")).toHaveLength(1);
+      });
+      failRoleReads = true;
+      const retry = page.getByRole("button", { name: "重试加载运营数据", exact: true }).last();
+      await stage("retry button", async () => {
+        await retry.waitFor({ state: "visible", timeout: 8_000 });
+        const failedRead = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.roles.list", { timeout: 8_000 });
+        await retry.click({ timeout: 8_000 });
+        await failedRead;
+      });
+      await stage("button disabled", () => expect.poll(() => submit.isDisabled(), { timeout: 5_000 }).toBe(true), 5_000);
+      await stage("error retained", async () => {
+        expect(await page.locator(".ops-page-error").count()).toBeGreaterThan(0);
+        expect(requests.find(request => request.method === "ops.authorization.role.assign")?.params.expected_authorization_revision).toBe("23");
+      }, 5_000);
+      await stage("form.requestSubmit", async () => {
+        await form.evaluate(element => (element as HTMLFormElement).requestSubmit());
+        await new Promise(resolve => setTimeout(resolve, 200));
+        expect(await submit.isDisabled()).toBe(true);
+        expect(await page.locator(".ops-page-error").count()).toBeGreaterThan(0);
+      }, 5_000);
+      await stage("assignment count", async () => {
+        expect(requests.filter(request => request.method === "ops.authorization.role.assign")).toHaveLength(1);
+      }, 5_000);
+    } finally {
+      await stage("page.close", () => page.close());
+    }
+  }, 60_000);
 });

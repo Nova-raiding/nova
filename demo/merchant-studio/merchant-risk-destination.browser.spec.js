@@ -59,7 +59,9 @@ async function openOverview(issue) {
     } else if (pathname === '/v1/auth/mcp-token') {
       data = { access_token: 'risk-browser-fixture', refresh_token: 'risk-browser-fixture-refresh', expires_in: 300 }
     } else if (pathname === '/healthz') {
-      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'postgres', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
+      // This spec stubs every API response. Report the persistence source as a
+      // fixture so the browser flow cannot be mistaken for a database check.
+      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
     } else if (pathname === '/v1/platform-accounts') {
       data = { items: [{ platform: 'jd', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'manual_upload', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店' }] }
     } else if (pathname === '/v1/products') {

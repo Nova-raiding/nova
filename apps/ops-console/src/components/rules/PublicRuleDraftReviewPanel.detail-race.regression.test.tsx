@@ -97,6 +97,10 @@ describe("public rule detail request ordering", () => {
     }, { first: firstRule, second: secondRule });
     await page.goto(`${baseUrl}/__public-rule-detail-race`);
     await page.getByText(firstRule.name, { exact: true }).waitFor();
+    const keyboardDetailButton = page.getByRole("button", { name: `查看${firstRule.name}审核详情` });
+    await keyboardDetailButton.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => Boolean(window.__pendingRuleDetails?.["pack-a"]));
     await page.getByText(firstRule.name, { exact: true }).click();
     await page.waitForFunction(() => Boolean(window.__pendingRuleDetails?.["pack-a"]));
     await page.getByText(secondRule.name, { exact: true }).click();

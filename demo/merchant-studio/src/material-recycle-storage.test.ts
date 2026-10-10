@@ -129,8 +129,11 @@ describe('merchant material browser storage isolation', () => {
     expect(readRecycleMaterialsWithStatus(scope, Date.now(), storage)).toEqual({ items: [], expiryCleanupFailed: false })
   })
 
-  it('labels past-due records as expired instead of showing a day remaining', () => {
-    expect(recycleExpiryLabel('2020-01-01T00:00:00Z')).toBe('已过期')
+  it('shows the server expiry date with its remaining-time status', () => {
+    const expiry = '2030-05-06T00:00:00Z'
+    const formattedDate = new Date(expiry).toLocaleDateString('zh-CN')
+    expect(recycleExpiryLabel(expiry)).toContain(`保留至 ${formattedDate}（剩余 `)
+    expect(recycleExpiryLabel('2020-01-01T00:00:00Z')).toContain('到期（已过期）')
     expect(recycleExpiryLabel('not-a-date')).toBe('到期时间无效')
   })
 })

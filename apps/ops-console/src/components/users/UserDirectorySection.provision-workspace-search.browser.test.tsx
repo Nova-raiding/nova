@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
-describe("merchant account provisioning workspace search", () => {
+describe("Ops /ops/users merchant account provisioning", () => {
   let browser: Browser | undefined;
   let vite: ViteDevServer | undefined;
   let cacheDirectory: string | undefined;
@@ -36,17 +36,18 @@ describe("merchant account provisioning workspace search", () => {
             import React, { useState } from 'react';
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
-            import { UserDirectorySection } from '/src/components/users/UserDirectorySection.tsx';
+            import { UsersPage } from '/src/pages/UsersPage.tsx';
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform', token: 'fixture-token', actorId: 'fixture-operator' }));
             function Fixture() {
               if (!window.__requests) window.__requests = [];
               const [directory, setDirectory] = useState({items: [], offset: 0, limit: 100, hasMore: false});
               const model = {
-                authorization: {can: capability => capability === 'identity.read'},
+                authorization: {can: capability => capability === 'identity.read', canAny: () => false, roles: [], scope: {kind: 'platform'}},
                 userDirectory: {items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false},
                 userDirectoryLoading: false, userDirectoryError: '', userExporting: false,
                 canPlatformOps: true, canUserGovernance: false, userDetail: undefined, userDetailLoading: false,
-                opsSession: undefined, loadUsers: async () => undefined, cancelUserRequests: () => undefined,
+                opsSession: {actor_id: 'fixture-operator'}, error: undefined, load: async () => undefined,
+                loadUsers: async () => undefined, cancelUserRequests: () => undefined,
                 workspaceDirectoryLoading: false, workspaceDirectoryError: '',
                 get workspaceDirectory() { return directory; },
                 loadWorkspaceDirectory: async filters => {
@@ -56,14 +57,14 @@ describe("merchant account provisioning workspace search", () => {
                   return true;
                 },
               };
-              return React.createElement(App, null, React.createElement(UserDirectorySection, {model}));
+              return React.createElement(App, null, React.createElement(UsersPage, {model}));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Fixture));
           `;
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
-            if (!req.url?.startsWith("/__provision-workspace-search-test")) return next();
+            if (!req.url?.startsWith("/ops/users")) return next();
             const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
             void server.transformIndexHtml(req.url, html).then(output => { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(output); }).catch(next);
           });
@@ -97,7 +98,7 @@ describe("merchant account provisioning workspace search", () => {
           commercial_qualification_granted: false, capabilities_granted: [],
         } }) });
       });
-      await page.goto(`${baseUrl}/__provision-workspace-search-test`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${baseUrl}/ops/users`, { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: /更多用户治理操作/u }).click();
       await page.getByRole("menuitem", { name: "开通商家账号" }).click();
       const dialog = page.getByRole("dialog", { name: "邀请客户激活登录账号" });
@@ -119,6 +120,52 @@ describe("merchant account provisioning workspace search", () => {
       await dialog.getByRole("button", { name: "创建账号与安全邀请" }).click();
       await dialog.getByText("邀请标识：", { exact: false }).waitFor({ state: "visible" });
       expect(provisioningPayload).toMatchObject({ workspace_ids: ["ws_workspace_101"], create_workspace: false, action: "create" });
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("preserves an ambiguous invitation intent across closing and reopening the route modal", async () => {
+    if (!browser) throw new Error("Browser did not start");
+    const page = await browser.newPage();
+    page.setDefaultTimeout(30_000);
+    page.setDefaultNavigationTimeout(30_000);
+    const payloads: Array<Record<string, unknown>> = [];
+    try {
+      await page.route("**/api/v1/ops/merchant-accounts", async route => {
+        payloads.push(route.request().postDataJSON() as Record<string, unknown>);
+        if (payloads.length === 1) {
+          await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "SERVICE_UNAVAILABLE", message: "邀请服务暂时不可用" } }) });
+          return;
+        }
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
+          account: { id: "acct_recovered_fixture", login: "recovery@example.test", workspaceIds: [], status: "invited" },
+          invitation: { id: "invite_recovered_fixture", expires_at: "2026-10-11T00:00:00Z", status: "pending", replayed: true, delivery_status: "not_sent" },
+          commercial_qualification_granted: false, capabilities_granted: [],
+        } }) });
+      });
+      await page.goto(`${baseUrl}/ops/users`, { waitUntil: "domcontentloaded" });
+      const openProvision = async () => {
+        await page.getByRole("button", { name: /更多用户治理操作/u }).click();
+        await page.getByRole("menuitem", { name: "开通商家账号" }).click();
+        return page.getByRole("dialog", { name: "邀请客户激活登录账号" });
+      };
+      let dialog = await openProvision();
+      await dialog.getByLabel("商家登录邮箱").fill("recovery@example.test");
+      await dialog.getByLabel("企业名称").fill("恢复验证企业");
+      await dialog.getByLabel("联系人").fill("测试联系人");
+      await dialog.getByLabel("开户或邀请原因").fill("验证请求结果恢复");
+      await dialog.getByRole("button", { name: "创建账号与安全邀请" }).click();
+      await dialog.getByText("邀请结果待确认", { exact: true }).waitFor({ state: "visible" });
+      const firstIntent = payloads[0]!;
+      expect(firstIntent).toMatchObject({ login: "recovery@example.test", enterprise_name: "恢复验证企业", action: "create" });
+
+      await dialog.locator(".ant-modal-footer button").first().click();
+      dialog = await openProvision();
+      expect(await dialog.getByLabel("商家登录邮箱").inputValue()).toBe("recovery@example.test");
+      expect(await dialog.getByRole("button", { name: "查询原邀请结果" }).count()).toBe(1);
+      await dialog.getByRole("button", { name: "查询原邀请结果" }).click();
+      await dialog.getByText("invite_recovered_fixture").waitFor({ state: "visible" });
+      expect(payloads).toHaveLength(2);
+      expect(payloads[1]).toEqual(firstIntent);
     } finally { await page.close(); }
   }, 60_000);
 });

@@ -308,6 +308,29 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('releases valid tenant claims when a claimed batch contains a foreign workspace row', async () => {
+    const validA = event({ id: 'evt_valid_a', workspaceId: 'ws_1', attempts: 1, leaseToken: 'lease_a' })
+    const foreign = event({ id: 'evt_foreign', workspaceId: 'ws_other', attempts: 1, leaseToken: 'lease_foreign' })
+    const validB = event({ id: 'evt_valid_b', workspaceId: 'ws_1', attempts: 1, leaseToken: 'lease_b' })
+    const store: DurableOutboxStore = {
+      claimPending: async () => [validA, foreign, validB],
+      validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
+      recordFailure: async () => event(), markUnknown: async () => event(),
+      releaseClaim: vi.fn(async (_workspaceId: string, id: string, _leaseToken: string) => event({ id })),
+    }
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }))
+
+    await expect(dispatcher.restore('ws_1')).rejects.toMatchObject({
+      code: 'OUTBOX_EVENT_SCOPE_MISMATCH', eventId: 'evt_foreign', eventWorkspaceId: 'ws_other',
+    })
+
+    expect(store.releaseClaim).toHaveBeenCalledTimes(2)
+    expect(store.releaseClaim).toHaveBeenNthCalledWith(1, 'ws_1', 'evt_valid_a', 'lease_a')
+    expect(store.releaseClaim).toHaveBeenNthCalledWith(2, 'ws_1', 'evt_valid_b', 'lease_b')
+    expect(queue.size).toBe(0)
+  })
+
   it('re-evaluates dynamic claim routing on every restore so a narrowed worker recovers', async () => {
     // A worker that owns several queues may have to withhold one of them while
     // it cannot run (an unready local scanner, for example). `claim` is fixed

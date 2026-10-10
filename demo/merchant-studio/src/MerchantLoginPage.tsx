@@ -66,6 +66,7 @@ export function MerchantLoginPage({
             className="merchant-login-form"
             layout="vertical"
             requiredMark={false}
+            disabled={submitting || loading}
             onFinish={(values) => void submit(values)}
             aria-label="商家账号登录"
           >
@@ -114,7 +115,7 @@ export function MerchantLoginPage({
             </Button>
           ) : null}
           <Typography.Text type="secondary" className="merchant-login-helper">
-            没有账号？请联系平台运营创建商家账号并分配企业工作区。
+            未登录或会话已失效？请用商家账号重新登录。此入口不支持自助注册；忘记密码或工作区绑定有误，请联系平台运营核对。
           </Typography.Text>
           <div className="merchant-login-footer">
             <span>商家账号</span>

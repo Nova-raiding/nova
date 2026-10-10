@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, publishMediaLifecycleClient, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -404,7 +404,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 270')
+      .rejects.toThrow('expected complete migration chain through 272')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -425,7 +425,7 @@ describe('worker production entry', () => {
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 270')
+      .rejects.toThrow('expected complete migration chain through 272')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('checksum mismatch')
   })
@@ -1574,6 +1574,67 @@ describe('worker production entry', () => {
       apiBaseUrl: 'http://api.test', apiToken: 'token', event,
       fetcher: async () => new Response(JSON.stringify({ data: { media: [{ visual_ref: 'dvis_1', role: 'main', mime_type: 'image/png', sha256: 'a'.repeat(64), content_base64: Buffer.from('not-a-png').toString('base64') }] } }), { status: 200 }),
     })).rejects.toThrow('invalid size or SHA-256 digest')
+  })
+
+  it('reuses only a non-empty persisted publish media receipt bound to the exact job and event', async () => {
+    const event = { id: 'evt_media_lifecycle', workspaceId: 'ws_a', aggregateId: 'job_media_lifecycle', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    const bytes = Buffer.from('image')
+    const media = { visualRef: 'visual_a', role: 'main' as const, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes, idempotencyKey: 'job_media_lifecycle:media:visual_a' }
+    const persisted = {
+      workspaceId: event.workspaceId, publishJobId: event.aggregateId, eventId: event.id, mediaIdempotencyKey: media.idempotencyKey,
+      platform: 'taobao', accountId: 'acct_a', visualRef: media.visualRef, role: media.role, sha256: media.sha256, state: 'uploaded',
+      receipt: { platform: 'taobao', visualRef: media.visualRef, role: media.role, sha256: media.sha256, mediaId: 'remote_media_a' },
+    }
+    const calls: Array<{ url: string; headers: Headers }> = []
+    const client = publishMediaLifecycleClient({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event, platform: 'taobao', accountId: 'acct_a',
+      fetcher: async (input, init) => {
+        calls.push({ url: String(input), headers: new Headers(init?.headers) })
+        return new Response(JSON.stringify({ data: { media_lifecycle: persisted } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    await expect(client.getReceipt(media)).resolves.toMatchObject({ mediaId: 'remote_media_a', visualRef: media.visualRef, sha256: media.sha256 })
+    const requestedUrl = new URL(calls[0]!.url)
+    expect(requestedUrl.searchParams.get('event_id')).toBe(event.id)
+    expect(requestedUrl.searchParams.get('media_idempotency_key')).toBe(media.idempotencyKey)
+    expect(calls[0]?.headers.get('x-workspace-id')).toBe(event.workspaceId)
+
+    for (const invalid of [
+      { ...persisted, eventId: 'another-event' },
+      { ...persisted, receipt: { ...persisted.receipt, mediaId: '   ' } },
+      { ...persisted, receipt: { ...persisted.receipt, url: ' ' } },
+    ]) {
+      const invalidClient = publishMediaLifecycleClient({
+        apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event, platform: 'taobao', accountId: 'acct_a',
+        fetcher: async () => new Response(JSON.stringify({ data: { media_lifecycle: invalid } }), { status: 200 }),
+      })
+      await expect(invalidClient.getReceipt(media)).rejects.toThrow(/out of scope|malformed/u)
+    }
+  })
+
+  it('passes lease cancellation to publish media lifecycle transitions', async () => {
+    const event = { id: 'evt_media_abort', workspaceId: 'ws_a', aggregateId: 'job_media_abort', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    const bytes = Buffer.from('image')
+    const media = { visualRef: 'visual_abort', role: 'main' as const, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes, idempotencyKey: 'job_media_abort:media:visual_abort' }
+    const controller = new AbortController()
+    let observedSignal: AbortSignal | null | undefined
+    const client = publishMediaLifecycleClient({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event, platform: 'taobao', accountId: 'acct_a', signal: controller.signal,
+      fetcher: async (_input, init) => {
+        observedSignal = init?.signal
+        return await new Promise<Response>((_resolve, reject) => {
+          if (init?.signal?.aborted) reject(init.signal.reason)
+          else init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+        })
+      },
+    })
+    const transition = client.transition({ media, state: 'intent' })
+    await vi.waitFor(() => expect(observedSignal).toBeInstanceOf(AbortSignal))
+    expect(observedSignal).toBeInstanceOf(AbortSignal)
+    expect(observedSignal?.aborted).toBe(false)
+    controller.abort(new Error('durable lease lost'))
+    expect(observedSignal?.aborted).toBe(true)
+    await expect(transition).rejects.toThrow('durable lease lost')
   })
 })
 

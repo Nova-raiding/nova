@@ -4,6 +4,9 @@ import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 
 export function BrandPreferencePanel({ model }: { model: OpsConsoleModel }) {
   const { brandPreference, canKnowledge, updateBrandPreference } = model;
+  const preferenceReadError = model.dataSetError("knowledge.brand.preference.get");
+  const preferenceReadPending = model.loading && !brandPreference && !preferenceReadError;
+  const formDisabled = !canKnowledge || Boolean(preferenceReadError) || preferenceReadPending;
   const [form] = Form.useForm();
   const initial = brandPreference?.preferences
     ? JSON.stringify(brandPreference.preferences, null, 2)
@@ -20,11 +23,13 @@ export function BrandPreferencePanel({ model }: { model: OpsConsoleModel }) {
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
       <Alert showIcon type="info" title="品牌偏好会进入后续文案、图片和视频生成上下文" description="只有 active 版本会被正式任务引用；草稿仍需运营确认。" />
+      {preferenceReadPending && <Alert showIcon type="info" title="正在读取品牌偏好" aria-live="polite" />}
+      {preferenceReadError && <Alert showIcon type="error" role="alert" title="品牌偏好读取失败" description={preferenceReadError} action={<Button onClick={() => void model.load()}>重试读取</Button>} />}
       {brandPreference && <Tag color={brandPreference.status === "active" ? "green" : "orange"}>当前版本 {brandPreference.version} · {brandPreference.status} · 修订 {brandPreference.revision}</Tag>}
       <Form
         form={form}
         layout="vertical"
-        disabled={!canKnowledge}
+        disabled={formDisabled}
         initialValues={{ preferencesJson: initial, version: brandPreference?.version ?? "v1", status: brandPreference?.status ?? "draft", source: brandPreference?.source ?? "" }}
         onFinish={(values) => void updateBrandPreference(values)}
       >
@@ -36,7 +41,7 @@ export function BrandPreferencePanel({ model }: { model: OpsConsoleModel }) {
           <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select style={{ width: 120 }} options={[{ value: "draft", label: "草稿" }, { value: "active", label: "生效" }, { value: "archived", label: "归档" }]} /></Form.Item>
           <Form.Item name="source" label="来源"><Input placeholder="访谈/审核记录/工单" /></Form.Item>
         </Space>
-        <Button type="primary" htmlType="submit" disabled={!canKnowledge}>保存品牌偏好</Button>
+        <Button type="primary" htmlType="submit" disabled={formDisabled}>保存品牌偏好</Button>
       </Form>
     </Space>
   );

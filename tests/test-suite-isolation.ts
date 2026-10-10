@@ -1,7 +1,7 @@
-// These files are real-runtime acceptance, not hermetic unit/API fixtures.
-// Keep them reachable through explicit integration entrypoints, never through
-// the default suite. This list remains explicit even if an individual test
-// later removes its historical localhost fallback.
+// These files are real-runtime or dedicated browser acceptance, not default
+// unit/API fixtures. Keep them reachable through explicit integration/browser
+// entrypoints, never through the root default suite. This list remains explicit
+// even if an individual test later removes its historical localhost fallback.
 export const NON_HERMETIC_TEST_FILES = [
   // Optional Kubernetes/ACK checks are outside the ECS release denominator.
   // Their dedicated Vitest configuration collects both files explicitly.
@@ -11,8 +11,20 @@ export const NON_HERMETIC_TEST_FILES = [
   'tests/local-docker-fault-acceptance.test.ts',
   'tests/local-docker-release-gate.test.ts',
   'tests/local-creative-points-seed-runtime.test.ts',
+  // Ops UI browser acceptance is owned once by apps/ops-console's Chromium
+  // runner; the root Vitest include glob also sees apps/**/*.test.tsx.
+  'apps/ops-console/src/navigation/OpsNavigation.browser.test.tsx',
+  'apps/ops-console/src/pages/OverviewPage.browser.test.tsx',
+  'apps/ops-console/src/components/OpsPageError.browser.test.tsx',
+  'apps/ops-console/src/pages/OpsConsoleController.identity-route.browser.test.tsx',
+  'apps/ops-console/src/components/finance/RefundSection.validation.browser.test.tsx',
+  'apps/ops-console/src/components/users/WorkspaceGovernanceSection.browser.test.tsx',
+  'apps/ops-console/src/components/users/UsersGovernanceDenied.browser.test.tsx',
   'packages/persistence/src/canonical-product-backfill.postgres.test.ts',
   'packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts',
+  'packages/persistence/src/product-listing-cross-tenant-account-integrity.postgres.test.ts',
+  'packages/persistence/src/customer-delivery-tenant-rls.postgres.test.ts',
+  'packages/persistence/src/publish-media-orphan-repository.postgres.test.ts',
   'packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts',
   'packages/persistence/src/migration-106-release.postgres.test.ts',
   'packages/persistence/src/migration-064-release.postgres.test.ts',

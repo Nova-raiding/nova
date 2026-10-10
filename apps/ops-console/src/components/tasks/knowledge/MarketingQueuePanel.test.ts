@@ -170,4 +170,16 @@ describe('marketing queue delivery evidence', () => {
     expect(imageEvidenceModalSource).toContain('打开人工收口')
     expect(imageEvidenceModalSource).toContain('导出脱敏证据包')
   })
+
+  it('reuses a support-ticket idempotency key while the same confirmation is retried', () => {
+    const supportTicketFlow = panelSource.slice(
+      panelSource.indexOf('const openSupportTicket ='),
+      panelSource.indexOf('const exportImageEvidence ='),
+    )
+    expect(supportTicketFlow.indexOf('const idempotencyKey = crypto.randomUUID()')).toBeLessThan(
+      supportTicketFlow.indexOf('onOk: async () =>'),
+    )
+    expect(supportTicketFlow).toContain('idempotencyKey,')
+    expect(supportTicketFlow).not.toContain('idempotencyKey: crypto.randomUUID()')
+  })
 })

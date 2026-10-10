@@ -26,6 +26,26 @@ describe('merchant rules page navigation', () => {
     expect(app).toContain("{page === 'rules' && <Rules baseUrl={apiBaseUrl} target={target} rulesPlatform={rulesPlatform} onRulesPlatformChange={setRulesPlatform} />}")
   })
 
+  it('restores the rule filter and product store from a copied URL as separate scopes', () => {
+    const route = merchantRouteFromLocation({
+      pathname: '/merchant/rules',
+      search: '?product_id=product-a&platform=taobao&account_id=store-a&rules_platform=jd',
+      hash: '',
+    })
+
+    expect(route).toEqual({
+      page: 'rules',
+      searchQuery: '',
+      rulesPlatform: 'jd',
+      target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' },
+    })
+  })
+
+  it('labels the active rule platform separately from the product store platform', () => {
+    expect(app).toContain('当前规则平台：${platform === \'all\' ? \'全部平台\' : platformNames[platform]}')
+    expect(app).toContain('商品所属店铺：${platformNames[target.platform]}')
+  })
+
   it('makes the dedicated rules page discoverable from the merchant sidebar', () => {
     expect(app).toContain("{ id: 'rules', label: '规则与类目', icon: ShieldCheck")
   })

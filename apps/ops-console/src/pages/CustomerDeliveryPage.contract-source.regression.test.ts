@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { customerDeliveryContractSource, ensureCustomerDeliveryContractAsset } from "./CustomerDeliveryPage.js";
 import type { CustomerDeliveryAsset } from "../api/customerDeliveryClient.js";
 
+const pageSource = readFileSync(new URL("./CustomerDeliveryPage.tsx", import.meta.url), "utf8");
+
 describe("customer delivery contract source regression", () => {
+  it("lists archived rows only by explicit workspace and restores with the current revision", () => {
+    expect(pageSource).toContain('checked={archivedOnly}');
+    expect(pageSource).toContain('archivedOnly: includeArchived');
+    expect(pageSource).toContain('patch: { archivedAt: null }, expectedRevision: record.revision as number');
+    expect(pageSource).toContain('onRestore={canUpdate && canRead ? restoreRecord : undefined}');
+    expect(pageSource).toContain('客户交付记录缺少有效版本，请刷新后重试');
+  });
   it("supports either a selected file or a server-validated HTTPS direct link", () => {
     const file = new File(["pdf"], "contract.pdf", { type: "application/pdf" });
     expect(customerDeliveryContractSource("contract.pdf", file)).toEqual({ kind: "file", file, cacheKey: file });

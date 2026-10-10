@@ -21,4 +21,10 @@ describe('DeliveryReadinessPanel capability boundary', () => {
     expect(component).toContain('type="button"')
     expect(component).toContain('<AlertCircle size={16} aria-hidden="true"/>')
   })
+
+  it('routes both refresh controls through the focus-restoring retry path', () => {
+    const component = readFileSync(new URL('./DeliveryReadinessPanel.tsx', import.meta.url), 'utf8')
+    expect(component).toMatch(/onClick=\{retry\}[^>]*aria-label="刷新平台交付状态"/)
+    expect(component).toContain('onClick={retry} aria-describedby="delivery-readiness-error-description">重试</button>')
+  })
 })

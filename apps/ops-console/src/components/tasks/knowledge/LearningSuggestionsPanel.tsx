@@ -1,7 +1,8 @@
 import { Button, Input, Modal, Space, Table, Typography } from "antd";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { LearningSuggestion } from "../../../types/ops";
+import { runSingleFlight } from "./singleFlight";
 
 interface LearningSuggestionsPanelProps {
   model: OpsConsoleModel;
@@ -24,6 +25,19 @@ export function LearningSuggestionsPanel({
   const [dismissTarget, setDismissTarget] = useState<LearningSuggestion>();
   const [dismissReason, setDismissReason] = useState("当前证据不足，不沉淀为规则");
   const [dismissing, setDismissing] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string>();
+  const confirmingRef = useRef(false);
+  const submitConfirm = async (suggestion: LearningSuggestion) => {
+    // A synchronous guard closes the gap before React paints the loading state;
+    // otherwise a fast double click can send duplicate approval RPCs.
+    if (!canKnowledge || confirmingRef.current) return;
+    setConfirmingId(suggestion.id);
+    try {
+      await runSingleFlight(confirmingRef, () => confirmLearning(suggestion));
+    } finally {
+      setConfirmingId(undefined);
+    }
+  };
   const closeDismiss = () => { if (!dismissing) { setDismissTarget(undefined); setDismissReason(""); } };
   const submitDismiss = async () => {
     if (!dismissTarget || dismissReason.trim().length < 4) return;
@@ -54,15 +68,16 @@ export function LearningSuggestionsPanel({
             <Space>
               <Button
                 type="link"
-                disabled={!canKnowledge}
-                onClick={() => void confirmLearning(row)}
+                disabled={!canKnowledge || Boolean(confirmingId)}
+                loading={confirmingId === row.id}
+                onClick={() => void submitConfirm(row)}
               >
                 确认证据
               </Button>
               <Button
                 type="link"
                 danger
-                disabled={!canKnowledge}
+                disabled={!canKnowledge || Boolean(confirmingId)}
                 onClick={() => { setDismissTarget(row); setDismissReason("当前证据不足，不沉淀为规则"); }}
               >
                 驳回建议

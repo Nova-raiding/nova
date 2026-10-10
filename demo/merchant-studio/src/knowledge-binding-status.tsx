@@ -44,7 +44,7 @@ export function resolveKnowledgeBindingStatus(
   const approvalStatus: KnowledgeApprovalStatus =
     asset.factsConfirmedBy && asset.factsConfirmedAt ? 'approved' : 'pending'
   const rightsStatus: KnowledgeRightsStatus =
-    asset.rightsStatus === 'approved' ? 'cleared' : 'unknown'
+    asset.rightsStatus === 'approved' && asset.rightsScope !== 'unusable' ? 'cleared' : 'unknown'
   const indexState: KnowledgeIndexState =
     asset.readiness?.status === 'ready' ? 'ready' : 'queued'
   const reasons: string[] = []

@@ -4,7 +4,7 @@ import { platformWriteAllowed } from '../../../packages/connectors/src/write-bou
 import type { FetchLike, ConnectorBeforeRequest, ProviderExchangeObservation } from '../../../packages/connectors/src/http-connector.js'
 import { createPublishWorker } from '../../../packages/workers/src/factories.js'
 import { createPublishHandler } from '../../../packages/workers/src/publish-adapter.js'
-import type { ConnectorContext, MediaUploadInput, PlatformWriteDraft, RawProduct } from '../../../packages/connectors/src/types.js'
+import type { ConnectorContext, MediaUploadInput, MediaUploadReceipt, PlatformWriteDraft, RawProduct } from '../../../packages/connectors/src/types.js'
 import type { CapabilityEvidence, ProductionCapabilityEvidenceTrust } from '../../../packages/connectors/src/capability-evidence.js'
 import { REQUIRED_CONNECTOR_CAPABILITIES } from '../../../packages/connectors/src/readiness.js'
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from './platform-field-mapping-gate.js'
@@ -16,6 +16,11 @@ export interface ConnectorRuntimeMappingPreflightAdapter {
 
 export interface ConnectorRuntimeWriteMappingPlan {
   gateInput: PlatformFieldMappingGateInput
+}
+
+export interface ConnectorRuntimeMediaLifecycle {
+  transition(input: { media: MediaUploadInput; state: 'intent' | 'uploaded' | 'orphaned' | 'retained' | 'unknown' | 'deleted'; receipt?: MediaUploadReceipt; reason?: string }): Promise<void>
+  getReceipt?(media: MediaUploadInput): Promise<MediaUploadReceipt | undefined>
 }
 
 export class ConnectorMappingPreflightError extends Error {
@@ -217,17 +222,30 @@ export class ConnectorRuntime {
   }
 
   /** Execute one durable-worker publish and immediately verify remote status. */
-  async executePublish(input: { platform: Platform; context: ConnectorContext; fields: Record<string, unknown>; remoteId?: string; idempotencyKey: string; media?: MediaUploadInput[] }) {
+  async executePublish(input: { platform: Platform; context: ConnectorContext; fields: Record<string, unknown>; remoteId?: string; idempotencyKey: string; media?: MediaUploadInput[]; mediaLifecycle?: ConnectorRuntimeMediaLifecycle }) {
     const connector = this.connector(input.platform)
     input.context.signal?.throwIfAborted()
     let fields = await this.preflightWrite(input)
     this.assertWriteAllowed(input.platform)
+    let uploaded: MediaUploadReceipt[] = []
+    const uploadStarted = new Set<string>()
+    let writeStarted = false
+    try {
     if (input.media?.length) {
+      if (!input.mediaLifecycle) throw new Error('selected product visuals require durable publish media lifecycle recording')
       if (typeof connector.uploadMedia !== 'function') throw new Error('selected product visuals require a platform media upload adapter')
-      const uploaded = []
       for (const media of input.media) {
         input.context.signal?.throwIfAborted()
-        uploaded.push(await connector.uploadMedia(input.context, media))
+        const prior = await input.mediaLifecycle.getReceipt?.(media)
+        if (prior) { uploaded.push(prior); continue }
+        await input.mediaLifecycle.transition({ media, state: 'intent' })
+        // Only an upload call that was actually dispatched can have an
+        // ambiguous remote outcome. Failures while reading or persisting the
+        // intent must not turn untouched media into an unknown upload.
+        uploadStarted.add(media.idempotencyKey)
+        const receipt = await connector.uploadMedia(input.context, media)
+        uploaded.push(receipt)
+        await input.mediaLifecycle.transition({ media, state: 'uploaded', receipt })
       }
       const imageRefs = uploaded.map(item => item.url ?? item.mediaId)
       if (imageRefs.some(value => !value)) throw new Error('platform media upload returned no usable image reference')
@@ -237,6 +255,7 @@ export class ConnectorRuntime {
     if (findings.some(finding => finding.severity === 'error')) throw new Error(findings.map(finding => finding.message).join('; '))
     const context = input.context
     const draft = { fields, ...(input.remoteId ? { remoteId: input.remoteId } : {}), idempotencyKey: input.idempotencyKey }
+    writeStarted = true
     const receipt = input.remoteId
       ? await connector.updateProduct(context, draft)
       : await connector.createProduct(context, draft)
@@ -246,7 +265,66 @@ export class ConnectorRuntime {
     context.signal?.throwIfAborted()
     const remoteStatus = await connector.queryWrite(context, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId })
     context.signal?.throwIfAborted()
+    if (remoteStatus.found && remoteStatus.state === 'rejected') {
+      // A definitive rejection proves the product write did not retain these
+      // uploads. Record them as orphans before attempting remote cleanup.
+      writeStarted = false
+      for (const mediaReceipt of uploaded) {
+        const media = input.media?.find(item => item.visualRef === mediaReceipt.visualRef)
+        if (!media || !input.mediaLifecycle) continue
+        await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'platform_rejected_cleanup_pending_manual_recovery_required' })
+        let deleted = false
+        let discardFailed = false
+        if (typeof connector.discardMedia === 'function') {
+          try {
+            const result = await connector.discardMedia(input.context, mediaReceipt, 'publish_rejected', media.idempotencyKey)
+            deleted = result.deleted
+          } catch {
+            discardFailed = true
+          }
+        }
+        if (deleted) await input.mediaLifecycle.transition({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
+        else if (discardFailed) await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'discard_adapter_failed_manual_recovery_required' })
+      }
+    } else {
+      for (const media of input.media ?? []) await input.mediaLifecycle?.transition({ media, state: remoteStatus.found && remoteStatus.state !== 'unknown' ? 'retained' : 'unknown', ...(remoteStatus.found && remoteStatus.state !== 'unknown' ? { reason: 'platform_write_confirmed' } : { reason: 'platform_write_status_unknown' }) })
+    }
     return { receipt, remoteStatus }
+    } catch (error) {
+      for (const media of input.media ?? []) {
+        if (uploaded.some(item => item.visualRef === media.visualRef)) continue
+        if (!input.mediaLifecycle) continue
+        if (!uploadStarted.has(media.idempotencyKey)) continue
+        await input.mediaLifecycle.transition({ media, state: 'unknown', reason: writeStarted ? 'platform_write_may_have_committed' : 'upload_result_unknown' })
+      }
+      for (const mediaReceipt of uploaded) {
+        const media = input.media?.find(item => item.visualRef === mediaReceipt.visualRef)
+        if (!media || !input.mediaLifecycle) continue
+        if (writeStarted) {
+          await input.mediaLifecycle.transition({ media, state: 'unknown', receipt: mediaReceipt, reason: 'platform_write_may_have_committed' })
+          continue
+        }
+        // Fail closed before attempting remote deletion. If the connector
+        // deletes the media but the follow-up lifecycle write fails, retries
+        // must still see an orphaned receipt rather than a reusable upload.
+        await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'prewrite_cleanup_pending_manual_recovery_required' })
+        let deleted = false
+        let discardFailed = false
+        if (typeof connector.discardMedia === 'function') {
+          try {
+            const result = await connector.discardMedia(input.context, mediaReceipt, 'publish_preflight_or_validation_rejected', media.idempotencyKey)
+            deleted = result.deleted
+          } catch {
+            // A failed cleanup call cannot prove deletion. Persist an orphan
+            // record so retries do not reuse the uploaded receipt as healthy.
+            discardFailed = true
+          }
+        }
+        if (deleted) await input.mediaLifecycle.transition({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
+        else if (discardFailed) await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'discard_adapter_failed_manual_recovery_required' })
+      }
+      throw error
+    }
   }
 
   async executeReconcile(input: { platform: Platform; context: ConnectorContext; remoteId?: string; idempotencyKey: string }) {

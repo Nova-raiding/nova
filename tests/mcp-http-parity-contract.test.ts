@@ -27,12 +27,33 @@ function parseOpenApiMcpMethods(source: string): string[] {
   const nextSchemaMatch = source.slice(schemaStart + 1).match(/\n    [A-Z][A-Za-z0-9]+:\s*$/mu)
   const nextSchema = nextSchemaMatch?.index === undefined ? -1 : schemaStart + 1 + nextSchemaMatch.index
   const block = source.slice(schemaStart, nextSchema < 0 ? undefined : nextSchema)
-  const methodMarker = block.match(/\n\s{8}method:\s*\n/u)
+  const lines = block.split('\n')
+  const propertiesIndex = lines.findIndex(line => /^ {6}properties:[ \t]*$/u.test(line))
+  expect(propertiesIndex, 'McpRequest.properties schema is required').toBeGreaterThanOrEqual(0)
+  const propertiesLines: string[] = []
+  for (const line of lines.slice(propertiesIndex + 1)) {
+    if (line.trim() && !/^ {8,}/u.test(line)) break
+    propertiesLines.push(line)
+  }
+  const propertiesBlock = propertiesLines.join('\n')
+  const methodMarker = propertiesBlock.match(/^[ \t]{8}method:[ \t]*(.*)$/mu)
   expect(methodMarker, 'McpRequest.method schema is required').not.toBeNull()
-  const methodOffset = methodMarker!.index! + methodMarker![0].length
-  const enumLines = [...block.slice(methodOffset).matchAll(/^\s{10}enum:\s*\[([^\]]*)\]\s*$/gmu)]
-  expect(enumLines, 'McpRequest.method must have one inline enum').toHaveLength(1)
-  const values = enumLines[0]![1]!.split(',').map(value => value.trim()).filter(Boolean)
+  const methodSchema = methodMarker![1]!.trim()
+  let enumBody = methodSchema.match(/\benum:\s*\[([^\]]*)\]/u)?.[1]
+  if (enumBody === undefined) {
+    const methodOffset = methodMarker!.index! + methodMarker![0].length
+    const afterMethod = propertiesBlock.slice(methodOffset)
+    const nextProperty = afterMethod.search(/^[ \t]{8}[A-Za-z][A-Za-z0-9_]*:[ \t]*/mu)
+    const methodBlock = nextProperty < 0 ? afterMethod : afterMethod.slice(0, nextProperty)
+    const flowEnum = methodBlock.match(/^[ \t]{10}enum:[ \t]*\[([^\]]*)\][ \t]*$/mu)
+    if (flowEnum) enumBody = flowEnum[1]
+    else {
+      const sequenceEnum = methodBlock.match(/^[ \t]{10}enum:[ \t]*\n((?:[ \t]{12}-[ \t]*[^\n]+\n?)+)/mu)
+      if (sequenceEnum) enumBody = [...sequenceEnum[1]!.matchAll(/^[ \t]{12}-[ \t]*['"]?([^,'"\]\s]+)['"]?[ \t]*$/gmu)].map(match => match[1]).join(',')
+    }
+  }
+  expect(enumBody, 'McpRequest.method must declare one enum').toBeDefined()
+  const values = enumBody!.split(',').map(value => value.trim().replace(/^(['"])(.*)\1$/u, '$2')).filter(Boolean)
   expect(values.length, 'McpRequest.method enum must not be empty').toBeGreaterThan(0)
   expect(new Set(values).size, 'McpRequest.method enum contains duplicates').toBe(values.length)
   expect(values.every(value => /^[A-Za-z0-9._-]+$/u.test(value)), 'McpRequest.method enum contains malformed values').toBe(true)
@@ -82,8 +103,31 @@ describe('MCP/HTTP parity contract', () => {
   })
 
   it('fails closed when a parity source is malformed instead of silently accepting a partial set', () => {
-    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [onboarding.status,', 'enum: [onboarding.status, onboarding.status,'))).toThrow()
-    expect(() => parseOpenApiMcpMethods(openApiSource.replace('enum: [onboarding.status,', 'enum: [onboarding.status,'))).not.toThrow()
-    expect(() => parseOpenApiMcpMethods(openApiSource.replace(/\n\s{8}method:\s*\n/u, '\n'))).toThrow()
+    const invalidMethod = openApiSource.replace("'onboarding.status',", "'invalid method!',")
+    expect(invalidMethod).not.toBe(openApiSource)
+    expect(() => parseOpenApiMcpMethods(invalidMethod)).toThrow('McpRequest.method enum contains malformed values')
+    const requestSchemaStart = openApiSource.indexOf('\n    McpRequest:')
+    const methodLineStart = openApiSource.indexOf('\n        method:', requestSchemaStart) + 1
+    const methodLineEnd = openApiSource.indexOf('\n', methodLineStart) + 1
+    const missingMethod = openApiSource.slice(0, methodLineStart) + openApiSource.slice(methodLineEnd)
+    expect(missingMethod).not.toBe(openApiSource)
+    expect(() => parseOpenApiMcpMethods(missingMethod)).toThrow('McpRequest.method schema is required')
+  })
+
+  it('parses a valid block-style method enum as well as the inline OpenAPI form', () => {
+    const blockStyle = `
+    McpRequest:
+      type: object
+      properties:
+        method:
+          type: string
+          enum:
+            - onboarding.status
+            - merchant.start
+    NextSchema:
+      type: object
+`
+    expect(parseOpenApiMcpMethods(blockStyle)).toEqual(['onboarding.status', 'merchant.start'])
+    expect(parseOpenApiMcpMethods(openApiSource)).toContain('merchant.start')
   })
 })

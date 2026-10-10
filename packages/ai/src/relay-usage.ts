@@ -157,9 +157,30 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // metering evidence.
   const result = data && record(data.result) ? data.result : undefined
   const metadata = record(root.metadata) ? root.metadata : undefined
-  const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : result && record(result.usage) ? result.usage : metadata && record(metadata.usage) ? metadata.usage : undefined
+  const usageEnvelopes = [root, data, nestedData, result, metadata].filter(record)
+  // An explicitly present but malformed usage envelope is a provider claim,
+  // not an absent optional envelope. Do not silently discard it when another
+  // supported envelope happens to contain a parseable receipt.
+  const malformedUsageEnvelope = usageEnvelopes.some(node =>
+    Object.prototype.hasOwnProperty.call(node, 'usage') && !record(node.usage))
+  // Validate every explicitly supported usage envelope. Some relays wrap an
+  // upstream response while retaining its original `usage` beside the
+  // normalized top-level usage; choosing only the first object could let a
+  // conflicting nested receipt silently pass settlement.
+  const usageNodes = [root.usage, data?.usage, nestedData?.usage, result?.usage, metadata?.usage].filter(record)
+  const usage = usageNodes[0]
+  const rawInputTokenFields = usageNodes.flatMap(node => [node.prompt_tokens, node.input_tokens, node.inputTokens]).filter(value => value !== undefined)
+  const rawOutputTokenFields = usageNodes.flatMap(node => [node.completion_tokens, node.output_tokens, node.outputTokens]).filter(value => value !== undefined)
+  const rawTotalTokenFields = usageNodes.flatMap(node => [node.total_tokens, node.totalTokens]).filter(value => value !== undefined)
+  const inputTokenAliases = rawInputTokenFields.map(tokenFrom)
+  const outputTokenAliases = rawOutputTokenFields.map(tokenFrom)
+  const totalTokenAliases = rawTotalTokenFields.map(tokenFrom)
+  const tokenAliasesInvalid = (values: Array<number | undefined>) =>
+    values.some(value => value === undefined) || new Set(values).size > 1
+  const inputTokenAliasesInvalid = tokenAliasesInvalid(inputTokenAliases)
+  const outputTokenAliasesInvalid = tokenAliasesInvalid(outputTokenAliases)
+  const totalTokenAliasesInvalid = tokenAliasesInvalid(totalTokenAliases)
   const inputTokens = tokenFrom(usage?.prompt_tokens) ?? tokenFrom(usage?.input_tokens) ?? tokenFrom(usage?.inputTokens)
-  const rawOutputTokenFields = [usage?.completion_tokens, usage?.output_tokens, usage?.outputTokens]
   const reportedOutputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
   const reportedTotal = tokenFrom(usage?.total_tokens) ?? tokenFrom(usage?.totalTokens)
   // Some embedding relays report prompt_tokens and total_tokens but omit the
@@ -177,12 +198,14 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const totalTokens = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && reportedTotal !== inputTokens + outputTokens
     ? undefined
     : reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
+  const tokenTotalMismatch = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && reportedTotal !== inputTokens + outputTokens
+  const tokenEvidenceInvalid = inputTokenAliasesInvalid || outputTokenAliasesInvalid || totalTokenAliasesInvalid || tokenTotalMismatch
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence. Explicit provider
   // cost fields are financial evidence: malformed values or a non-CNY
   // currency must invalidate the receipt instead of being silently ignored
   // and replaced by a derived estimate downstream.
-  const costNodes = [usage, root, data, nestedData, result, metadata].filter((value): value is RecordLike => Boolean(value))
+  const costNodes = [...usageNodes, root, data, nestedData, result, metadata].filter((value): value is RecordLike => Boolean(value))
   const costKeys = ['cost_cny', 'costCny', 'actual_cost_cny', 'actualCostCny'] as const
   const explicitCost = costNodes.flatMap(node => costKeys.filter(key => Object.prototype.hasOwnProperty.call(node, key)).map(key => node[key]))
   const explicitCurrency = costNodes.flatMap(node => ['currency', 'cost_currency', 'costCurrency'].filter(key => Object.prototype.hasOwnProperty.call(node, key)).map(key => node[key]))
@@ -233,18 +256,30 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // `usage.image_count`. New API preserves that upstream usage object in its
   // response metadata. Both are provider-reported metering evidence; neither
   // is inferred from the requested or returned artifact count.
-  const rawOutputImageCount = [
-    usage?.output_image_count,
-    usage?.outputImageCount,
-    usage?.image_count,
-    usage?.imageCount,
+  const rawOutputImageCounts = [
+    ...usageNodes.flatMap(node => [node.output_image_count, node.outputImageCount, node.image_count, node.imageCount]),
     root.output_image_count,
+    root.outputImageCount,
+    root.image_count,
+    root.imageCount,
     data?.output_image_count,
+    data?.outputImageCount,
+    data?.image_count,
+    data?.imageCount,
     result?.output_image_count,
+    result?.outputImageCount,
+    result?.image_count,
+    result?.imageCount,
     metadata?.output_image_count,
-  ].find(value => value !== undefined)
-  const reportedOutputImageCount = rawOutputImageCount === undefined ? undefined : tokenFrom(rawOutputImageCount)
-  const reportedOutputImageCountValid = rawOutputImageCount === undefined || (reportedOutputImageCount !== undefined && reportedOutputImageCount > 0)
+    metadata?.outputImageCount,
+    metadata?.image_count,
+    metadata?.imageCount,
+  ].filter(value => value !== undefined)
+  const parsedOutputImageCounts = rawOutputImageCounts.map(tokenFrom)
+  const imageCountEvidenceInvalid = parsedOutputImageCounts.some(value => value === undefined || value <= 0)
+    || new Set(parsedOutputImageCounts).size > 1
+  const reportedOutputImageCount = parsedOutputImageCounts.find((value): value is number => value !== undefined)
+  const reportedOutputImageCountValid = !imageCountEvidenceInvalid && (rawOutputImageCounts.length === 0 || reportedOutputImageCount !== undefined)
   const observedArtifactCount = defaults.context?.observedArtifactCount
   const observedArtifactCountValid = observedArtifactCount !== undefined && Number.isSafeInteger(observedArtifactCount) && observedArtifactCount >= 0
   const imageArtifactCountMismatch = reportedOutputImageCount !== undefined && observedArtifactCountValid && reportedOutputImageCount !== observedArtifactCount
@@ -252,13 +287,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // responses `output_video_duration`) for the provider-observed duration.
   // Treat these as equivalent provider evidence; they are not the request
   // estimate and must remain distinct from preauthorizationDurationSeconds.
-  const rawProviderDurations = [
-    usage?.duration_seconds,
-    usage?.durationSeconds,
-    usage?.duration,
-    usage?.output_video_duration,
-    usage?.outputVideoDuration,
-  ].filter(value => value !== undefined)
+  const rawProviderDurations = usageNodes.flatMap(node => [node.duration_seconds, node.durationSeconds, node.duration, node.output_video_duration, node.outputVideoDuration]).filter(value => value !== undefined)
   const parsedProviderDurations = rawProviderDurations.map(numberFrom)
   const parsedProviderDurationSeconds = firstNumber(...rawProviderDurations)
   // These aliases describe the same billed duration. A malformed explicit
@@ -290,9 +319,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // job reconcilable even when its usage cannot be settled locally.
   const videoJobId = defaults.modality === 'video' && videoRequestAccepted ? explicitVideoJobIdValue ?? statusBoundVideoIdValue : undefined
   const imageModality = defaults.modality === 'image' || defaults.modality === 'image_edit'
-  const usageObserved = !providerDurationEvidenceInvalid && (imageModality
-    ? rawOutputImageCount !== undefined && reportedOutputImageCountValid && reportedOutputImageCount !== undefined && reportedOutputImageCount > 0
-    : inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined)
+  const usageObserved = !malformedUsageEnvelope && !providerDurationEvidenceInvalid && (imageModality
+    ? rawOutputImageCounts.length > 0 && reportedOutputImageCountValid && reportedOutputImageCount !== undefined
+    : !tokenEvidenceInvalid && (inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined))
   const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
@@ -304,13 +333,19 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     model: defaults.model,
     ...(providerRequestId ? { providerRequestId } : {}),
     ...(defaults.context?.providerAttemptId?.trim() ? { providerAttemptId: defaults.context.providerAttemptId.trim() } : {}),
-    ...(inputTokens !== undefined ? { inputTokens } : {}),
-    ...(outputTokens !== undefined ? { outputTokens } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    // Image receipts may still be settled from independent provider-reported
+    // image units or an actual CNY cost. Do not carry contradictory token
+    // aliases into the sink, where a token-priced model could use them to
+    // derive cost or persist them as accounting evidence.
+    ...(!inputTokenAliasesInvalid && inputTokens !== undefined ? { inputTokens } : {}),
+    ...(!outputTokenAliasesInvalid && outputTokens !== undefined ? { outputTokens } : {}),
+    ...(!totalTokenAliasesInvalid && !tokenTotalMismatch && totalTokens !== undefined ? { totalTokens } : {}),
     ...(costCny !== undefined ? { costCny } : {}),
     observedAt: new Date().toISOString(),
     metadata: {
       usage_observed: usageObserved,
+      ...(malformedUsageEnvelope ? { malformed_usage_envelope: true } : {}),
+      ...(tokenEvidenceInvalid ? { token_evidence_invalid: true } : {}),
       ...(outputTokensDerivedFromEmbeddingTotal ? { output_tokens_derivation: 'embedding_total_equals_prompt_tokens' } : {}),
       ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
       // Persist the relay's durable video job id. When settlement cannot be
@@ -318,7 +353,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
       // call, and without this id the queued (possibly billed) provider job
       // has no reconcilable identity anywhere in the ledger.
       ...(videoJobId ? { provider_job_id: videoJobId } : {}),
-      ...(imageModality && reportedOutputImageCount !== undefined ? { billing_units: reportedOutputImageCount, billing_units_evidence: 'provider_usage' } : {}),
+      ...(imageModality && !imageCountEvidenceInvalid && reportedOutputImageCount !== undefined ? { billing_units: reportedOutputImageCount, billing_units_evidence: 'provider_usage' } : {}),
+      ...(imageModality && imageCountEvidenceInvalid ? { billing_units_evidence_invalid: true } : {}),
       ...(imageModality && observedArtifactCountValid ? { observed_artifact_count: observedArtifactCount } : {}),
       ...(imageModality && imageArtifactCountMismatch ? { artifact_count_mismatch: true } : {}),
       ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),

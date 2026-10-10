@@ -1673,6 +1673,13 @@ export class MerchantService {
       && isUsableAssetWithoutScan(asset, this.options.allowUnscannedAssets)
       && asset.rightsStatus === 'approved'
       && asset.rightsScope !== 'unusable'
+      // Restricted/unknown rights scopes may be stored with an approved review
+      // status, but that status must never grant them to a commercial task or
+      // AI generation snapshot. Explicit usageScopes cannot override this
+      // stronger rights boundary.
+      && asset.rightsScope !== 'internal_only'
+      && asset.rightsScope !== 'limited_use'
+      && asset.rightsScope !== 'unknown'
       && !assetRequiresConfirmedFacts(asset)
       && (!asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(task.platform))
       && (!asset.applicableRegions?.length || Boolean(task.region && asset.applicableRegions.includes(task.region)))
@@ -1692,7 +1699,7 @@ export class MerchantService {
       const asset = this.assets.get(assetId)
       if (!asset || asset.workspaceId !== task.workspaceId) return []
       if (asset.preference?.verdict === 'disliked') throw new DomainError('ASSET_PREFERENCE_BLOCKED', `素材“${asset.name}”已标记为不喜欢，不能进入本次生成快照`, 409, { asset_id: asset.id, reasons: asset.preference.reasons, next_step: '移除该素材，或在素材库修改评价后重新确认制作方案' })
-      if (!assetUsableForTask(asset)) throw new DomainError('ASSET_NOT_READY', `素材“${asset.name}”未通过本次生成所需的权益、事实、平台或用途检查`, 409, { asset_id: asset.id, scan_status: asset.scanStatus, rights_status: asset.rightsStatus, parse_status: asset.parseStatus, facts_confirmed: Boolean(asset.factsConfirmedBy && asset.factsConfirmedAt), applicable_platforms: asset.applicablePlatforms ?? [], usage_scopes: asset.usageScopes ?? [], next_step: '确认权益和素材事实，并调整素材使用范围后重试' })
+      if (!assetUsableForTask(asset)) throw new DomainError('ASSET_NOT_READY', `素材“${asset.name}”未通过本次生成所需的权益、事实、平台或用途检查`, 409, { asset_id: asset.id, scan_status: asset.scanStatus, rights_status: asset.rightsStatus, rights_scope: asset.rightsScope ?? 'unknown', parse_status: asset.parseStatus, facts_confirmed: Boolean(asset.factsConfirmedBy && asset.factsConfirmedAt), applicable_platforms: asset.applicablePlatforms ?? [], usage_scopes: asset.usageScopes ?? [], next_step: '确认权益和素材事实，并调整素材使用范围后重试' })
       return [{ id: asset.id, revision: asset.revision, sha256: asset.sha256, contentTrust: structuredClone(asset.contentTrust ?? untrustedAssetContent()), ...(asset.preference ? { preference: structuredClone(asset.preference) } : {}) }]
     })
     const brandId = typeof task.answers.brand_id === 'string' ? task.answers.brand_id.trim() : ''
@@ -2232,8 +2239,8 @@ export class MerchantService {
     const localKey = input.localProductKey?.trim() || `${input.accountId ?? (input.storeName?.trim() || '导入店铺')}:${title}`
     if (!title || !localKey) throw new DomainError('PRODUCT_IMPORT_INVALID', '导入商品必须包含 title，且 local_product_key 不能为空', 400)
     if (input.price !== undefined && (!Number.isFinite(input.price) || input.price < 0)) throw new DomainError('PRODUCT_IMPORT_PRICE_INVALID', '商品价格必须是非负金额', 400)
-    if (input.stock !== undefined && (!Number.isInteger(input.stock) || input.stock < 0)) throw new DomainError('PRODUCT_IMPORT_STOCK_INVALID', '商品库存必须是非负整数', 400)
-    if (input.skuCount !== undefined && (!Number.isInteger(input.skuCount) || input.skuCount < 0)) throw new DomainError('PRODUCT_IMPORT_SKU_COUNT_INVALID', 'SKU 数量必须是非负整数', 400)
+    if (input.stock !== undefined && (!Number.isSafeInteger(input.stock) || input.stock < 0)) throw new DomainError('PRODUCT_IMPORT_STOCK_INVALID', '商品库存必须是非负整数', 400)
+    if (input.skuCount !== undefined && (!Number.isSafeInteger(input.skuCount) || input.skuCount < 0)) throw new DomainError('PRODUCT_IMPORT_SKU_COUNT_INVALID', 'SKU 数量必须是非负整数', 400)
     const sourceAssetIds = input.sourceAssetIds ? [...new Set(input.sourceAssetIds.map(assetId => assetId.trim()).filter(Boolean))] : undefined
     const allSourceAssetIds = [...(sourceAssetIds ?? []), ...(input.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]
     if (allSourceAssetIds.length) {
@@ -2246,7 +2253,10 @@ export class MerchantService {
     for (const [index, sku] of (input.skus ?? []).entries()) {
       if (!sku.id.trim() || !sku.name.trim()) throw new DomainError('PRODUCT_IMPORT_SKU_INVALID', `SKU ${index + 1} 必须包含 id 和 name`, 400)
       if (!Number.isFinite(sku.price) || sku.price < 0) throw new DomainError('PRODUCT_IMPORT_SKU_PRICE_INVALID', `SKU ${index + 1} 价格必须是非负金额`, 400)
-      if (!Number.isInteger(sku.stock) || sku.stock < 0) throw new DomainError('PRODUCT_IMPORT_SKU_STOCK_INVALID', `SKU ${index + 1} 库存必须是非负整数`, 400)
+      if (!Number.isSafeInteger(sku.stock) || sku.stock < 0) throw new DomainError('PRODUCT_IMPORT_SKU_STOCK_INVALID', `SKU ${index + 1} 库存必须是非负整数`, 400)
+    }
+    if ((input.skus ?? []).length && !Number.isSafeInteger((input.skus ?? []).reduce((total, sku) => total + sku.stock, 0))) {
+      throw new DomainError('PRODUCT_IMPORT_SKU_STOCK_TOTAL_INVALID', 'SKU 库存合计必须是非负安全整数', 400)
     }
     const skuIds = (input.skus ?? []).map(sku => sku.id.trim())
     if (new Set(skuIds).size !== skuIds.length) throw new DomainError('PRODUCT_IMPORT_DUPLICATE_SKU', '同一商品内的 SKU ID 必须唯一', 409)
@@ -2292,11 +2302,13 @@ export class MerchantService {
     }
     if (!next.name) throw new DomainError('SKU_NAME_REQUIRED', 'SKU 名称不能为空', 400)
     if (!Number.isFinite(next.price) || next.price < 0) throw new DomainError('SKU_PRICE_INVALID', 'SKU 价格必须是非负金额', 400)
-    if (!Number.isInteger(next.stock) || next.stock < 0) throw new DomainError('SKU_STOCK_INVALID', 'SKU 库存必须是非负整数', 400)
+    if (!Number.isSafeInteger(next.stock) || next.stock < 0) throw new DomainError('SKU_STOCK_INVALID', 'SKU 库存必须是非负整数', 400)
     skus[index] = next
+    const totalStock = skus.reduce((sum, sku) => sum + sku.stock, 0)
+    if (!Number.isSafeInteger(totalStock)) throw new DomainError('SKU_STOCK_TOTAL_INVALID', 'SKU 库存合计必须是非负安全整数', 400)
     product.skus = skus
     product.skuCount = skus.length
-    product.stock = skus.reduce((sum, sku) => sum + sku.stock, 0)
+    product.stock = totalStock
     if (input.stock !== undefined) product.stockProvided = true
     product.factsConfirmed = false
     product.version = (product.version ?? 0) + 1
@@ -2365,6 +2377,19 @@ export class MerchantService {
     return product
   }
   upsertSyncedProducts(input: { workspaceId: string; platform: Platform; accountId?: string; items: Array<{ remoteId: string; title: string; sku: Array<unknown>; stock: number; source: Product['source']; price?: number; category?: string; images?: string[]; facts?: Record<string, string | number>; listingStatus?: Product['listingStatus']; platformUpdatedAt?: string; rawPlatformFields?: Record<string, unknown>; mappingWarnings?: string[] }> }) {
+    for (const [index, item] of input.items.entries()) {
+      if (!Number.isSafeInteger(item.stock) || item.stock < 0) throw new DomainError('PRODUCT_SYNC_STOCK_INVALID', `同步商品 ${index + 1} 库存必须是非负安全整数`, 400)
+      let skuStockTotal = 0
+      for (const [skuIndex, value] of item.sku.entries()) {
+        const row = value && typeof value === 'object' ? value as Record<string, unknown> : undefined
+        if (row && 'stock' in row && (!Number.isSafeInteger(row.stock) || (row.stock as number) < 0)) {
+          throw new DomainError('PRODUCT_SYNC_SKU_STOCK_INVALID', `同步商品 ${index + 1} 的 SKU ${skuIndex + 1} 库存必须是非负安全整数`, 400)
+        }
+        const stock = row?.stock === undefined ? 0 : row.stock as number
+        skuStockTotal += stock
+        if (!Number.isSafeInteger(skuStockTotal)) throw new DomainError('PRODUCT_SYNC_SKU_STOCK_TOTAL_INVALID', `同步商品 ${index + 1} 的 SKU 库存合计必须是非负安全整数`, 400)
+      }
+    }
     const updated: Product[] = []
     for (const item of input.items) {
       const productId = this.scopedProductId(input.workspaceId, input.platform, item.remoteId, input.accountId)
@@ -2657,6 +2682,9 @@ export class MerchantService {
     }
     const applicableRegions = normalizeList(input.applicableRegions, 'ASSET_REGIONS_INVALID', '素材适用地区')
     const usageScopes = normalizeList(input.usageScopes, 'ASSET_USAGE_SCOPES_INVALID', '素材使用范围')
+    if ((input.rightsScope === 'internal_only' || input.rightsScope === 'limited_use') && usageScopes?.some(scope => scope === 'commercial' || scope === 'ai_generation')) {
+      throw new DomainError('ASSET_RIGHTS_SCOPE_CONFLICT', '内部或受限用途素材不能同时授权通用商用或 AI 生成范围', 400)
+    }
     if ((input.validFrom && !Number.isFinite(Date.parse(input.validFrom))) || (input.validTo && !Number.isFinite(Date.parse(input.validTo)))) throw new DomainError('ASSET_RIGHTS_DATE_INVALID', '素材权益有效期必须是合法日期', 400)
     if (input.validFrom && input.validTo && Date.parse(input.validFrom) > Date.parse(input.validTo)) throw new DomainError('ASSET_RIGHTS_DATE_INVALID', '素材权益开始时间不能晚于结束时间', 400)
     const existing = [...this.assets.values()].find(asset => asset.workspaceId === input.workspaceId && asset.sha256.toLowerCase() === sha256)
@@ -2820,6 +2848,10 @@ export class MerchantService {
     if (nextValidFrom && nextValidTo && Date.parse(nextValidFrom) > Date.parse(nextValidTo)) throw new DomainError('ASSET_RIGHTS_DATE_INVALID', '素材权益开始时间不能晚于结束时间', 400)
     const nextApplicableRegions = input.applicableRegions !== undefined ? [...new Set(input.applicableRegions.map(value => value.trim()).filter(Boolean))] : asset.applicableRegions
     const nextUsageScopes = input.usageScopes !== undefined ? [...new Set(input.usageScopes.map(value => value.trim()).filter(Boolean))] : asset.usageScopes
+    const nextRightsScope = input.rightsScope ?? asset.rightsScope
+    if ((nextRightsScope === 'internal_only' || nextRightsScope === 'limited_use') && nextUsageScopes?.some(scope => scope === 'commercial' || scope === 'ai_generation')) {
+      throw new DomainError('ASSET_RIGHTS_SCOPE_CONFLICT', '内部或受限用途素材不能同时授权通用商用或 AI 生成范围', 400)
+    }
     asset.rightsStatus = input.rightsStatus
     if (input.rightsScope !== undefined) asset.rightsScope = input.rightsScope
     if (input.applicablePlatforms !== undefined) asset.applicablePlatforms = [...input.applicablePlatforms]
@@ -5331,11 +5363,13 @@ export class MerchantService {
 
   confirmPublish(input: { workspaceId: string; taskId: string; batchId?: string; contentVersionId: string; confirmationHash: string; remoteSnapshotHash: string; idempotencyKey: string; accountId?: string; mediaAdapterReady?: boolean; deferCommit?: boolean; authorizationSnapshot?: PublishAuthorizationSnapshot }) {
     const candidateTask = this.mustTask(input.taskId)
+    if (input.accountId && candidateTask.accountId && input.accountId !== candidateTask.accountId) throw new DomainError('PLATFORM_ACCOUNT_SCOPE_MISMATCH', '发布账号与任务账号不一致', 409)
     if (candidateTask.workspaceId === input.workspaceId && candidateTask.candidateOnly) throw new DomainError('CANDIDATE_TASK_NOT_PUBLISHABLE', '候选任务只允许生成、审核和导出，不能发布到平台', 409, { task_id: candidateTask.id, candidate_only: true })
     const existingId = this.idempotency.get(`${input.workspaceId}:${input.idempotencyKey}`)
     if (existingId) {
       const existing = this.publishJobs.get(existingId)!
-      if (existing.taskId !== input.taskId || existing.contentVersionId !== input.contentVersionId || existing.confirmationHash !== input.confirmationHash || existing.remoteSnapshotHash !== input.remoteSnapshotHash) {
+      const requestedAccountId = candidateTask.accountId ?? input.accountId
+      if (existing.workspaceId !== input.workspaceId || existing.platform !== candidateTask.platform || existing.accountId !== requestedAccountId || existing.taskId !== input.taskId || existing.contentVersionId !== input.contentVersionId || existing.confirmationHash !== input.confirmationHash || existing.remoteSnapshotHash !== input.remoteSnapshotHash) {
         throw new DomainError('IDEMPOTENCY_CONFLICT', '幂等键已绑定其他发布意图', 409)
       }
       return existing

@@ -25,8 +25,16 @@ export async function acceptWorkspaceInvitation(input: { workspaceId: string; ac
 export async function listOpsMembers(input: { workspaceId: string; params: Record<string, unknown>; members: MembersRepository; platformOperator: boolean; authorization: AuthorizationProjection; actorSubjects: ReadonlySet<string>; actorIdentityId?: string }) {
   const { params, workspaceId } = input
   const hasPageParams = Object.prototype.hasOwnProperty.call(params, 'offset') || Object.prototype.hasOwnProperty.call(params, 'limit')
-  const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
-  const requestedOffset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Number(params.offset) : 0
+  const parsePageInteger = (key: 'limit' | 'offset', fallback: number): number => {
+    if (!Object.prototype.hasOwnProperty.call(params, key)) return fallback
+    const value = params[key]
+    if (typeof value !== 'string' || !/^\d+$/u.test(value)) {
+      throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是有效整数`, 400)
+    }
+    return Number(value)
+  }
+  const requestedLimit = parsePageInteger('limit', 20)
+  const requestedOffset = parsePageInteger('offset', 0)
   if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
   if (!Number.isSafeInteger(requestedOffset) || requestedOffset < 0 || requestedOffset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
   const memberPage = hasPageParams && input.members.listPage

@@ -59,7 +59,7 @@ export function MerchantWorkspaceBootstrapPage({
         </Typography.Paragraph>
         <form onSubmit={event => void submit(event)} aria-label="首次工作区创建">
           <label htmlFor="merchant-workspace-display-name">企业或工作区名称</label>
-          <Input id="merchant-workspace-display-name" value={displayName} maxLength={120} autoComplete="organization" disabled={busy} onChange={event => { setDisplayName(event.target.value); setError('') }} />
+          <Input id="merchant-workspace-display-name" value={displayName} maxLength={120} autoComplete="organization" autoFocus disabled={busy} onChange={event => { setDisplayName(event.target.value); setError('') }} />
           {error && <Alert role="alert" type="error" showIcon title="工作区尚未创建" description={error} style={{ marginTop: 16 }} />}
           <div className="merchant-login-actions">
             <Button htmlType="submit" type="primary" loading={busy} disabled={busy || !displayName.trim()}>创建工作区</Button>

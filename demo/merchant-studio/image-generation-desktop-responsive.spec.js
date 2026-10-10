@@ -99,7 +99,9 @@ async function installRoutes(page) {
   }))
   await page.route('**/healthz', (route) => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'postgres', ready: true } })),
+    // The generated job and every API response are fixtures. This spec checks
+    // desktop rendering and keyboard/accessibility behavior only.
+    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'fixture', ready: true } })),
   }))
   await page.route('**/v1/image-generation-jobs/*', (route) => route.fulfill({
     contentType: 'application/json',

@@ -1,6 +1,5 @@
 import { Alert, Button } from "antd";
 import { OpsPage } from "../components/OpsPage.js";
-import { OpsPageError } from "../components/OpsPageError.js";
 import { SupportQueueSection } from "../components/support/SupportQueueSection.js";
 import { SupportTicketDetailSection } from "../components/support/SupportTicketDetailSection.js";
 import { SupportSlaReportSection } from "../components/support/SupportSlaReportSection.js";
@@ -19,7 +18,6 @@ export function SupportPage(props: { model: SupportDomainModel; canMutate?: bool
       actions={<Button type="primary" loading={model.loading} onClick={() => void model.reload()}>刷新客服</Button>}
     >
       <div className="ops-support-page">
-        <OpsPageError error={model.error ?? ""} onRetry={() => void model.reload()} />
         <Alert
           type="info"
           showIcon

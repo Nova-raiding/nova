@@ -14,7 +14,10 @@ export interface CatalogBatchImportIdempotencyRepository {
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize)
   if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalize(item)]))
+  // Idempotency hashes must be identical across hosts regardless of their
+  // default ICU locale. Object-key order is a byte-level wire convention here,
+  // so use code-point ordering instead of localeCompare.
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, item]) => [key, canonicalize(item)]))
 }
 export function hashCatalogBatchImportRequest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex')

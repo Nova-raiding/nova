@@ -12,7 +12,7 @@ vi.mock("antd", () => ({
 
 import { AutomationScopeSection } from "./AutomationScopeSection.js";
 
-const stores = [{ label: "演示店铺", platform: "pdd", accountId: "acct-1" }] as any;
+const stores = [{ label: "演示店铺", platform: "pdd", accountId: "acct-1", state: "connected", readable: true }] as any;
 
 describe("AutomationScopeSection", () => {
   it("defaults to a workspace scope and disables selection without queue permission", () => {
@@ -27,5 +27,17 @@ describe("AutomationScopeSection", () => {
     expect(html).toContain("演示店铺（pdd）");
     expect(html).toContain("演示店铺 · pdd");
     expect(html).not.toContain('disabled=""');
+  });
+
+  it("does not offer unreadable or revoked accounts as automation scopes", () => {
+    const html = renderToStaticMarkup(<AutomationScopeSection storeDirectory={[
+      ...stores,
+      { label: "无读取权店铺", platform: "jd", accountId: "hidden", state: "connected", readable: false },
+      { label: "已撤销店铺", platform: "jd", accountId: "revoked", state: "revoked", readable: true },
+    ] as any} selectedAutomationStore={undefined} automationScope="" canQueue={true} onLoadScope={vi.fn(async () => undefined)} />);
+
+    expect(html).toContain("演示店铺 · pdd");
+    expect(html).not.toContain("无读取权店铺");
+    expect(html).not.toContain("已撤销店铺");
   });
 });

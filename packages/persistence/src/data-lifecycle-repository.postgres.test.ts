@@ -49,6 +49,36 @@ describe('PostgresDataLifecycleRepository', () => {
     expect(client.calls[2]?.values).toEqual(['ws_delete', 'delete-1'])
   })
 
+  it('resolves a concurrent idempotency-key winner as a replay', async () => {
+    const client = new RecordingClient()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue({ rows: [row()] })
+    const repository = new PostgresDataLifecycleRepository(new RecordingPool(client))
+
+    const result = await repository.request({ workspaceId: 'ws_delete', scope: 'assets', reason: '删除历史素材', requestedBy: 'owner', gracePeriodDays: 7, idempotencyKey: 'delete-1' })
+
+    expect(result).toMatchObject({ id: 'deletion-1', workspaceId: 'ws_delete' })
+    expect(client.calls[3]?.text).toContain('ON CONFLICT (workspace_id,idempotency_key) DO NOTHING')
+    expect(client.calls[4]?.text).toContain('WHERE workspace_id=$1 AND idempotency_key=$2')
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
+  })
+
+  it('rejects a concurrent idempotency-key winner bound to a different intent', async () => {
+    const client = new RecordingClient()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue({ rows: [row({ reason: '其他删除理由' })] })
+    const repository = new PostgresDataLifecycleRepository(new RecordingPool(client))
+
+    await expect(repository.request({ workspaceId: 'ws_delete', scope: 'assets', reason: '删除历史素材', requestedBy: 'owner', gracePeriodDays: 7, idempotencyKey: 'delete-1' })).rejects.toMatchObject({ code: 'DATA_DELETION_IDEMPOTENCY_CONFLICT' })
+    expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+  })
+
   it('locks approvals and only completes an approved request after the grace period', async () => {
     const client = new RecordingClient()
     client.enqueue()

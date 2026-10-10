@@ -57,6 +57,22 @@ describe('knowledge binding status', () => {
     })
   })
 
+  it('keeps an unusable rights scope blocked even if the other readiness fields claim ready', () => {
+    const result = resolveKnowledgeBindingStatus(asset({
+      rightsStatus: 'approved',
+      rightsScope: 'unusable',
+      factsConfirmedBy: 'merchant-1',
+      factsConfirmedAt: '2026-09-01T00:01:00Z',
+      readiness: { status: 'ready', reasons: [] },
+    }))
+
+    expect(result).toMatchObject({
+      rightsStatus: 'unknown',
+      ready: false,
+      reasons: ['先确认商用权益'],
+    })
+  })
+
   it('keeps missing bindings blocked and aggregates the strictest state', () => {
     const ready = asset({
       rightsStatus: 'approved',

@@ -183,6 +183,16 @@ describe("UserDirectorySection directory behavior", () => {
     expect(canWriteLoadedIdentity(state({ canUserGovernance: false }))).toBe(false);
   });
 
+  it("labels identity risk controls and presents risk levels in the operator's language", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('<label htmlFor="identity-risk-level">风险级别</label>');
+    expect(source).toContain('aria-label="风险级别"');
+    expect(source).toContain('<label htmlFor="identity-risk-decision">处理方式</label>');
+    expect(source).toContain('aria-label="处理方式"');
+    expect(source).toContain('{ value: "critical", label: "严重" }');
+    expect(source).not.toContain('{ value: "critical" }');
+  });
+
   it("keeps the wide directory table inside a horizontal scroll surface on mobile", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('scroll={{ x: "max-content" }}');

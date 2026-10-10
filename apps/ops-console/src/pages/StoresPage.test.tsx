@@ -22,7 +22,11 @@ const model = (overrides: Partial<OpsConsoleModel> = {}) => ({
   automationPolicy: undefined,
   automationScan: undefined,
   canQueue: true,
+  automationScope: "",
+  selectedAutomationStore: undefined,
   setAutomationPolicy: vi.fn(),
+  updateAutomationSync: vi.fn(),
+  loadAutomationScope: vi.fn(async () => undefined),
   scanAutomation: vi.fn(async () => undefined),
   updateAutomation: vi.fn(async () => undefined),
   load: vi.fn(async () => undefined),
@@ -89,6 +93,8 @@ describe("StoresPage", () => {
       storeDirectory: [store],
       automationPolicies: [policy],
       automationPolicy: policy,
+      automationScope: "jd:store-real-1",
+      selectedAutomationStore: store,
       automationScan: {
         counts: { products: 12, publishJobs: 2, risks: 1 },
         risks: [{ kind: "authorization", message: "授权即将过期", product_id: "product-1" }],
@@ -102,6 +108,9 @@ describe("StoresPage", () => {
     expect(markup).toContain("品牌治理聚合");
     expect(markup).toContain("京东真实店铺");
     expect(markup).toContain("已配置的店铺自动化策略");
+    expect(markup).toContain("自动化运营作用域");
+    expect(markup).toContain("自动商品同步");
+    expect(markup).toContain("保存同步策略");
     expect(markup).toContain("assisted");
     expect(markup).toContain("店铺优化建议");
     expect(markup).toContain("更新店铺授权");

@@ -176,6 +176,7 @@ describe("ops header logout failure feedback", () => {
             // ?workbench=workspace: a platform-scoped session whose active
             // workbench is the merchant one, so both notification surfaces show.
             const withAlerts = new URLSearchParams(window.location.search).get('alerts') === '1';
+            const unauthenticated = new URLSearchParams(window.location.search).get('unauth') === '1';
             const alert = {
               id: 'alert-1', code: 'PUBLISH_STALLED', severity: 'high', platform: 'taobao',
               entityType: 'publish_batch', entityId: 'batch_1', title: '发布批次卡住',
@@ -186,8 +187,8 @@ describe("ops header logout failure feedback", () => {
               return React.createElement(App, null,
                 React.createElement(OpsHeader, {
                   managedSession: false,
-                  sessionLoaded: true,
-                  session,
+                  sessionLoaded: !unauthenticated,
+                  session: unauthenticated ? undefined : session,
                   onRefresh: () => setRefreshed(true),
                   ...(withAlerts ? {
                     authorization: createAuthorizationProjection(session, false),
@@ -233,6 +234,27 @@ describe("ops header logout failure feedback", () => {
     await page.getByRole("button", { name: "打开账号信息", exact: true }).click();
     await page.getByRole("button", { name: /退出登录/u }).waitFor();
   }
+
+  it("labels a rejected platform login as a login failure", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.route("**/v1/auth/login", route => route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "账号或密码错误" } }),
+      }));
+      await page.goto(`${baseUrl}/__ops-header-test?unauth=1`);
+      await page.getByRole("button", { name: "平台运营账号登录", exact: true }).first().click();
+      const dialog = page.getByRole("dialog", { name: "平台运营账号登录" });
+      await dialog.getByLabel("平台运营账号").fill("ops@example.com");
+      await dialog.getByLabel("密码").fill("wrong-password");
+      await page.locator(".ant-modal-footer .ant-btn-primary").click();
+      const alert = dialog.getByRole("alert");
+      await alert.waitFor();
+      await expect.poll(() => alert.innerText()).toContain("平台运营账号登录失败");
+      expect(await alert.innerText()).not.toContain("退出");
+    } finally { await page.close(); }
+  }, 45_000);
 
   it("reports a rejected logout in the open account panel instead of dropping it", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });

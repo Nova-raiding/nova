@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
-import { runDeletionDecisionOnce } from "./DataReadinessSection.js";
+import { dataDeletionQueueReadState, runDeletionDecisionOnce } from "./DataReadinessSection.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -11,6 +11,15 @@ function deferred<T>() {
 }
 
 describe("DataReadinessSection deletion decision modal", () => {
+  it("distinguishes denied, platform-scoped, unread, failed and genuinely empty queues", () => {
+    expect(dataDeletionQueueReadState({ canRead: false, scopeKind: "platform" })).toBe("platform_scope");
+    expect(dataDeletionQueueReadState({ canRead: false, scopeKind: "workspace" })).toBe("denied");
+    expect(dataDeletionQueueReadState({ canRead: true, scopeKind: "workspace" })).toBe("unread");
+    expect(dataDeletionQueueReadState({ canRead: true, scopeKind: "workspace", error: "API 失败" })).toBe("error");
+    expect(dataDeletionQueueReadState({ canRead: true, scopeKind: "workspace", requests: [] })).toBe("empty");
+    expect(dataDeletionQueueReadState({ canRead: true, scopeKind: "workspace", requests: [{ id: "d1" } as never] })).toBe("ready");
+  });
+
   it(
     "closes and resets immediately after a successful cancellation",
     async () => {

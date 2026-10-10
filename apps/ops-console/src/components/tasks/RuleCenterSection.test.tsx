@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import JSZip from "jszip";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRule, parseMarkdownDraftInputs, readRuleMarkdownDocuments, ruleTrustLabel, uploadMarkdownDrafts } from "./RuleCenterSection";
+import { RuleCenterSection, canActivateOfficialPlatformRule, isTrustedPlatformRule, isValidApprovalTimestamp, parseMarkdownDraftInputs, readRuleMarkdownDocuments, ruleTrustLabel, uploadMarkdownDrafts } from "./RuleCenterSection";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Platform, Rule } from "../../types/ops";
 
@@ -318,6 +318,14 @@ describe("rule activation approval transport", () => {
     expect(source).toContain("必须与令牌绑定的审批人一致");
     expect(source).toContain("审批证明来自审批人令牌");
     expect(source).not.toContain("请输入不同于当前操作者的审批人 ID");
+  });
+
+  it("rejects malformed approval timestamps before submitting audit metadata", () => {
+    expect(isValidApprovalTimestamp("2026-08-29T08:00:00.000Z")).toBe(true);
+    expect(isValidApprovalTimestamp("2026-99-99T08:00:00.000Z")).toBe(false);
+    expect(isValidApprovalTimestamp("2026-08-29Tnot-a-time")).toBe(false);
+    expect(isValidApprovalTimestamp("approval time")).toBe(false);
+    expect(source).toContain('validator: (_, value: unknown) => isValidApprovalTimestamp(value)');
   });
 
   it("sends the token as an OpsRpcOptions header, never as an rpc param", () => {

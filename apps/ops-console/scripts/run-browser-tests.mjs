@@ -3,6 +3,14 @@ import { fileURLToPath } from "node:url";
 
 const vitest = fileURLToPath(new URL("../../../node_modules/vitest/vitest.mjs", import.meta.url));
 const files = [
+  "src/pages/OverviewPage.browser.test.tsx",
+  "src/navigation/OpsNavigation.browser.test.tsx",
+  "src/components/OpsPageError.browser.test.tsx",
+  "src/components/support/SupportQueueSection.row-interaction.browser.test.tsx",
+  "src/components/commercial/CommercialRefundOperationsPanel.browser.test.tsx",
+  "src/components/commercial/PointAdjustmentPanel.browser.test.tsx",
+  "src/pages/OpsConsoleController.identity-route.browser.test.tsx",
+  "src/components/finance/RefundSection.validation.browser.test.tsx",
   "src/components/OpsHeader.test.tsx",
   "src/components/delivery/CustomerDeliveryTrainingToggle.test.tsx",
   "src/components/delivery/CustomerDeliveryUpload.test.tsx",

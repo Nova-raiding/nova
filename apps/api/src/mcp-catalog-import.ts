@@ -21,7 +21,21 @@ export async function handleCatalogImport(workspaceId: string, params: Params, d
 
       const platform = required(params, 'platform') as Platform
       const draftOnly = params.draft_only === 'true'
-      const numeric = (key: string) => typeof params[key] === 'string' && params[key]!.trim() ? Number(params[key]) : undefined
+      const numeric = (key: string) => {
+        const raw = params[key]
+        if (raw === undefined) return undefined
+        if (raw === '') return undefined
+        if (typeof raw !== 'string' || !raw.trim()) {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是有效数字`, 400, { field: key })
+        }
+        const value = Number(raw)
+        if (!Number.isFinite(value)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是有效数字`, 400, { field: key })
+        if (key === 'price' && value < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'price 必须是非负金额', 400, { field: key })
+        if ((key === 'stock' || key === 'sku_count') && (!Number.isSafeInteger(value) || value < 0)) {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是非负安全整数`, 400, { field: key })
+        }
+        return value
+      }
       const images = typeof params.images === 'string' && params.images.trim() ? params.images.split(',').map(item => item.trim()).filter(Boolean) : undefined
       let sourceAssetIds: string[] | undefined
       if (typeof params.asset_ids_json === 'string' && params.asset_ids_json.trim()) {

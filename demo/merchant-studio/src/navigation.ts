@@ -115,7 +115,7 @@ export function focusMainAfterMerchantNavigation(
 }
 
 const platforms = new Set<MerchantPlatformId>(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'])
-const merchantRoutePattern = /\/merchant\/(?:overview|products|finance|members|tasks(?:\/new|\/[^/?#]+)?|publish|rules)\/?$/u
+const merchantRoutePattern = /\/merchant(?:\/(?:overview|products|finance|members|tasks(?:\/new|\/[^/?#]+)?|publish|rules))?\/?$/u
 
 function platformFromQuery(value: string | null): MerchantPlatformId | undefined {
   return value && platforms.has(value as MerchantPlatformId) ? value as MerchantPlatformId : undefined
@@ -259,16 +259,32 @@ export function urlForMerchantCatalogSearch(
   })
 }
 
-/** Open a store as a durable catalog deep link and discard stale product/search scope. */
+/** Open a store as a durable catalog deep link; preserve only an explicitly active search. */
 export function urlForMerchantCatalogStore(
   location: Pick<Location, 'hash' | 'pathname' | 'search'>,
   store: { platform: MerchantPlatformId; accountId: string },
+  searchQuery = '',
 ): string {
   const route = merchantRouteFromLocation(location)
   return urlForMerchantRoute(location, {
     page: 'products',
     entry: route.page === 'products' ? route.entry : 'products',
+    searchQuery,
     catalogContext: { platform: store.platform, accountId: store.accountId },
+  })
+}
+
+/** Open a product inside its verified store scope and keep that selection shareable. */
+export function urlForMerchantCatalogProduct(
+  location: Pick<Location, 'hash' | 'pathname' | 'search'>,
+  product: { platform: MerchantPlatformId; accountId: string; productId: string },
+): string {
+  const route = merchantRouteFromLocation(location)
+  return urlForMerchantRoute(location, {
+    page: 'products',
+    entry: route.page === 'products' ? route.entry : 'products',
+    searchQuery: route.searchQuery,
+    catalogContext: product,
   })
 }
 

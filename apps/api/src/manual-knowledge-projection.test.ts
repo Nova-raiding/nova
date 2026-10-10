@@ -56,6 +56,29 @@ describe('manual draft sparse knowledge projection', () => {
     if (stock === '0' || stock === '5') expect(document!.extractedText).toContain(`商品库存：${stock}`)
     else expect(document!.extractedText).not.toContain('库存')
   })
+  it.each([
+    ['price', 'not-a-number'],
+    ['sku_count', '1e999'],
+    ['stock', ' '],
+    ['price', '-0.01'],
+    ['stock', '-1'],
+    ['sku_count', '1.5'],
+    ['stock', '9007199254740992'],
+  ])('rejects invalid numeric %s before creating a product', async (field, value) => {
+    let importCalls = 0
+    const deps = {
+      service: { importProduct: () => { importCalls += 1; return structuredClone(product) } },
+      supportedPlatforms: ['taobao'], isProduction: () => false,
+      knowledgeRepository: new MemoryKnowledgeRepository(),
+      required: (params: Record<string, unknown>, key: string) => String(params[key]),
+      scanImportedProductRules: async () => undefined,
+      persistSnapshot: async () => undefined,
+    } as unknown as CatalogImportDependencies
+
+    await expect(handleCatalogImport('ws', { platform: 'taobao', title: '蓝袋QA', [field]: value }, deps))
+      .rejects.toMatchObject({ code: 'INVALID_REQUEST', details: { field } })
+    expect(importCalls).toBe(0)
+  })
   it('does not create knowledge for an ordinary import', async () => {
     const repository = new MemoryKnowledgeRepository()
     await handleCatalogImport('ws', { platform: 'taobao', title: '蓝袋QA' }, {

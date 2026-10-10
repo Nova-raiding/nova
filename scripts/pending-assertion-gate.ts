@@ -47,6 +47,7 @@ export interface PendingReport {
   numFailedTests: number
   numPendingTests: number
   numTodoTests: number
+  filtered?: boolean
   testResults: PendingReportFileResult[]
 }
 
@@ -59,34 +60,65 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
  * while `it.todo` uses `mode: 'todo'`. Only those two are silent: neither turns
  * the run red, which is exactly the hole this gate closes.
  */
-export function collectFileAssertions(task: unknown, collected: { status: string }[] = []): { status: string }[] {
+export function collectFileAssertions(
+  task: unknown,
+  collected: { status: string }[] = [],
+  namePattern?: RegExp,
+  suiteNames: string[] = [],
+): { status: string }[] {
   if (!object(task)) return collected
   if (task.type === 'test') {
+    const fullName = [...suiteNames, typeof task.name === 'string' ? task.name : ''].filter(Boolean).join(' ')
+    if (namePattern && !namePattern.test(fullName)) return collected
     const state = object(task.result) && typeof task.result.state === 'string' ? task.result.state : undefined
     collected.push({ status: task.mode === 'todo' ? 'todo' : task.mode === 'skip' ? 'pending' : state === 'fail' ? 'failed' : 'passed' })
     return collected
   }
   const tasks = Array.isArray(task.tasks) ? task.tasks : []
-  for (const child of tasks) collectFileAssertions(child, collected)
+  const names = task.type === 'suite' && typeof task.name === 'string' ? [...suiteNames, task.name] : suiteNames
+  for (const child of tasks) collectFileAssertions(child, collected, namePattern, names)
   return collected
 }
 
+/** Parse Vitest's name filter so filtered-out leaves do not look like skips to the gate. */
+export function testNamePatternFromArgs(args: readonly string[]): RegExp | undefined {
+  let source: string | undefined
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if (argument === '-t' || argument === '--testNamePattern') {
+      source = args[index + 1]
+      if (source === undefined || source.startsWith('-')) throw new Error('Invalid Vitest testNamePattern')
+      index += 1
+    } else if (argument.startsWith('--testNamePattern=')) {
+      source = argument.slice('--testNamePattern='.length)
+      if (!source) throw new Error('Invalid Vitest testNamePattern')
+    }
+  }
+  if (source === undefined) return undefined
+  try {
+    return new RegExp(source)
+  } catch {
+    throw new Error('Invalid Vitest testNamePattern')
+  }
+}
+
 /** Vitest's `TestModule[]` in the same JSON-report shape the isolated launchers validate. */
-export function buildPendingReport(modules: ReadonlyArray<TestModule>): PendingReport {
+export function buildPendingReport(modules: ReadonlyArray<TestModule>, namePattern?: RegExp): PendingReport {
   const testResults: PendingReportFileResult[] = modules.map(module => {
     // Vitest 4's TestModule nests the file suite under `task`; `tasks` on the
     // module itself is empty and would silently report zero assertions.
     const file = module as unknown as { filepath?: string; moduleId?: string; task?: unknown }
     const name = file.filepath ?? file.moduleId ?? '<unknown>'
     const assertionResults: { status: string }[] = []
-    collectFileAssertions(file.task, assertionResults)
+    collectFileAssertions(file.task, assertionResults, namePattern)
+    if (namePattern && assertionResults.length === 0) return null
     const statuses = new Set(assertionResults.map(assertion => assertion.status))
     return {
       name,
       status: statuses.has('failed') ? 'failed' : 'passed',
       assertionResults,
     }
-  })
+  }).filter((result): result is PendingReportFileResult => result !== null)
   const statuses = testResults.flatMap(result => result.assertionResults.map(assertion => assertion.status))
   const count = (status: string) => statuses.filter(value => value === status).length
   return {
@@ -98,6 +130,7 @@ export function buildPendingReport(modules: ReadonlyArray<TestModule>): PendingR
     // isolated launchers assert on `numPendingTests === 0`, so keep parity.
     numPendingTests: statuses.filter(status => status === 'pending' || status === 'skipped').length,
     numTodoTests: count('todo'),
+    ...(namePattern ? { filtered: true } : {}),
     testResults,
   }
 }
@@ -156,6 +189,7 @@ export function validatePendingReport(
   // `success` is deliberately not re-checked: a failed assertion already fails
   // the run that produced the report. This gate owns only the silent signal.
   const errors: string[] = []
+  const filteredRun = value.filtered === true
   if ((value.numTodoTests ?? 0) !== 0) errors.push(PENDING_GATE_ERROR_CODES.todo)
 
   let observedTotal = 0
@@ -194,6 +228,7 @@ export function validatePendingReport(
   // pending assertion at all while the binding it names is missing. See the
   // function comment for why an absent file and a present binding are excluded.
   for (const allowance of allowances) {
+    if (filteredRun) break
     if (!collectedFiles.has(allowance.file)) continue
     if ((observedPending.get(allowance.file) ?? 0) !== 0) continue
     if (bindingProvided(environment, allowance.binding)) continue
@@ -246,7 +281,8 @@ export function formatPendingGateFailure(errors: readonly string[]): string {
 export default class PendingAssertionGateReporter {
   onTestRunEnd(testModules: ReadonlyArray<TestModule>): void {
     const root = process.cwd()
-    const report = buildPendingReport(testModules)
+    const namePattern = testNamePatternFromArgs(process.argv)
+    const report = buildPendingReport(testModules, namePattern)
     const errors = validatePendingReport(report, root)
     if (errors.length === 0) {
       const withPending = report.testResults.filter(file => file.assertionResults.some(assertion => assertion.status === 'pending'))

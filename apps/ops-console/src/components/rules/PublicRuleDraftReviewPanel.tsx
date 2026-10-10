@@ -183,6 +183,10 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
   };
 
   const selectedRules = items.filter(item => selectedIds.includes(item.id));
+  const detailColumns: ColumnsType<ReviewRule> = [...columns, {
+    title: "操作",
+    render: (_: unknown, item: ReviewRule) => <Button type="link" aria-label={`查看${item.name}审核详情`} onClick={event => { event.stopPropagation(); void openDetail(item); }}>查看详情</Button>,
+  }];
   const approveBatch = async () => {
     if (!canApprove || !selectedRules.length || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !approvedAt.trim() || !approvalToken.trim()) return;
     setBusy(true); setError("");
@@ -200,7 +204,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
     {!canWrite && <Alert type="info" showIcon title="只读审核视图" description="当前身份只有规则读取权限；审批、激活或拒绝需要 rule.update，激活还需要 rule.publish.approve 和服务端签发的规则审批凭证。" style={{ marginBottom: 16 }} />}
     <Space wrap style={{ marginBottom: 12 }}><Select aria-label="按平台筛选公共规则草稿" allowClear disabled={busy} placeholder="全部平台" value={platform || undefined} onChange={value => setPlatform((value ?? "") as Platform | "")} options={platforms.map(value => ({ value, label: platformLabels[value] }))} style={{ minWidth: 180 }} /><Button onClick={() => void load(pageCursors[pageIndex], pageIndex)} loading={loading}>刷新草稿</Button>{canApprove && <Button type="primary" disabled={!selectedRules.length || busy} onClick={() => setBatchApprovalOpen(true)}>一键审批选中（{selectedRules.length}）</Button>}</Space>
     {error && <Alert type="error" showIcon title="公共规则审核操作失败" description={error} style={{ marginBottom: 12 }} />}
-    {items.length ? <Table rowKey="id" size="small" dataSource={items} rowSelection={canApprove ? { selectedRowKeys: selectedIds, onChange: keys => setSelectedIds(keys.map(String)) } : undefined} columns={columns} pagination={false} scroll={{ x: 900 }} onRow={item => ({ onClick: () => void openDetail(item), style: { cursor: "pointer" } })} /> : !loading ? <Empty description="当前筛选范围内没有待审核公共规则草稿" /> : null}
+    {items.length ? <Table rowKey="id" size="small" dataSource={items} rowSelection={canApprove ? { selectedRowKeys: selectedIds, onChange: keys => setSelectedIds(keys.map(String)) } : undefined} columns={detailColumns} pagination={false} scroll={{ x: 1000 }} onRow={item => ({ onClick: () => void openDetail(item), style: { cursor: "pointer" } })} /> : !loading ? <Empty description="当前筛选范围内没有待审核公共规则草稿" /> : null}
     {(pageIndex > 0 || nextCursor) && <Space align="center" style={{ marginTop: 12 }}>
       <Button aria-label="上一页公共规则草稿" disabled={pageIndex === 0 || loading} onClick={() => void load(pageCursors[pageIndex - 1], pageIndex - 1)}>上一页</Button>
       <Typography.Text aria-live="polite">第 {pageIndex + 1} 页</Typography.Text>

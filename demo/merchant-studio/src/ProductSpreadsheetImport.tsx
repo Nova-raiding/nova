@@ -87,6 +87,7 @@ export function ProductSpreadsheetImport({
   const [asset, setAsset] = useState<AssetMetadata | null>(null)
   const [products, setProducts] = useState<SpreadsheetProduct[]>([])
   const [importedIds, setImportedIds] = useState<string[]>([])
+  const [unconfirmedIds, setUnconfirmedIds] = useState<string[]>([])
   const errorRef = useRef<HTMLDivElement>(null)
   const runRef = useRef(0)
 
@@ -98,7 +99,7 @@ export function ProductSpreadsheetImport({
 
   const reset = () => {
     runRef.current += 1
-    setAsset(null); setProducts([]); setImportedIds([]); setError(''); setPhase('')
+    setAsset(null); setProducts([]); setImportedIds([]); setUnconfirmedIds([]); setError(''); setPhase('')
   }
 
   const inspect = async (assetId: string, run: number) => {
@@ -132,7 +133,7 @@ export function ProductSpreadsheetImport({
       return
     }
     const run = ++runRef.current
-    setBusy(true); setError(''); setAsset(null); setProducts([]); setImportedIds([]); setPhase('正在上传表格…')
+    setBusy(true); setError(''); setAsset(null); setProducts([]); setImportedIds([]); setUnconfirmedIds([]); setPhase('正在上传表格…')
     try {
       const uploaded = await uploadAsset(baseUrl, new File([await file.arrayBuffer()], file.name, { type: spreadsheetMime(file.name) }))
       setAsset(uploaded)
@@ -164,12 +165,33 @@ export function ProductSpreadsheetImport({
       if (!ids.length) throw new Error('服务端未返回商品编号，未显示为成功。')
       setPhase('正在确认商品事实，准备进入内容生产…')
       const confirmations = await Promise.allSettled(ids.map((id) => confirmProductFacts(baseUrl, id)))
-      const failed = confirmations.filter((item) => item.status === 'rejected').length
+      const failedIds = ids.filter((_, index) => confirmations[index]?.status === 'rejected')
       if (run !== runRef.current) return
       setImportedIds(ids)
-      setPhase(failed ? `已创建 ${ids.length} 个商品，但有 ${failed} 个商品事实仍需重试确认。` : mode === 'draft_only' ? `已创建 ${ids.length} 个草稿商品；不可同步或发布。` : `已导入并确认 ${ids.length} 个真实店铺商品。`)
+      setUnconfirmedIds(failedIds)
+      setPhase(failedIds.length ? `已创建 ${ids.length} 个商品；${failedIds.length} 个商品事实尚未确认，请重试确认。` : mode === 'draft_only' ? `已创建 ${ids.length} 个草稿商品；不可同步或发布。` : `已导入并确认 ${ids.length} 个真实店铺商品。`)
     } catch (cause) {
       if (run === runRef.current) setError(cause instanceof Error ? cause.message : '导入失败')
+    } finally {
+      if (run === runRef.current) setBusy(false)
+    }
+  }
+
+  const retryConfirmations = async () => {
+    if (!baseUrl || !unconfirmedIds.length || busy) return
+    const ids = [...unconfirmedIds]
+    const run = ++runRef.current
+    setBusy(true); setError(''); setPhase(`正在重试确认 ${ids.length} 个商品事实…`)
+    try {
+      const confirmations = await Promise.allSettled(ids.map((id) => confirmProductFacts(baseUrl, id)))
+      if (run !== runRef.current) return
+      const failedIds = ids.filter((_, index) => confirmations[index]?.status === 'rejected')
+      setUnconfirmedIds(failedIds)
+      setPhase(failedIds.length
+        ? `${failedIds.length} 个商品事实仍未确认，可继续重试；不会重复创建商品。`
+        : '所有商品事实均已确认，可以继续审核商品。')
+    } catch (cause) {
+      if (run === runRef.current) setError(cause instanceof Error ? cause.message : '重试确认失败')
     } finally {
       if (run === runRef.current) setBusy(false)
     }
@@ -192,6 +214,7 @@ export function ProductSpreadsheetImport({
       {error && <div ref={errorRef} id="merchant-spreadsheet-import-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive"><b>无法导入</b><span>{error}</span></div>}
       {phase && <div className="info-notice" role="status" aria-live="polite">{phase}</div>}
       {!!rows.length && <><div className="import-preview-summary"><b>预览：{products.length} 个商品，{rows.length} 个 SKU / 商品记录</b><span>{mode === 'draft_only' ? '草稿模式：不会写入任何平台店铺' : '真实店铺模式：按表格中的店铺账号绑定'}</span></div><div className="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>品牌</th><th>材质</th><th>规格</th><th>待确认卖点数</th><th>店铺账号</th><th>价格（元）</th><th>库存</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><td>{row.title}</td><td>{row.sku}</td><td>{row.brand}</td><td>{row.material}</td><td>{row.specification}</td><td>{row.sellingPointCount}</td><td>{row.storeLabel}</td><td>{row.price}</td><td>{row.stock}</td></tr>)}</tbody></table></div><button className="primary" type="button" onClick={() => void commit()} disabled={busy || !!importedIds.length || !canWrite}>{importedIds.length ? '已提交' : mode === 'draft_only' ? '确认并创建草稿' : '确认并导入真实店铺'}</button></>}
+      {!!unconfirmedIds.length && <button className="secondary" type="button" onClick={() => void retryConfirmations()} disabled={busy || !canWrite}>重试确认 {unconfirmedIds.length} 个商品事实</button>}
       {!!importedIds.length && <p className="source-note">商品编号：{importedIds.join('、')}。请在商品目录中继续审核事实、知识权益和索引状态。</p>}
     </div>
   </section>

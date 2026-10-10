@@ -274,11 +274,13 @@ export async function uploadMaterialFiles(input: {
   upload: (file: File, signal?: AbortSignal) => Promise<AssetMetadata>
   labels: { category: StoreMaterialCategory; series: StoreMaterialSeries }
   previewUrlFor?: (file: File) => string | undefined
+  onProgress?: (progress: { completed: number; total: number; accepted: number; failed: number }) => void
   signal?: AbortSignal
 }): Promise<MaterialUploadOutcome> {
   const accepted: StoreMaterialItem[] = []
   const acceptedFiles: File[] = []
   const failures: string[] = []
+  let completed = 0
   for (const file of input.files) {
     if (input.signal?.aborted) break
     try {
@@ -303,6 +305,8 @@ export async function uploadMaterialFiles(input: {
     } catch (cause) {
       failures.push(`${file.name}：${describeApiError(cause)}`)
     }
+    completed += 1
+    input.onProgress?.({ completed, total: input.files.length, accepted: accepted.length, failed: failures.length })
   }
   return { accepted, acceptedFiles, failures }
 }

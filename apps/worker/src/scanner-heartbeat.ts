@@ -39,24 +39,34 @@ export class ScannerHeartbeatController {
   private inFlight?: Promise<ScannerHeartbeat>
   private lastEicar?: ScannerHeartbeat['eicar']
   private latestHeartbeat?: ScannerHeartbeat
+  private stopped = false
 
   constructor(private readonly options: ScannerHeartbeatControllerOptions) {}
 
   async tick(): Promise<ScannerHeartbeat> {
+    if (this.stopped) throw Object.assign(new Error('scanner heartbeat controller is stopped'), { code: 'SCANNER_HEARTBEAT_STOPPED' })
     if (this.inFlight) return this.inFlight
     this.inFlight = this.probe().finally(() => { this.inFlight = undefined })
     return this.inFlight
   }
 
   async start(): Promise<ScannerHeartbeat> {
+    this.stopped = false
     const first = await this.tick()
-    this.timer = setInterval(() => { void this.tick().catch(() => undefined) }, this.options.intervalMs)
-    this.timer.unref?.()
+    // stop() may run while the initial probe is pending. In that case the
+    // caller still receives its probe result, but startup must not resurrect a
+    // timer after stop has removed the readiness marker and Redis heartbeat.
+    if (!this.stopped && !this.timer) {
+      this.timer = setInterval(() => { void this.tick().catch(() => undefined) }, this.options.intervalMs)
+      this.timer.unref?.()
+    }
     return first
   }
 
   async stop(): Promise<void> {
+    this.stopped = true
     if (this.timer) clearInterval(this.timer)
+    this.timer = undefined
     await this.inFlight?.catch(() => undefined)
     await unlink(this.options.readyFile).catch(() => undefined)
     await this.options.redis.remove(this.options.instanceId).catch(() => undefined)
@@ -74,7 +84,7 @@ export class ScannerHeartbeatController {
     // processing a real outbox event can produce the first accepted callback.
     // This admits execution, NOT readiness or asset promotion. The API still
     // verifies the signed receipt and real event/object binding before release.
-    if (!heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || heartbeat.failure) return false
+    if (this.stopped || !heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || heartbeat.failure) return false
     const now = this.options.now?.() ?? new Date()
     const eicarAt = heartbeat.eicar.checkedAt ? Date.parse(heartbeat.eicar.checkedAt) : Number.NaN
     if (!Number.isFinite(eicarAt) || eicarAt > now.getTime() || now.getTime() - eicarAt > this.options.thresholds.eicarMaxAgeSeconds * 1000) return false
@@ -134,21 +144,28 @@ export class ScannerHeartbeatController {
     try {
       await this.options.redis.publish(heartbeat, this.options.thresholds.ttlSeconds)
     } catch (error) {
+      this.latestHeartbeat = undefined
       await unlink(this.options.readyFile).catch(() => undefined)
       throw error
     }
-    this.latestHeartbeat = heartbeat
     // `recoveryCapable` - not `ready` - decides whether the marker exists: a
     // scanner that cannot accept a new callback yet must still be able to
     // recover, and `state` tells the probes which of the two it is. The marker
     // is written here and nowhere else, so a probe can never observe a
     // different shape from a second writer racing this one.
-    if (heartbeat.recoveryCapable) {
-      const document = (this.options.formatReadyDocument ?? defaultReadyDocument)(heartbeat, now)
-      await writeFile(this.options.readyFile, JSON.stringify(document))
-    } else {
+    try {
+      if (heartbeat.recoveryCapable) {
+        const document = (this.options.formatReadyDocument ?? defaultReadyDocument)(heartbeat, now)
+        await writeFile(this.options.readyFile, JSON.stringify(document))
+      } else {
+        await unlink(this.options.readyFile).catch(() => undefined)
+      }
+    } catch (error) {
+      this.latestHeartbeat = undefined
       await unlink(this.options.readyFile).catch(() => undefined)
+      throw error
     }
+    this.latestHeartbeat = heartbeat
     this.options.onHeartbeat?.(heartbeat)
     return heartbeat
   }

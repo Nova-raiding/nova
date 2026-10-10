@@ -47,13 +47,29 @@ export function campaignActionRecoveryCopy(action: CampaignAction | undefined) {
 export function CampaignLifecycleControl({ canControl }: { canControl: boolean }) {
   const [campaignId, setCampaignId] = useState(''); const [campaign, setCampaign] = useState<CampaignControlSnapshot>(); const [loading, setLoading] = useState(false); const [error, setError] = useState('')
   const [action, setAction] = useState<CampaignAction>(); const [reason, setReason] = useState(''); const [confirmed, setConfirmed] = useState(false); const [selected, setSelected] = useState<string[]>([]); const [submitting, setSubmitting] = useState(false)
+  const lastActionIntent = useRef<{ fingerprint: string; idempotencyKey: string } | undefined>(undefined)
   const regionRef = useRef<HTMLDivElement>(null); const errorRef = useRef<HTMLDivElement>(null); const actionErrorRef = useRef<HTMLDivElement>(null)
   const failed = campaign?.items.filter(item => item.state === 'failed') ?? []
   const load = async (id = campaignId.trim()) => { if (!id) return; setLoading(true); setError(''); try { setCampaign(parseCampaignControlSnapshot(await rpc('campaign.batch.get', { campaign_id: id }))) } catch (cause) { setCampaign(undefined); setError(describeOpsError(cause)) } finally { setLoading(false) } }
   useEffect(() => { if (!loading && (campaign || error)) window.requestAnimationFrame(() => (error ? (action ? actionErrorRef.current : errorRef.current) : regionRef.current)?.focus()) }, [action, campaign, error, loading])
   const open = (next: CampaignAction) => { setAction(next); setReason(''); setConfirmed(false); setError(''); setSelected(failed.map(item => item.id)) }
   const close = () => { if (!submitting) { setAction(undefined); setReason(''); setConfirmed(false); setError('') } }
-  const submit = async () => { if (!campaign || !action) return; setSubmitting(true); setError(''); try { const params = campaignActionParams({ campaign, action, reason, itemIds: selected, idempotencyKey: `ops:${action}:${campaign.id}:${crypto.randomUUID()}` }); setCampaign(parseCampaignControlSnapshot(await rpc(`campaign.batch.${action}`, params))); close() } catch (cause) { setError(describeOpsError(cause)) } finally { setSubmitting(false) } }
+  const submit = async () => {
+    if (!campaign || !action) return
+    setSubmitting(true); setError('')
+    try {
+      const fingerprint = JSON.stringify([campaign.id, campaign.revision, action, reason.trim(), action === 'retry_failed' ? [...selected].sort() : []])
+      const idempotencyKey = lastActionIntent.current?.fingerprint === fingerprint
+        ? lastActionIntent.current.idempotencyKey
+        : `ops:${action}:${campaign.id}:${crypto.randomUUID()}`
+      const params = campaignActionParams({ campaign, action, reason, itemIds: selected, idempotencyKey })
+      lastActionIntent.current = { fingerprint, idempotencyKey }
+      setCampaign(parseCampaignControlSnapshot(await rpc(`campaign.batch.${action}`, params)))
+      lastActionIntent.current = undefined
+      close()
+    } catch (cause) { setError(describeOpsError(cause)) }
+    finally { setSubmitting(false) }
+  }
   return <Card className="ops-campaign-control" size="small" title="Campaign 生命周期控制" extra={<Tag color="blue">revision fail-closed</Tag>}>
     <Typography.Paragraph type="secondary">输入真实 Campaign ID 后读取服务端状态。暂停、恢复和失败项重试均提交当前 expected revision、原因和独立幂等键。</Typography.Paragraph>
     <Space.Compact block><Input aria-label="Campaign ID" value={campaignId} disabled={loading || submitting} placeholder="campaign_batch_…" onChange={event => setCampaignId(event.target.value)}/><Button type="primary" loading={loading} disabled={!campaignId.trim()} onClick={() => void load()}>读取真实状态</Button></Space.Compact>

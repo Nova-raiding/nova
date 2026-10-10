@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, domainHydrationPermissions, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedGrantedCapabilities, accessDeniedReasonCode, domainHydrationPermissions, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
@@ -140,6 +140,17 @@ describe("desktop loading feedback", () => {
 });
 
 describe("access denied evidence", () => {
+  it("reports granted capabilities only when the server projection was returned", () => {
+    expect(accessDeniedGrantedCapabilities(createAuthorizationProjection({
+      actor_id: "operator-1", workspace_id: "platform", roles: [], workspace_granted: true, capabilities: [],
+    }, true))).toEqual([]);
+    expect(accessDeniedGrantedCapabilities(createAuthorizationProjection(undefined, true))).toBeUndefined();
+    expect(accessDeniedGrantedCapabilities(createAuthorizationProjection({
+      actor_id: "operator-1", workspace_id: "platform", roles: [], workspace_granted: true,
+      capabilities: ["z.read", "a.read"],
+    }, true))).toEqual(["a.read", "z.read"]);
+  });
+
   it("prefers the server decision reason over the transport error code", () => {
     expect(accessDeniedReasonCode({ code: "FORBIDDEN", details: { reason_code: "SCOPE_MISMATCH" } })).toBe("SCOPE_MISMATCH");
     expect(accessDeniedReasonCode({ code: "HTTP_403", details: {} })).toBe("HTTP_403");

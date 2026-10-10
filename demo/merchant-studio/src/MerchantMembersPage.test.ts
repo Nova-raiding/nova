@@ -56,8 +56,13 @@ describe('merchant members scope and governance', () => {
   })
 
   it('clears the previous workspace success notice when switching workspaces', () => {
-    const switchHandler = membersPageSource.match(/onChange=\{\(event\) => \{ const next = event\.target\.value;([\s\S]*?)setSelectedWorkspaceId\(next\) \}\}/)?.[1] ?? ''
+    const switchHandler = membersPageSource.match(/onChange=\{\(event\) => \{ const next = event\.target\.value;([\s\S]*?)setLocalWorkspaceId\(next\) \}\}/)?.[1] ?? ''
     expect(switchHandler).toContain("setNotice('')")
     expect(switchHandler).toContain('setPage(null)')
+  })
+
+  it('uses the parent workbench workspace for mutations after a global workspace switch', () => {
+    expect(membersPageSource).toContain('selectedWorkspaceRef.current = selectedWorkspaceId')
+    expect(membersPageSource).toContain("useEffect(() => {\n    setAction(null)\n    setNotice('')\n  }, [selectedWorkspaceId])")
   })
 })

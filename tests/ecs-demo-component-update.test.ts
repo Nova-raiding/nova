@@ -274,8 +274,11 @@ describe('Demo UI mixed-component publication identity', () => {
     reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
     expect(() => prepare(input)).toThrow(/source digest differs/)
   })
-  it('strictly reproduces the deployed 270-row migration chain with actual logical Migration.name values', async () => {
-    const rows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
+  it('preserves the archived 270-row baseline and rejects the current 272-row source chain', async () => {
+    const sourceRows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
+    const rows = sourceRows.slice(0, 270)
+    expect(sourceRows).toHaveLength(272)
+    expect(sourceRows.at(-1)).toMatchObject({ version: 272, name: 'publish_media_orphan_outbox' })
     expect(rows).toHaveLength(270)
     expect(rows[99]?.name).toBe('operation_alert_notifications')
     const chain = hash(canonicalJson(rows))
@@ -285,6 +288,9 @@ describe('Demo UI mixed-component publication identity', () => {
     input.target_migrations = structuredClone(rows)
     reseal(input, (_compose, manifest) => { manifest.migration_chain_sha256 = chain })
     expect(JSON.parse(prepare(input).manifest_text).migration_chain_sha256).toBe(chain)
+
+    input.target_migrations = sourceRows
+    expect(() => prepare(input)).toThrow(/complete 270-row chain/)
   })
   it.each(['100_operation_alert_notifications.sql', '../operation_alert_notifications', 'operation-alert-notifications'])('rejects invalid logical migration name %s', name => {
     const input = fixture()

@@ -11,6 +11,7 @@ import { ALL_POSTGRES_TEST_FILES } from '../vitest.postgres.config.js'
 import {
   buildPendingReport,
   normalizeReportPath,
+  testNamePatternFromArgs,
   unobservedAllowances,
   validatePendingReport,
 } from '../scripts/pending-assertion-gate.js'
@@ -167,6 +168,41 @@ describe('default suite pending-assertion gate', () => {
     expect(report.numPendingTests).toBe(1)
     expect(report.numTodoTests).toBe(1)
     expect(report.testResults[0]?.name).toBe(`${root}/tests/module.test.ts`)
+  })
+
+  it('filters Vitest name patterns against full suite names while retaining selected skip and todo failures', () => {
+    const module = {
+      filepath: `${root}/tests/module.test.ts`,
+      task: {
+        type: 'suite', name: 'outer suite', tasks: [
+          { type: 'suite', name: 'selected group', tasks: [
+            { type: 'test', name: 'target passes', mode: 'run', result: { state: 'pass' } },
+            { type: 'test', name: 'target skipped', mode: 'skip' },
+            { type: 'test', name: 'target todo', mode: 'todo' },
+          ] },
+          { type: 'suite', name: 'other group', tasks: [
+            { type: 'test', name: 'unrelated skipped', mode: 'skip' },
+          ] },
+        ],
+      },
+    }
+    const report = buildPendingReport([module] as never, /selected group/u)
+    expect(report.numTotalTests).toBe(3)
+    expect(report.numPassedTests).toBe(1)
+    expect(report.numPendingTests).toBe(1)
+    expect(report.numTodoTests).toBe(1)
+    expect(report.filtered).toBe(true)
+    expect(validatePendingReport(report, root, [])).toContain('DEFAULT_SUITE_TODO_ASSERTIONS')
+    const skippedOnly = buildPendingReport([module] as never, /target skipped/u)
+    expect(validatePendingReport(skippedOnly, root, [])).toContain('DEFAULT_SUITE_UNEXPECTED_PENDING_ASSERTIONS:tests/module.test.ts (1)')
+  })
+
+  it('parses the supported Vitest name-filter argument forms and rejects malformed patterns', () => {
+    expect(testNamePatternFromArgs(['-t', 'target'])?.test('target case')).toBe(true)
+    expect(testNamePatternFromArgs(['--testNamePattern', 'target'])?.test('target case')).toBe(true)
+    expect(testNamePatternFromArgs(['--testNamePattern=target'])?.test('target case')).toBe(true)
+    expect(() => testNamePatternFromArgs(['-t', '['])).toThrow('Invalid Vitest testNamePattern')
+    expect(testNamePatternFromArgs([])).toBeUndefined()
   })
 
   it('keeps every allowance unique, reasoned, and outside the isolated manifest', () => {

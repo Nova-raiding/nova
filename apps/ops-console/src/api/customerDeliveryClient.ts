@@ -6,7 +6,7 @@ export interface CustomerDeliveryClient {
   bindAccount(input: { targetWorkspaceId: string; deliveryId: string; targetAccountId: string; expectedRevision: number; reason: string }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   uploadAsset(input: CustomerDeliveryAssetUploadInput, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
   getAsset(input: { targetWorkspaceId: string; deliveryId: string; purpose: CustomerDeliveryAssetPurpose; assetRef: string }, signal?: AbortSignal): Promise<CustomerDeliveryAsset>;
-  list(input: { targetWorkspaceId: string; offset?: number; limit?: number; query?: string; projectOwner?: string; supportOwner?: string }, signal?: AbortSignal): Promise<CustomerDeliveryPage | null>;
+  list(input: { targetWorkspaceId: string; offset?: number; limit?: number; query?: string; projectOwner?: string; supportOwner?: string; archivedOnly?: boolean }, signal?: AbortSignal): Promise<CustomerDeliveryPage | null>;
   get(targetWorkspaceId: string, deliveryId: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   create(targetWorkspaceId: string, companyName: string, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
   update(input: { targetWorkspaceId: string; deliveryId: string; patch: Record<string, unknown>; expectedRevision: number }, signal?: AbortSignal): Promise<CustomerDeliveryRecord>;
@@ -280,6 +280,10 @@ export function parseCustomerDeliveryList(value: unknown): CustomerDeliveryPage 
       ...(text(row.effectiveAt ?? row.effective_at) ? { goLiveAt: (row.effectiveAt ?? row.effective_at) as string } : {}),
       ...(Array.isArray(row.videoUrls) ? { videoUrls: row.videoUrls.filter(text) } : {}),
       ...(typeof row.revision === "number" ? { revision: row.revision } : {}),
+      ...(row.archivedAt === null || row.archived_at === null ? { archivedAt: null }
+        : text(row.archivedAt ?? row.archived_at) ? { archivedAt: String(row.archivedAt ?? row.archived_at) } : {}),
+      ...(text(row.archivedByActorId ?? row.archived_by_actor_id) ? { archivedByActorId: String(row.archivedByActorId ?? row.archived_by_actor_id) }
+        : row.archivedByActorId === null || row.archived_by_actor_id === null ? { archivedByActorId: null } : {}),
       ...(text(row.createdAt ?? row.created_at) ? { createdAt: String(row.createdAt ?? row.created_at) } : {}),
       ...(text(row.createdByActorId ?? row.created_by_actor_id) ? { createdByActorId: String(row.createdByActorId ?? row.created_by_actor_id) } : {}),
       ...(text(row.updatedByActorId ?? row.updated_by_actor_id) ? { updatedByActorId: String(row.updatedByActorId ?? row.updated_by_actor_id) } : {}),
@@ -376,6 +380,7 @@ export const customerDeliveryClient: CustomerDeliveryClient = {
       ...(input.query?.trim() ? { query: input.query.trim() } : {}),
       ...(input.projectOwner?.trim() ? { project_owner: input.projectOwner.trim() } : {}),
       ...(input.supportOwner?.trim() ? { support_owner: input.supportOwner.trim() } : {}),
+      ...(input.archivedOnly ? { archived_only: "true" } : {}),
       offset: String(offset), limit: String(limit) }, { signal });
     return value === null ? null : parseCustomerDeliveryList(value);
   },

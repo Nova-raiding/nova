@@ -117,6 +117,12 @@ export const UNINVOKED_SCRIPTS: readonly UninvokedScript[] = [
     requires: 'A running Ops Console candidate with operator credentials and an isolated customer workspace',
     reason: 'Exercises the operator-only rule-upload flow against a prepared Ops Console runtime. It needs authenticated browser access and writable isolated workspace data, so it remains a named manual browser entrypoint rather than running in the hermetic default suite.',
   },
+  {
+    script: 'test:browser:merchant:overview-journeys',
+    category: 'local-dev',
+    requires: 'A local Playwright and Chromium installation plus an available loopback port for the Vite fixture',
+    reason: 'This isolated overview journey runner is kept as a focused diagnostic. Its two browser specs already run through the merchant candidate suite, so including this extra fixture in test:browser:all would repeat the same scenarios instead of adding coverage.',
+  },
 ]
 
 const TEXT_FILE = /\.(?:ts|tsx|mts|cts|js|mjs|cjs|jsx|json|ya?ml|md|sh|bash)$/u

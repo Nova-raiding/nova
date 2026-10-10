@@ -48,6 +48,31 @@ describe('asynchronous video actual usage settlement', () => {
     expect(f.sink).not.toHaveBeenCalled()
     expect(f.calls).toEqual(['GET', 'GET'])
   })
+  it.each([
+    { usage: { duration_seconds: 4, cost_cny: 0.5, actual_cost_cny: 0.7 } },
+    { usage: { duration_seconds: 4, cost_cny: 'unknown' } },
+    { usage: { duration_seconds: 4, cost_cny: 0.5, currency: 'USD' } },
+  ])('does not let prior settlement hide invalid or conflicting provider cost: %j', async metering => {
+    const f = fixture()
+    f.setStatus({ id: 'job-a', status: 'completed', video_url: 'https://cdn.example/a.mp4', ...metering })
+    await expect(f.generator.getStatus('job-a', {
+      ...usageContext, providerJobId: 'job-a', providerRequestId: 'generation-a', model: 'video-model', settlementVerified: true,
+    })).resolves.toEqual({ status: 'queued', providerJobId: 'job-a', settlementStatus: 'pending_receipt' })
+    expect(f.sink).not.toHaveBeenCalled()
+    expect(f.calls).toEqual(['GET'])
+  })
+  it.each([
+    { usage: 'bad' },
+    { usage: [] },
+  ])('does not let prior settlement hide a malformed explicit usage field: %j', async metering => {
+    const f = fixture()
+    f.setStatus({ id: 'job-a', status: 'completed', video_url: 'https://cdn.example/a.mp4', ...metering })
+    await expect(f.generator.getStatus('job-a', {
+      ...usageContext, providerJobId: 'job-a', providerRequestId: 'generation-a', model: 'video-model', settlementVerified: true,
+    })).resolves.toEqual({ status: 'queued', providerJobId: 'job-a', settlementStatus: 'pending_receipt' })
+    expect(f.sink).not.toHaveBeenCalled()
+    expect(f.calls).toEqual(['GET'])
+  })
   it('retains provider-success semantics if accepted-job persistence fails', async () => {
     const f = fixture()
     await expect(f.generator.generate({ prompt: 'test', output: 'rendering', context: {}, usageContext, onAccepted: async () => { throw new Error('durability unavailable') } })).rejects.toMatchObject({ providerSucceeded: true, reconciliationRequired: true, providerJobId: 'job-a' })

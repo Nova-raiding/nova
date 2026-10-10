@@ -23,3 +23,19 @@ export function resolveProductAssetRelation(product: Product, assets: AssetMetad
     missingAssetIds: boundIds.filter(id => !assetById.has(id)),
   }
 }
+
+/** A product's active bindings become generation sources, so every binding must
+ * still be present, scan-clean, and rights-approved before continuing. */
+export function productAssetGenerationBlockers(relation: ProductAssetRelation): string[] {
+  const blockers: string[] = []
+  if (relation.missingAssetIds.length > 0) {
+    blockers.push('部分已绑定素材未返回详情；重新读取关系后再继续。')
+  }
+  if (relation.matchedAssets.some(asset => asset.scanStatus !== 'clean')) {
+    blockers.push('已绑定素材尚未通过安全扫描；完成扫描或解除绑定后再继续。')
+  }
+  if (relation.matchedAssets.some(asset => asset.rightsStatus !== 'approved')) {
+    blockers.push('已绑定素材尚未通过权益审核；完成审核或解除绑定后再继续。')
+  }
+  return blockers
+}

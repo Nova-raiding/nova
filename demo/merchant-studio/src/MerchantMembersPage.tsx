@@ -52,6 +52,10 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   const [localWorkspaceId, setLocalWorkspaceId] = useState(account.workspaceIds.length === 1 ? account.workspaceIds[0] ?? '' : '')
   const selectedWorkspaceId = activeWorkspaceId ?? localWorkspaceId
   const selectedWorkspaceRef = useRef(selectedWorkspaceId)
+  // Keep mutations scoped to the currently selected workspace when the parent
+  // workbench changes it. This ref is also read by async handlers that can
+  // outlive the render that created them.
+  selectedWorkspaceRef.current = selectedWorkspaceId
   const requestGate = useRef(new MemberRequestGate())
   const [session, setSession] = useState<MemberSession | null>(null)
   const [page, setPage] = useState<MemberPage | null>(null)
@@ -99,6 +103,10 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
     }
   }, [account, baseUrl, selectedWorkspaceId])
 
+  useEffect(() => {
+    setAction(null)
+    setNotice('')
+  }, [selectedWorkspaceId])
   useEffect(() => { void load(); return () => requestGate.current.invalidate() }, [load])
   const workspaceId = session ? memberSessionScope(session, account, selectedWorkspaceId) : null
   const assignableRoles = (session?.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && role in roleLabels)

@@ -1,6 +1,7 @@
 import { Button, Card, Input, Select, Space } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { platformLabels, platforms } from "../../types/ops";
+import { updatePlatformFilter } from "./platformFilter.js";
 
 interface AlertFiltersSectionProps {
   model: OpsConsoleModel;
@@ -26,7 +27,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
           style={{ width: 150 }}
           value={alertFilters.platform}
           onChange={(value) =>
-            setAlertFilters((current) => ({ ...current, platform: value }))
+            setAlertFilters((current) => updatePlatformFilter(current, value, storeDirectory))
           }
           options={platforms.map((platform) => ({
             value: platform,
@@ -42,7 +43,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
           onChange={(value) =>
             setAlertFilters((current) => ({ ...current, accountId: value }))
           }
-          options={storeDirectory.map((store) => ({
+          options={storeDirectory.filter((store) => !alertFilters.platform || store.platform === alertFilters.platform).map((store) => ({
             value: store.accountId,
             label: `${store.label} · ${platformLabels[store.platform]}`,
           }))}

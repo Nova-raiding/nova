@@ -1414,6 +1414,8 @@ describe('MerchantService', () => {
     const second = service.confirmPublish(input)
     expect(second.id).toBe(first.id)
     expect(service.publishJobs.size).toBe(1)
+    expect(() => service.confirmPublish({ ...input, accountId: 'acct_other' }))
+      .toThrowError(expect.objectContaining({ code: 'PLATFORM_ACCOUNT_SCOPE_MISMATCH' }))
   })
 
   it('can defer publish state mutation until durable persistence commits', () => {
@@ -1891,6 +1893,39 @@ describe('MerchantService', () => {
     expect(() => service.confirmProductionPlan('ws_asset_scope', task.id, 'merchant')).toThrowError(expect.objectContaining({ code: 'ASSET_NOT_READY' }))
   })
 
+  it('never lets an internal-only rights scope enter an AI generation snapshot', () => {
+    const service = new MerchantService({ fixtureMode: true, seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_asset_internal', platform: 'taobao', title: '内部素材边界', price: 199, stock: 1 })
+    const asset = service.registerAsset({ workspaceId: 'ws_asset_internal', name: 'internal-only.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'f'.repeat(64), storageKey: 'quarantine/ws_asset_internal/internal-only.png', rightsStatus: 'approved', rightsScope: 'internal_only', applicablePlatforms: ['taobao'], usageScopes: ['internal_only'] })
+    // Simulate a legacy row that predates registration-time scope validation.
+    asset.usageScopes = ['commercial', 'ai_generation']
+    markTrustedClean(asset)
+    const task = service.createTask({ workspaceId: 'ws_asset_internal', productId: product.id, platform: 'taobao' })
+    service.answerTask('ws_asset_internal', task.id, { asset_ids: [asset.id], confirm_facts: true })
+    service.selectDirection(task.id, 'A')
+    expect(() => service.confirmProductionPlan('ws_asset_internal', task.id, 'merchant')).toThrowError(expect.objectContaining({
+      code: 'ASSET_NOT_READY',
+      details: expect.objectContaining({ rights_scope: 'internal_only' }),
+    }))
+    expect(() => service.updateAssetRights({ workspaceId: 'ws_asset_internal', assetId: asset.id, rightsStatus: 'approved', rightsScope: 'internal_only', usageScopes: ['ai_generation'] })).toThrowError(expect.objectContaining({ code: 'ASSET_RIGHTS_SCOPE_CONFLICT' }))
+  })
+
+  it('keeps limited-use assets out of general generation and rejects conflicting broad scopes', () => {
+    const service = new MerchantService({ fixtureMode: true, seedFixture: false })
+    expect(() => service.registerAsset({ workspaceId: 'ws_asset_limited', name: 'contradictory.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'd'.repeat(64), storageKey: 'quarantine/ws_asset_limited/contradictory.png', rightsScope: 'limited_use', usageScopes: ['commercial', 'ai_generation'] })).toThrowError(expect.objectContaining({ code: 'ASSET_RIGHTS_SCOPE_CONFLICT' }))
+    const product = service.importProduct({ workspaceId: 'ws_asset_limited', platform: 'taobao', title: '受限素材边界', price: 199, stock: 1 })
+    const asset = service.registerAsset({ workspaceId: 'ws_asset_limited', name: 'limited-use.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'e'.repeat(64), storageKey: 'quarantine/ws_asset_limited/limited-use.png', rightsStatus: 'approved', rightsScope: 'limited_use', applicablePlatforms: ['taobao'], usageScopes: ['limited_use'] })
+    markTrustedClean(asset)
+    const task = service.createTask({ workspaceId: 'ws_asset_limited', productId: product.id, platform: 'taobao' })
+    service.answerTask('ws_asset_limited', task.id, { asset_ids: [asset.id], confirm_facts: true })
+    service.selectDirection(task.id, 'A')
+    expect(() => service.confirmProductionPlan('ws_asset_limited', task.id, 'merchant')).toThrowError(expect.objectContaining({
+      code: 'ASSET_NOT_READY',
+      details: expect.objectContaining({ rights_scope: 'limited_use' }),
+    }))
+    expect(() => service.updateAssetRights({ workspaceId: 'ws_asset_limited', assetId: asset.id, rightsStatus: 'approved', rightsScope: 'limited_use', usageScopes: ['commercial', 'ai_generation'] })).toThrowError(expect.objectContaining({ code: 'ASSET_RIGHTS_SCOPE_CONFLICT' }))
+  })
+
   it('blocks unconfirmed document facts at the application boundary and releases after merchant confirmation', () => {
     const service = new MerchantService({ fixtureMode: true, seedFixture: false })
     const product = service.importProduct({ workspaceId: 'ws_asset_facts', platform: 'taobao', title: '事实外套', price: 199, stock: 1 })
@@ -2056,6 +2091,24 @@ describe('MerchantService', () => {
     const productUpdated = service.updateProductFacts({ workspaceId: 'ws_sku', productId: imported.id, title: '雾蓝防晒外套', category: '女装/外套', images: ['fixture://hero.jpg', 'fixture://detail.jpg'], attributes: { material: '锦纶' }, expectedVersion: updated.version })
     expect(productUpdated).toMatchObject({ title: '雾蓝防晒外套', category: '女装/外套', factsConfirmed: false, images: ['fixture://hero.jpg', 'fixture://detail.jpg'], attributes: { material: '锦纶' } })
     expect(() => service.updateProductSku({ workspaceId: 'ws_other', productId: imported.id, skuId: 'sku-blue-m', stock: 1 })).toThrowError(expect.objectContaining({ code: 'PRODUCT_NOT_FOUND' }))
+  })
+
+  it('rejects unsafe stock and SKU counts before product import writes', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const overflow = Number.MAX_SAFE_INTEGER + 1
+    expect(() => service.importProduct({ workspaceId: 'ws_safe_stock', platform: 'jd', title: '超限商品库存', stock: overflow })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_STOCK_INVALID' }))
+    expect(() => service.importProduct({ workspaceId: 'ws_safe_stock', platform: 'jd', title: '超限SKU数量', skuCount: overflow })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_SKU_COUNT_INVALID' }))
+    expect(() => service.importProduct({ workspaceId: 'ws_safe_stock', platform: 'jd', title: '超限SKU库存', skus: [{ id: 'overflow', name: '超限', price: 1, stock: overflow }] })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_SKU_STOCK_INVALID' }))
+    const accepted = service.importProduct({ workspaceId: 'ws_safe_stock', platform: 'jd', title: '边界有效库存', stock: Number.MAX_SAFE_INTEGER, skus: [{ id: 'valid', name: '有效边界', price: 1, stock: Number.MAX_SAFE_INTEGER }] })
+    expect(accepted.stock).toBe(Number.MAX_SAFE_INTEGER)
+    expect(service.products.size).toBe(1)
+  })
+
+  it('rejects unsafe SKU stock updates without changing the product', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const imported = service.importProduct({ workspaceId: 'ws_safe_sku_update', platform: 'jd', title: 'SKU库存更新', stock: 3, skus: [{ id: 'sku-one', name: '一号', price: 1, stock: 3 }] })
+    expect(() => service.updateProductSku({ workspaceId: 'ws_safe_sku_update', productId: imported.id, skuId: 'sku-one', stock: Number.MAX_SAFE_INTEGER + 1 })).toThrowError(expect.objectContaining({ code: 'SKU_STOCK_INVALID' }))
+    expect(service.products.get(imported.id)).toMatchObject({ stock: 3, version: imported.version, skus: [{ id: 'sku-one', stock: 3 }] })
   })
 
   it('records task-scoped feedback and enforces version and workspace boundaries', () => {

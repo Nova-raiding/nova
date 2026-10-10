@@ -68,6 +68,7 @@ export * from './creative-point-lifecycle-repository.js'
 export * from "./customer-delivery-repository.js"
 export * from './job-queue-metrics-repository.js'
 export * from './local-plugin-install-instance-repository.js'
+export * from './publish-media-orphan-repository.js'
 
 export * from './commercial-benefit-bundle-repository.js'
 export * from './commercial-receipt-repository.js'

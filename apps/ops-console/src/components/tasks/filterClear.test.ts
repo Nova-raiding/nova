@@ -5,10 +5,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
 import { AlertFiltersSection, clearAlertFilters } from "./AlertFiltersSection.js";
 import { clearMarketingQueueFilters, MarketingQueueFiltersSection } from "./MarketingQueueFiltersSection.js";
+import { updatePlatformFilter } from "./platformFilter.js";
 
 const marketingQueueFiltersSource = readFileSync(new URL("./MarketingQueueFiltersSection.tsx", import.meta.url), "utf8");
 
 describe("Ops filter clearing", () => {
+  it("clears an incompatible shop when switching platform and preserves a matching shop", () => {
+    const stores: Array<{ accountId: string; platform: "jd" | "taobao" }> = [
+      { accountId: "jd-store", platform: "jd" },
+      { accountId: "taobao-store", platform: "taobao" },
+    ];
+    const current: { platform?: "jd" | "taobao"; accountId?: string; state: string } = { platform: "jd", accountId: "jd-store", state: "failed" };
+
+    expect(updatePlatformFilter<"jd" | "taobao", typeof current>(current, "taobao", stores))
+      .toEqual({ platform: "taobao", accountId: undefined, state: "failed" });
+    expect(updatePlatformFilter<"jd" | "taobao", typeof current>(current, "jd", stores))
+      .toEqual({ platform: "jd", accountId: "jd-store", state: "failed" });
+    expect(updatePlatformFilter<"jd" | "taobao", typeof current>(current, undefined, stores))
+      .toEqual({ platform: undefined, accountId: "jd-store", state: "failed" });
+  });
+
   it("gives every task filter control an accessible name", () => {
     const model = {
       alertFilters: {}, queueFilters: {}, storeDirectory: [],

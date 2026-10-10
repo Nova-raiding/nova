@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const playwright = resolve(root, 'node_modules/.bin/playwright')
 const specs = [
+  'demo/merchant-studio/material-library-search.browser.spec.js',
   'demo/merchant-studio/material-library-preview.browser.spec.js',
   'demo/merchant-studio/brand-upload-retry.browser.spec.js',
   'demo/merchant-studio/material-library-preview-forbidden.browser.spec.js',

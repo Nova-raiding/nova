@@ -34,6 +34,7 @@ describe("ops console model read state", () => {
 
     expect(model.knowledgeRules).toBeUndefined();
     expect(model.knowledgeAssets).toBeUndefined();
+    expect(model.deletionRequests).toBeUndefined();
     expect(model.learningSuggestions).toBeUndefined();
     expect(model.competitors).toBeUndefined();
   });

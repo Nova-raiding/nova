@@ -29,6 +29,21 @@ class RecordingPool implements SqlPool {
 }
 
 describe("PostgresSubscriptionRepository", () => {
+  it("orders tied subscription timestamps by id for a stable bounded result", async () => {
+    const client = new RecordingClient();
+    client.enqueue();
+    client.enqueue();
+    client.enqueue([]);
+
+    await new PostgresSubscriptionRepository(new RecordingPool(client)).listOrders(
+      "ws_subscription",
+      25,
+    );
+
+    expect(client.calls.find((call) => call.includes("FROM workspace_subscription_orders")))
+      .toMatch(/ORDER BY created_at DESC,id DESC LIMIT \$2/u);
+  });
+
   it("rejects unsafe or channel-mismatched checkout URLs before SQL and gates fixture URLs", async () => {
     const client = new RecordingClient();
     const base = { workspaceId: "ws_subscription", planCode: "starter", planName: "Starter", billingCycle: "monthly" as const, priceCny: 99, includedStores: 2, includedTasks: 100, idempotencyKey: "checkout-url", paymentUrl: "alipays://platformapi/startapp?appId=123" };
@@ -182,6 +197,37 @@ describe("PostgresSubscriptionRepository", () => {
 });
 
 describe("MemorySubscriptionRepository", () => {
+  it("breaks tied order timestamps by id", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T00:00:00.000Z"));
+    try {
+      const repository = new MemorySubscriptionRepository();
+      const base = {
+        workspaceId: "ws_subscription_ties",
+        planCode: "starter",
+        planName: "Starter",
+        billingCycle: "monthly" as const,
+        priceCny: 99,
+        includedStores: 2,
+        includedTasks: 100,
+        paymentProvider: "pending_provider",
+      };
+      await repository.createOrder({ ...base, idempotencyKey: "tie-a" });
+      await repository.createOrder({ ...base, idempotencyKey: "tie-b" });
+
+      const orders = await repository.listOrders(base.workspaceId);
+      expect(orders.map((order) => order.createdAt)).toEqual([
+        "2026-10-10T00:00:00.000Z",
+        "2026-10-10T00:00:00.000Z",
+      ]);
+      expect(orders.map((order) => order.id)).toEqual(
+        [...orders.map((order) => order.id)].sort((a, b) => b.localeCompare(a)),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails closed when an order omits its idempotency key", async () => {
     const repository = new MemorySubscriptionRepository();
     await expect(

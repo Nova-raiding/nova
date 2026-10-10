@@ -92,6 +92,13 @@ export function parseDeliveryScanAdmission(event: DeliveryScanEvent, options: { 
     admitted_at: textField(raw.admitted_at, 'admitted_at'),
   }
   const objectPrefix = `quarantine/${admission.workspace_id}/${admission.asset_id}/`
+  const payloadWorkspaceFields = ['workspace_id', 'workspaceId'] as const
+  for (const field of payloadWorkspaceFields) {
+    const payloadWorkspaceId = event.payload[field]
+    if (payloadWorkspaceId !== undefined && payloadWorkspaceId !== event.workspaceId) {
+      throw invalid('delivery scan payload workspace binding mismatch')
+    }
+  }
   if (admission.workspace_id !== event.workspaceId || admission.asset_id !== event.aggregateId || admission.asset_revision !== event.sequence
     || admission.asset_id !== event.payload.asset_id || admission.source_revision !== event.payload.source_revision
     || admission.storage_key !== event.payload.storage_key || admission.sha256 !== event.payload.sha256

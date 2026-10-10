@@ -82,7 +82,7 @@ describe('single-image brand settings save path', () => {
     expect(detail).toContain('setImageBrands((current) => ({ ...current, [detailMaterial.id]: next }))')
     expect(detail).toContain('setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled }))')
     expect(detail).toContain('setScopedBrandDraftDirty(true); setScopedBrandError(\'\'); setScopedBrandSaved(\'\')')
-    expect(detail).toContain('{(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved) && <div className="material-brand-save-row">')
+    expect(detail).toContain('{(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-brand-save-row">')
     expect(save).toContain('for (const [assetId, value] of imageBrandSaveEntries(imageBrands, imageBrandEnabled))')
     expect(save).toContain('enabled: imageBrandEnabled[assetId] ?? true')
     expect(save).toContain('await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)')

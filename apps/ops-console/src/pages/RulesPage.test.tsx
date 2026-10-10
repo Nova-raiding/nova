@@ -1,6 +1,8 @@
+import { Children, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RulesPage } from "./RulesPage.js";
+import { RuleSyncStatusSection } from "../components/rules/RuleSyncStatusSection.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel.js";
 
 function rulesModel(options: { consoleError?: string; ruleError?: string; platform?: boolean; canReadRules?: boolean; canManageRules?: boolean } = {}) {
@@ -18,7 +20,7 @@ function rulesModel(options: { consoleError?: string; ruleError?: string; platfo
     ruleMutationKey: undefined,
     canRules: options.canManageRules === true,
     loadRules: async () => undefined,
-    syncRulesNow: async () => false,
+    syncRulesNow: vi.fn(async () => false),
     updateRuleStatus: async () => undefined,
     publishRuleDraft: async () => undefined,
   } as unknown as OpsConsoleModel;
@@ -63,5 +65,19 @@ describe("rules page error scope", () => {
     expect(readOnlyHtml).toContain("上传平台规则（Markdown/ZIP）");
     expect(uploadButton(readOnlyHtml)).toMatch(/\sdisabled=""/u);
     expect(uploadButton(writableHtml)).not.toMatch(/\sdisabled=""/u);
+  });
+
+  it("passes the sync promise through so the page can show failure recovery", async () => {
+    const model = rulesModel({ platform: true });
+    const page = RulesPage({ model });
+    const pageContent = page.props.children;
+    if (!isValidElement<{ children?: ReactNode }>(pageContent)) throw new Error("RulesPage did not render its page content");
+    const syncSection = Children.toArray(pageContent.props.children).find((child) =>
+      isValidElement(child) && child.type === RuleSyncStatusSection,
+    );
+    if (!isValidElement<{ onSyncNow?: () => Promise<boolean> }>(syncSection)) throw new Error("RulesPage did not render rule sync controls");
+
+    expect(syncSection.props.onSyncNow).toBe(model.syncRulesNow);
+    await expect(syncSection.props.onSyncNow?.()).resolves.toBe(false);
   });
 });

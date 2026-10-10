@@ -532,6 +532,22 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     // the queue can hold.
     if (this.queue.hasCapacity && !await this.queue.hasCapacity()) return 0
     const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now, ...(this.claimFor?.() ?? this.claim) })
+    // Validate the whole claimed batch before exposing any of it to a queue.
+    // A faulty or misconfigured store must not let one foreign-tenant row
+    // interrupt the loop after earlier rows were enqueued and strand the rest
+    // of this tenant's valid leases without deliveries.
+    if (events.some(event => event.workspaceId !== workspaceId)) {
+      await Promise.allSettled(events
+        .filter(event => event.workspaceId === workspaceId && event.leaseToken)
+        .map(event => this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken!) ?? Promise.resolve(event)))
+      const foreign = events.find(event => event.workspaceId !== workspaceId)!
+      throw Object.assign(new Error('outbox event workspace scope mismatch'), {
+        code: 'OUTBOX_EVENT_SCOPE_MISMATCH',
+        workspaceId,
+        eventId: foreign.id,
+        eventWorkspaceId: foreign.workspaceId,
+      })
+    }
     let added = 0
     // A depth limit refuses the delivery, not this event: every remaining claim
     // of the batch would be refused too. Releasing only the one that hit the
@@ -540,17 +556,6 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     // WORKER_CLAIM_ATTEMPTS_EXHAUSTED without a handler ever running.
     let queueFull = false
     for (const event of events) {
-      // RLS/repository scope is a defense-in-depth boundary, not an implicit
-      // trust boundary. A faulty store must never hydrate another tenant's
-      // event into this worker's queue.
-      if (event.workspaceId !== workspaceId) {
-        throw Object.assign(new Error('outbox event workspace scope mismatch'), {
-          code: 'OUTBOX_EVENT_SCOPE_MISMATCH',
-          workspaceId,
-          eventId: event.id,
-          eventWorkspaceId: event.workspaceId,
-        })
-      }
       if (queueFull) {
         await this.store.releaseClaim?.(workspaceId, event.id, event.leaseToken ?? '')
         continue

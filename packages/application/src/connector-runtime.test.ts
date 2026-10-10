@@ -100,6 +100,88 @@ function syncGateInput(platform: Platform, rawProduct: RawProduct, state: Immuta
 }
 
 describe('ConnectorRuntime', () => {
+  it('persists media receipts before publish and never orphans after an unknown commit', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_1', role: 'main' as const, mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: new Uint8Array([1]), idempotencyKey: 'job_1:media:visual_1' }
+    const states: string[] = []
+    connector.uploadMedia = vi.fn(async () => ({ platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'remote_1', sha256: media.sha256, simulated: false }))
+    connector.discardMedia = vi.fn(async () => ({ deleted: false }))
+    connector.createProduct = vi.fn(async () => { throw new Error('transport timed out after request dispatch') })
+    const mediaLifecycle = { transition: vi.fn(async (value: { state: string }) => { states.push(value.state) }) }
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: { title: 'x', category: 'y', price: 1, stock: 1 }, idempotencyKey: 'publish_1', media: [media], mediaLifecycle })).rejects.toThrow('transport timed out')
+    expect(states).toEqual(['intent', 'uploaded', 'unknown'])
+    expect(connector.discardMedia).not.toHaveBeenCalled()
+  })
+
+  it('marks uploaded media orphaned after pre-write validation rejection', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_2', role: 'secondary' as const, mimeType: 'image/png', sha256: 'b'.repeat(64), bytes: new Uint8Array([2]), idempotencyKey: 'job_2:media:visual_2' }
+    const states: string[] = []
+    connector.uploadMedia = vi.fn(async () => ({ platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'remote_2', sha256: media.sha256, simulated: false }))
+    connector.validateWrite = () => [{ field: 'images', code: 'INVALID_VALUE', message: 'rejected', severity: 'error' }]
+    connector.discardMedia = vi.fn(async () => ({ deleted: false }))
+    const mediaLifecycle = { transition: vi.fn(async (value: { state: string }) => { states.push(value.state) }) }
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: {}, idempotencyKey: 'publish_2', media: [media], mediaLifecycle })).rejects.toThrow('rejected')
+    expect(states).toEqual(['intent', 'uploaded', 'orphaned'])
+    expect(connector.discardMedia).toHaveBeenCalledOnce()
+  })
+
+  it('cleans up uploaded media after the platform definitively rejects the publish', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_rejected', role: 'main' as const, mimeType: 'image/png', sha256: 'f'.repeat(64), bytes: new Uint8Array([6]), idempotencyKey: 'job_rejected:media:visual_rejected' }
+    const mediaReceipt = { platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'remote_rejected', sha256: media.sha256, simulated: false }
+    const states: string[] = []
+    connector.uploadMedia = vi.fn(async () => mediaReceipt)
+    connector.queryWrite = vi.fn(async () => ({ found: true, state: 'rejected', remoteId: 'remote_product', simulated: false }))
+    connector.discardMedia = vi.fn(async () => ({ deleted: true }))
+    const mediaLifecycle = { transition: vi.fn(async (value: { state: string }) => { states.push(value.state) }) }
+
+    const result = await runtime.executePublish({
+      platform: 'jd',
+      context: { workspaceId: 'ws_rejected', accountId: 'acct_rejected' },
+      fields: { title: 'rejected', category: 'outerwear', price: 10, stock: 1 },
+      idempotencyKey: 'publish_rejected',
+      media: [media],
+      mediaLifecycle,
+    })
+
+    expect(result.remoteStatus).toMatchObject({ found: true, state: 'rejected' })
+    expect(states).toEqual(['intent', 'uploaded', 'orphaned', 'deleted'])
+    expect(connector.discardMedia).toHaveBeenCalledWith(expect.anything(), mediaReceipt, 'publish_rejected', media.idempotencyKey)
+    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'platform_rejected_cleanup_pending_manual_recovery_required' })
+    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
+  })
+
+  it('does not mark media unknown when durable intent recording fails before upload dispatch', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_intent_failure', role: 'main' as const, mimeType: 'image/png', sha256: 'd'.repeat(64), bytes: new Uint8Array([4]), idempotencyKey: 'job_intent_failure:media:visual_intent_failure' }
+    connector.uploadMedia = vi.fn(async () => ({ platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'must_not_exist', sha256: media.sha256, simulated: false }))
+    const transition = vi.fn(async (value: { state: string }) => {
+      if (value.state === 'intent') throw new Error('lifecycle store unavailable')
+    })
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: {}, idempotencyKey: 'publish_intent_failure', media: [media], mediaLifecycle: { transition } })).rejects.toThrow('lifecycle store unavailable')
+    expect(connector.uploadMedia).not.toHaveBeenCalled()
+    expect(transition).toHaveBeenCalledTimes(1)
+    expect(transition).toHaveBeenCalledWith({ media, state: 'intent' })
+  })
+
+  it('reuses the persisted media receipt on retry without uploading again', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef:'visual_retry',role:'main' as const,mimeType:'image/png',sha256:'c'.repeat(64),bytes:new Uint8Array([3]),idempotencyKey:'job_retry:media:visual_retry' }
+    connector.uploadMedia = vi.fn(async () => { throw new Error('must reuse persisted receipt') })
+    const receipt = { platform:'jd' as const,visualRef:media.visualRef,role:media.role,mediaId:'remote_retry',sha256:media.sha256,simulated:false }
+    const transition = vi.fn(async () => undefined)
+    const result = await runtime.executePublish({ platform:'jd',context:{workspaceId:'ws_retry',accountId:'acct_retry'},fields:{title:'retry',category:'outerwear',price:2,stock:1},idempotencyKey:'publish_retry',media:[media],mediaLifecycle:{getReceipt:async()=>receipt,transition} })
+    expect(result.receipt.remoteId).toBeTruthy()
+    expect(connector.uploadMedia).not.toHaveBeenCalled()
+    expect(transition).toHaveBeenCalledWith({media,state:'retained',reason:'platform_write_confirmed'})
+  })
+
   it('syncs through a selected profile and keeps platform identity', async () => {
     const runtime = new ConnectorRuntime({ fixtureMode: true })
     const result = await runtime.sync('tmall', { workspaceId: 'ws_1', accountId: 'acct_1', traceId: 'trace_1' })

@@ -2,6 +2,8 @@ import { OpsPage } from "../components/OpsPage";
 import { OpsPageError } from "../components/OpsPageError";
 import { AutomationPolicySection } from "../components/stores/AutomationPolicySection";
 import { AutomationScanSection } from "../components/stores/AutomationScanSection";
+import { AutomationScopeSection } from "../components/stores/AutomationScopeSection";
+import { AutoSyncSection } from "../components/stores/AutoSyncSection";
 import { PlatformSummarySection } from "../components/stores/PlatformSummarySection";
 import { StoreDirectorySection } from "../components/stores/StoreDirectorySection";
 import { PlatformManualProductImport } from "../components/stores/PlatformManualProductImport";
@@ -101,11 +103,25 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
         }}
       /> : null}
       {platformScope && model.authorization.can("customer.manual_import") && <PlatformManualProductImport workspaces={model.workspaceDirectory?.items ?? []} />}
+      <AutomationScopeSection
+        storeDirectory={model.storeDirectory}
+        selectedAutomationStore={model.selectedAutomationStore}
+        automationScope={model.automationScope}
+        canQueue={model.canQueue}
+        onLoadScope={model.loadAutomationScope}
+      />
       <AutomationPolicySection
         automationPolicies={model.automationPolicies}
         loading={model.loading}
         error={automationError}
         onRetry={() => void model.load()}
+      />
+      <AutoSyncSection
+        automationPolicy={model.automationPolicy}
+        selectedAutomationStore={model.selectedAutomationStore}
+        canQueue={model.canQueue}
+        onUpdateSync={model.updateAutomationSync}
+        onUpdate={model.updateAutomation}
       />
       <AutomationScanSection
         automationPolicy={model.automationPolicy}

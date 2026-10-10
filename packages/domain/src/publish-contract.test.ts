@@ -25,6 +25,39 @@ describe('publish state contract', () => {
     expect(confirmPublish(token(), input, new Map([['idem_1', existing]]), runtime, new Map())).toMatchObject({ ok: false, error: { code: 'PUBLISH_IDEMPOTENCY_CONFLICT' } })
   })
 
+  it('does not return an existing publish job across workspace or platform scope', () => {
+    const existing: PublishJob = { id: 'publish_1', workspaceId: 'ws_other', taskId: 'task_1', contentVersionId: 'cv_1', platform: 'tmall', idempotencyKey: 'idem_1', confirmationHash: 'confirm_hash', remoteSnapshotHash: 'remote_hash', confirmationTokenValue: 'confirm_old', state: 'confirmed', attempt: 1, createdAt: runtime.now() }
+    expect(confirmPublish(token(), input, new Map([['idem_1', existing]]), runtime, new Map()))
+      .toMatchObject({ ok: false, error: { code: 'PUBLISH_IDEMPOTENCY_CONFLICT' } })
+
+    const otherPlatformToken = issueConfirmationToken({
+      workspaceId: 'ws_1', platform: 'jd', taskId: 'task_1', contentVersionId: 'cv_1',
+      remoteSnapshotHash: 'remote_hash', confirmationHash: 'confirm_hash', expiresAt: '2026-09-02T00:00:00.000Z',
+    }, runtime)
+    const sameTenantDifferentPlatform: PublishJob = { ...existing, workspaceId: 'ws_1' }
+    expect(confirmPublish(otherPlatformToken, input, new Map([['idem_1', sameTenantDifferentPlatform]]), runtime, new Map()))
+      .toMatchObject({ ok: false, error: { code: 'PUBLISH_IDEMPOTENCY_CONFLICT' } })
+  })
+
+  it('rejects an idempotent replay when the supplied token claims another intent', () => {
+    const first = confirmPublish(token(), input, new Map(), runtime, new Map())
+    if (!first.ok) throw new Error('fixture publish failed')
+    const otherWorkspaceToken = issueConfirmationToken({
+      workspaceId: 'ws_other', platform: 'tmall', taskId: 'task_1', contentVersionId: 'cv_1',
+      remoteSnapshotHash: 'remote_hash', confirmationHash: 'confirm_hash', expiresAt: '2026-09-02T00:00:00.000Z',
+    }, runtime)
+    expect(confirmPublish(otherWorkspaceToken, input, new Map([['idem_1', first.value]]), runtime, new Map()))
+      .toMatchObject({ ok: false, error: { code: 'PUBLISH_CONFIRMATION_STALE' } })
+  })
+
+  it('rejects an empty token before returning an existing idempotent job', () => {
+    const first = confirmPublish(token(), input, new Map(), runtime, new Map())
+    if (!first.ok) throw new Error('fixture publish failed')
+    const emptyToken = { ...token(), value: '' }
+    expect(confirmPublish(emptyToken, input, new Map([['idem_1', first.value]]), runtime, new Map()))
+      .toMatchObject({ ok: false, error: { code: 'PUBLISH_CONFIRMATION_REQUIRED' } })
+  })
+
   it('forces unknown jobs through reconciliation before any remote outcome is accepted', () => {
     const unknown: PublishJob = { id: 'publish_1', workspaceId: 'ws_1', taskId: 'task_1', contentVersionId: 'cv_1', platform: 'tmall', idempotencyKey: 'idem_1', confirmationHash: 'confirm_hash', remoteSnapshotHash: 'remote_hash', confirmationTokenValue: 'confirm_1', state: 'unknown', attempt: 1, createdAt: runtime.now() }
     expect(startReconciliation(unknown)).toMatchObject({ ok: true, value: { state: 'reconciling' } })

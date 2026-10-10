@@ -42,7 +42,7 @@ export function AutomationScopeSection({
           style={{ minWidth: 260 }}
           options={[
             { value: "", label: "全工作区" },
-            ...storeDirectory.map((row) => ({
+            ...storeDirectory.filter((row) => row.readable && row.state !== "revoked").map((row) => ({
               value: `${row.platform}:${row.accountId}`,
               label: `${row.label} · ${row.platform}`,
             })),

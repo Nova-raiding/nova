@@ -11,6 +11,15 @@ import {
 } from './index.js'
 
 describe('MCP method contract', () => {
+  it('bounds task.timeline limits to the API range', () => {
+    const method = 'task.timeline'
+    expect(MCP_METHOD_SCHEMAS[method].properties.limit).toMatchObject({ type: 'string', maxLength: 3, pattern: '^(?:[1-9]|[1-9][0-9]|1[0-9]{2}|200)$' })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'timeline-max', method, params: { task_id: 'task_1', limit: '200' } })).toEqual({ valid: true, errors: [] })
+    for (const limit of ['0', '201', '1.5', '9999']) {
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: `timeline-${limit}`, method, params: { task_id: 'task_1', limit } }).valid).toBe(false)
+    }
+  })
+
   const productionEvidenceMethods = [
     'platform.media.spec.list',
     'platform.media.spec.get',
@@ -278,6 +287,9 @@ describe('MCP method contract', () => {
       'ops.customer-delivery.assets.upload', 'ops.customer-delivery.assets.get',
     ] as const
     for (const method of customerDeliveryMethods) expect(MCP_METHOD_SCHEMAS[method].required).toContain('target_workspace_id')
+    expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.list'].properties.archived_only).toMatchObject({ type: 'string', enum: ['true', 'false'] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'delivery-archive-list', method: 'ops.customer-delivery.list', params: { target_workspace_id: 'ws_delivery', archived_only: 'true' } })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'delivery-archive-list-invalid', method: 'ops.customer-delivery.list', params: { target_workspace_id: 'ws_delivery', archived_only: 'yes' } }).valid).toBe(false)
     const schema = MCP_METHOD_SCHEMAS['ops.customer-delivery.checklist.update']
     expect(schema.properties.items_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array', maxLength: 16_384 })
     expect(MCP_METHOD_SCHEMAS['ops.customer-delivery.update'].properties.patch_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object', maxLength: 16_384 })

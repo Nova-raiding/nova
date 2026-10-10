@@ -1,6 +1,6 @@
 import { CloudSyncOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Table, Tag, Typography } from "antd";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { RuleSyncStatus } from "../../types/ops";
 
 interface RuleSyncStatusSectionProps {
@@ -9,7 +9,7 @@ interface RuleSyncStatusSectionProps {
   error?: string | null;
   onRefresh: () => void;
   canSync?: boolean;
-  onSyncNow?: () => void;
+  onSyncNow?: () => void | boolean | Promise<void | boolean>;
 }
 
 const statePresentation: Record<RuleSyncStatus["state"], { color: string; label: string }> = {
@@ -30,6 +30,20 @@ export function RuleSyncStatusSection({
   const errorRef = useRef<HTMLDivElement>(null);
   const errorTitleId = useId();
   const errorDescriptionId = useId();
+  const [syncError, setSyncError] = useState("");
+
+  const runSync = async () => {
+    if (!onSyncNow) return;
+    setSyncError("");
+    try {
+      const completed = await onSyncNow();
+      if (completed === false) {
+        setSyncError("同步请求未完成。请核对上方错误提示或同步配置，再重试。");
+      }
+    } catch (cause) {
+      setSyncError(cause instanceof Error ? cause.message : "同步请求未完成，请重试。");
+    }
+  };
 
   useEffect(() => {
     if (error) errorRef.current?.focus({ preventScroll: true });
@@ -51,7 +65,7 @@ export function RuleSyncStatusSection({
               aria-busy={loading}
               aria-label={canSync ? "立即更新平台规则" : "立即更新平台规则（需要规则治理权限）"}
               style={{ minHeight: 44, marginRight: 8 }}
-              onClick={onSyncNow}
+              onClick={() => void runSync()}
             >
               立即更新
             </Button>
@@ -93,6 +107,17 @@ export function RuleSyncStatusSection({
             }
           />
         </div>
+      ) : null}
+      {syncError ? (
+        <Alert
+          role="alert"
+          type="error"
+          showIcon
+          title="规则同步未完成"
+          description={syncError}
+          action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void runSync()}>重试同步</Button>}
+          style={{ marginBottom: 16 }}
+        />
       ) : null}
       <Alert
         type={statuses.length > 0 && blocked === 0 ? "success" : "warning"}

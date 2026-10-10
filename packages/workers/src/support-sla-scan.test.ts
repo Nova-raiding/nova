@@ -55,6 +55,17 @@ describe('support SLA scan planner', () => {
     ])
   })
 
+  it('does not merge distinct tenant and ticket identifiers containing delimiters', () => {
+    const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
+    const tickets = [
+      { workspaceId: 'a:b', ticketId: 'c', status: 'open' as const, sla },
+      { workspaceId: 'a', ticketId: 'b:c', status: 'open' as const, sla },
+    ]
+    const actions = planSupportSlaScan(tickets, new Date('2026-08-31T12:00:00.000Z'))
+    expect(actions).toHaveLength(2)
+    expect(actions[0]?.idempotencyKey).not.toBe(actions[1]?.idempotencyKey)
+  })
+
   it('fails closed when duplicate rows disagree about the SLA projection', () => {
     const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
     const ticket = { workspaceId: 'ws-a', ticketId: 'ticket-conflict', status: 'open' as const, sla }

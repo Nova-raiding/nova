@@ -10,6 +10,12 @@ interface RuleCenterSectionProps {
 }
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
+export function isValidApprovalTimestamp(value: unknown): value is string {
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T/u.test(value)
+    && Number.isFinite(Date.parse(value));
+}
+
 const platformByMarkdownName = new Map<string, Platform>(
   platforms.flatMap((platform) => [
     [platform, platform] as const,
@@ -430,7 +436,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
           <Form.Item name="approvalRef" label="审批引用" extra="服务端仍要求该字段；仅作审批记录留存，不是审批证明" rules={[{ required: true, message: "请输入审批引用" }]}>
             <Input placeholder="工单或审批记录 ID" />
           </Form.Item>
-          <Form.Item name="approvedAt" label="审批时间" extra="仅为记录：审批证明来自令牌，本字段不参与服务端审批判定" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { pattern: /^\d{4}-\d{2}-\d{2}T/u, message: "请输入 ISO 8601 时间" }]}>
+          <Form.Item name="approvedAt" label="审批时间" extra="仅为记录：审批证明来自令牌，本字段不参与服务端审批判定" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { validator: (_, value: unknown) => isValidApprovalTimestamp(value) ? Promise.resolve() : Promise.reject(new Error("请输入合法 ISO 8601 时间")) }]}>
             <Input placeholder="2026-08-29T08:00:00.000Z" />
           </Form.Item>
           <Form.Item name="reason" label="激活原因" rules={[{ required: true, whitespace: true, message: "请输入激活原因" }]}>

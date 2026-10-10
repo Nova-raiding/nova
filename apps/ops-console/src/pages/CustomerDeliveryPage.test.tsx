@@ -306,7 +306,13 @@ describe("customer delivery read-only desktop interaction", () => {
         videos.push(video);
         result = video;
       }
-      else if (options.onMutation) result = await options.onMutation(request.method, request.params);
+      else if (options.onMutation) {
+        try { result = await options.onMutation(request.method, request.params); }
+        catch (cause) {
+          const message = cause instanceof Error ? cause.message : "模拟交付操作失败";
+          return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: "REVISION_CONFLICT", message, retryable: true } }) });
+        }
+      }
       else return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN", message: "Read-only test does not allow mutations" } }) });
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) });
     });
@@ -599,6 +605,44 @@ describe("customer delivery read-only desktop interaction", () => {
       expect(await page.getByRole("region", { name: "生效账号", exact: true }).innerText()).not.toContain("wrong-identity");
       await closeDrawer(page); await openAccountBinding(page);
       expect(await page.getByRole("region", { name: "生效账号", exact: true }).innerText()).toContain("未关联");
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("refreshes the authoritative revision before retrying a failed account binding", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const bindRevisions: string[] = [];
+    let bindAttempts = 0;
+    try {
+      const methods = await prepare(page, { write: true,
+        onGet: async () => ({ ...record, revision: 5 }),
+        onMutation: async (method, params) => {
+          if (method.endsWith("accounts.list")) return { items: [account] };
+          if (method.endsWith("account.bind")) {
+            bindRevisions.push(params.expected_revision!);
+            if (++bindAttempts === 1) throw new Error("档案版本冲突");
+            return { ...boundRecord, revision: 6 };
+          }
+          throw new Error(`Unexpected ${method}`);
+        },
+      });
+      await openAccountBinding(page); await selectAccount(page);
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "关联未确认成功" }).waitFor();
+      expect(await page.getByRole("button", { name: "重试关联", exact: true }).count()).toBe(0);
+      await page.getByRole("button", { name: "刷新档案核对", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "请重新查询并选择账号" }).waitFor();
+      expect(methods.filter(method => method === "ops.customer-delivery.get")).toHaveLength(1);
+      expect(await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).count()).toBe(0);
+
+      await selectAccount(page);
+      await page.getByLabel("关联原因（必填）", { exact: true }).fill("已核对商家登录账号");
+      await page.getByRole("checkbox", { name: `我已核对登录账号，确认关联 ${account.login}`, exact: true }).check();
+      await page.getByRole("button", { name: "确认关联账号", exact: true }).click();
+      await page.getByText("已关联，仅此账号受该交付档案的完成状态约束。", { exact: false }).waitFor();
+      expect(bindRevisions).toEqual(["4", "5"]);
+      expect(methods.filter(method => method.endsWith("account.bind"))).toHaveLength(2);
     } finally { await page.close(); }
   }, 45_000);
 

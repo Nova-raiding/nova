@@ -34,6 +34,14 @@ describe('merchant login page shows why the session ended', () => {
     expect(html).toContain('登录商家工作台')
   })
 
+  it('explains the controlled registration and password recovery path', () => {
+    const html = render(undefined)
+    expect(html).toContain('未登录或会话已失效')
+    expect(html).toContain('此入口不支持自助注册')
+    expect(html).toContain('忘记密码或工作区绑定有误')
+    expect(html).toContain('请联系平台运营核对')
+  })
+
   it('renders the retry action only when session recovery is available', () => {
     expect(render('无法验证登录状态：API 请求超时', () => undefined)).toContain('重新检查登录状态')
     expect(render('无法验证登录状态：API 请求超时')).not.toContain('重新检查登录状态')

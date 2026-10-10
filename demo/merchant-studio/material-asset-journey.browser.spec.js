@@ -39,6 +39,7 @@ test('one workspace can upload and preview an image, then import a product table
   const browserErrors = []
   const unexpectedRequests = []
   const assets = []
+  let releaseImageUpload
   const imageAsset = {
     id: imageAssetId, workspaceId, name: 'journey-product.png', mimeType: 'image/png', sizeBytes: png.length,
     sha256: 'a'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
@@ -84,6 +85,7 @@ test('one workspace can upload and preview an image, then import a product table
     const name = request.headers()['x-asset-name']
     const asset = name === imageAsset.name ? imageAsset : tableAsset
     apiCalls.push({ path: '/api/v1/assets/upload', method: request.method(), name, mimeType: request.headers()['content-type'] })
+    if (asset === imageAsset) await new Promise(resolve => { releaseImageUpload = resolve })
     assets.push(asset)
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(asset)) })
   })
@@ -122,6 +124,10 @@ test('one workspace can upload and preview an image, then import a product table
     await uploadDialog.getByRole('button', { name: '所属系列' }).click()
     await uploadDialog.getByRole('option', { name: '未分类' }).click()
     await page.getByRole('button', { name: /确认上传/ }).click()
+    const uploadProgress = uploadDialog.getByTestId('material-upload-progress')
+    await expect(uploadProgress).toContainText('上传进度：0/1，已成功 0，失败 0')
+    expect(typeof releaseImageUpload).toBe('function')
+    releaseImageUpload()
     const imageCard = page.locator('article').filter({ hasText: imageAsset.name })
     const thumbnail = imageCard.locator('.material-card-open img')
     await expect(thumbnail).toBeVisible()

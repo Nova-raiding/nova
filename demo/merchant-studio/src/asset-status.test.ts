@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { resolveAssetPrimaryAction, resolveAssetPrimaryStatus, resolveAssetSecondaryStatus } from './asset-status.js'
+import { resolveAssetPrimaryAction, resolveAssetPrimaryStatus, resolveAssetSecondaryStatus, rightsConfirmationPayload, rightsScopeForConfirmation } from './asset-status.js'
 import type { AssetMetadata } from './api'
 
 const asset = (overrides: Partial<AssetMetadata> = {}): AssetMetadata => ({
@@ -29,6 +29,38 @@ describe('asset primary status projection', () => {
     expect(resolveAssetPrimaryStatus(asset({ parseStatus: 'failed', parseError: '无法读取' }))).toMatchObject({ label: '内容读取失败', action: 'manual_review', tone: 'red' })
     expect(resolveAssetPrimaryStatus(asset({ parseStatus: 'processing' })).label).toBe('正在读取内容')
     expect(resolveAssetPrimaryStatus(asset({ rightsStatus: 'pending' })).label).toBe('等待确认使用权')
+  })
+  it('routes unusable or rejected rights back to rights confirmation, not fact review', () => {
+    const unusableScope = asset({
+      rightsStatus: 'approved', rightsScope: 'unusable', factsConfirmedBy: 'merchant-1',
+      readiness: { status: 'blocked', reasons: ['商用权益被拒绝或不可用'] },
+      display: { primaryStatus: 'rights_blocked', label: '使用权益受限', sourceState: 'blocked', reasons: ['商用权益被拒绝或不可用'], nextAction: { method: 'asset.rights.update', label: '重新确认使用权', allowed: true } },
+    })
+    const rejectedStatus = asset({ rightsStatus: 'rejected', rightsScope: 'unusable', factsConfirmedBy: 'merchant-1' })
+
+    expect(resolveAssetPrimaryAction(unusableScope)).toMatchObject({ kind: 'confirm_rights', label: '调整权益范围' })
+    expect(resolveAssetPrimaryAction(rejectedStatus)).toMatchObject({ kind: 'confirm_rights', label: '确认权益范围' })
+    expect(rightsScopeForConfirmation(unusableScope)).toBe('internal_only')
+    expect(rightsScopeForConfirmation(asset({ rightsScope: 'mystery' }))).toBe('internal_only')
+    expect(rightsScopeForConfirmation(asset({ rightsScope: 'limited_use' }))).toBe('limited_use')
+  })
+  it('does not upgrade internal or restricted scopes to commercial generation', () => {
+    expect(rightsConfirmationPayload('internal_only')).toEqual({
+      rights_status: 'approved', rights_scope: 'internal_only', usage_scopes: ['internal_only'], ai_modification_allowed: false,
+    })
+    expect(rightsConfirmationPayload('limited_use')).toEqual({
+      rights_status: 'approved', rights_scope: 'limited_use', usage_scopes: ['limited_use'], ai_modification_allowed: false,
+    })
+    expect(rightsConfirmationPayload('commercial_authorized').usage_scopes).toEqual(['commercial', 'ai_generation'])
+    expect(rightsConfirmationPayload('unknown')).toEqual({
+      rights_status: 'approved', rights_scope: 'internal_only', usage_scopes: ['internal_only'], ai_modification_allowed: false,
+    })
+    for (const rightsScope of ['internal_only', 'limited_use']) {
+      expect(resolveAssetPrimaryStatus(asset({ rightsStatus: 'approved', rightsScope, factsConfirmedBy: 'merchant-1' }))).toMatchObject({
+        key: 'blocked', action: 'confirm_rights', tone: 'red',
+      })
+      expect(resolveAssetPrimaryAction(asset({ rightsStatus: 'approved', rightsScope }))).toMatchObject({ label: '调整权益范围' })
+    }
   })
   it('only shows ready after trusted lifecycle fields are in an allowed state', () => {
     expect(resolveAssetPrimaryStatus(asset({ rightsStatus: 'approved', factsConfirmedBy: 'merchant-1', display: { primaryStatus: 'ready', label: '可以用于当前任务', sourceState: 'ready', reasons: [], nextAction: null } }))).toMatchObject({ key: 'ready', label: '可以用于生成', tone: 'green' })

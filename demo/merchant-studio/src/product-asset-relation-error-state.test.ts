@@ -32,4 +32,10 @@ describe('product asset relation dialog separates read failures from write failu
     expect(dialog).toContain('重新读取关系')
     expect(dialog).toContain('onClick={reload}')
   })
+
+  it('blocks continuation when an active source is missing or not generation-ready', () => {
+    expect(dialog).toContain('const generationBlockers = productAssetGenerationBlockers(relation)')
+    expect(dialog).toContain('generationBlockers.length > 0')
+    expect(dialog).toContain('data-testid="product-asset-generation-blocked"')
+  })
 })

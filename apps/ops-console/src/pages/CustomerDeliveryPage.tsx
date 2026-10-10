@@ -122,6 +122,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const [projectOwnerOptions, setProjectOwnerOptions] = useState<string[]>([]);
   const [supportOwnerOptions, setSupportOwnerOptions] = useState<string[]>([]);
   const [listQuery, setListQuery] = useState({ page: 1, pageSize: 20, keyword: "", owner: "", afterSalesOwner: "" });
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const [listTotal, setListTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -182,7 +183,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       isCurrent: () => !controller.signal.aborted && hasCurrentReadAccess(workspaceId, generation),
     };
   };
-  const load = async (query = listQuery) => {
+  const load = async (query = listQuery, includeArchived = archivedOnly) => {
     // A completed mutation may call an older load closure. Its payload remains
     // unchanged, but any follow-up read must use today's permission/lifecycle.
     const request = startCurrentRead(targetWorkspaceId);
@@ -190,7 +191,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     setLoading(true); setError("");
     try {
       const result = await customerDeliveryClient.list({ targetWorkspaceId, offset: (query.page - 1) * query.pageSize, limit: query.pageSize,
-        query: query.keyword, projectOwner: query.owner, supportOwner: query.afterSalesOwner }, request.controller.signal);
+        query: query.keyword, projectOwner: query.owner, supportOwner: query.afterSalesOwner, archivedOnly: includeArchived }, request.controller.signal);
       if (result === null) throw new Error("客户交付 API 未返回数据");
       if (request.isCurrent()) {
         setRecords(result.items);
@@ -222,7 +223,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     setMutationError("");
     void load(initialQuery);
     return () => { loadRequest.current.controller?.abort(); loadRequest.current.generation++; };
-  }, [canRead, targetWorkspaceId]);
+  }, [canRead, targetWorkspaceId, archivedOnly]);
   const saveChecklist = async (payload: import("../components/delivery/CustomerDeliverySection.js").CustomerDeliveryChecklistSave) => {
     setMutationError("");
     const mutationWorkspaceId = targetWorkspaceId;
@@ -443,6 +444,22 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       throw cause;
     }
   };
+  const restoreRecord = async (record: CustomerDeliveryRecord) => {
+    if (!canRead || !currentCanUpdate.current || currentWorkspace.current !== targetWorkspaceId) throw new Error("客户交付恢复权限或工作区已变更，请刷新后重试");
+    if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+    const generation = loadRequest.current.generation;
+    try {
+      const restored = await customerDeliveryClient.update({ targetWorkspaceId, deliveryId: record.id, patch: { archivedAt: null }, expectedRevision: record.revision as number });
+      if (restored.archivedAt !== null) throw new Error("服务端未确认记录已恢复；请刷新归档列表核对状态");
+      if (!hasCurrentReadAccess(targetWorkspaceId, generation) || !currentCanUpdate.current) return;
+      setRecords((current) => current.filter((candidate) => candidate.id !== record.id));
+      message.success("客户交付记录已恢复");
+      await load(listQuery, true);
+    } catch (cause) {
+      reportMutationError(cause);
+      throw cause;
+    }
+  };
   const workspaceToolbar = <Space wrap>
     <Select
       aria-label="客户交付目标企业工作区"
@@ -461,6 +478,10 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       loading={loading}
       onClick={() => void load()}
     >刷新交付档案</Button>
+    {!createPage ? <Checkbox checked={archivedOnly} disabled={!canRead || !targetWorkspaceId || loading} onChange={(event) => {
+      setListQuery((current) => ({ ...current, page: 1, keyword: "", owner: "", afterSalesOwner: "" }));
+      setArchivedOnly(event.target.checked);
+    }}>查看已归档记录</Checkbox> : null}
   </Space>;
   return (
     <OpsPage
@@ -474,7 +495,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
       {!targetWorkspaceId && canRead && createPage ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="请先选择目标企业工作区。选择后即可读取档案，并按权限执行建档、上传和验收。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
-      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付保存被阻断" description={mutationError} closable onClose={() => setMutationError("")} /> : null}
+      {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title={archivedOnly ? "客户交付恢复失败" : "客户交付保存被阻断"} description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
         <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage} onValuesChange={() => setCreateDraftDirty(true)}>
         <Card title="用户建档">
@@ -523,6 +544,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         key={targetWorkspaceId || "unselected"}
         disabled={!canRead || !targetWorkspaceId}
         readOnly={canRead && !canUpdate}
+        archivedView={archivedOnly}
+        loading={loading}
         records={records}
         projectOwnerOptions={projectOwnerOptions}
         supportOwnerOptions={supportOwnerOptions}
@@ -533,12 +556,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         pageSize={listQuery.pageSize}
         onPageChange={(page) => { const next = { ...listQuery, page }; setListQuery(next); void load(next); }}
         onFiltersChange={(filters) => { const next = { ...listQuery, page: 1, keyword: filters.keyword ?? "", owner: filters.owner ?? "", afterSalesOwner: filters.afterSalesOwner ?? "" }; setListQuery(next); void load(next); }}
-        onCreate={canUpdate && canRead ? createRecord : undefined}
+        onCreate={!archivedOnly && canUpdate && canRead ? createRecord : undefined}
         onCreateNavigate={() => { setMutationError(""); pendingCreate.current = undefined; setCreateDraftDirty(false); setCreatePage(true); }}
-        onSave={canUpdate && canRead ? saveProfile : undefined}
-        onChecklistSave={canUpdate && canRead ? saveChecklist : undefined}
+        onSave={!archivedOnly && canUpdate && canRead ? saveProfile : undefined}
+        onChecklistSave={!archivedOnly && canUpdate && canRead ? saveChecklist : undefined}
         onChecklistLoad={loadChecklist}
-        onTrainingSave={canUpdate && canRead ? saveTraining : undefined}
+        onTrainingSave={!archivedOnly && canUpdate && canRead ? saveTraining : undefined}
         onAccountList={canUpdate && canRead ? async (input, signal) => {
           signal.throwIfAborted();
           if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询权限已变更", "AbortError");
@@ -547,7 +570,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号查询范围已变更", "AbortError");
           return result;
         } : undefined}
-        onAccountBind={canUpdate && canRead ? async (record, account, reason, signal) => {
+        onAccountBind={!archivedOnly && canUpdate && canRead ? async (record, account, reason, signal) => {
           signal.throwIfAborted();
           if (!hasCurrentReadAccess(targetWorkspaceId) || !currentCanUpdate.current) throw new DOMException("账号关联权限已变更", "AbortError");
           if (!Number.isSafeInteger(record.revision) || Number(record.revision) < 1) throw new Error("档案版本无效，请刷新后再关联账号");
@@ -559,7 +582,18 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
           setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? updated : candidate));
           return updated;
         } : undefined}
-        onAssetUpload={canUpdate && canRead ? (record, source, purpose, signal) => {
+        onAccountRefresh={canRead ? async (record, signal) => {
+          const workspaceId = targetWorkspaceId;
+          const generation = loadRequest.current.generation;
+          if (!hasCurrentReadAccess(workspaceId, generation)) throw new DOMException("客户交付读取权限或范围已变更", "AbortError");
+          const refreshed = await customerDeliveryClient.get(workspaceId, record.id, signal);
+          signal.throwIfAborted();
+          if (!hasCurrentReadAccess(workspaceId, generation)) throw new DOMException("客户交付读取范围已变更", "AbortError");
+          if (refreshed.id !== record.id) throw new Error("刷新结果与当前档案不匹配");
+          setRecords((previous) => previous.map((candidate) => candidate.id === record.id ? refreshed : candidate));
+          return refreshed;
+        } : undefined}
+        onAssetUpload={!archivedOnly && canUpdate && canRead ? (record, source, purpose, signal) => {
           if ("sourceUrl" in source) {
             if (purpose !== "contract") return Promise.reject(new Error("仅合同凭证支持链接导入"));
             return customerDeliveryClient.uploadAsset({ targetWorkspaceId, deliveryId: record.id, sourceUrl: source.sourceUrl, purpose }, signal);
@@ -568,7 +602,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         } : undefined}
         onAssetGet={(record, assetRef, purpose, signal) => customerDeliveryClient.getAsset({ targetWorkspaceId, deliveryId: record.id, assetRef, purpose }, signal)}
         onAssetOpen={openDeliveryAsset}
-        onArchive={canUpdate && canRead ? archiveRecord : undefined}
+        onArchive={!archivedOnly && canUpdate && canRead ? archiveRecord : undefined}
+        onRestore={canUpdate && canRead ? restoreRecord : undefined}
         operatorActorId={model.opsSession?.actor_id}
         operatorName={accountLabel(model.opsSession)}
       />}

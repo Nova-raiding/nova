@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
+import { assertUsageSinkConfiguredBeforeDispatch, emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey, type RelayUsageRecord } from './relay-usage.js'
 
 describe('relay usage normalization', () => {
   it('fails closed before production dispatch when the durable usage sink is absent', () => {
@@ -49,6 +49,137 @@ describe('relay usage normalization', () => {
     expect(parseRelayUsage({ usage: { prompt_tokens: 1, cost_cny: 'not-a-number' } }, new Headers({ 'x-request-id': 'bad-cost' }), { modality: 'text', model: 'm' })).toBeUndefined()
     expect(parseRelayUsage({ usage: { prompt_tokens: 1, cost_cny: 0.01, currency: 'USD' } }, new Headers({ 'x-request-id': 'usd-cost' }), { modality: 'text', model: 'm' })).toBeUndefined()
     expect(parseRelayUsage({ usage: { prompt_tokens: 1, currency: 'CNY' } }, new Headers({ 'x-request-id': 'currency-only' }), { modality: 'text', model: 'm' })).toBeUndefined()
+  })
+
+  it.each([
+    ['conflicting input aliases', { prompt_tokens: 100, input_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.01 }],
+    ['malformed preferred alias', { prompt_tokens: 'unknown', input_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.01 }],
+    ['inconsistent total', { prompt_tokens: 5, completion_tokens: 2, total_tokens: 99, cost_cny: 0.01 }],
+    ['conflicting output aliases', { prompt_tokens: 5, completion_tokens: 2, output_tokens: 7, total_tokens: 12, cost_cny: 0.01 }],
+  ])('does not settle token usage with %s', async (_label, usageEvidence) => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = { usage: usageEvidence }
+    const headers = new Headers({ 'x-request-id': 'invalid-token-evidence' })
+
+    expect(parseRelayUsage(payload, headers, { modality: 'text', model: 'text-v1' })).toMatchObject({
+      costCny: 0.01,
+      metadata: { usage_observed: false, token_evidence_invalid: true },
+    })
+    await expect(emitRelayUsage(sink, payload, headers, { modality: 'text', model: 'text-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('rejects conflicting usage objects across supported response envelopes', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const textPayload = {
+      usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 },
+      data: { usage: { prompt_tokens: 50, completion_tokens: 1, total_tokens: 51, cost_cny: 0.01 } },
+    }
+    const imagePayload = {
+      usage: { output_image_count: 1, cost_cny: 0.12 },
+      data: { usage: { image_count: 2, cost_cny: 0.12 } },
+    }
+
+    expect(parseRelayUsage(textPayload, new Headers({ 'x-request-id': 'nested-text-conflict' }), { modality: 'text', model: 'text-v1' })).toMatchObject({
+      metadata: { usage_observed: false, token_evidence_invalid: true },
+    })
+    expect(parseRelayUsage(imagePayload, new Headers({ 'x-request-id': 'nested-image-conflict' }), { modality: 'image', model: 'image-v1' })).toMatchObject({
+      metadata: { usage_observed: false, billing_units_evidence_invalid: true },
+    })
+    await expect(emitRelayUsage(sink, textPayload, new Headers({ 'x-request-id': 'nested-text-conflict' }), { modality: 'text', model: 'text-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    await expect(emitRelayUsage(sink, imagePayload, new Headers({ 'x-request-id': 'nested-image-conflict' }), { modality: 'image', model: 'image-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('accepts identical usage copied across supported response envelopes', () => {
+    const usage = { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 }
+    expect(parseRelayUsage({ usage, data: { usage: { ...usage } } }, new Headers({ 'x-request-id': 'nested-identical-usage' }), { modality: 'text', model: 'text-v1' })).toMatchObject({
+      inputTokens: 5,
+      outputTokens: 1,
+      totalTokens: 6,
+      costCny: 0.01,
+      metadata: { usage_observed: true },
+    })
+  })
+
+  it.each([
+    ['text', { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 }],
+    ['image', { output_image_count: 1, cost_cny: 0.12 }],
+    ['image_edit', { output_image_count: 1, cost_cny: 0.12 }],
+    ['ocr', { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 }],
+    ['video', { duration_seconds: 4, cost_cny: 0.5 }],
+    ['embedding', { prompt_tokens: 5, total_tokens: 5, cost_cny: 0.01 }],
+  ] as const)('blocks %s settlement when another supported usage envelope is malformed', async (modality, usage) => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = { usage, data: { usage: 'unknown' } }
+    const headers = new Headers({ 'x-request-id': `malformed-secondary-${modality}` })
+
+    expect(parseRelayUsage(payload, headers, { modality, model: `${modality}-v1` })).toMatchObject({
+      metadata: { usage_observed: false, malformed_usage_envelope: true },
+    })
+    await expect(emitRelayUsage(sink, payload, headers, { modality, model: `${modality}-v1` })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it.each(['image', 'image_edit'] as const)('preserves image-unit settlement but drops invalid token aliases for %s', async modality => {
+    const sink = vi.fn(async (_record: RelayUsageRecord) => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = {
+      usage: {
+        output_image_count: 1,
+        prompt_tokens: 100,
+        input_tokens: 1,
+        completion_tokens: 2,
+        output_tokens: 3,
+        total_tokens: 103,
+        cost_cny: 0.12,
+      },
+      data: [{ url: 'https://cdn.example/image.png' }],
+    }
+    const headers = new Headers({ 'x-request-id': `invalid-image-token-evidence-${modality}` })
+
+    const parsed = parseRelayUsage(payload, headers, { modality, model: 'image-v1' })
+    expect(parsed).toMatchObject({ costCny: 0.12, metadata: { usage_observed: true, token_evidence_invalid: true, billing_units: 1 } })
+    expect(parsed).not.toHaveProperty('inputTokens')
+    expect(parsed).not.toHaveProperty('outputTokens')
+    expect(parsed).not.toHaveProperty('totalTokens')
+
+    const settled = await emitRelayUsage(sink, payload, headers, { modality, model: 'image-v1' })
+    expect(settled.metadata).toMatchObject({ usage_observed: true, token_evidence_invalid: true, settlement: 'recorded' })
+    expect(sink).toHaveBeenCalledOnce()
+    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('inputTokens')
+    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('outputTokens')
+    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('totalTokens')
+  })
+
+  it.each([
+    ['conflicting image aliases', { output_image_count: 1, image_count: 2 }],
+    ['malformed secondary image alias', { output_image_count: 1, image_count: 'one' }],
+    ['zero secondary image alias', { output_image_count: 1, image_count: 0 }],
+  ])('blocks image settlement with %s', async (_label, imageUsage) => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = {
+      usage: { ...imageUsage, cost_cny: 0.12 },
+      data: [{ url: 'https://cdn.example/image.png' }],
+    }
+    const headers = new Headers({ 'x-request-id': 'ambiguous-image-units' })
+
+    expect(parseRelayUsage(payload, headers, { modality: 'image', model: 'image-v1' })).toMatchObject({
+      costCny: 0.12,
+      metadata: { usage_observed: false, billing_units_evidence_invalid: true },
+    })
+    expect(parseRelayUsage(payload, headers, { modality: 'image', model: 'image-v1' })?.metadata).not.toHaveProperty('billing_units')
+    await expect(emitRelayUsage(sink, payload, headers, { modality: 'image', model: 'image-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it('prefers the New API request id used by its user log', () => {

@@ -39,6 +39,7 @@ export function PermissionSelfView({
   grantedCapabilities?: readonly string[];
 }) {
   const granted = normalizeDiagnosticTokens(grantedCapabilities);
+  const grantsWereReturned = grantedCapabilities !== undefined;
   return (
     <div id="access-denied-permissions" className="access-denied-permissions-content">
       <Typography.Paragraph>
@@ -51,8 +52,10 @@ export function PermissionSelfView({
         <ul className="access-denied-capability-list">
           {granted.map((item) => <li key={item}><Typography.Text code>{item}</Typography.Text></li>)}
         </ul>
+      ) : grantsWereReturned ? (
+        <Typography.Paragraph type="secondary">服务端当前没有向此会话授予运营能力。</Typography.Paragraph>
       ) : (
-        <Typography.Paragraph type="secondary">当前会话没有被授予任何运营能力。</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">服务端尚未返回当前会话的能力列表，请刷新权限后重试。</Typography.Paragraph>
       )}
       <Typography.Paragraph type="secondary">
         缺失能力 <Typography.Text code>{capability}</Typography.Text> 只能由服务端授权策略下发：平台运营控制台

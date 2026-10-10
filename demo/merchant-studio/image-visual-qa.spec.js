@@ -82,7 +82,8 @@ async function openVisualPage() {
   }))
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, persistence: { mode: 'postgres', ready: true }, setup: { ai: { costGate: 'ready' }, modelReadiness: { image: { ready: true }, image_edit: { ready: true }, ocr: { ready: true }, video: { ready: true } } } })),
+    // This spec intercepts image generation and does not prove relay, cost, persistence, or worker behavior.
+    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, persistence: { mode: 'fixture', ready: true }, setup: { ai: { costGate: 'ready' }, modelReadiness: { image: { ready: true }, image_edit: { ready: true }, ocr: { ready: true }, video: { ready: true } } } })),
   }))
   await page.route('**/v1/platform-accounts', route => route.fulfill({
     contentType: 'application/json',

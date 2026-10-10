@@ -75,7 +75,19 @@ function PeriodTable({ rows, name }: { rows: CommercialSubscriptionSnapshot[]; n
   ]} />
 }
 
-export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport, openCatalog = false, onCatalogClose, notificationTarget }: { baseUrl: string; workspaceKey: string; onOpenSupport: () => void; openCatalog?: boolean; onCatalogClose?: () => void; notificationTarget?: CommercialNotification | null }) {
+export function commercialPurchaseWorkspaceStorageKey(baseUrl: string, accountKey: string, workspaceId: string) {
+  return `store-nova-commercial:${baseUrl}:${accountKey}:${workspaceId}`
+}
+
+export function legacyCommercialRecoveryDisposition(accountKey: string, workspaceId: string, legacyValue: string | null): 'none' | 'migrate' | 'block' {
+  if (!legacyValue) return 'none'
+  const split = accountKey.lastIndexOf(':')
+  if (split < 0) return 'block'
+  const workspaceIds = accountKey.slice(split + 1).split(',').filter(Boolean)
+  return workspaceIds.length === 1 && workspaceIds[0] === workspaceId ? 'migrate' : 'block'
+}
+
+export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, onOpenSupport, openCatalog = false, onCatalogClose, notificationTarget }: { baseUrl: string; workspaceKey: string; workspaceId: string; onOpenSupport: () => void; openCatalog?: boolean; onCatalogClose?: () => void; notificationTarget?: CommercialNotification | null }) {
   const [catalog, setCatalog] = useState<CommercialCatalogItem[] | null>(null)
   const [portfolio, setPortfolio] = useState<CommercialSubscriptionPortfolio | null>(null)
   const [readError, setReadError] = useState('')
@@ -94,6 +106,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
   const [traceRef, setTraceRef] = useState('')
   const [supportOpen, setSupportOpen] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
+  const [legacyRecoveryBlocked, setLegacyRecoveryBlocked] = useState(false)
   const [activeTab, setActiveTab] = useState('current')
   const [clockNow, setClockNow] = useState(() => Date.now())
   useEffect(() => {
@@ -109,10 +122,25 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
     return () => clearInterval(timer)
   }, [orders])
   const intent = useRef<{ target: string; key: string; checkoutId: string; kind?: 'first_checkout' | 'upgrade_quote' | 'upgrade_order' | 'order' } | null>(null)
-  const savedKey = `store-nova-commercial:${baseUrl}:${workspaceKey}`
+  // Purchase recovery is tenant data: a multi-workspace merchant must not see
+  // another workspace's pending order or idempotency intent after switching.
+  const savedKey = commercialPurchaseWorkspaceStorageKey(baseUrl, workspaceKey, workspaceId)
+  const [loadedScopeKey, setLoadedScopeKey] = useState(savedKey)
+  const scopeCurrent = Boolean(workspaceId) && loadedScopeKey === savedKey
+  const workspaceScopeRef = useRef(savedKey)
+  workspaceScopeRef.current = savedKey
+  useEffect(() => {
+    setLoadedScopeKey(savedKey)
+    intent.current = null
+    setTarget(null); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false)
+    setRecoveredCheckoutOpen(false); setResultUnknown(false); setWriteError('')
+    setRequestRef(''); setTraceRef(''); setRecoverOrderId(''); setSupportOpen(false); setCopyNotice('')
+    setLegacyRecoveryBlocked(false)
+  }, [savedKey])
   useEffect(() => {
     let active = true
     setLoading(true); setReadError(''); setPortfolio(null); setCatalog(null)
+    if (!workspaceId) { setReadError('请先选择当前账号已授权的工作区，套餐和订单按工作区分别读取。'); setLoading(false); return }
     if (!baseUrl) { setReadError('未配置 API，商品和已购事实尚未读取。'); setLoading(false); return }
     Promise.allSettled([fetchCommercialCatalog(baseUrl), fetchCommercialSubscription(baseUrl)]).then(([items, summary]) => {
       if (!active) return
@@ -126,11 +154,28 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
       if (failedRead) { setRequestRef(failedRead.requestId ?? ''); setTraceRef(failedRead.traceId ?? '') }
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [baseUrl, workspaceKey, reload])
+  }, [baseUrl, workspaceKey, workspaceId, reload])
   useEffect(() => {
     let active = true
+    if (!workspaceId) return () => { active = false }
     try {
-      const saved = JSON.parse(sessionStorage.getItem(savedKey) ?? 'null') as { orderIds?: string[]; intent?: typeof intent.current } | null
+      let savedValue = sessionStorage.getItem(savedKey)
+      if (!savedValue) {
+        const legacyKey = `store-nova-commercial:${baseUrl}:${workspaceKey}`
+        const legacyValue = sessionStorage.getItem(legacyKey)
+        const disposition = legacyCommercialRecoveryDisposition(workspaceKey, workspaceId, legacyValue)
+        if (disposition === 'migrate' && legacyValue) {
+          sessionStorage.setItem(savedKey, legacyValue)
+          sessionStorage.removeItem(legacyKey)
+          savedValue = legacyValue
+        } else if (disposition === 'block') {
+          setLegacyRecoveryBlocked(true)
+          setResultUnknown(true)
+          setWriteError('发现旧版跨工作区购买恢复记录，无法确认它属于哪个工作区。请先逐工作区核对原订单并联系运营；核验完成前不能新购、升级或付款。')
+          return () => { active = false }
+        }
+      }
+      const saved = JSON.parse(savedValue ?? 'null') as { orderIds?: string[]; intent?: typeof intent.current } | null
       if (saved?.intent) { intent.current = saved.intent; setResultUnknown(true) }
       if (saved?.orderIds?.length) {
         setRecoverOrderId(saved.orderIds[0]); setResultUnknown(true)
@@ -142,9 +187,11 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
       } else if (saved?.intent) setWriteError('上次提交结果待确认。请保留原请求标识联系运营查询，勿另建或重复付款。')
     } catch { setWriteError('本地订单恢复信息无法读取，请先查询原订单或联系运营核对。') }
     return () => { active = false }
-  }, [savedKey, baseUrl])
+  }, [savedKey, baseUrl, workspaceId])
   const persist = (next: CommercialPurchaseOrder[]) => { try { sessionStorage.setItem(savedKey, JSON.stringify({ orderIds: next.map(order => order.id), intent: intent.current })) } catch { /* original intent is retained in memory */ } }
   const choose = (item: CommercialCatalogItem) => {
+    if (!scopeCurrent) return
+    if (legacyRecoveryBlocked) { setWriteError('旧版购买恢复记录尚未完成跨工作区核验；请联系运营核对原订单后再继续。'); return }
     if (intent.current?.target === item.sku_code && orders.length) { setTarget(item); return }
     if (resultUnknown || orders.some(order => order.state === 'pending')) { setWriteError('已有待确认或待付款意图，请先查询原订单；关闭弹窗不会取消订单。'); return }
     setTarget(item); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false); setWriteError('')
@@ -159,7 +206,8 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
     setResultUnknown(uncertain)
   }
   const prepare = async () => {
-    if (!portfolio || !target || !intent.current || busy || resultUnknown || readError) return
+    const scopeKey = savedKey
+    if (!scopeCurrent || !portfolio || !target || !intent.current || busy || resultUnknown || readError) return
     const action = commercialPurchaseAction(portfolio, target)
     if (!action.kind) return
     if (quote && Date.parse(quote.expires_at) <= Date.now()) {
@@ -170,7 +218,9 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
     setBusy(true); setWriteError(''); setConfirmed(false)
     try {
       if (action.kind === 'upgrade' && !quote) {
-        setQuote(await createCommercialUpgradeQuote(baseUrl, target.sku_code, `${intent.current.key}-quote`))
+        const nextQuote = await createCommercialUpgradeQuote(baseUrl, target.sku_code, `${intent.current.key}-quote`)
+        if (workspaceScopeRef.current !== scopeKey) return
+        setQuote(nextQuote)
         return
       }
       let next: CommercialPurchaseOrder[]
@@ -183,52 +233,63 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
         const order = await createCommercialPurchaseOrder(baseUrl, action.kind, target.sku_code, 'merchant_commercial_purchase', intent.current.key, quote?.upgrade_quote_id)
         next = [order]
       }
+      if (workspaceScopeRef.current !== scopeKey) return
       setOrders(next); persist(next); setResultUnknown(false)
-    } catch (cause) { reportError(cause) } finally { setBusy(false) }
+    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
   const queryOriginalRequest = async () => {
-    if (!intent.current || busy) return
+    const scopeKey = savedKey
+    if (!scopeCurrent || !intent.current || busy) return
     setBusy(true); setWriteError('')
     try {
       if (intent.current.kind === 'upgrade_quote') {
         const original = await fetchCommercialUpgradeQuoteRequest(baseUrl, `${intent.current.key}-quote`)
+        if (workspaceScopeRef.current !== scopeKey) return
         if (original) { setQuote(original); setResultUnknown(false) }
         else { setResultUnknown(true); setWriteError('尚未查询到原报价的提交记录，原请求可能仍在处理中；保留原意图，请稍后查原请求或联系运营。') }
       } else if (intent.current.kind === 'first_checkout') {
         const original = await fetchCommercialFirstCheckoutRequest(baseUrl, intent.current.key)
+        if (workspaceScopeRef.current !== scopeKey) return
         if (original) { setOrders(original.orders); persist(original.orders); setResultUnknown(false) }
         else { setResultUnknown(true); setWriteError('尚未查询到首购的提交记录，原请求可能仍在处理中；当前保留原意图，不另建或重复支付。') }
       } else {
         const original = await fetchCommercialPurchaseRequest(baseUrl, intent.current.key)
+        if (workspaceScopeRef.current !== scopeKey) return
         if (original) { setOrders([original]); persist([original]); setResultUnknown(false) }
         else { setResultUnknown(true); setWriteError('尚未查询到原订单的提交记录，原请求可能仍在处理中；请稍后查原请求或联系运营，勿另建或重付。') }
       }
-    } catch (cause) { reportError(cause) } finally { setBusy(false) }
+    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
   const queryOrders = async () => {
+    const scopeKey = savedKey
+    if (!scopeCurrent) return
     const ids = commercialRecoveryOrderIds(Boolean(target), recoverOrderId, orders)
     if (!ids.length) { setWriteError('本次提交结果待确认。请保留请求标识联系运营查询原幂等意图，不要重新下单或付款。'); return }
     setBusy(true); setWriteError('')
     try {
       const next = await Promise.all(ids.map(id => fetchCommercialPurchaseOrder(baseUrl, id)))
+      if (workspaceScopeRef.current !== scopeKey) return
       setOrders(next); persist(next); setResultUnknown(false); setConfirmed(false); setAccepted(false)
       if (next.every(order => order.state !== 'pending')) { intent.current = null; sessionStorage.removeItem(savedKey); setReload(value => value + 1) }
-    } catch (cause) { reportError(cause) } finally { setBusy(false) }
+    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
   const confirmPayment = async () => {
+    const scopeKey = savedKey
     const payableOrders = commercialOrdersToConfirm(orders, clockNow)
-    if (!accepted || busy || !payableOrders.length) return
+    if (!scopeCurrent || !accepted || busy || !payableOrders.length) return
     setBusy(true); setWriteError('')
     try {
       const nextPayable = await Promise.all(payableOrders.map(order => order.payment_mode === 'manual_transfer' ? Promise.resolve(order) : createCommercialPaymentRequest(baseUrl, order.id, `merchant-payment:${order.id}`)))
+      if (workspaceScopeRef.current !== scopeKey) return
       const changed = nextPayable.some((order, index) => order.id !== payableOrders[index].id || order.amount_fen !== payableOrders[index].amount_fen || order.sku_version_id !== payableOrders[index].sku_version_id || JSON.stringify(order.snapshot) !== JSON.stringify(payableOrders[index].snapshot))
       const replacements = new Map(nextPayable.map(order => [order.id, order]))
       const next = orders.map(order => replacements.get(order.id) ?? order)
       setOrders(next); persist(next)
       if (changed) { setConfirmed(false); setAccepted(false); setWriteError('价格或权益已更新，请重新确认服务端明细；当前不会打开付款请求。') }
       else setConfirmed(true)
-    } catch (cause) { reportError(cause) } finally { setBusy(false) }
+    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
+  if (!scopeCurrent) return <section className="commercial-center" aria-label="套餐与权益包"><p role="status">{workspaceId ? '正在切换套餐与订单工作区…' : '请先选择已授权工作区。'}</p></section>
   const total = orders.reduce((sum, order) => sum + order.amount_fen, 0)
   const payableOrders = commercialOrdersToConfirm(orders, clockNow)
   const payableTotal = payableOrders.reduce((sum, order) => sum + order.amount_fen, 0)
@@ -263,7 +324,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, onOpenSupport,
     {writeError && <Alert type="error" title={writeError} description={<>{requestRef && <><p>请求标识：{requestRef}</p><Button onClick={() => { const context = `请求标识：${requestRef}；商业契约：commercial.subscription.v1；步骤：${intent.current?.kind ?? '目录/已购查询'}`; if (!navigator.clipboard) { setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。'); return } void navigator.clipboard.writeText(context).then(() => setCopyNotice('排障标识已复制；尚未提交求助或建立工单。')).catch(() => setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。')) }}>复制脱敏排障标识</Button><p role="status">{copyNotice}</p></>}{resultUnknown && <p>结果待确认，请先查原订单或联系运营；不会重新建立付款意图。</p>}{resultUnknown && intent.current && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}<Button onClick={() => setSupportOpen(true)}>提交人工支持</Button></>} />}
     {orders.length > 0 && !target && <div><p>原订单查询结果：</p><Button disabled={busy} onClick={() => { setConfirmed(false); setAccepted(false); setRecoveredCheckoutOpen(true) }}>查看原冻结明细与付款</Button>{orders.map(order => <p key={order.id}>{order.id} · {commercialState(order.state)} · {commercialMoney(order.amount_fen)}</p>)}</div>}
     {!supportOpen && !readError && !writeError && <Button onClick={() => setSupportOpen(true)}>首单前需要人工支持</Button>}
-    {supportOpen && <MerchantSupportRequestPanel baseUrl={baseUrl} workspaceKey={workspaceKey} handoff={portfolio?.support_handoff} requestId={requestRef || undefined} traceId={traceRef || undefined} step={intent.current?.kind ?? '目录及已购查询'} />}
+    {supportOpen && <MerchantSupportRequestPanel baseUrl={baseUrl} workspaceKey={`${workspaceKey}:${workspaceId}`} handoff={portfolio?.support_handoff} requestId={requestRef || undefined} traceId={traceRef || undefined} step={intent.current?.kind ?? '目录及已购查询'} />}
     <Modal title="确认服务端订单与付款明细" open={Boolean(target) || recoveredCheckoutOpen} footer={null} width={860} onCancel={() => { if (!busy) { setTarget(null); setRecoveredCheckoutOpen(false) } }} mask={{ closable: !busy }} keyboard={!busy} className="commercial-checkout-modal" destroyOnHidden={false}>
       {(target || orders.length > 0) && <>
         <h3>{target?.name ?? orders[0]?.snapshot?.name ?? orders[0]?.sku_code}</h3><p>{portfolio && target && commercialPurchaseAction(portfolio, target).reason}</p>

@@ -1,12 +1,26 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const bridgePath = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
+const marketplaceBridgePath = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs')
+const invalidTransportConfigurations = [
+  ['MERCHANT_MCP_TIMEOUT_MS', 'not-a-number'],
+  ['MERCHANT_MCP_TIMEOUT_MS', '0'],
+  ['MERCHANT_MCP_TIMEOUT_MS', '2147483648'],
+  ['MERCHANT_MCP_RETRY_ATTEMPTS', 'not-a-number'],
+  ['MERCHANT_MCP_RETRY_ATTEMPTS', '0'],
+  ['MERCHANT_MCP_RETRY_ATTEMPTS', '11'],
+  ['MERCHANT_MCP_RETRY_ATTEMPTS', '9007199254740992'],
+  ['MERCHANT_MCP_RETRY_DELAY_MS', 'not-a-number'],
+  ['MERCHANT_MCP_RETRY_DELAY_MS', '49'],
+  ['MERCHANT_MCP_RETRY_DELAY_MS', '2147483648'],
+] as const
 
-async function runBridge(requests: unknown[], env: NodeJS.ProcessEnv = {}, entrypoint = bridgePath) {
+async function runBridge(requests: unknown[] | string, env: NodeJS.ProcessEnv = {}, entrypoint = bridgePath) {
   const child = spawn(process.execPath, [entrypoint], {
     env: { ...process.env, NODE_ENV: 'test', MERCHANT_MCP_TOKEN_SOURCE: 'environment', ...env },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -22,7 +36,8 @@ async function runBridge(requests: unknown[], env: NodeJS.ProcessEnv = {}, entry
       buffer = buffer.slice(newline + 1)
     }
   })
-  for (const request of requests) child.stdin.write(`${JSON.stringify(request)}\n`)
+  if (typeof requests === 'string') child.stdin.write(requests)
+  else for (const request of requests) child.stdin.write(`${JSON.stringify(request)}\n`)
   child.stdin.end()
   await once(child, 'close')
   if (buffer.trim()) output.push(buffer.trim())
@@ -30,6 +45,28 @@ async function runBridge(requests: unknown[], env: NodeJS.ProcessEnv = {}, entry
 }
 
 describe('local stdio bridge JSON-RPC error contract', () => {
+  it.each([
+    ['canonical', bridgePath],
+    ['installable mirror', marketplaceBridgePath],
+  ])('fails closed on invalid transport configuration for %s', async (_name, entrypoint) => {
+    for (const [name, value] of invalidTransportConfigurations) {
+      const responses = await runBridge([
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } },
+      ], {
+        DEPLOY_ENV: 'local_desktop',
+        MERCHANT_MCP_BASE_URL: 'https://merchant.example.com',
+        MERCHANT_WORKSPACE_ID: 'ws_invalid_transport_config',
+        MERCHANT_MCP_TOKEN: 'isolated-invalid-config-test-token',
+        MERCHANT_STRICT_AUTH: 'true',
+        [name]: value,
+      }, entrypoint)
+      expect(responses[0]).toMatchObject({
+        id: 1,
+        result: { isError: true, structuredContent: { code: 'MCP_TRANSPORT_CONFIGURATION_INVALID' } },
+      })
+    }
+  }, 20_000)
+
   it.each([
     ['limit', '0'], ['limit', '101'], ['offset', '-1'], ['offset', '01'], ['offset', '10000000000'],
   ])('rejects invalid task.history %s=%s before forwarding', async (field, value) => {
@@ -45,7 +82,7 @@ describe('local stdio bridge JSON-RPC error contract', () => {
 
   it.each([
     ['canonical', bridgePath],
-    ['installable mirror', fileURLToPath(new URL('../../../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url))],
+    ['installable mirror', marketplaceBridgePath],
   ])('accepts omitted arguments but rejects malformed and required arguments on %s', async (_name, entrypoint) => {
     const forwarded: Record<string, unknown>[] = []
     const server = createServer(async (req, res) => {
@@ -144,6 +181,10 @@ describe('local stdio bridge JSON-RPC error contract', () => {
       { jsonrpc: '2.0', id: true, method: 'ping' },
       { jsonrpc: '2.0', id: {}, method: 'ping' },
       { jsonrpc: '2.0', id: [], method: 'ping' },
+      { jsonrpc: '2.0', id: null, method: 'ping' },
+      { jsonrpc: '2.0', id: 1.5, method: 'ping' },
+      { jsonrpc: '2.0', id: 9007199254740992, method: 'ping' },
+      { jsonrpc: '1.0', id: {}, method: 'ping' },
     ])
 
     expect(responses).toEqual([
@@ -151,7 +192,18 @@ describe('local stdio bridge JSON-RPC error contract', () => {
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
       { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
+      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
+      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
+      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
+      { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'JSON-RPC 请求格式无效' } },
     ])
+  })
+
+  it('accepts safe integer request ids at the supported numeric boundaries', async () => {
+    const ids = [Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER]
+    await expect(runBridge(ids.map(id => ({ jsonrpc: '2.0', id, method: 'ping' })))).resolves.toEqual(
+      ids.map(id => ({ jsonrpc: '2.0', id, result: {} })),
+    )
   })
 
   it('keeps notifications without ids silent', async () => {
@@ -161,5 +213,12 @@ describe('local stdio bridge JSON-RPC error contract', () => {
       { jsonrpc: '2.0', method: 'notifications/custom-event', params: { ignored: true } },
       { jsonrpc: '2.0', id: 'after-notifications', method: 'ping' },
     ])).resolves.toEqual([{ jsonrpc: '2.0', id: 'after-notifications', result: {} }])
+  })
+
+  it('reports malformed JSON with parse error and continues with the next stdio request', async () => {
+    await expect(runBridge('not-json\n{"jsonrpc":"2.0","id":"after-parse-error","method":"ping"}\n')).resolves.toEqual([
+      { jsonrpc: '2.0', id: null, error: { code: -32700, message: '请求内容解析失败' } },
+      { jsonrpc: '2.0', id: 'after-parse-error', result: {} },
+    ])
   })
 })

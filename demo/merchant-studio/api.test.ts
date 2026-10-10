@@ -178,7 +178,8 @@ describe('merchant product response normalization', () => {
     expect(new Headers(request?.headers).get('x-workspace-id')).toBe('ws_expected')
   })
 
-  it('keeps same-origin cookie sessions authoritative instead of injecting a demo tenant header', async () => {
+  it('uses the selected workspace scope with the same-origin cookie session', async () => {
+    vi.stubEnv('VITE_API_TOKEN', '')
     vi.stubGlobal('window', globalThis)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       request_id: 'req_cookie_scope', trace_id: 'trace_cookie_scope', workspace_id: 'ws_live_session',
@@ -187,7 +188,9 @@ describe('merchant product response normalization', () => {
 
     await expect(requestApi('/api', '/v1/products', {}, 'ws_demo')).resolves.toEqual({ ok: true })
     const request = vi.mocked(fetch).mock.calls[0]?.[1]
-    expect(new Headers(request?.headers).has('x-workspace-id')).toBe(false)
+    expect(new Headers(request?.headers).get('x-workspace-id')).toBe('ws_demo')
+    expect(new Headers(request?.headers).has('authorization')).toBe(false)
+    expect(request?.credentials).toBe('include')
   })
 
   it('reads the workspace-scoped image task discovery page without inventing demo rows', async () => {

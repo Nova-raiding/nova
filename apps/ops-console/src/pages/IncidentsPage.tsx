@@ -31,7 +31,7 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
   return (
     <OpsPage eyebrow="INCIDENT RESPONSE" title="事故中心" description="统一管理 SEV-1 至 SEV-4 事故、指挥官、影响范围和不可变处置时间线。" actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新事故</Button>}>
       <div className="ops-incidents-page">
-      {model.error ? <div ref={retryRef} tabIndex={-1} aria-label="事故错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={model.error} action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} /></div> : null}
+      {model.error && !initialLoadFailed ? <div ref={retryRef} tabIndex={-1} aria-label="事故错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={model.error} action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} /></div> : null}
       <Card title="筛选与操作" extra={canMutate ? <Button type="primary" style={{ minHeight: 44 }} onClick={() => setCreateOpen(true)}>创建事故</Button> : undefined}>
         <Space wrap>
           <Select allowClear aria-label="按状态筛选" placeholder="状态" style={{ width: 180 }} value={draftFilters.status} options={incidentStatusOptions} onChange={(status) => setDraftFilters((current) => ({ ...current, status }))} />
@@ -43,7 +43,7 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
 
       <Card title={platformScope ? "平台事故列表" : "事故列表"} aria-busy={model.loading}>
         {initialLoadFailed ? (
-          <Result status="error" title="事故列表不可用" subTitle="请修复工作区配置后重试；当前空列表不代表没有事故。" extra={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试事故列表</Button>} />
+          <Result status="error" title="事故列表不可用" subTitle={<>{model.error}。请修复工作区配置后重试；当前空列表不代表没有事故。</>} extra={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试事故列表</Button>} />
         ) : !model.loading && model.incidents.length === 0 ? (
           <Result status="info" title="暂无事故" subTitle="当前范围没有事故记录。事故发生后可在此建立指挥、状态和时间线。" extra={canMutate ? <Button type="primary" onClick={() => setCreateOpen(true)}>创建第一起事故</Button> : undefined} />
         ) : <IncidentsTable incidents={model.incidents} loading={model.loading} onSelect={(incident) => void model.select(incident)} />}

@@ -24,7 +24,7 @@ const report = index => ({
   evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-29T09:00:00.000Z',
 })
 
-async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false, focusJobId = '' } = {}) {
+async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false, focusJobId = '', delayJobs = 0, dynamicService = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const page = await context.newPage()
@@ -50,6 +50,7 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
       const offset = Number(parsed.searchParams.get('offset') ?? 0)
       observations.jobOffsets.push(offset)
       observations.jobAttempts++
+      if (delayJobs > 0) await new Promise(resolve => setTimeout(resolve, delayJobs))
       if (failFirst && observations.jobAttempts === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
       data = empty ? { items: [], total: 0, limit: 20, offset } : {
         items: offset === 0
@@ -76,7 +77,10 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
   })
   // Isolated local candidate mount: the browser sees the production panel
   // component, while all backend responses are controlled read-only mocks.
-  await page.goto(`${studioUrl}/publish-history-visual.html${focusJobId ? `?publish_job_id=${encodeURIComponent(focusJobId)}` : ''}`, { waitUntil: 'domcontentloaded' })
+  const query = new URLSearchParams()
+  if (focusJobId) query.set('publish_job_id', focusJobId)
+  if (dynamicService) query.set('test_service_toggle', '1')
+  await page.goto(`${studioUrl}/publish-history-visual.html${query.size ? `?${query}` : ''}`, { waitUntil: 'domcontentloaded' })
   return { browser, context, page, observations, pageErrors }
 }
 
@@ -124,6 +128,41 @@ test('发布记录空态可区分两类记录', async () => {
   } finally { await context.close(); await browser.close() }
 })
 
+test('发布记录类型标签支持左右方向键切换并将焦点移到当前标签', async () => {
+  const { browser, context, page, pageErrors } = await openMock()
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    const jobsTab = panel.getByRole('tab', { name: '发布任务' })
+    const manualTab = panel.getByRole('tab', { name: '人工发布报告' })
+    const jobsPanel = panel.getByRole('tabpanel')
+    await expect(jobsTab).toHaveAttribute('aria-controls', await jobsPanel.getAttribute('id'))
+    await expect(jobsPanel).toHaveAttribute('aria-labelledby', await jobsTab.getAttribute('id'))
+    await expect(jobsTab).toHaveAttribute('tabindex', '0')
+    await expect(manualTab).toHaveAttribute('tabindex', '-1')
+    await jobsTab.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(manualTab).toHaveAttribute('aria-selected', 'true')
+    await expect(manualTab).toBeFocused()
+    const manualPanel = panel.getByRole('tabpanel')
+    await expect(manualTab).toHaveAttribute('aria-controls', await manualPanel.getAttribute('id'))
+    await expect(manualPanel).toHaveAttribute('aria-labelledby', await manualTab.getAttribute('id'))
+    await expect(manualTab).toHaveAttribute('tabindex', '0')
+    await expect(jobsTab).toHaveAttribute('tabindex', '-1')
+    await expect(panel).toContainText('未经平台接口验证，不代表平台已发布')
+    await page.keyboard.press('ArrowLeft')
+    await expect(jobsTab).toHaveAttribute('aria-selected', 'true')
+    await expect(jobsTab).toBeFocused()
+    await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
+    await page.keyboard.press('End')
+    await expect(manualTab).toBeFocused()
+    await expect(manualTab).toHaveAttribute('aria-selected', 'true')
+    await page.keyboard.press('Home')
+    await expect(jobsTab).toBeFocused()
+    await expect(jobsTab).toHaveAttribute('aria-selected', 'true')
+    expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
 test('发布记录读取错误显示原始错误并可重试恢复', async () => {
   const { browser, context, page, observations, pageErrors } = await openMock({ failFirst: true })
   try {
@@ -133,6 +172,20 @@ test('发布记录读取错误显示原始错误并可重试恢复', async () =>
     await panel.getByRole('button', { name: '重试' }).click()
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     expect(observations.jobAttempts).toBe(2)
+    expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('服务配置在读取中失效时退出加载态并清除旧发布记录', async () => {
+  const { browser, context, page, pageErrors } = await openMock({ delayJobs: 700, dynamicService: true })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel.getByRole('status')).toContainText('正在读取发布记录')
+    await page.getByRole('button', { name: '切换服务配置' }).click()
+    await expect(panel.getByRole('status')).toContainText('配置服务端后可读取真实发布记录')
+    await expect(panel).not.toContainText('正在读取发布记录')
+    await page.getByRole('button', { name: '切换服务配置' }).click()
+    await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })

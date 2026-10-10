@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("antd", () => {
   const passthrough = ({ children, ...props }: any) => createElement("div", props, children);
-  const Button = ({ children, disabled }: any) => createElement("button", { disabled }, children);
-  const Input = ({ value, placeholder }: any) => createElement("input", { value, placeholder });
-  Input.TextArea = ({ value, placeholder }: any) => createElement("textarea", { value, placeholder });
+  const Button = ({ children, disabled, "aria-label": ariaLabel }: any) => createElement("button", { disabled, "aria-label": ariaLabel }, children);
+  const Input = ({ value, placeholder, onChange, "aria-label": ariaLabel }: any) => createElement("input", { value, placeholder, onChange, "aria-label": ariaLabel });
+  Input.TextArea = ({ value, placeholder, onChange, "aria-label": ariaLabel }: any) => createElement("textarea", { value, placeholder, onChange, "aria-label": ariaLabel });
   const Typography = { Text: ({ children }: any) => createElement("span", null, children) };
   return {
     Alert: ({ title, description }: any) => createElement("div", { role: "alert" }, title, description),
@@ -45,6 +45,8 @@ describe("PointAdjustmentPanel", () => {
     expect(html).toContain("点数调整（双人审批）");
     expect(html).toContain("创建点数调整提议");
     expect(html).toContain("输入待审批 proposal_id");
+    expect(html).toContain('aria-label="批准点数调整提议"');
+    expect(html).toContain('aria-label="驳回点数调整提议"');
     expect(html).toContain("批准");
     expect(html).toContain("驳回");
     expect(html).toContain("审批必须由另一具备审批 capability 的账号完成");

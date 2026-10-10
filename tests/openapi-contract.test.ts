@@ -45,6 +45,18 @@ function openApiOperation(source: string, path: string, method: string) {
 }
 
 describe('OpenAPI security contract', () => {
+  it('documents task answer/confirmation routes and their optional concurrency versions', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const answers = source.slice(source.indexOf('  /v1/tasks/{taskId}/answers:'), source.indexOf('  /v1/tasks/{taskId}/directions:'))
+    const confirm = source.slice(source.indexOf('  /v1/tasks/{taskId}/plan/confirm:'), source.indexOf('  /v1/tasks/{taskId}/content:'))
+
+    expect(answers).toContain('operationId: submitTaskAnswers')
+    expect(answers).toContain('expected_version: { type: integer, minimum: 1, maximum: 9007199254740991 }')
+    expect(confirm).toContain('operationId: confirmTaskPlan')
+    expect(confirm).toContain('expected_version: { type: integer, minimum: 1, maximum: 9007199254740991 }')
+    expect(confirm).toContain("'409': { $ref: '#/components/responses/ErrorEnvelope' }")
+  })
+
   it('documents strict task-list filter values and the invalid-request response', () => {
     const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
     const operation = openApiOperation(source, '/v1/tasks', 'get')

@@ -1,5 +1,4 @@
 import { OpsPage } from "../components/OpsPage";
-import { OpsPageError } from "../components/OpsPageError";
 import { StorageReconciliationSection } from "../components/storage/StorageReconciliationSection";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button } from "antd";
@@ -20,7 +19,6 @@ export function StoragePage({ model }: StoragePageProps) {
   return (
     <OpsPage eyebrow="STORAGE & RECONCILIATION" title="存储与对账" description="按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。" actions={canRefreshPageData ? <Button type="primary" loading={model.loading} style={{ minWidth: 110 }} onClick={() => void model.load()}>{canReadPlatformReconciliation ? "刷新存储" : "刷新存储摘要"}</Button> : undefined}>
       <div className="ops-storage-page">
-        {canReadPlatformReconciliation ? <OpsPageError error={storageError ?? ""} onRetry={() => void model.load()} /> : null}
         {!canReadPlatformReconciliation ? (
           <Alert
             style={{ marginBottom: 16 }}

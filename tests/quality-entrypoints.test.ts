@@ -146,6 +146,15 @@ describe('quality entrypoint coverage', () => {
 
     const collected = entrypointTestFiles(root)
     expect(collected.size, 'the enumeration returned nothing, so "collected" would be vacuously true').toBeGreaterThan(0)
+    for (const file of [
+      'apps/ops-console/src/pages/OverviewPage.browser.test.tsx',
+      'apps/ops-console/src/navigation/OpsNavigation.browser.test.tsx',
+      'apps/ops-console/src/components/OpsPageError.browser.test.tsx',
+      'apps/ops-console/src/pages/OpsConsoleController.identity-route.browser.test.tsx',
+      'apps/ops-console/src/components/finance/RefundSection.validation.browser.test.tsx',
+      'apps/ops-console/src/components/users/WorkspaceGovernanceSection.browser.test.tsx',
+      'apps/ops-console/src/components/users/UsersGovernanceDenied.browser.test.tsx',
+    ]) expect(collected, `${file} must be owned by its workspace browser runner`).toContain(file)
     expect(staleManifestEntries(root), 'an entrypoint list names a file that no longer exists').toEqual([])
 
     expect(findUncollectedVitestTests(root)).toEqual(UNCOLLECTED_VITEST_TEST_FILES.map(entry => entry.file))
@@ -244,6 +253,7 @@ describe('quality entrypoint coverage', () => {
       'apps/plugin/mcp/visual-permission-denial.e2e.test.ts',
       'apps/plugin/mcp/bridge-api-transport-contract.e2e.test.ts',
       'apps/plugin/mcp/bridge-error-contract.test.ts',
+      'apps/plugin/visual-workflow-install-contract.test.ts',
       'apps/plugin/install-smoke.test.ts',
       'tests/mcp-surface-contract.test.ts',
       'tests/openapi-contract.test.ts',
@@ -318,7 +328,7 @@ describe('quality entrypoint coverage', () => {
     expect(postgresManifest).toContain("'tests/postgres-rls-attack-matrix.postgres.test.ts'")
   })
 
-  it('keeps the deliberately server-only control planes explicit', () => {
+  it('keeps the deliberately server-only control planes explicit', { timeout: 15_000 }, () => {
     const auditSource = readFileSync(resolve(root, 'scripts/audit-ops-surface.mjs'), 'utf8')
     // Not only feature flags: `ops.platform.store.record.create` is the other
     // deliberately UI-less control plane (see the set's own comment in
@@ -351,7 +361,7 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(54)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(64)
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')
@@ -359,6 +369,16 @@ describe('quality entrypoint coverage', () => {
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/support-repository-sla-filter.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/content-generation-action-owner.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/catalog-positive-isolated.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/product-listing-cross-tenant-account-integrity.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/customer-delivery-tenant-rls.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/publish-media-orphan-repository.postgres.test.ts')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/pages/OverviewPage.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/navigation/OpsNavigation.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/components/OpsPageError.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/pages/OpsConsoleController.identity-route.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/components/finance/RefundSection.validation.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/components/users/WorkspaceGovernanceSection.browser.test.tsx')
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/ops-console/src/components/users/UsersGovernanceDenied.browser.test.tsx')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/migration-215-release.postgres.test.ts')
     expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')

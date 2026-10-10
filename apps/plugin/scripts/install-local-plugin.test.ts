@@ -79,6 +79,7 @@ function rollbackDirectories(fixture: ReturnType<typeof setup>) {
 }
 
 describe('direct local plugin install runtime build', () => {
+  // The macOS path builds the Keychain helper under its own 120s bound.
   it('installs the checked-in marketplace mirror with its explicit QA-only package profile', () => {
     const fixture = setup(source, { marketplaceSourceRoot: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing') })
     try {
@@ -87,7 +88,7 @@ describe('direct local plugin install runtime build', () => {
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true })
       expect(codexCommands(fixture).some(command => command.slice(0, 3).join(' ') === 'plugin marketplace add')).toBe(true)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
-  }, 30_000)
+  }, 180_000)
 
   it.skipIf(process.platform !== 'darwin')('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
     const fixture = setup()

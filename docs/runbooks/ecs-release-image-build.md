@@ -1,10 +1,12 @@
 # ECS release 镜像构建
 
-`infra/scripts/build-ecs-release-images.sh` 是仓库内六个业务运行镜像的唯一通用生产入口。开发机可从指定的干净 Git 提交创建归档；ECS 构建机则直接消费经过 staging 校验的 `.candidate-source.tar` 与 `.candidate-identity`，不要求服务器保留 Git 工作区。脚本默认依次构建 API、worker、商家桌面 UI、运营桌面 UI、支付网关和入口网关，推送到显式配置的镜像仓库，然后输出不可变摘要。
+`infra/scripts/build-ecs-release-images.sh` 是仓库内六个业务运行镜像的唯一通用构建入口。开发机可从指定的干净 Git 提交创建归档；ECS 构建机则直接消费经过 staging 校验的 `.candidate-source.tar` 与 `.candidate-identity`，不要求服务器保留 Git 工作区。脚本默认依次构建 API、worker、商家桌面 UI、运营桌面 UI、支付网关和入口网关，推送到显式配置的镜像仓库，然后输出不可变摘要。
+
+此通用构建器只生成镜像，不授予任何环境的部署权限。唯一 Demo 的快速更新适配器仅支持 `merchant-api`、`merchant-worker`、`merchant-ops-ui`、`merchant-ui`；默认 `all` 会额外构建支付和入口网关镜像，但这不代表它们获准进入 Demo 候选或部署。Demo 构建必须显式选择受支持组件；支付/网关变更应按 [101 快速更新方案](ecs-fast-update.md) 停止当前流程。
 
 脚本只构建和推送镜像，不渲染 Compose、不启动容器、不切流，也不修改数据库。PostgreSQL 迁移镜像与 ClamAV 镜像仍必须由发布配置提供经过审核的上游固定摘要，不能用本脚本输出的六镜像清单冒充完整发布清单。
 
-候选源码归档不是运行镜像：它为发布门禁保留 `apps/plugin` 和 `.codex-marketplace` 的插件契约测试输入，但排除已跟踪的 `artifacts/` 与 `screenshots/` 历史交付物。API、worker 的最终运行镜像只复制各自编译入口和共享包，不复制本地插件的编译树；商家及平台桌面 UI 镜像也各自从独立前端目录构建。因而不能把裸 `git archive HEAD` 的体积、或服务器上供门禁使用的源码目录，等同于实际生产运行镜像内容。若要求服务器连插件源码都不暂存，须先拆分门禁输入与业务源码身份，并同步改造候选包、镜像标签、发布清单及证据校验，不可单方面排除目录。
+候选源码归档不是运行镜像：它为发布门禁保留 `apps/plugin` 和 `.codex-marketplace` 的插件契约测试输入，但排除已跟踪的 `artifacts/` 与 `screenshots/` 历史交付物。API、worker 的最终运行镜像只复制各自编译入口和共享包，不复制本地插件的编译树；商家及平台桌面 UI 镜像也各自从独立前端目录构建。因而不能把裸 `git archive HEAD` 的体积、或服务器上供门禁使用的源码目录，等同于最终运行镜像内容。若要求服务器连插件源码都不暂存，须先拆分门禁输入与业务源码身份，并同步改造候选包、镜像标签、发布清单及证据校验，不可单方面排除目录。
 
 每次修改候选归档路径或运行镜像拷贝边界后，运行 `npm run test:ecs-source-archive-contract` 核对生产路径契约；该测试不能替代镜像构建与容器内容检查。
 
@@ -26,7 +28,7 @@ ECS_NPM_REGISTRY=https://registry.npmjs.org/ \
 sh infra/scripts/build-ecs-release-images.sh
 ```
 
-在 `/srv/merchant-releases/release-...` 的已验证 checkout 中执行时，脚本自动读取 `.candidate-source.tar` 和 `.candidate-identity`；也可用 `ECS_RELEASE_SOURCE_ARCHIVE` 与 `ECS_RELEASE_SOURCE_IDENTITY` 显式指定。两者必须同时提供，且 release ID、完整 Git SHA 与源码 SHA-256 必须完全一致，否则在调用 Docker 前失败关闭。
+在 101 上经只读现状和当前 Demo 受保护配置确认的已验证候选 checkout 中执行时，脚本自动读取 `.candidate-source.tar` 和 `.candidate-identity`；不要从历史文档推断或硬编码 staging 路径。也可用 `ECS_RELEASE_SOURCE_ARCHIVE` 与 `ECS_RELEASE_SOURCE_IDENTITY` 显式指定。两者必须同时提供，且 release ID、完整 Git SHA 与源码 SHA-256 必须完全一致，否则在调用 Docker 前失败关闭。
 
 生产运营后台默认使用 `/api` 和 `/ops/`。如环境契约不同，只允许通过 `ECS_OPS_UI_API_BASE`、`ECS_MERCHANT_UI_API_BASE_URL` 和非敏感的 `ECS_MERCHANT_UI_WORKSPACE_ID` 提供构建参数。不得把密钥、令牌或数据库地址作为 Docker build argument。
 

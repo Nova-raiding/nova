@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Empty,
   Form,
   Input,
   Modal,
@@ -48,6 +49,20 @@ interface DeletionDecisionRunnerOptions {
 }
 
 type CapacityEvidenceState = "ready" | "not_performed" | "blocked";
+
+export type DataDeletionQueueReadState = "error" | "platform_scope" | "denied" | "unread" | "empty" | "ready";
+
+export function dataDeletionQueueReadState(input: {
+  canRead: boolean;
+  scopeKind: string;
+  error?: string;
+  requests?: readonly DataDeletionRequest[];
+}): DataDeletionQueueReadState {
+  if (input.error) return "error";
+  if (!input.canRead) return input.scopeKind === "platform" ? "platform_scope" : "denied";
+  if (input.requests === undefined) return "unread";
+  return input.requests.length === 0 ? "empty" : "ready";
+}
 
 export function capacityEvidenceState(value: EvidenceReadiness): CapacityEvidenceState {
   if (value.state === "ready") return "ready";
@@ -272,6 +287,13 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
     ? Boolean(deletionActionLoading[activeDeletionActionKey])
     : false;
   const deletionActionsBusy = Object.keys(deletionActionLoading).length > 0;
+  const deletionReadError = model.dataSetError("ops.data.delete.list");
+  const deletionQueueState = dataDeletionQueueReadState({
+    canRead: model.authorization.can("workspace.delete.execute"),
+    scopeKind: model.authorization.scope.kind,
+    error: deletionReadError,
+    requests: deletionRequests,
+  });
   const deletionReasonInvalid =
     deletionReason.trim().length < DATA_DELETION_REASON_MIN_LENGTH;
   const capacityState = capacityEvidenceState(productionEvidence.capacity);
@@ -490,7 +512,37 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
         title="数据删除申请"
         extra={<Tag color="orange">双人审批后仍需外部删除证明</Tag>}
       >
-        <Table
+        {deletionQueueState === "error" ? <Alert
+          type="error"
+          showIcon
+          title="数据删除申请读取失败"
+          description={deletionRequests?.length ? `以下保留的是上次成功读取的 ${deletionRequests.length} 条申请；当前状态可能已变化。${deletionReadError}` : deletionReadError}
+          action={<Button onClick={() => void model.load()}>重试读取申请</Button>}
+          style={{ marginBottom: 16 }}
+        /> : null}
+        {deletionQueueState === "platform_scope" ? <Alert
+          type="info"
+          showIcon
+          title="平台工作台不读取客户级删除申请"
+          description="申请详情和审批需要明确的工作区授权会话。此处未读取申请列表，空结果不代表没有申请。"
+          style={{ marginBottom: 16 }}
+        /> : null}
+        {deletionQueueState === "denied" ? <Alert
+          type="warning"
+          showIcon
+          title="当前会话没有数据删除申请读取权限"
+          description="此处未读取申请列表；请使用具备工作区数据治理读取权限的会话后再核对。"
+          style={{ marginBottom: 16 }}
+        /> : null}
+        {deletionQueueState === "unread" ? <Alert
+          type="info"
+          showIcon
+          title="数据删除申请尚未读取"
+          description="当前没有可验证的列表结果，不能将空白表格理解为没有申请。"
+          style={{ marginBottom: 16 }}
+        /> : null}
+        {deletionQueueState === "empty" ? <Empty description="暂无数据删除申请" /> : null}
+        {deletionRequests?.length ? <Table
           rowKey="id"
           pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={deletionRequests}
@@ -565,7 +617,7 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
               },
             },
           ]}
-        />
+        /> : null}
       </Card>
       <Modal
         open={Boolean(deletionDecision)}
