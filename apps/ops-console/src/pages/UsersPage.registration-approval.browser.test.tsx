@@ -130,7 +130,7 @@ describe("UsersPage platform registration review route journey", () => {
         await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "fixture blocks unconfigured request" }) });
       });
 
-      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded", timeout: 45_000 });
       await page.getByRole("heading", { name: "已接入用户" }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: /更多用户治理操作/u }).click();
       await page.getByRole("menuitem", { name: "入驻申请", exact: true }).click();
@@ -151,8 +151,7 @@ describe("UsersPage platform registration review route journey", () => {
       expect(await drawer.getByRole("button", { name: "提交审核", exact: true }).isDisabled()).toBe(true);
       expect(restCalls.filter(call => call.method === "POST")).toEqual([]);
 
-      await drawer.getByLabel("审核决定").click();
-      await page.getByRole("option", { name: "拒绝", exact: true }).click();
+      await drawer.getByRole("radio", { name: "拒绝", exact: true }).check();
       expect(await reasonInput.inputValue()).toBe("资料仍需核验");
       await drawer.getByRole("button", { name: "提交审核", exact: true }).click();
       await drawer.waitFor({ state: "hidden" });

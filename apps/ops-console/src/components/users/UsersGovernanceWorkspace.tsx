@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { Alert, Button, Card, Drawer, Dropdown, Form, Input, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Drawer, Dropdown, Form, Input, Radio, Space, Table, Tag, Typography, message } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { OpsPageError } from "../OpsPageError";
 import { UserDirectorySection } from "./UserDirectorySection";
@@ -126,11 +126,12 @@ function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel 
       >
         <Form layout="vertical">
           <Form.Item label="审核决定">
-            <Select value={decision} onChange={setDecision} options={[
-              { value: "undecided", label: "请选择" },
-              { value: "approved", label: "通过（暂不可用）", disabled: true },
-              { value: "rejected", label: "拒绝" },
-            ]} />
+            <Radio.Group aria-label="审核决定" value={decision} onChange={event => setDecision(event.target.value)}>
+              <Space orientation="vertical">
+                <Radio value="approved" disabled>通过（暂不可用）</Radio>
+                <Radio value="rejected">拒绝</Radio>
+              </Space>
+            </Radio.Group>
           </Form.Item>
           <Alert
             type="warning"
