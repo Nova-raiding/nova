@@ -208,6 +208,7 @@
 
 - **电商图片/视频技能文档：**图片 prompt 参考现在只负责策划与复核，图像生成必须调用 Store Nova `catalog.image.generate` 与已配置服务端 relay；视频指南/模板改为证据驱动的脚本、分镜和时间线方法，视频技能入口已同步删除“6阶段”“8种商品模板”等失效索引。图片视觉合同 4/4、视频安全与插件 manifest 2 个文件共 9 项通过，源与 marketplace 镜像一致。只适配了流程方法，没有运行或原样安装第三方 provider/renderer；本轮新版插件包已重建并安装，真实生成未验证。
 - **Customer Delivery：**合同来源支持经过 HTTPS 校验的直链或本地文件；两者共用现有服务端安全下载、workspace 鉴权、隔离资产和扫描可用性门禁。扫描等待失败时，重试复用已返回的 `assetRef`，避免重复上传。对应窄回归覆盖源类型与 pending scan 重试；没有真实下载、客户创建或文件上传。待扫描缓存按文件/URL 来源复用，尚未覆盖 workspace 或 delivery 切换后恢复；服务端仍会执行授权检查，未发现绕过证据。
+- **Customer Delivery 列表失败态：**成功加载后若刷新列表失败，页面清空行但此前保留旧 `listTotal`，导致错误空态仍显示过期匹配总数。现失败处理同时将总数清零。新增独立 Chromium 回归先加载 total=21 再模拟 503，确认错误提示出现且旧总数消失，1/1 通过；Ops Console TypeScript 检查 exit 0。该证据来自本地 RPC stub，不是实时 API 稳定性验收。
 - **Merchant Rules：**规则平台筛选与商品/店铺深链平台分别序列化为 `rules_platform` 与 `platform`。普通规则页浏览器 fixture 已验证直达、刷新、过滤、后退/前进、搜索空态、类目模板和错误重试 1/1；scoped URL 路由合同 6/6。商品深链浏览器尝试受登录 fixture 状态阻断，未计通过。两条新 browser spec 已加入专用 `test:browser:all` 入口和 entrypoint ledger。
 - **API 商品搜索：**隔离 PostgreSQL `catalog.search` 与内存 fallback 的复合筛选、`% _ !` 字面匹配、第二页顺序/total 和持久化时间窗口对照 1/1。用 Service 内存 `updatedAt` 取精确相同的日期上下界时曾出现 PostgreSQL 未命中；因为持久化时间与内存时间值可能不同，这个精确边界仍需另行确认。MCP-only 状态过滤未覆盖；HTTP 搜索契约目前较窄，不声称与 MCP 字段级完全一致。
 - **当前 demo 状态：**没有检查 ECS `merchant-demo-85575f9c` 或依据域名探测当前健康，也没有部署。personal 插件的新版构建/安装收据如下。
