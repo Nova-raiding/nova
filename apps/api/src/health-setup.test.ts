@@ -36,10 +36,19 @@ describe('setup diagnostics demo gate boundary', () => {
       SUPPORTED_PLATFORMS: [],
       manualPlatformEnabled: () => true,
       fixturePlatformEnabled: () => false,
-      paymentCapabilityStatus: ((input: { productionGate: boolean }) => {
+      paymentCapabilityStatus: (input: Parameters<SetupDiagnosticsDependencies['paymentCapabilityStatus']>[0]) => {
         paymentGate = input.productionGate
-        return { effective: input.productionGate }
-      }) as SetupDiagnosticsDependencies['paymentCapabilityStatus'],
+        return {
+          provider_configured: true,
+          configured: true,
+          effective: input.productionGate,
+          production_enabled: input.productionGate,
+          state: input.productionGate ? 'enabled' : 'configured_but_blocked',
+          supported_channels: [...(input.supportedChannels ?? [])],
+          channel_readiness: input.channelReadiness ?? {},
+          reasons: input.reasons ?? [],
+        }
+      },
     } as unknown as SetupDiagnosticsDependencies
 
     const setup = setupDiagnostics({ commercialReadiness: { ready: true, reasons: [] } }, dependencies)

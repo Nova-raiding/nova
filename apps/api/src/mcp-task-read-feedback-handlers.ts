@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Task, type TaskFeedback } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { PostgresBusinessRepository } from '../../../packages/persistence/src/business-repository.js'
+import { normalizeCatalogDateRange } from './catalog-search-dates.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -49,6 +50,7 @@ export async function handleMcpTaskReadFeedback(method: string, params: JsonObje
     }
     case 'task.history': {
       const pageRequest = mcpPagination(params)
+      const dateRange = normalizeCatalogDateRange(params.date_from, params.date_to)
       const filters = {
       ...(typeof params.query === 'string' ? { query: params.query } : {}),
       ...(typeof params.platform === 'string' ? { platform: params.platform as Platform } : {}),
@@ -59,8 +61,7 @@ export async function handleMcpTaskReadFeedback(method: string, params: JsonObje
       ...(typeof params.store_name === 'string' ? { storeName: params.store_name } : {}),
       ...(typeof params.remote_product_id === 'string' ? { remoteProductId: params.remote_product_id } : {}),
       ...(typeof params.publish_status === 'string' ? { publishStatus: params.publish_status as import('../../../packages/application/src/service.js').PublishState } : {}),
-      ...(typeof params.date_from === 'string' ? { dateFrom: params.date_from } : {}),
-      ...(typeof params.date_to === 'string' ? { dateTo: params.date_to } : {}),
+      ...dateRange,
       }
       const accessibleBrandIds = await accessibleTaskBrandIds(req, workspaceId)
       const page = business

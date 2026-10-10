@@ -58,6 +58,8 @@ test('catalog API read failure exposes a retry and recovers to server data', asy
 
   try {
     await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('.topbar h1')).toHaveText('平台&店铺&商品')
+    await expect(page.locator('#merchant-knowledge-subnav [aria-current="page"]')).toHaveText('平台&店铺&商品')
     await page.getByRole('button', { name: /^京东/u }).click()
     await page.locator('.catalog-store-card').filter({ hasText: '目录重试验收店' }).getByRole('button', { name: /进入商品库/u }).click()
     await expect(page.getByLabel('商品目录读取错误').getByText(/商品读取失败：/u)).toBeVisible()

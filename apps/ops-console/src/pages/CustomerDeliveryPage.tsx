@@ -432,6 +432,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         await persist(await customerDeliveryClient.get(targetWorkspaceId, record.id));
       }
       setRecords((current) => current.filter((candidate) => candidate.id !== record.id));
+      const nextTotal = Math.max(0, listTotal - 1);
+      const nextPage = Math.min(listQuery.page, Math.max(1, Math.ceil(nextTotal / listQuery.pageSize)));
+      setListTotal(nextTotal);
+      const nextQuery = { ...listQuery, page: nextPage };
+      if (nextPage !== listQuery.page) setListQuery(nextQuery);
+      await load(nextQuery);
     } catch (cause) {
       reportMutationError(cause);
       throw cause;

@@ -1403,7 +1403,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'task.history',
     description: 'Search historical marketing tasks visible to the scoped workspace.',
-    params: params({ query: { type: 'string' }, platform: platformProperty, state: { type: 'string', enum: TASK_STATES }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: pageLimit100, offset: nonNegativeIntegerString }),
+    params: params({ query: { type: 'string' }, platform: platformProperty, state: { type: 'string', enum: TASK_STATES }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string', format: 'date-time', description: '带时区的 ISO 8601/RFC 3339 时间，最多 3 位小数秒；偏移必须在 -15:59 到 +15:59，不接受 -00:00。' }, date_to: { type: 'string', format: 'date-time', description: '带时区的 ISO 8601/RFC 3339 时间，最多 3 位小数秒；偏移必须在 -15:59 到 +15:59，不接受 -00:00。' }, limit: pageLimit100, offset: nonNegativeIntegerString }),
   },
   {
     method: 'task.resume',

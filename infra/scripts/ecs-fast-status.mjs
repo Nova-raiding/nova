@@ -5,19 +5,33 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+export const CANONICAL_DEMO_SERVICES = Object.freeze([
+  'api', 'api-replica', 'clamav', 'ops-ui', 'payment-gateway', 'pilot-gateway',
+  'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation',
+  'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync',
+])
+
 export function assess(snapshot) {
   const blockers = []
   if (snapshot.free_bytes < 8 * 1024 ** 3) blockers.push('disk_free_below_8GiB')
   if (!snapshot.services.length) blockers.push('live_project_missing')
+  const names = snapshot.services.map(service => service.service)
+  const actual = new Set(names)
+  for (const name of CANONICAL_DEMO_SERVICES) {
+    if (!actual.has(name)) blockers.push(`service_missing:${name}`)
+  }
+  for (const name of actual) {
+    if (!CANONICAL_DEMO_SERVICES.includes(name)) blockers.push(`service_unexpected:${name}`)
+  }
+  for (const name of actual) {
+    if (names.filter(item => item === name).length > 1) blockers.push(`service_duplicate:${name}`)
+  }
   for (const service of snapshot.services) {
     if (service.state !== 'running' || service.health !== 'healthy') blockers.push(`service_not_healthy:${service.service}`)
     const repositoryDigest = /^.+@sha256:[a-f0-9]{64}$/u.test(service.image ?? '')
     const exactLocalImageId = /^sha256:[a-f0-9]{64}$/u.test(service.image ?? '') && service.image === service.image_id
     if (!repositoryDigest && !exactLocalImageId) blockers.push(`image_not_pinned:${service.service}`)
     if (!/^[a-f0-9]{40}$/u.test(service.git_sha ?? '')) blockers.push(`source_revision_missing:${service.service}`)
-  }
-  for (const name of ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']) {
-    if (!snapshot.services.some(service => service.service === name)) blockers.push(`service_missing:${name}`)
   }
   // Upstream database/cache images have no repository Git SHA; do not invent one.
   // Third-party infrastructure images are pinned by immutable digest but do
@@ -45,14 +59,14 @@ export function inventoryStatus(blockers) {
   const demoRuntimeHealthy = blockers.length === 0
   return {
     scope: 'inventory_only',
+    environment_scope: 'canonical_demo',
     demo_runtime_healthy: demoRuntimeHealthy,
-    formal_production_approved: false,
-    // Kept for consumers that already treat this field as a conservative
-    // approval signal. This read-only inventory never grants approval.
+    // Kept for consumers that treat this field as a conservative candidate
+    // update signal. This read-only inventory never grants approval.
     release_approved: false,
     next_step: demoRuntimeHealthy
-      ? 'Demo runtime healthy; formal production approval not evaluated. Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.'
-      : 'Demo runtime has inventory blockers; formal production approval not evaluated. Resolve the reported blockers before updating.',
+      ? 'Canonical Demo inventory healthy. Freeze a target SHA; compare each component revision, verify migration compatibility and required Demo evidence before updating.'
+      : 'Canonical Demo inventory has blockers. Resolve the reported blockers before updating.',
   }
 }
 
@@ -69,15 +83,35 @@ export async function collectPublicProbes(fetchImpl = fetch) {
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), redirect: 'error' })
       const body = await response.json()
-      probes.push({ url, status: response.status, ready: body.data?.ready ?? body.data?.status === 'ok', ...(body.data?.release ? { release: body.data.release } : {}) })
+      probes.push({ url, status: response.status, ready: body.data?.ready ?? body.data?.status === 'ok',
+        ...(body.data?.release ? { release: body.data.release } : {}),
+        ...(body.data?.setup?.mode ? { mode: body.data.setup.mode } : {}) })
     } catch { probes.push({ url, status: null, ready: false }) }
   }
   return probes
 }
 
 export function publicProbeBlockers(probes) {
-  return probes.filter(probe => probe.status !== 200 || !probe.ready)
+  const blockers = probes.filter(probe => probe.status !== 200 || !probe.ready)
     .map(probe => `public_probe_failed:${probe.url}`)
+  for (const probe of probes) {
+    if (probe.url === 'https://yxsona.com/api/healthz' && probe.mode !== 'demo') {
+      blockers.push(`public_demo_mode_invalid:${probe.url}`)
+    }
+  }
+  return blockers
+}
+
+export function publicIdentityBlockers(snapshot, probes) {
+  const probe = probes.find(item => item.url === 'https://yxsona.com/releasez')
+  const publicSha = probe?.release?.release_git_sha
+  const apiShas = snapshot.services.filter(service => ['api', 'api-replica'].includes(service.service))
+    .map(service => service.runtime_release_git_sha)
+  if (!/^[a-f0-9]{40}$/u.test(publicSha ?? '') || apiShas.length !== 2
+    || apiShas.some(value => !/^[a-f0-9]{40}$/u.test(value ?? '') || value !== publicSha)) {
+    return ['public_release_identity_mismatch']
+  }
+  return []
 }
 
 const remote = String.raw`
@@ -96,7 +130,11 @@ for cid in ids:
         continue
     image=json.loads(docker('image','inspect',c['Image']))[0]
     il=image['Config'].get('Labels') or {}
-    services.append(dict(service=labels.get('com.docker.compose.service'),container_id=c['Id'],state=c['State']['Status'],health=c['State'].get('Health',{}).get('Status','absent'),image=c['Config']['Image'],image_id=c['Image'],git_sha=il.get('org.opencontainers.image.revision'),compose_path=labels.get('com.docker.compose.project.config_files')))
+    service=labels.get('com.docker.compose.service')
+    item=dict(service=service,container_id=c['Id'],state=c['State']['Status'],health=c['State'].get('Health',{}).get('Status','absent'),image=c['Config']['Image'],image_id=c['Image'],git_sha=il.get('org.opencontainers.image.revision'),compose_path=labels.get('com.docker.compose.project.config_files'))
+    if service in ('api','api-replica'):
+        item['runtime_release_git_sha']=next((entry.partition('=')[2] for entry in (c['Config'].get('Env') or []) if entry.startswith('RELEASE_GIT_SHA=')),None)
+    services.append(item)
 print(json.dumps(dict(project='merchant-demo-85575f9c',free_bytes=shutil.disk_usage('/').free,services=services)))
 `
 
@@ -110,6 +148,7 @@ async function main() {
   const probes = await collectPublicProbes()
   const blockers = assess(snapshot)
   blockers.push(...publicProbeBlockers(probes))
+  blockers.push(...publicIdentityBlockers(snapshot, probes))
   const warnings = [...inventoryWarnings(snapshot), ...snapshot.services.filter(s => ['postgres', 'redis'].includes(s.service) && !s.image.includes('@sha256:')).map(s => `data_service_uses_tag_preserve_running_image_id:${s.service}`)]
   console.log(JSON.stringify({ observed_at: new Date().toISOString(), ...snapshot, probes, blockers, warnings,
     ...inventoryStatus(blockers),

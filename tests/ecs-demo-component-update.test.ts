@@ -13,7 +13,7 @@ const previousSource = sha('previous source'), nextSource = sha('next source')
 const keys = ['RELEASE_ID', 'RELEASE_GIT_SHA', 'RELEASE_MANIFEST_SHA256', 'RELEASE_IMAGE_SET_DIGEST']
 
 // Synthetic evidence only; these fixtures make no claim about live Docker.
-function fixture() {
+function fixture(): any {
   const services: Record<string, any> = {}, records: Record<string, any> = {}, actual: Record<string, any> = {}
   for (const name of runtimeServices as string[]) {
     const upstream = ['postgres', 'redis', 'clamav'].includes(name)
@@ -42,13 +42,14 @@ function fixture() {
   }
   return input
 }
-function selectComponents(input: ReturnType<typeof fixture>, components: string[]) {
+function selectComponents(input: any, components: string[]): any {
   const labels = { 'org.opencontainers.image.revision': nextGit, 'com.storenova.release.id': 'release-next', 'com.storenova.release.source_sha256': nextSource }
   const refs: Record<string, string> = {}, digests: Record<string, string> = {}, metadata: Record<string, any> = {}, imported: Record<string, any> = {}
   for (const component of components) {
     const reference = `registry.example/${component}@${sha(`new ${component} digest`)}`
+    const digestRef = reference.split('@')[1]!
     const imageId = sha(`new ${component} image`)
-    refs[component] = reference; digests[component] = reference.split('@')[1]
+    refs[component] = reference; digests[component] = digestRef
     metadata[component] = { reference, digest: digests[component], labels }
     imported[component] = { reference, image_id: imageId, repo_digests: [reference], labels, os: 'linux', architecture: 'amd64' }
   }
@@ -115,20 +116,23 @@ describe('Demo UI mixed-component publication identity', () => {
     expect(prepare(reversed)).toEqual(prepare(input))
   })
 
-  it('prepares API, Ops UI and Merchant UI from one exact candidate as one configuration-only package', () => {
-    const input = selectComponents(fixture(), ['merchant-api', 'merchant-ops-ui', 'merchant-ui'])
+  it('prepares API, Worker, Ops UI and Merchant UI from one exact candidate as one configuration-only package', () => {
+    const input = selectComponents(fixture(), ['merchant-api', 'merchant-worker', 'merchant-ops-ui', 'merchant-ui'])
     const result = prepare(input), compose = JSON.parse(result.candidate_compose_text), manifest = JSON.parse(result.manifest_text)
+    const original = JSON.parse(input.baseline.compose_text)
     expect(result.review.deploy_authorized).toBe(false)
-    expect(result.review.updated_services).toEqual(['api', 'api-replica', 'ops-ui', 'ui'])
-    expect(result.review.image_updated_services).toEqual(['api', 'api-replica', 'ops-ui', 'ui'])
-    for (const name of ['api', 'api-replica', 'ops-ui', 'ui']) {
+    const allChangedServices = ['api', 'api-replica', 'ops-ui', 'ui', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'].sort()
+    expect(result.review.updated_services).toEqual(allChangedServices)
+    expect(result.review.image_updated_services).toEqual(allChangedServices)
+    for (const name of allChangedServices) {
       expect(compose.services[name].image).toContain('@sha256:')
       expect(compose.services[name].labels['org.opencontainers.image.revision']).toBe(nextGit)
       expect(manifest.services[name]).toMatchObject({ git_sha: nextGit, source_sha256: nextSource, updated: true, image_updated: true })
     }
     expect(compose.services.api.environment.DEMO_RUNTIME_MODE).toBe('true')
     expect(compose.services['api-replica'].environment.DEMO_RUNTIME_MODE).toBe('true')
-    expect(manifest.preserved_services).toHaveLength(11)
+    expect(manifest.preserved_services).toEqual(['clamav', 'payment-gateway', 'pilot-gateway', 'postgres', 'redis'])
+    for (const name of manifest.preserved_services) expect(compose.services[name]).toEqual(original.services[name])
     expect(result.rollback_compose_text).toBe(input.baseline.compose_text)
   })
 
@@ -144,16 +148,20 @@ describe('Demo UI mixed-component publication identity', () => {
     expect(candidate.services['api-replica'].environment.DEMO_RUNTIME_MODE).toBe('true')
     expect(result.rollback_compose_text).toBe(exactLegacyCompose)
     expect(JSON.parse(result.rollback_compose_text).services.api.environment.DEMO_RUNTIME_MODE).toBeUndefined()
+    const normalizedCandidate = structuredClone(candidate)
+    for (const service of Object.values(normalizedCandidate.services) as any[]) for (const key of keys) delete service.environment?.[key]
+    expect(JSON.parse(result.manifest_text).configuration_contract_sha256).toBe(hash(canonicalJson(normalizedCandidate)))
   })
 
   it.each([
     ['merchant-api', ['api', 'api-replica']],
+    ['merchant-worker', ['api', 'api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']],
     ['merchant-ops-ui', ['api', 'api-replica', 'ops-ui']],
     ['merchant-ui', ['api', 'api-replica', 'ui']],
   ])('supports the %s component subset with only its image services plus API identity services', (component, expected) => {
     const result = prepare(selectComponents(fixture(), [component]))
     expect(result.review.updated_services).toEqual(expected)
-    expect(result.review.image_updated_services).toEqual(component === 'merchant-api' ? ['api', 'api-replica'] : [component === 'merchant-ops-ui' ? 'ops-ui' : 'ui'])
+    expect(result.review.image_updated_services).toEqual(component === 'merchant-api' ? ['api', 'api-replica'] : component === 'merchant-worker' ? ['worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'] : [component === 'merchant-ops-ui' ? 'ops-ui' : 'ui'])
     expect(result.review.deploy_authorized).toBe(false)
   })
 
@@ -187,12 +195,27 @@ describe('Demo UI mixed-component publication identity', () => {
   it.each([
     ['missing imported component', (x: any) => { delete x.imported_components['merchant-ops-ui'] }],
     ['extra imported component', (x: any) => { x.imported_components['merchant-api'] = x.imported_components['merchant-ops-ui'] }],
+    ['missing worker image', (x: any) => { delete x.component_images.image_references['merchant-worker'] }],
     ['mixed OCI revision', (x: any) => { x.component_images.image_metadata['merchant-api'].labels['org.opencontainers.image.revision'] = previousGit }],
     ['wrong imported digest', (x: any) => { x.imported_components['merchant-ops-ui'].reference = 'registry.example/merchant-ops-ui@' + sha('other digest') }],
   ])('rejects invalid multi-component evidence: %s', (_label, mutate) => {
-    const input = selectComponents(fixture(), ['merchant-api', 'merchant-ops-ui', 'merchant-ui'])
+    const input = selectComponents(fixture(), ['merchant-api', 'merchant-worker', 'merchant-ops-ui', 'merchant-ui'])
     mutate(input)
     expect(() => prepare(input)).toThrow()
+  })
+  it.each([
+    ['merchant-api', 'merchant-ui'],
+    ['merchant-ops-ui', 'merchant-api'],
+    ['merchant-ui', 'merchant-ops-ui'],
+  ])('rejects a %s component bound to the %s image repository', (component, wrongComponent) => {
+    const input = selectComponents(fixture(), [component])
+    const reference = `registry.example/${wrongComponent}@${sha(`wrong ${wrongComponent} repo`)}`
+    input.component_images.image_references[component] = reference
+    input.component_images.image_digests[component] = reference.split('@')[1]
+    input.component_images.image_metadata[component] = { ...input.component_images.image_metadata[component], reference, digest: reference.split('@')[1] }
+    input.imported_components[component] = { ...input.imported_components[component], reference, repo_digests: [reference] }
+    if (component === 'merchant-ui') input.imported_ui = input.imported_components[component]
+    expect(() => prepare(input)).toThrow(/repository identity differs/)
   })
 
   it('rejects startup DDL even when the caller seals a consistent baseline', () => {

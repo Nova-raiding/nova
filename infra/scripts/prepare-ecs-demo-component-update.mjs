@@ -3,7 +3,12 @@ import { createHash } from 'node:crypto'
 
 const project = 'merchant-demo-85575f9c'
 export const runtimeServices = Object.freeze(['api', 'api-replica', 'clamav', 'ops-ui', 'payment-gateway', 'pilot-gateway', 'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'].sort())
-const componentServices = Object.freeze({ 'merchant-api': ['api', 'api-replica'], 'merchant-ops-ui': ['ops-ui'], 'merchant-ui': ['ui'] })
+const componentServices = Object.freeze({
+  'merchant-api': ['api', 'api-replica'],
+  'merchant-worker': ['worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'],
+  'merchant-ops-ui': ['ops-ui'],
+  'merchant-ui': ['ui'],
+})
 const identityServices = ['api', 'api-replica']
 const keys = ['RELEASE_ID', 'RELEASE_GIT_SHA', 'RELEASE_MANIFEST_SHA256', 'RELEASE_IMAGE_SET_DIGEST']
 const sha = value => createHash('sha256').update(value).digest('hex')
@@ -115,6 +120,7 @@ export function prepareDemoComponentUpdate(input) {
   for (const component of selected) {
     const ref = images.image_references[component], metadata = images.image_metadata[component], imported = importedImages[component]
     assert(immutable(ref) && images.image_digests[component] === ref.split('@')[1] && metadata.reference === ref && metadata.digest === ref.split('@')[1], `${component} immutable digest binding differs`)
+    assert(new RegExp(`(?:^|/)${component}@sha256:[a-f0-9]{64}$`, 'u').test(ref), `${component} image repository identity differs`)
     assert(metadata.labels && Object.entries(labels).every(([key, value]) => metadata.labels[key] === value), `${component} build OCI labels differ`)
     exactNames(imported, ['reference', 'image_id', 'repo_digests', 'labels', 'os', 'architecture'], `imported ${component} projection`)
     assert(imported.reference === ref && digest(imported.image_id) && Array.isArray(imported.repo_digests) && imported.repo_digests.includes(ref) && imported.os === 'linux' && imported.architecture === 'amd64' && Object.entries(labels).every(([key, value]) => imported.labels?.[key] === value), `imported ${component} inspect evidence differs`)
@@ -127,6 +133,7 @@ export function prepareDemoComponentUpdate(input) {
   const recreated = [...new Set([...identityServices, ...imageUpdatedServices])].sort()
 
   const candidate = structuredClone(original)
+  for (const name of identityServices) candidate.services[name].environment.DEMO_RUNTIME_MODE = 'true'
   for (const [serviceName, update] of Object.entries(updates)) {
     candidate.services[serviceName].image = update.reference
     candidate.services[serviceName].labels = { ...candidate.services[serviceName].labels, ...labels }
@@ -155,7 +162,6 @@ export function prepareDemoComponentUpdate(input) {
   const nextIdentity = { RELEASE_ID: target.release_id, RELEASE_GIT_SHA: target.git_sha, RELEASE_MANIFEST_SHA256: sha(manifestText), RELEASE_IMAGE_SET_DIGEST: setDigest }
   for (const name of ['api', 'api-replica']) {
     Object.assign(candidate.services[name].environment, nextIdentity)
-    candidate.services[name].environment.DEMO_RUNTIME_MODE = 'true'
   }
   // Independent minimal-change assertion: only selected component services
   // and API release metadata may change.

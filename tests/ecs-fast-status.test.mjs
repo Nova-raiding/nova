@@ -2,32 +2,32 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { assess, collectPublicProbes, inventoryStatus, inventoryWarnings, isManagedDemoContainerName, publicProbeBlockers, PUBLIC_PROBE_URLS } from '../infra/scripts/ecs-fast-status.mjs'
-const names = ['api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis']
+import { assess, collectPublicProbes, inventoryStatus, inventoryWarnings, isManagedDemoContainerName, publicProbeBlockers, publicIdentityBlockers, PUBLIC_PROBE_URLS, CANONICAL_DEMO_SERVICES } from '../infra/scripts/ecs-fast-status.mjs'
+const names = CANONICAL_DEMO_SERVICES
 function snapshot() {
-  return { free_bytes: 10 * 1024 ** 3, services: names.map(service => ({ service, state: 'running', health: 'healthy', image: `registry/service@sha256:${'a'.repeat(64)}`, git_sha: ['postgres', 'redis'].includes(service) ? null : 'b'.repeat(40) })) }
+  return { free_bytes: 10 * 1024 ** 3, services: names.map(service => ({ service, state: 'running', health: 'healthy', image: `registry/service@sha256:${'a'.repeat(64)}`, git_sha: ['postgres', 'redis', 'clamav'].includes(service) ? null : 'b'.repeat(40), ...(['api', 'api-replica'].includes(service) ? { runtime_release_git_sha: 'b'.repeat(40) } : {}) })) }
 }
 test('healthy pinned live inventory does not require Git labels on upstream data services', () => {
   assert.deepEqual(assess(snapshot()), [])
   assert.deepEqual(inventoryWarnings(snapshot()), [])
 })
-test('inventory status distinguishes healthy demo runtime from formal production approval', () => {
+test('inventory status reports only the canonical Demo and candidate update state', () => {
   const result = inventoryStatus([])
   assert.deepEqual(result, {
     scope: 'inventory_only',
+    environment_scope: 'canonical_demo',
     demo_runtime_healthy: true,
-    formal_production_approved: false,
     release_approved: false,
-    next_step: 'Demo runtime healthy; formal production approval not evaluated. Freeze a target SHA; compare each component revision, verify migration compatibility and required release evidence before updating.',
+    next_step: 'Canonical Demo inventory healthy. Freeze a target SHA; compare each component revision, verify migration compatibility and required Demo evidence before updating.',
   })
 })
-test('inventory blockers remain visible without evaluating formal production approval', () => {
+test('inventory blockers remain visible without granting a candidate update', () => {
   const result = inventoryStatus(['service_not_healthy:api'])
   assert.equal(result.scope, 'inventory_only')
+  assert.equal(result.environment_scope, 'canonical_demo')
   assert.equal(result.demo_runtime_healthy, false)
-  assert.equal(result.formal_production_approved, false)
   assert.equal(result.release_approved, false)
-  assert.equal(result.next_step, 'Demo runtime has inventory blockers; formal production approval not evaluated. Resolve the reported blockers before updating.')
+  assert.equal(result.next_step, 'Canonical Demo inventory has blockers. Resolve the reported blockers before updating.')
 })
 test('mixed application Git revisions are surfaced without pretending health is release approval', () => {
   const value = snapshot()
@@ -55,6 +55,16 @@ test('missing replica, unhealthy API, mutable image, missing revision and low di
 })
 test('an empty project cannot pass the inventory check', () => {
   assert.ok(assess({ free_bytes: 20 * 1024 ** 3, services: [] }).includes('live_project_missing'))
+})
+
+test('every canonical Demo service must be present exactly once', () => {
+  const value = snapshot()
+  value.services = value.services.filter(service => service.service !== 'ui')
+  assert.ok(assess(value).includes('service_missing:ui'))
+  value.services.push({ ...value.services[0] })
+  assert.ok(assess(value).includes('service_duplicate:api'))
+  value.services.push({ ...value.services[0], service: 'unknown' })
+  assert.ok(assess(value).includes('service_unexpected:unknown'))
 })
 
 test('untouched database and Redis tag references are not application update blockers', () => {
@@ -85,7 +95,7 @@ test('isolated candidate sidecars are excluded from the formal demo inventory', 
 test('fast status keeps liveness and readiness probes separate', () => {
   const source = readFileSync(fileURLToPath(new URL('../infra/scripts/ecs-fast-status.mjs', import.meta.url)), 'utf8')
   // /ops.yxsona.com/healthz is a liveness signal and /api/readyz is the
-  // production readiness gate. A readiness 503 must remain visible even when
+  // API readiness signal. A readiness 503 must remain visible even when
   // the liveness endpoint is 200; the report must not collapse them into one
   // boolean health result.
   assert.match(source, /https:\/\/yxsona\.com\/api\/readyz/u)
@@ -98,15 +108,16 @@ test('fast status keeps liveness and readiness probes separate', () => {
   assert.match(source, /public_probe_failed:\$\{probe\.url\}/u)
   assert.match(source, /scope: 'inventory_only'/u)
   assert.match(source, /demo_runtime_healthy: demoRuntimeHealthy/u)
-  assert.match(source, /formal_production_approved: false/u)
-  assert.match(source, /formal production approval not evaluated/u)
+  assert.doesNotMatch(source, /formal_production_approved|formal production approval/u)
+  assert.match(source, /Canonical Demo inventory/u)
   assert.match(source, /release_approved: false/u)
 })
 
 test('public API healthz probe is required and cannot grant release approval', async () => {
   const responses = new Map(PUBLIC_PROBE_URLS.map(url => [url, {
     status: 200,
-    body: { data: url.endsWith('/releasez') ? { ready: true, release: { release_id: 'old-release' } } : { status: 'ok' } },
+    body: { data: url.endsWith('/releasez') ? { ready: true, release: { release_id: 'old-release', release_git_sha: 'b'.repeat(40) } }
+      : url.endsWith('/api/healthz') ? { status: 'ok', setup: { mode: 'demo' } } : { status: 'ok' } },
   }]))
   const fetchMock = async url => {
     const response = responses.get(url)
@@ -117,9 +128,18 @@ test('public API healthz probe is required and cannot grant release approval', a
   const healthy = await collectPublicProbes(fetchMock)
   assert.equal(healthy.find(probe => probe.url === 'https://yxsona.com/api/healthz')?.ready, true)
   assert.deepEqual(publicProbeBlockers(healthy), [])
+  assert.deepEqual(publicIdentityBlockers(snapshot(), healthy), [])
+  const mismatched = healthy.map(probe => probe.url.endsWith('/releasez')
+    ? { ...probe, release: { ...probe.release, release_git_sha: 'c'.repeat(40) } } : probe)
+  assert.deepEqual(publicIdentityBlockers(snapshot(), mismatched), ['public_release_identity_mismatch'])
+  const mixedSources = snapshot()
+  mixedSources.services.find(service => service.service === 'ui').git_sha = 'd'.repeat(40)
+  assert.deepEqual(publicIdentityBlockers(mixedSources, healthy), [])
+
+  responses.set('https://yxsona.com/api/healthz', { status: 200, body: { data: { status: 'ok', setup: { mode: 'production' } } } })
+  assert.ok(publicProbeBlockers(await collectPublicProbes(fetchMock)).includes('public_demo_mode_invalid:https://yxsona.com/api/healthz'))
   assert.equal(inventoryStatus([]).scope, 'inventory_only')
   assert.equal(inventoryStatus([]).release_approved, false)
-  assert.equal(inventoryStatus([]).formal_production_approved, false)
 
   for (const failure of [
     new Error('endpoint unavailable'),

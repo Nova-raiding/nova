@@ -1,8 +1,8 @@
 # ECS demo 直接部署与上线验收
 
-适用范围：`101` 上的 Store Nova 本地 ChatGPT stdio 插件 demo。此流程记录 2026-09-25 已实际运行的 `merchant-demo-85575f9c` 隔离 Compose 项目和公网接管方式。它与需要旧版回滚胶囊、扫描回调和 15 场景预发布证据的正式生产部署器分开；那些旧版门禁不作为本次 demo 修复发布的前置条件。**每项修复先提交、从精确提交构建并部署，然后在公网和服务端验证该项；失败则继续修复和重新部署。**
+适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**每项修复先提交、从精确提交构建并部署到该 Demo，然后验证该项；失败则继续修复和重新部署。**
 
-本流程不调用 `infra:launch-preflight` 或 `infra:production-gate`。这两个入口只服务正式生产配置，要求 `plugin_enabled`、生产对象存储和完整生产证据；它们不是本地直装插件或 `merchant-demo-*` Demo 的前置条件。Demo 仍必须保留真实模型中转鉴权、请求、用量和成本证据，缺少这些证据时只阻断对应模型能力，不得冒充正式生产上线。
+本流程只要求与本次变更相称的类型检查、单元/API 测试、桌面浏览器验收和唯一 Demo 容器健康检查；不把其他环境的发布门禁作为 Demo 验收。真实模型中转鉴权、请求、用量和成本仍须保留证据；配置或凭据缺失时 fail closed，并明确阻断对应模型能力。
 
 日常更新入口与时间预算见 [101 快速更新方案](ecs-fast-update.md)，支持只读现状检查与按组件构建。
 
@@ -10,16 +10,16 @@
 
 - 本地只用 `main` 分支和唯一主工作目录。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。发布前确认工作目录干净，并从已提交的精确 SHA 构建。
 - 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到 `/srv/merchant-releases/release-<sha>`。不得从带有未提交改动的共享工作目录构建镜像。记录快照 SHA、目标组件、镜像 digest 和构建结果。
-- 仅为改动的组件构建镜像。API、Ops UI、gateway、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。
-- 密钥、数据库连接和部署环境只放 ECS 受保护目录 `/var/lib/merchant-release-security/demo-first-install/release-85575f9c`；不要进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
+- 仅为改动的组件构建镜像。API、Ops UI、Merchant UI、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。当前快速更新适配器不覆盖 gateway/payment；这两类变更必须停止并另行完成专用候选、切流、回滚和验收方案后再部署。
+- 密钥、数据库连接和部署环境只放 101 上当前 Demo 对应的受保护目录；以只读状态检查发现的现存配置为准，不硬编码过期目录、不复制到其他环境。不要让这些内容进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
 
 ## 2. 更新目标服务并接管公网
 
 本次 demo 的运行配置采用 `NODE_ENV=production`（保留生产加固行为）、`DEMO_RUNTIME_MODE=true`（明确唯一 demo 部署目标）、`DEPLOYMENT_PROFILE=ecs`、`MCP_INTEGRATION_MODE=local_stdio`、`PUBLIC_OPS_BASE_URL=https://ops.yxsona.com`、`ASSET_SCANNER_MODE=deferred` 和 `DEMO_UNSCANNED_ASSETS_ENABLED=true`。健康接口的 `setup.mode` 必须报告 `demo`；若报告 `production`，说明 demo 标记丢失，停止发布并先修复受保护 Compose 配置。本地直装不使用 ChatGPT 市场/OAuth；从 API、replica 和其受保护环境中**移除** `MCP_OAUTH_REQUIRED`、`OIDC_PROXY_SIGNING_SECRET` 等退役外部认证变量，不要以 `false` 或空值冒充删除。模型中转仍须真实鉴权和用量回执；缺少配置时保持阻断。
 
-使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更的服务，例如 API 修复只更新 `api api-replica`，Ops 修复只更新 `ops-ui`；确实修改 worker 或 gateway 才更新对应服务。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得运行无服务名的 `up -d`，以免启动 `worker-scan`、ClamAV 或无关旧服务。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
+使用该 release 的受保护 Compose 文件、`candidate.local-stdio.env` 和固定项目名，只指定本次变更相关的服务。API `/releasez` 读取 API 启动环境中的发布身份，因此任何新候选都必须明确更新 `api api-replica`；仅 Ops 或商家 UI 变更时沿用当前 API 镜像，仅更新其发布身份环境，再加入受影响的 `ops-ui` 或 `ui`。API 修复更新 `api api-replica` 的镜像；worker 修复按 fast-update runbook 选择完整 worker 组件并刷新 API 身份。Gateway/payment 不属于当前适配器范围，不得按本节直接部署。执行前先核对 `docker compose config` 中目标服务的镜像、环境和持久卷，再运行带**明确服务列表**的 `docker compose up -d --no-deps <services>`。不得运行无服务名的 `up -d`，以免启动 ClamAV 或无关旧服务。本 demo 的素材可保留 `unscanned` 状态直接使用；如有其他 Compose 项目的扫描容器仍在运行，不应称整台主机已关闭扫描。
 
-公网接管只操作事先核对完整 ID 的旧 gateway 容器，保留容器、卷和业务数据；新 gateway 在 80/443 生效后核对公网身份。不要用删除数据库、对象存储或容器卷掩盖问题。上传所需的持久对象目录是 `/var/lib/merchant-assets/objects`。
+公网域名和现有 gateway 配置保持不变；部署前后验证域名仍指向唯一 Demo，并对照 `/releasez` 与该项目运行镜像身份。当前流程不创建或切换 gateway，也不接管 80/443。不要用删除数据库、对象存储或容器卷掩盖问题。上传所需的持久对象目录是 `/var/lib/merchant-assets/objects`。
 
 ## 3. 部署后验收与判定
 
@@ -31,13 +31,13 @@
 4. 对修改过的 MCP/模型路径，从实际本地 stdio 插件入口发请求，核对中转鉴权、真实 provider 回执、模型用量与成本、创意点预留/结算。仅 `/v1/models` 或简单 JSON 探针成功，不代表完整商家生成任务成功。provider 结果未知时保留待核对的预留，不盲目退款或重放；余额/点数不足时拒绝新请求。
 5. 若任何一项失败，记录具体错误和证据，修复该项，单独提交并从新提交构建、部署该组件，再只复测失败项及受影响邻接路径。不得用旧版响应、静态代码或未完成的本地包证明上线。
 
-本次已观察到：公网 `release-e2ae2723-full` 的 `ready=true`，manifest SHA-256 为 `c4f1123a870cf8715e6d011e418f2b76df8b92a788c0c639e3ef177ec77b5ea7`，image-set digest 为 `sha256:4c8445d84baadb8e3c6ae25bf8a250c13903b34c6ca2b9273975659a6ca87f57`；API 双副本运行镜像均为 `127.0.0.1:5000/storenova/merchant-api@sha256:449081b72e9391e3145cd019f16cc1d8eda937b5e340d46347b91323f423ee0a`，与完整运行集其余 9 个业务服务的镜像摘要逐一匹配清单且全部健康，两个公网健康探针返回 200。部署后真实平台运营账号调用 `ops.commercial.readiness.report` 返回 200，OCR 显示 `executable=false`、`RATE_CARD_MISSING` 并列出阻断，已批准的文本费率仍可执行。前版 `109ec223` 增加结果未知的模型请求关联记录，已在运行 API 容器中验证 `unknown:` 标识和 `outcome=unknown` 的代码产物，未人为制造付费请求的不确定结果；遗留 unknown 预留经只读复核仍 active，未误扣或退款。此前已通过真实商家账号验证登录、`ws_guirenniaoniao` MCP token 签发及刷新均为 200，错误身份调用 `workspace.bootstrap` 返回 403，正确身份复用原工作区。本次未重复已通过的 REST/MCP 上传、客户交付和文本生成；那次文本生成由 Qwen 中转返回 750 tokens、成本 ¥0.003511、1 个创意点已结算。遗留 unknown 预留仍待中转站权威账单核对，不能擅自释放。
+历史候选记录（早期验证，非当前状态或本轮证据）：公网 `release-e2ae2723-full` 曾报告 `ready=true`，manifest SHA-256 为 `c4f1123a870cf8715e6d011e418f2b76df8b92a788c0c639e3ef177ec77b5ea7`，image-set digest 为 `sha256:4c8445d84baadb8e3c6ae25bf8a250c13903b34c6ca2b9273975659a6ca87f57`；当时 API 双副本镜像均为 `127.0.0.1:5000/storenova/merchant-api@sha256:449081b72e9391e3145cd019f16cc1d8eda937b5e340d46347b91323f423ee0a`，运行服务健康，公网健康探针返回 200。真实平台运营账号曾验证 `ops.commercial.readiness.report`，其输出含 `RATE_CARD_MISSING` 阻断；真实商家账号曾验证登录及 `ws_guirenniaoniao` MCP token 签发/刷新，错误身份调用 `workspace.bootstrap` 返回 403。此前 REST/MCP 上传、客户交付和文本生成也曾通过；Qwen 中转回执记录 750 tokens、成本 ¥0.003511，结算 1 个创意点。遗留 unknown 预留待中转站权威账单核对，禁止据此记录擅自释放。本段只供追溯，不能替代本轮候选验收。
 
 2026-09-25 OCR 修复发布：从精确提交 `1e30307eb1450b0edc770bbf52c2cef70458e795` 构建 API 与 worker，先在 101 应用迁移 247，再分别只重建 API 双副本与 5 个业务 worker。迁移后旧 worker 镜像因只包含到 246 的迁移链而变为 unhealthy；改用同一提交构建的 worker 镜像后恢复。最终公网 `release-1e30307e-ocr-workers` 返回 `ready=true`，清单 SHA-256 为 `a452e9b85472539dbf38c21d91448b50dfbab4f48c50e3143454e099fa6ea710`，镜像集摘要为 `sha256:c8793edbc5133cd04f21455f5f87813bc750e1650fec3a9db51abdd694f3fa78`；11 个运行中的业务服务均 healthy 且镜像与清单逐项匹配，API 与 Ops 公网健康检查均为 200。平台账号从公网读取 OCR 费率为已审批可执行的 `⌈实际模型成本（CNY）× 2⌉`，最低 1 点。
 
 部署后用明确标记为 QA 的合成文字图片 `asset_94c49435-82c8-4d16-87d7-f2b55019a410` 在 `ws_guirenniaoniao` 做了一次**计费技术验证**：OCR 实际调用 `agnes-2.5-flash`，回执记录输入 172、输出 28、合计 200 token；模型用量账本成本 ¥0.000068，创意点回执保留更精确的 ¥0.0000683；预留 40 点，实际结算 1 点并释放差额。重复解析返回 `replayed=true`、仍为第 1 次尝试，模型用量账本只有 1 条记录，未重复扣点。OCR 将图片上的测试文字识别错了，因此此项仅证明中转、回执、费率和扣点链路，**不能**充当贵人鸟商品事实或识别质量验收；该工作区仍缺经确认的真实商品图片。
 
-客户安装尚未达到正式发布条件：Mac 单文件候选包已从干净提交 `98aea8ad` 重建，包含安装后安全打开 ChatGPT、token 刷新修复、官方 ChatGPT.app、Node 和插件，SHA-256 为 `b0a8e56ff9323788d213d93d6fd69a449773fe1d1ace6022deeb26a8bb9d13c4`；但它仍标记 `unsigned_candidate`、`ready_to_install=false`，缺 Developer ID 签名、公证和 ChatGPT 图形界面绑定验收。Windows `192.168.1.104` 按用户要求暂缓，尚无 Windows 包和目标机安装证据；现有 Windows 流程还需在线取得 Microsoft Store 客户端，并要求 ZIP 与包外签名安装脚本两个文件，未满足离线单文件交付。图片生成、图片编辑、视频仍无本工作区的真实 provider 用量回执；OCR 虽已完成 QA 计费技术验证，该工作区仍没有经确认的真实商品图片与资料，不能宣称商家 OCR 业务验收完成。这些项不得以配置就绪或健康探针通过替代上线证据。
+历史安装包记录：Mac 单文件候选包曾标记 `unsigned_candidate`；Windows `192.168.1.104` 曾按用户要求暂缓。Apple Developer ID 签名、公证和 ChatGPT 宿主身份/进程绑定不属于本地直装 stdio Demo 的验收项或阻断项。若后续另有明确授权的客户安装交付，按对应用户场景验收安装和插件调用即可。该记录不表示当前 Demo 已完成真实商品工作流验收：图片生成、图片编辑、视频须有真实中转与用量回执，OCR 业务质量须有经确认的商品图片和资料；不能用配置就绪或健康探针替代。
 
 2026-09-25 OCR 免费阈值修复发布：计费、费率目录、API 结算和运营展示分别提交为 `d387f2e5`、`b63d0c26`、`01e4503d`、`9b78e5ed`，从完整提交 `9b78e5ed049e21c42d1aae30d3b15995becd4894` 的源码归档在 101 构建 API、worker 和 Ops UI 镜像。先应用迁移 248，再只更新 API 双副本、五个业务 worker 和 Ops UI。公网 `release-9b78e5ed-ocr-free` 返回 `ready=true`，清单 SHA-256 为 `e98cdcde26d8b0c1408700ead88774845cf4e328aa26a69426cafd78cb3f115e`，镜像集摘要为 `sha256:ef7ade829676e97eaef111eaef406ab7c8d9bd15c8f1f9921d189b260a8dfc58`；11 个业务容器健康且镜像与 Compose 指定摘要逐一匹配，API 与 Ops 公网健康检查均为 200。运营后台桌面浏览器以真实平台账号登录后，OCR 卡片显示“图片文字识别”和“实际模型成本 ≤ ¥0.30 免费；超过 ¥0.30 按 ⌈成本（CNY）× 2⌉ 扣点，最低 1 点”。
 

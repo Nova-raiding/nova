@@ -10,6 +10,7 @@ const files = [
   "src/components/users/AuthorizationGovernanceSection.test.tsx",
   "src/components/users/RegistrationApplications.test.tsx",
   "src/components/users/WorkspaceGovernanceSection.browser.test.tsx",
+  "src/components/users/UsersGovernanceDenied.browser.test.tsx",
   "src/hooks/alertPollingBoundary.test.tsx",
   "src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx",
   "src/pages/CustomerDeliveryPage.test.tsx",
