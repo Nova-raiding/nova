@@ -45,6 +45,6 @@ describe("ModelMarkupPanel input guidance", () => {
 
     expect(markup).toContain("计费倍率必须在 1–10 之间");
     expect(markup).toContain('aria-invalid="true"');
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>保存并生效/u);
+    expect(markup).toContain('disabled=""><span>保存并生效</span></button>');
   });
 });
