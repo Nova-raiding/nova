@@ -210,7 +210,7 @@ const initializeRequest = { jsonrpc: '2.0', id: 1, method: 'initialize', params:
 } }
 const initializedNotification = { jsonrpc: '2.0', method: 'notifications/initialized' }
 const discoveryEnv = { ...process.env, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' }
-function bridgeResponses(root, nodeBinary, env, request) {
+function bridgeResponses(root, nodeBinary, env, request, expectedBridgeVersion) {
   const bridge = spawnSync(nodeBinary, [resolve(root, 'mcp/bridge.mjs')], {
     encoding: 'utf8',
     input: [initializeRequest, initializedNotification, request].map(message => JSON.stringify(message)).join('\n') + '\n',
@@ -223,7 +223,7 @@ function bridgeResponses(root, nodeBinary, env, request) {
     const initialized = lines.find(line => line.id === 1)
     if (initialized?.result?.protocolVersion !== protocolVersion
       || initialized.result.serverInfo?.name !== 'merchant-marketing'
-      || initialized.result.serverInfo?.version !== expectedVersion) {
+      || initialized.result.serverInfo?.version !== expectedBridgeVersion) {
       return { error: 'invalid initialize response' }
     }
     const response = lines.find(line => line.id === request.id)
@@ -232,9 +232,9 @@ function bridgeResponses(root, nodeBinary, env, request) {
     return { error: `invalid ${request.method} response` }
   }
 }
-function discoverTools(root, nodeBinary = process.execPath) {
+function discoverTools(root, expectedBridgeVersion, nodeBinary = process.execPath) {
   const probe = bridgeResponses(root, nodeBinary, discoveryEnv,
-    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, expectedBridgeVersion)
   if (probe.error) return { names: [], error: probe.error }
   const tools = probe.response?.result?.tools
   if (!Array.isArray(tools)) return { names: [], error: 'invalid tools/list response' }
@@ -259,8 +259,8 @@ function toolSnapshotDigest(tools) {
   return createHash('sha256').update(JSON.stringify(canonicalToolSnapshot(tools)), 'utf8').digest('hex')
 }
 
-const sourceDiscovery = discoverTools(sourceRoot)
-const installedDiscovery = discoverTools(installedRoot,
+const sourceDiscovery = discoverTools(sourceRoot, sourceManifestVersion)
+const installedDiscovery = discoverTools(installedRoot, String(manifest.version ?? ''),
   startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath)
 // VITEST only disables macOS launchd recovery in the bridge; keep NODE_ENV in
 // production so this probes the production failure path without host secrets.
@@ -270,7 +270,7 @@ const unconfiguredEnv = { ...process.env, NODE_ENV: 'production', VITEST: 'true'
 const unconfiguredProbe = bridgeResponses(installedRoot,
   startup?.command === bundledNodeCommand && bundledNodeExists ? bundledNodePath : process.execPath,
   unconfiguredEnv, { jsonrpc: '2.0', id: 2, method: 'tools/call',
-    params: { name: 'workspace.health', arguments: {} } })
+    params: { name: 'workspace.health', arguments: {} } }, String(manifest.version ?? ''))
 const unconfiguredCode = unconfiguredProbe.response?.result?.structuredContent?.code
 const unconfiguredError = unconfiguredProbe.error
   ?? (unconfiguredProbe.response?.result?.isError === true

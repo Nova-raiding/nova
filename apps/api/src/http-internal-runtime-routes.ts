@@ -11,6 +11,7 @@ import { ImageGenerationExecutionError } from '../../../packages/persistence/src
 import { parseWorkerAuthorizationSnapshot, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { requiredStringValue } from './ops-params.js'
 import { imageArtifactBody } from './image-artifact-policy.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 /** Internal worker callbacks share the server's signed worker identity gate. */
 export async function handleInternalRuntimeRoute(context: InternalRuntimeContext): Promise<boolean> {
@@ -58,7 +59,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
   if (req.method === 'POST' && imageGenerationResultMatch) {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
-    const jobId = decodeURIComponent(imageGenerationResultMatch[1]!)
+    const jobId = decodeHttpPathSegment(imageGenerationResultMatch[1]!)
     enrichRequestObservation(req, { jobId })
     await hydrateWorkspace(workspaceId)
     const input = await body(req)
@@ -148,7 +149,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
   if (req.method === 'POST' && imageGenerationExecutionMatch) {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
-    const jobId = decodeURIComponent(imageGenerationExecutionMatch[1]!)
+    const jobId = decodeHttpPathSegment(imageGenerationExecutionMatch[1]!)
     enrichRequestObservation(req, { jobId })
     const input = await body(req)
     const repository = persistence.imageGenerationExecutions
@@ -245,7 +246,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
   if (req.method === 'POST' && imageContinuationMatch) {
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
-    const jobId = decodeURIComponent(imageContinuationMatch[1]!)
+    const jobId = decodeHttpPathSegment(imageContinuationMatch[1]!)
     enrichRequestObservation(req, { jobId })
     const executed = await executeReadyImageContinuation(workspaceId, jobId)
     return send(res, 200, workspaceId, { job_id: executed.job.id, state: executed.job.state, continuation_state: executed.job.continuation?.state, already_completed: executed.alreadyCompleted }, null, req)
@@ -257,7 +258,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     // tenant/job/execution checks plus durable state transitions.
     await requireWorkerAuthorization(req)
     const workspaceId = headerRequired(req, 'x-workspace-id')
-    const jobId = decodeURIComponent(imageGenerationEvidenceMatch[1]!)
+    const jobId = decodeHttpPathSegment(imageGenerationEvidenceMatch[1]!)
     enrichRequestObservation(req, { jobId })
     await hydrateWorkspace(workspaceId)
     const input = await body(req)
@@ -497,7 +498,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
       return send(res, 200, workspaceId, { ok: true, claim_id: claim.claimId, workspace_id: workspaceId, event_id: eventId, aggregate_id: aggregateId, task_id: taskId, logical_attempt: logicalAttempt, transport_attempt: transportAttempt, provider_attempt_id: providerAttemptId, provider_attempt_key: providerAttemptKey, request_body_sha256: requestBodySha256, request_nonce: requestNonce, product_id: productId, context_hash: contextHash, document_count: expectedDocuments.length, claim_state: claim.state, claimed_at: claim.claimedAt }, null, req)
     }
 
-    const claimId = decodeURIComponent(knowledgeClaimTransitionMatch![1]!)
+    const claimId = decodeHttpPathSegment(knowledgeClaimTransitionMatch![1]!)
     const to = input.to
     if (!['provider_started', 'outcome_unknown', 'completed', 'rejected'].includes(String(to))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '知识生成 claim 状态转换无效', 400)
     // Releasing an outcome-unknown product lock requires a settled model

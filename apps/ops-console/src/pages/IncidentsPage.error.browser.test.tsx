@@ -196,6 +196,11 @@ describe("IncidentsPage list recovery and filters", () => {
       await detail.getByRole("textbox", { name: "事故评论" }).fill("Worker 队列确认评论");
       expect(await detail.getByRole("button", { name: "追加评论" }).isDisabled()).toBe(true);
       expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
+      const commentForm = detail.locator("form").filter({ has: detail.getByRole("textbox", { name: "事故评论" }) });
+      expect(await commentForm.count()).toBe(1);
+      await commentForm.evaluate((form) => form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true })));
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
       await page.evaluate(() => window.__rejectNextIncidentComment?.());
       const alert = page.getByRole("alert").filter({ hasText: "评论请求超时" });
       await alert.getByText("事故操作结果尚未确认").waitFor();

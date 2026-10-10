@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isTrustedCleanAsset, isUsableAssetWithoutScan, type MerchantService } from '../../../packages/application/src/service.js'
 import type { ImageGenerationExecutionRepository } from '../../../packages/persistence/src/image-generation-execution-repository.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 type ImageJob = ReturnType<MerchantService['getImageGenerationJob']>
 
@@ -66,9 +67,10 @@ export async function handleHttpImageGenerationJobRead(req: IncomingMessage, res
   }
   const imageGenerationJobGetMatch = path.match(/^\/v1\/image-generation-jobs\/([^/]+)$/u)
   if (req.method === 'GET' && imageGenerationJobGetMatch) {
+    const jobId = decodeHttpPathSegment(imageGenerationJobGetMatch[1]!)
     const workspaceId = resolveWorkspace(req)
     await hydrateWorkspace(workspaceId)
-    let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
+    let job = service.getImageGenerationJob(workspaceId, jobId)
     const candidatesReadable = (await chargedImageCandidatesReadable(workspaceId, job)) && imageJobRightsAreReadable(service, job, workspaceId)
     enrichRequestObservation(req, { jobId: job.id })
     // `catalog.image.get` is workspace scoped, so the brand boundary has to be

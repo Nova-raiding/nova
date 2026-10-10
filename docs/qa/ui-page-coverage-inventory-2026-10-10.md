@@ -21,24 +21,26 @@
 
 ## Ops Console
 
-路由页面清单按 `apps/ops-console/src/navigation` 当前 registry：Overview、Users、Customer Delivery、Members、Tasks、Knowledge、Stores、Rules、Models、Storage、Finance、Support、Audit、Incidents。
+实际 Ops domain 清单以 `opsDomains` 和 `opsPageRegistry` 为准，共 13 个：Overview、Users、Customer Delivery、Members、Tasks、Knowledge、Stores、Rules、Models、Storage、Finance、Support、Audit。`IncidentsPage` 有独立组件与浏览器 fixture，但 `incidents` 不在 `opsDomains`、路由识别、页面 registry 或 sidebar 中，`IncidentsRoute.tsx` 也没有生产调用方；不能把它记为可访问的 Ops 页面或路由旅程。Ops Console 明确只激活 platform workbench；Members、Tasks、Knowledge 所需的 workspace workbench 在 `canActivateOpsWorkbench()` 中被拒绝，直达这些 workspace 路由会进入阻断恢复页，不应记作已验收页面。
 
-| 页面 | 页面级/浏览器证据 | 当前状态/下一步 |
+分类约定：**已完成（定向）** = 本地浏览器旅程有明确通过收据，只表示该旅程；**有测试未完成/未执行** = 存在相关测试或断言，但当前没有完整、可归属的通过收据；**无页面覆盖** = 没有对应可访问页面的浏览器旅程。任何一类均不代表唯一 Demo 实机验收。
+
+| 页面/路由 | 分类 | 可核对证据与缺口 |
 |---|---|---|
-| Overview | `OverviewPage.browser.test.tsx` | 有本地页面旅程 |
-| Users | `OpsConsoleController.identity-route.browser.test.tsx` 与邀请恢复 fixture | 本轮新增/扩展路由级恢复验证 |
-| Customer Delivery | authorization/create/session loss/browser suites | 多条隔离旅程；真实业务数据未测 |
-| Members | 当前有页面/组件与权限单测 | 路由组合 browser journey 待补 |
-| Tasks | `BrandStoreTasksDeepLink.browser.test.tsx` 与任务组件 fixture | 仅深链/组件专项；完整页面组合待补 |
-| Knowledge | `LearningSuggestionsPanel`/读状态/辅助 single-flight 单测共 11 项通过 | `/ops/knowledge?workbench=workspace` 被现有工作台权限策略拦截，审批路由旅程无法在此控制台验收；归属需产品决策 |
-| Stores | 撤权失败提示/目标保留的浏览器断言可通过 | 单项回归通过；完整文件顺序运行不稳定，失败等待重试按钮可见；仍需修复/复核 |
-| Rules | `RulesPage` 单测和 sync retry browser fixture | 新增失败后页面内恢复验证；单测和 browser 通过 |
-| Models | `ModelsPage.overview-navigation.browser.test.tsx` | 模型计费页新增直达总览按钮；单测 4/4、浏览器 1/1 |
-| Storage | `StoragePage.error.browser.test.tsx` | 错误单一呈现与重试已在本地 Chromium 验证 |
-| Finance | 页面单测、费用/收据专项用例 | 全页面筛选与错误恢复旅程仍缺 |
-| Support | `SupportPage.error.browser.test.tsx`、队列/详情/分页/回复专项 | Support error 1/1，单测 2/2；9-file 串行批次 8/11。whitespace fixture 未 mount；Audit truncation 标题 timeout；另有 locator timeout 已单项修复通过 |
-| Audit | 页面/中心/筛选单测及导出 Chromium | AuditPage 4/4、AuditCenter 10/10、filters 2/2；导出单项 2/2。完整路由级筛选到导出旅程仍缺 |
-| Incidents | `IncidentsPage.error.browser.test.tsx` | 本轮新增初次失败、重试、状态筛选与清除筛选旅程 |
+| Overview `/ops/overview` | 有测试未完成/未执行 | `OverviewPage.browser.test.tsx` 存在；本状态账本没有可归属的最新完整执行收据。 |
+| Users `/ops/users` | 有测试未完成/未执行 | `OpsConsoleController.identity-route.browser.test.tsx` 存在；邀请恢复仅有 fixture/专项，完整用户中心页面旅程收据缺失。 |
+| Customer Delivery `/ops/customer-delivery` | 有测试未完成/未执行 | 存在授权、创建、session-loss、归档等隔离 journey；不能合并为整页验收，当前账本没有这轮完整页面旅程收据。 |
+| Members `/ops/members` | 有测试未完成/未执行 | 新增的 route browser 场景检查平台账号明确阻断、sidebar 不显示 workspace 页，以及“返回总览”；首次运行 **2 tests failed**，因测试 fixture 在 Node 回调中读取 `window`，已移除该错误并改为匹配实际 `role=status`，修订尚未复跑。成员邀请/角色/状态/分页/恢复 journey 无覆盖；该页面按现有工作台边界在 Ops 中不可达。 |
+| Tasks `/ops/tasks` | 有测试未完成/未执行 | `BrandStoreTasksDeepLink.browser.test.tsx` 只覆盖任务深链；完整页面列表、筛选、输入、空/错恢复没有页面旅程收据。 |
+| Knowledge `/ops/knowledge` | 无页面覆盖 | 组件/读状态单测存在；`workbench=workspace` 由平台控制台 fail closed，审批路径不属于可访问的 Ops 页面。 |
+| Stores `/ops/stores` | 有测试未完成/未执行 | 店铺绑定/目录/注册/撤权等独立浏览器用例存在；完整 route page 组合及当前修改后顺序运行无通过收据。 |
+| Rules `/ops/rules` | 有测试未完成/未执行 | 页面单测与 sync retry browser fixture 存在；当前状态账本没有完整 route journey 的归属收据。 |
+| Models `/ops/models` | 已完成（定向） | `ModelsPage.overview-navigation.browser.test.tsx` + `StoragePage.error.browser.test.tsx` 合计 **4/4**；覆盖总览跳转、倍率读重试/审计保存、relay fail-closed、存储错误重试。完整模型成本/真实 relay 仍未验收。 |
+| Storage `/ops/storage` | 已完成（定向） | 与 Models 同一浏览器批次 **4/4**；仅本地 fixture 的错误恢复和对账重载，不是 Demo 存储一致性证据。 |
+| Finance `/ops/finance` | 有测试未完成/未执行 | 高级筛选浏览器专项 **2/2**，API/Hook/组件 **26/26**；仍没有全页查询、组合筛选、错误恢复与真实账务旅程的完整 route 收据。 |
+| Support `/ops/support` | 有测试未完成/未执行 | 详情错误、队列/分页/回复等多项浏览器测试存在；最近可归属的完整串行批次曾有失败，修订后没有完整全套通过收据。 |
+| Audit `/ops/audit` | 已完成（定向） | 完整 route journey **5/5**；覆盖范围筛选、脱敏详情、导出失败重试/CSV、聚合只读、空目录和目录错误恢复，均为本地 RPC fixture。 |
+| Incidents `/ops/incidents` | 无页面覆盖（路由不存在） | 独立 `IncidentsPage.error.browser.test.tsx` 覆盖组件状态，不证明生产路由存在；`/ops/incidents` 会作为未知 Ops path 退回 Overview。已有组件旅程不可计入 Ops 页面覆盖。 |
 
 ## 验收边界
 

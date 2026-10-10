@@ -122,9 +122,17 @@ export async function acquireSafeTestLock(options: { path?: string; timeoutMs?: 
     } catch (error) {
       try { await unlink(tempPath) } catch { /* no temporary lock was created */ }
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const current = await readSafeTestLockAt(path)
+      let current = await readSafeTestLockAt(path)
       if (!current) {
-        throw new Error(`safe test lock ${path} is unreadable; verify no runner is active before removing it`)
+        // The lock owner may have released the file between our EEXIST and
+        // read. Re-read once if another owner won the handoff, retrying only
+        // when the path disappeared and failing closed for a corrupt lock.
+        if (!existsSync(path)) continue
+        current = await readSafeTestLockAt(path)
+        if (!current) {
+          if (!existsSync(path)) continue
+          throw new Error(`safe test lock ${path} is unreadable; verify no runner is active before removing it`)
+        }
       }
       if (!holderIsAlive(current.pid)) {
         throw new Error(`safe test lock ${path} is stale (pid ${current.pid}); verify no runner is active before removing it`)

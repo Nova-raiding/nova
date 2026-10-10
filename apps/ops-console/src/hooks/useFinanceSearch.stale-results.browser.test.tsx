@@ -11,6 +11,8 @@ declare global {
     __financeSearchCalls?: Array<{ text?: string; signalAborted: boolean }>;
     __financeExports?: number;
     __financeDownloads?: number;
+    __financeDetailCalls?: number;
+    __failNextFinanceDetail?: boolean;
     __releaseFinanceExport?: () => void;
     __failReplacementSearch?: () => void;
   }
@@ -52,12 +54,21 @@ describe("finance search stale snapshot protection", () => {
                 });
                 return Promise.resolve({ records: [record], summary, snapshotAt: '2026-08-29T00:00:00.000Z', scope: { role: 'platform_ops', workspaceCount: 1 } });
               },
-              detail: async () => ({ ...record, attributes: {} }),
+              detail: async () => {
+                window.__financeDetailCalls++;
+                if (window.__failNextFinanceDetail) {
+                  window.__failNextFinanceDetail = false;
+                  throw new Error('finance detail temporarily unavailable');
+                }
+                return { ...record, enterpriseName: '演示企业', attributes: {} };
+              },
               exportCsv: async () => { window.__financeExports++; return await new Promise(resolve => { window.__releaseFinanceExport = () => resolve({ csv: 'id\\nold-record', contentType: 'text/csv', fileName: 'finance.csv' }); }); },
             };
             window.__financeSearchCalls = [];
             window.__financeExports = 0;
             window.__financeDownloads = 0;
+            window.__financeDetailCalls = 0;
+            window.__failNextFinanceDetail = false;
             HTMLAnchorElement.prototype.click = function() { window.__financeDownloads++; };
             function Harness() {
               const controller = useFinanceSearch(client, { limit: 20 }, false);
@@ -121,6 +132,31 @@ describe("finance search stale snapshot protection", () => {
       expect(await page.evaluate(() => window.__financeExports)).toBe(1);
       expect(await page.evaluate(() => window.__financeDownloads)).toBe(0);
       expect(await page.evaluate(() => window.__financeSearchCalls?.map(call => call.text))).toEqual(["old-filter", "new-filter"]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("opens detail by keyboard, recovers a failed read, and restores focus after closing", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(10_000);
+    try {
+      await page.goto(`${baseUrl}/__finance-stale-search`, { waitUntil: "commit", timeout: 60_000 });
+      await page.getByRole("button", { name: "读取旧筛选" }).click();
+      await page.getByText("old-record", { exact: true }).waitFor();
+      await page.evaluate(() => { window.__failNextFinanceDetail = true; });
+
+      const detailTrigger = page.getByRole("button", { name: "查看 钱包流水 old-record 详情" });
+      await detailTrigger.focus();
+      await detailTrigger.press("Enter");
+      const drawer = page.getByRole("dialog", { name: "财务详情 · 钱包流水", exact: true });
+      await drawer.waitFor({ state: "visible" });
+      await drawer.getByRole("alert").getByText("finance detail temporarily unavailable", { exact: true }).waitFor();
+      await drawer.getByRole("button", { name: "重试财务详情" }).click();
+      await drawer.getByText("演示企业", { exact: true }).waitFor();
+      expect(await page.evaluate(() => window.__financeDetailCalls)).toBe(2);
+
+      await page.keyboard.press("Escape");
+      await drawer.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "查看 钱包流水 old-record 详情");
     } finally { await page.close(); }
   }, 60_000);
 });

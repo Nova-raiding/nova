@@ -113,7 +113,9 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
       await expect.poll(async () => page.getByRole("status").allInnerTexts()).toContain("订单已创建。真实到账、依赖校验和权益授予仍分别核验，建单不代表已开通。");
       const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
       expect(calls).toContainEqual({ method: "checkout.preview", input: { workspace: "ws_commercial_browser", beneficiaryMemberId: "member-2048", onboardingSkuCode: "onboarding_once", subscriptionSkuCode: "growth", reason: "客户书面授权 REF-2048" } });
-      expect(calls).toContainEqual({ method: "checkout.create", input: { workspace: "ws_commercial_browser", beneficiaryMemberId: "member-2048", onboardingSkuCode: "onboarding_once", subscriptionSkuCode: "growth", reason: "客户书面授权 REF-2048", previewHash: "server-preview-hash", idempotencyKey: expect.stringMatching(/^ops_checkout-/u) } });
+      const createCall = calls.find(call => call.method === "checkout.create");
+      expect(createCall).toMatchObject({ method: "checkout.create", input: { workspace: "ws_commercial_browser", beneficiaryMemberId: "member-2048", onboardingSkuCode: "onboarding_once", subscriptionSkuCode: "growth", reason: "客户书面授权 REF-2048", previewHash: "server-preview-hash" } });
+      expect((createCall?.input as { idempotencyKey?: unknown } | undefined)?.idempotencyKey).toEqual(expect.stringMatching(/^ops_checkout_/u));
       expect(calls.filter(call => call.method === "payment.create")).toEqual([]);
       expect(calls).toContainEqual({ method: "read.refresh", view: "orders" });
     } finally { await page.close(); }

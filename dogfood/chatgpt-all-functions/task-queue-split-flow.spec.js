@@ -61,6 +61,15 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
   const directionSelectionRequests = []
   const planConfirmationRequests = []
   const reviewRequests = []
+  const approvalRequests = []
+  const publishPreviewRequests = []
+  const publishConfirmRequests = []
+  const publishJob = {
+    id: 'publish-handoff-1', workspaceId, taskId: 'task-creative', contentVersionId: 'content-creative-1',
+    platform: 'taobao', accountId: 'store-taobao', idempotencyKey: '', state: 'confirmed',
+    confirmationHash: 'confirmation-hash', remoteSnapshotHash: 'remote-snapshot-hash', createdAt: '2026-10-10T00:00:00.000Z',
+  }
+  let acceptedPublishIntent
   const unmockedApiCalls = []
   const unexpectedNetworkRequests = []
   let productFetchCount = 0
@@ -136,6 +145,40 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
       reviewRequests.push({ method: route.request().method(), body: route.request().postData() })
       return json({ findings: [], categories: [{ id: 'facts', name: '商品事实', status: 'passed', findingCount: 0, summary: 'fixture review passed' }], blocking: false })
     }
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/approve') {
+      approvalRequests.push({ method: route.request().method(), body: route.request().postDataJSON() })
+      generationTask = { ...generationTask, state: 'approved', version: generationTask.version + 1 }
+      generatedContent = { ...generatedContent, state: 'approved', revision: generatedContent.revision + 1 }
+      return json({ task: generationTask, version: generatedContent })
+    }
+    if (creativeJourney && apiPath === '/v1/tasks/task-creative/publish-preview') {
+      publishPreviewRequests.push({ method: route.request().method(), body: route.request().postData() })
+      return json({
+        task: generationTask, version: generatedContent, remoteSnapshotHash: 'remote-snapshot-hash',
+        confirmationHash: 'confirmation-hash', operation: 'create', changes: ['标题', '详情'], protectedFields: ['价格', '库存', 'SKU'],
+      })
+    }
+    if (creativeJourney && apiPath === '/v1/publish-jobs' && route.request().method() === 'POST') {
+      const request = { body: route.request().postDataJSON(), idempotencyKey: route.request().headers()['idempotency-key'] }
+      publishConfirmRequests.push(request)
+      if (!acceptedPublishIntent) {
+        acceptedPublishIntent = request
+        publishJob.idempotencyKey = request.idempotencyKey
+        // The service accepted and persisted this idempotent intent, then the
+        // connection was lost before the browser received its response.
+        return route.abort('failed')
+      }
+      if (request.idempotencyKey !== acceptedPublishIntent.idempotencyKey || JSON.stringify(request.body) !== JSON.stringify(acceptedPublishIntent.body)) {
+        return json(null, 409, { code: 'PUBLISH_IDEMPOTENCY_CONFLICT', message: '发布请求与已接受的确认内容不匹配' })
+      }
+      return json(publishJob)
+    }
+    const publishJobMatch = apiPath.match(/^\/v1\/publish-jobs\/([^/]+)$/u)
+    if (creativeJourney && publishJobMatch) {
+      return decodeURIComponent(publishJobMatch[1]) === publishJob.id
+        ? json(publishJob)
+        : json(null, 404, { code: 'PUBLISH_JOB_NOT_FOUND', message: '发布任务不存在' })
+    }
     if (apiPath === '/v1/task-requests') {
       taskRequestBodies.push(route.request().postDataJSON())
       if (creationStatus === 409) return json(null, 409, { code: 'TASK_REQUEST_SCOPE_CHANGED', message: '商品或 SKU 范围与已确认的执行计划不一致；任务未创建，请重新分析并确认范围' })
@@ -164,7 +207,7 @@ async function openApp(path, { mode = 'split_by_platform', creationStatus = 202,
   })
 
   await page.goto(`${studioUrl}${path}`, { waitUntil: 'domcontentloaded' })
-  return { browser, context, page, apiCalls, taskPageQueries, taskRequestBodies, generationRequests, directionSelectionRequests, planConfirmationRequests, reviewRequests, unmockedApiCalls, unexpectedNetworkRequests, waitForProductRestore: () => productRestorePending, releaseProductRestore: () => releaseProductRestore() }
+  return { browser, context, page, apiCalls, taskPageQueries, taskRequestBodies, generationRequests, directionSelectionRequests, planConfirmationRequests, reviewRequests, approvalRequests, publishPreviewRequests, publishConfirmRequests, publishJob, unmockedApiCalls, unexpectedNetworkRequests, waitForProductRestore: () => productRestorePending, releaseProductRestore: () => releaseProductRestore() }
 }
 
 
@@ -311,6 +354,48 @@ test('a selected creative direction must be confirmed before content generation,
     expect(apiCalls.some((call) => call.path === '/v1/tasks/task-creative/directions' && call.method === 'POST')).toBe(true)
     expect(apiCalls.some((call) => call.path === '/v1/tasks/task-creative/content-jobs' && call.method === 'POST')).toBe(true)
     expect(apiCalls.some((call) => call.path === '/v1/content-versions/content-creative-1/review')).toBe(true)
+    expect(unmockedApiCalls).toEqual([])
+    expect(unexpectedNetworkRequests).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('an uncertain manual-publish response keeps the outcome honest, retries the same intent, and deep-links its history', async () => {
+  const { browser, context, page, approvalRequests, publishPreviewRequests, publishConfirmRequests, publishJob, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
+  try {
+    await page.getByRole('button', { name: /突出核心功能/u }).click()
+    await page.getByRole('button', { name: '确认制作方案并生成' }).click()
+    await expect(page.getByRole('heading', { name: '可以进入人工确认' })).toBeVisible()
+
+    const approvalCheckbox = page.getByRole('checkbox', { name: /我已核对事实、规则和最终内容/u })
+    await expect(approvalCheckbox).toBeEnabled()
+    await approvalCheckbox.check()
+    await expect(page.getByRole('button', { name: '继续确认发布' })).toBeEnabled()
+    await page.getByRole('button', { name: '继续确认发布' }).click()
+    const dialog = page.getByRole('dialog', { name: '提交人工发布任务' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('当前不代表平台已受理或已生效')
+    await dialog.getByRole('checkbox', { name: /我确认将审核后的内容交付/u }).check()
+    await dialog.getByRole('button', { name: '提交人工发布任务' }).click()
+
+    const error = dialog.getByRole('alert')
+    await expect(error).toContainText('提交结果未确认')
+    await expect(error).toContainText('同一幂等键')
+    await expect(error).not.toContainText('发布未受理')
+    await expect(dialog.getByRole('checkbox', { name: /我确认将审核后的内容交付/u })).toBeChecked()
+    await expect(dialog.getByRole('button', { name: '重新安全提交' })).toBeEnabled()
+
+    await dialog.getByRole('button', { name: '重新安全提交' }).click()
+    await expect(page.getByRole('region', { name: '发布记录' })).toContainText('刚创建的发布任务：publish-handoff-1')
+    await expect(page.getByRole('region', { name: '发布记录' })).toContainText('发布确认已记录，待入队')
+    expect(new URL(page.url()).searchParams.get('publish_job_id')).toBe(publishJob.id)
+    expect(approvalRequests).toEqual([{ method: 'POST', body: { content_version_id: 'content-creative-1' } }])
+    expect(publishPreviewRequests).toEqual([{ method: 'POST', body: null }])
+    expect(publishConfirmRequests).toHaveLength(2)
+    expect(publishConfirmRequests[0].idempotencyKey).toBeTruthy()
+    expect(publishConfirmRequests[1]).toEqual(publishConfirmRequests[0])
     expect(unmockedApiCalls).toEqual([])
     expect(unexpectedNetworkRequests).toEqual([])
   } finally {

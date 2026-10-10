@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Product } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 import { assertUniqueBatchProductImportIdentities } from './product-import-identity.js'
 import { batchFactsConfirmation, productFactsConfirmation } from './brand-product-helpers.js'
 import { CatalogBatchImportIdempotencyError, hashCatalogBatchImportIntent, MemoryCatalogBatchImportIdempotencyRepository, type CatalogBatchImportIdempotencyRepository } from '../../../packages/persistence/src/catalog-batch-import-idempotency-repository.js'
@@ -143,7 +144,7 @@ export async function handleHttpProductWrite(req: IncomingMessage, res: ServerRe
   const productConfirmMatch = path.match(/^\/v1\/products\/([^/]+)\/confirm$/)
   if (req.method === 'POST' && productConfirmMatch) {
     const workspaceId = resolveWorkspace(req)
-    const productId = decodeURIComponent(productConfirmMatch[1]!)
+    const productId = decodeHttpPathSegment(productConfirmMatch[1]!)
     await enforceProductBrandAccess(workspaceId, productId)
     const { product, resumedTasks } = await confirmProductFactsTransition({ workspaceId, productId, source: 'rest' })
     return send(res, 200, workspaceId, { ...product, product_id: product.id, factsConfirmationRequired: false, humanConfirmed: true, facts_confirmation: productFactsConfirmation(product), resumed_task_ids: resumedTasks.map(task => task.id) }, null, req)

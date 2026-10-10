@@ -27,4 +27,10 @@ describe('content candidate to manual publish workflow', () => {
     expect(app).not.toContain("navigateTo('products')\n    showToast(\n      `人工发布任务已创建：${jobId}")
     expect(app).toContain('<PublishHistoryPanel baseUrl={baseUrl} />')
   })
+
+  it('does not claim an uncertain manual-publish submission was rejected', () => {
+    expect(app).toContain('提交结果未确认：${describeApiError(cause)}')
+    expect(app).toContain('请先核对发布记录；如需重试，系统会复用同一幂等键。')
+    expect(app).not.toContain('发布未受理：${describeApiError(cause)}')
+  })
 })

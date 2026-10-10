@@ -2025,7 +2025,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: pluginVersion } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ protocolVersion: '2025-06-18' })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
       const resources = await nextLine(child.stdout)
@@ -2033,7 +2033,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-local-edit-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-candidate-choice-v15.html', mimeType: 'text/html;profile=mcp-app' }))
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11.5, method: 'resources/read', params: { uri: 'ui://merchant-marketing/onboarding-v1.html' } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'resources/read', params: { uri: 'ui://merchant-marketing/onboarding-v1.html' } })}\n`)
       const onboardingUi = await nextLine(child.stdout)
       expect(onboardingUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/onboarding-v1.html', mimeType: 'text/html;profile=mcp-app' })
       expect(onboardingUi.result.contents[0].text).toContain('Store Nova插件安装引导')
@@ -2793,7 +2793,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(JSON.stringify({ content: single.result.content, structuredContent: single.result.structuredContent })).not.toMatch(/data:image|asset_secret|provider_secret|visualRef|assetId|管理员|运营后台|context_bar|action_cards/iu)
       expect(JSON.stringify({ content: single.result.content, structuredContent: single.result.structuredContent })).not.toMatch(/selection_tickets|nonce_hash|intent_hash|a{64}|b{64}/u)
 
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_native' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_native' } } })}\n`)
       const native = await nextLine(child.stdout)
       expect(native.result.structuredContent.candidate_state.presentation).toBe('native_image')
       expect(native.result.structuredContent).not.toHaveProperty('images')
@@ -3237,8 +3237,16 @@ describe('Codex stdio MCP bridge', () => {
           expect(tool.inputSchema.properties).not.toHaveProperty(forbidden)
         }
       }
+      const emptyFilePath = join(directory, 'empty.png')
+      await writeFile(emptyFilePath, Buffer.alloc(0))
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'empty.png', mime_type: 'image/png', file_path: emptyFilePath } } })}\n`)
+      const emptyUpload = await nextLine(child.stdout)
+      expect(emptyUpload.result.isError).toBe(true)
+      expect(emptyUpload.result.content[0].text).toContain('文件不能为空')
+      expect(requests).toHaveLength(0)
+
       const continuation = { continuation_kind: 'image_generation', continuation_product_id: 'prod_1', continuation_task_id: 'task_1', continuation_content_version_id: 'cv_1', continuation_sku_ids_json: '["sku_1"]', continuation_direction: '京东白底主图', continuation_count: '1', continuation_idempotency_key: 'upload-generation-1' }
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', file_path: filePath, ...continuation } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', file_path: filePath, ...continuation } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result.isError).toBe(false)
       expect(response.result._meta).toBeUndefined()
@@ -3421,6 +3429,37 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).toContain('检查通过后会等待你的确认')
       expect(JSON.stringify(response.result)).not.toMatch(/管理员|运营后台|扫描证据/u)
       expect(methods).toEqual(['asset.upload', 'asset.list'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('uses bounded defaults when asset scan poll timing is malformed', async () => {
+    const methods: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      methods.push(request.method)
+      const result = request.method === 'asset.list'
+        ? { assets: [{ id: 'asset_poll_config_1', scanStatus: methods.filter(method => method === 'asset.list').length > 1 ? 'clean' : 'quarantined' }] }
+        : { id: 'asset_poll_config_1', scanStatus: 'quarantined' }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS: 'not-a-number', MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS: '25' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: false, structuredContent: { scanStatus: 'clean', scan_wait: { state: 'completed', timed_out: false } } })
+      expect(response.result.content[0].text).toContain('图片检查已通过')
+      expect(methods).toEqual(['asset.upload', 'asset.list', 'asset.list'])
     } finally {
       child.kill()
       await close(server)

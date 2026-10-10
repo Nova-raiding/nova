@@ -2,19 +2,30 @@ import React from 'react'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import type { AssetMetadata } from './api.js'
 import { ProductSpreadsheetImport, spreadsheetImportScanState, spreadsheetPreviewRows, validateSpreadsheetImportMode } from './ProductSpreadsheetImport.js'
 
 const accounts = [{ platform: 'jd' as const, accountId: 'jd-store-1', state: 'connected', readEnabled: true, writeEnabled: true }]
 const product = { platform: 'jd' as const, title: '冲锋衣', account_id: 'jd-store-1' }
 const source = readFileSync(new URL('./ProductSpreadsheetImport.tsx', import.meta.url), 'utf8')
+const scannedAsset = (overrides: Partial<AssetMetadata> = {}) => ({
+  id: 'asset-spreadsheet-test', workspaceId: 'ws-spreadsheet-test', name: 'products.csv', mimeType: 'text/csv', sizeBytes: 10,
+  scanStatus: 'clean', scanVerdict: 'clean', scanReceiptId: 'receipt-spreadsheet-test', scanReceiptDigest: 'a'.repeat(64),
+  storageKey: 'clean/ws-spreadsheet-test/products.csv', rightsStatus: 'pending', parseStatus: 'pending',
+  contentTrust: { classification: 'untrusted', mode: 'data_only', canOverrideInstructions: false, canTriggerTools: false, requiresMerchantConfirmation: true },
+  references: [], revision: 1, createdAt: '2026-10-10T00:00:00.000Z',
+  ...overrides,
+}) as AssetMetadata
 
 describe('Merchant Studio spreadsheet import', () => {
   it('waits for the real scanner while quarantine is pending and only parses clean assets', () => {
-    expect(spreadsheetImportScanState('quarantined')).toBe('pending')
-    expect(spreadsheetImportScanState('unscanned')).toBe('pending')
+    expect(spreadsheetImportScanState(scannedAsset({ scanStatus: 'quarantined' }))).toBe('pending')
+    expect(spreadsheetImportScanState(scannedAsset({ scanStatus: 'unscanned' }))).toBe('pending')
     expect(spreadsheetImportScanState(undefined)).toBe('pending')
-    expect(spreadsheetImportScanState('clean')).toBe('ready')
-    for (const status of ['blocked', 'rejected', 'failed']) expect(spreadsheetImportScanState(status)).toBe('blocked')
+    expect(spreadsheetImportScanState(scannedAsset())).toBe('ready')
+    expect(spreadsheetImportScanState(scannedAsset({ scanReceiptId: undefined, scanReceiptDigest: undefined, scanVerdict: undefined }))).toBe('blocked')
+    expect(spreadsheetImportScanState(scannedAsset({ scanReceiptDigest: 'invalid' }))).toBe('blocked')
+    for (const status of ['blocked', 'rejected', 'failed']) expect(spreadsheetImportScanState(scannedAsset({ scanStatus: status }))).toBe('blocked')
   })
   it('allows a draft without a store and exposes the draft submit action', () => {
     expect(validateSpreadsheetImportMode([{ platform: 'jd', title: '草稿', account_id: '' }], 'draft_only', [])).toBeNull()

@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { parseScopedBrandSettings, ScopedBrandSettingsError } from '../../../packages/application/src/scoped-brand-settings.js'
 import { PostgresScopedBrandSettingsRepository, ScopedBrandBindingError, ScopedBrandRevisionConflictError } from '../../../packages/persistence/src/scoped-brand-settings-repository.js'
 import { DomainError } from '../../../packages/application/src/service.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 export interface ScopedBrandHttpDependencies {
   repository?: PostgresScopedBrandSettingsRepository
@@ -92,7 +93,7 @@ export async function routeScopedBrandHttp(req: IncomingMessage, res: ServerResp
     if (typeof input.account_id !== 'string' || !input.account_id.trim() || !Number.isSafeInteger(input.expected_revision) || Number(input.expected_revision) < 0) throw new DomainError('BRAND_ASSET_ASSIGNMENT_INVALID', '请选择店铺并提供当前归属修订号', 400)
     if (input.series_id !== undefined && input.series_id !== null && (typeof input.series_id !== 'string' || !input.series_id.trim())) throw new DomainError('BRAND_ASSET_ASSIGNMENT_INVALID', '系列标识无效', 400)
     dependencies.requireActionableStore(workspaceId, input.account_id)
-    const assetId = decodeURIComponent(assetMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetMatch[1]!)
     await dependencies.assertAssetActive?.(workspaceId, assetId)
     try {
       const assignment = await repository.assignAsset({ workspaceId, assetId, accountId: input.account_id, seriesId: typeof input.series_id === 'string' ? input.series_id : null, expectedRevision: Number(input.expected_revision) })

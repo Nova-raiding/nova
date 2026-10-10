@@ -53,12 +53,22 @@ test('spreadsheet import uploads a product table and carries its material ID thr
   const pageErrors = []
   const consoleErrors = []
   const unexpectedRequests = []
+  let trustedScanReceiptAvailable = false
+  let parseCompleted = false
   const uploadedAsset = {
     id: assetId, workspaceId, name: 'merchant-products.csv', mimeType: 'text/csv', sizeBytes: 86,
     sha256: 'a'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
-    parseStatus: 'succeeded', extractedFacts, revision: 1,
+    parseStatus: 'pending', revision: 1,
     createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z',
   }
+  const assetProjection = () => ({
+    ...uploadedAsset,
+    ...(trustedScanReceiptAvailable ? {
+      scanVerdict: 'clean', scanReceiptId: 'fixture-material-import-scan', scanReceiptDigest: 'c'.repeat(64),
+      storageKey: `clean/${workspaceId}/${assetId}/merchant-products.csv`,
+    } : {}),
+    ...(parseCompleted ? { parseStatus: 'succeeded', extractedFacts } : {}),
+  })
   page.on('pageerror', error => pageErrors.push(error.stack || error.message))
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
 
@@ -98,15 +108,20 @@ test('spreadsheet import uploads a product table and carries its material ID thr
   }))
   await page.route('**/v1/assets/upload', route => {
     requests.push({ path: '/api/v1/assets/upload', method: route.request().method(), contentType: route.request().headers()['content-type'], name: route.request().headers()['x-asset-name'] })
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(uploadedAsset)) })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(assetProjection())) })
   })
   await page.route('**/v1/assets?*', route => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(envelope({ items: [uploadedAsset], total: 1, limit: 50, offset: 0 })),
+    body: JSON.stringify(envelope({ items: [assetProjection()], total: 1, limit: 50, offset: 0 })),
   }))
+  await page.route(`**/v1/assets/${assetId}/parse`, route => {
+    requests.push({ path: `/api/v1/assets/${assetId}/parse`, method: route.request().method() })
+    parseCompleted = true
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(assetProjection())) })
+  })
   await page.route(`**/v1/assets/${assetId}/facts`, route => {
     requests.push({ path: `/api/v1/assets/${assetId}/facts`, method: route.request().method(), body: route.request().postDataJSON() })
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(uploadedAsset)) })
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(assetProjection())) })
   })
   await page.route('**/v1/auth/mcp-token', route => route.fulfill({
     contentType: 'application/json',
@@ -135,7 +150,13 @@ test('spreadsheet import uploads a product table and carries its material ID thr
       name: 'merchant-products.csv', mimeType: 'text/csv',
       buffer: Buffer.from('平台,商品名称,素材ID\n淘宝,表格绑定素材商品,asset_uploaded_material_fixture'),
     })
+    await expect(importer.getByRole('alert')).toContainText('安全扫描凭据缺失或无效')
+    expect(requests.filter(request => request.path.endsWith('/parse'))).toHaveLength(0)
+
+    trustedScanReceiptAvailable = true
+    await importer.getByRole('button', { name: '继续检查' }).click()
     await expect(importer.getByText('表格绑定素材商品', { exact: true })).toBeVisible()
+    expect(requests.filter(request => request.path.endsWith('/parse'))).toHaveLength(1)
 
     // Every row in store mode must identify its destination. Keep the preview
     // available so the merchant can recover in draft mode without reuploading.
@@ -144,22 +165,22 @@ test('spreadsheet import uploads a product table and carries its material ID thr
     const importError = importer.getByRole('alert')
     await expect(importError).toContainText('第 1 个商品未填写店铺账号')
     await expect(importError).toBeFocused()
-    expect(requests.map(request => request.path)).toEqual(['/api/v1/assets/upload'])
+    expect(requests.map(request => request.path)).toEqual(['/api/v1/assets/upload', `/api/v1/assets/${assetId}/parse`])
 
     await importer.getByLabel('仅草稿').check()
     await importer.getByRole('button', { name: '确认并创建草稿' }).click()
     await expect(importer.getByText('已创建 1 个草稿商品；不可同步或发布。', { exact: true })).toBeVisible()
 
     expect(requests.map(request => request.path)).toEqual([
-      '/api/v1/assets/upload', `/api/v1/assets/${assetId}/facts`, '/api/mcp', '/api/mcp',
+      '/api/v1/assets/upload', `/api/v1/assets/${assetId}/parse`, `/api/v1/assets/${assetId}/facts`, '/api/mcp', '/api/mcp',
     ])
     expect(requests[0]).toMatchObject({ method: 'POST', contentType: 'text/csv', name: 'merchant-products.csv' })
-    expect(requests[1].body).toMatchObject({ facts: extractedFacts })
-    expect(requests[2]).toMatchObject({ method: 'catalog.import.batch', params: {
+    expect(requests[2].body).toMatchObject({ facts: extractedFacts })
+    expect(requests[3]).toMatchObject({ method: 'catalog.import.batch', params: {
       source_asset_id: assetId, draft_only: 'true',
       products_json: JSON.stringify([{ platform: 'taobao', title: '表格绑定素材商品', asset_ids: [assetId] }]),
     } })
-    expect(requests[3]).toMatchObject({ method: 'catalog.facts.confirm', params: { product_id: productId } })
+    expect(requests[4]).toMatchObject({ method: 'catalog.facts.confirm', params: { product_id: productId } })
     expect(unexpectedRequests).toEqual([])
     expect(pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
@@ -171,6 +192,7 @@ test('spreadsheet import uploads a product table and carries its material ID thr
 }, 60_000)
 
 test('a partial product-fact confirmation failure can be retried without importing products again', async () => {
+  test.setTimeout(60_000)
   const vite = await createServer({
     configFile: false,
     envDir: false,
@@ -234,7 +256,7 @@ test('a partial product-fact confirmation failure can be retried without importi
   }))
   const retryAsset = {
     id: 'asset_import_confirm_retry_fixture', workspaceId, name: 'merchant-products.csv', mimeType: 'text/csv', sizeBytes: 86,
-    sha256: 'b'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
+    sha256: 'b'.repeat(64), scanStatus: 'clean', scanVerdict: 'clean', scanReceiptId: 'fixture-material-import-retry-scan', scanReceiptDigest: 'd'.repeat(64), storageKey: `clean/${workspaceId}/asset_import_confirm_retry_fixture/merchant-products.csv`, rightsStatus: 'approved', source: 'merchant_upload',
     parseStatus: 'succeeded', extractedFacts, revision: 1,
     createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z',
   }

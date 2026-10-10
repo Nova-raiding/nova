@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type MerchantService } from '../../../packages/application/src/service.js'
 import { ERROR_CODES, type ApiEnvelope } from '../../../packages/contracts/src/index.js'
 import { BusinessSnapshotVersionConflictError, type PostgresBusinessRepository, type ProductAssetBindingRow } from '../../../packages/persistence/src/business-repository.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 type JsonObject = Record<string, unknown>
 type Send = <T>(res: ServerResponse, status: number, workspaceId: string, data: T | null, error?: ApiEnvelope<T>['error'], req?: IncomingMessage) => void
@@ -24,7 +25,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
   const productAssetsMatch = path.match(/^\/v1\/products\/([^/]+)\/assets$/)
   if (req.method === 'GET' && productAssetsMatch) {
     const workspaceId = deps.resolveWorkspace(req)
-    const productId = decodeURIComponent(productAssetsMatch[1]!)
+    const productId = decodeHttpPathSegment(productAssetsMatch[1]!)
     const product = deps.service.products.get(productId)
     if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     await deps.enforceProductBrandAccess(req, workspaceId, productId)
@@ -48,7 +49,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
     if (!deps.business) throw new DomainError('BUSINESS_PERSISTENCE_REQUIRED', '商品素材关系变更需要持久化业务仓储', 503)
     const input = await deps.body(req)
     const workspaceId = deps.resolveWorkspace(req, input.workspace_id)
-    const productId = decodeURIComponent(productAssetsMatch[1]!)
+    const productId = decodeHttpPathSegment(productAssetsMatch[1]!)
     const assetId = typeof input.asset_id === 'string' ? input.asset_id.trim() : ''
     const brandId = typeof input.brand_id === 'string' ? input.brand_id.trim() : ''
     const assetRole = typeof input.asset_role === 'string' ? input.asset_role.trim() : 'source'
@@ -73,7 +74,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
   }
   if (req.method === 'GET' && productGetMatch) {
     const workspaceId = deps.resolveWorkspace(req)
-    const product = deps.service.products.get(decodeURIComponent(productGetMatch[1]!))
+    const product = deps.service.products.get(decodeHttpPathSegment(productGetMatch[1]!))
     if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     await deps.enforceProductBrandAccess(req, workspaceId, product.id)
     return deps.send(res, 200, workspaceId, product, null, req)
@@ -81,7 +82,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
   const assetProductsMatch = path.match(/^\/v1\/assets\/([^/]+)\/products$/)
   if (req.method === 'GET' && assetProductsMatch) {
     const workspaceId = deps.resolveWorkspace(req)
-    const assetId = decodeURIComponent(assetProductsMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetProductsMatch[1]!)
     const asset = deps.service.listAssets(workspaceId).find(item => item.id === assetId)
     if (!asset) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
     await deps.assertAssetActive?.(workspaceId, assetId)
@@ -96,7 +97,7 @@ export async function handleHttpProductAssetRoute(req: IncomingMessage, res: Ser
   const productImageReviewMatch = path.match(/^\/v1\/products\/([^/]+)\/image-review$/)
   if (req.method === 'GET' && productImageReviewMatch) {
     const workspaceId = deps.resolveWorkspace(req)
-    const productId = decodeURIComponent(productImageReviewMatch[1]!)
+    const productId = decodeHttpPathSegment(productImageReviewMatch[1]!)
     await deps.enforceProductBrandAccess(req, workspaceId, productId)
     return deps.send(res, 200, workspaceId, deps.service.reviewProductImages(workspaceId, productId), null, req)
   }

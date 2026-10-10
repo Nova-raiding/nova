@@ -22,7 +22,7 @@ describe("Ops controller identity route authorization", () => {
     const harnessHtml = join(appRoot, `${harnessName}.html`);
     const harnessEntry = join(appRoot, `${harnessName}.tsx`);
     harnessFiles = [harnessHtml, harnessEntry];
-    await writeFile(harnessHtml, `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script>history.replaceState(null, '', '/ops/users?workbench=platform')</script><script type="module" src="/${harnessName}.tsx"></script></body></html>`, { flag: "wx" });
+    await writeFile(harnessHtml, `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script>window.__initialDomain = new URLSearchParams(location.search).get('route') || 'users'; history.replaceState(null, '', '/ops/' + window.__initialDomain + '?workbench=platform')</script><script type="module" src="/${harnessName}.tsx"></script></body></html>`, { flag: "wx" });
     await writeFile(harnessEntry, `
       import React from 'react';
       import { createRoot } from 'react-dom/client';
@@ -138,6 +138,58 @@ describe("Ops controller identity route authorization", () => {
       expect(unexpectedRequests).toEqual([]);
     } finally { await page.close(); }
   }, 60_000);
+
+  it("explains that Members is unavailable in the platform workbench and returns to an accessible route", async () => {
+    if (!browser) throw new Error("Browser did not start");
+    const page = await browser.newPage();
+    page.setDefaultTimeout(30_000);
+    const rpcMethods: string[] = [];
+    const unexpectedRequests: string[] = [];
+    try {
+      await page.route("**/*", async route => {
+        const url = new URL(route.request().url());
+        if (url.hostname === "127.0.0.1" && url.port === new URL(baseUrl).port) return route.fallback();
+        unexpectedRequests.push(url.origin);
+        await route.abort();
+      });
+      await page.route(url => url.origin === new URL(baseUrl).origin && url.pathname.startsWith("/api/"), async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() !== "POST" || url.pathname !== "/api/mcp") {
+          unexpectedRequests.push(`${request.method()} ${url.pathname}`);
+          await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "fixture blocks unexpected requests" }) });
+          return;
+        }
+        let rpc: { id?: string | number | null; method?: string };
+        try { rpc = request.postDataJSON() as typeof rpc; }
+        catch { unexpectedRequests.push("malformed JSON-RPC"); await route.fulfill({ status: 400, body: "bad JSON-RPC" }); return; }
+        const method = rpc.method ?? "";
+        rpcMethods.push(method);
+        const result = method === "ops.session" ? {
+          actor_id: "fixture-operator", workspace_id: "", roles: ["platform_ops"], workspace_granted: false,
+          workbench: "platform", scope: { type: "platform" }, capabilities: ["platform.summary.read"],
+        } : null;
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
+      });
+      await page.goto(`${baseUrl}/${harnessName}.html?route=members`, { waitUntil: "domcontentloaded" });
+      const blocked = page.getByRole("status").filter({ hasText: "此页面需要商家工作区权限" });
+      await blocked.waitFor({ state: "visible" });
+      await expectEventually(() => page.url().includes("/ops/members?workbench=platform"));
+      await blocked.getByText("平台运营控制台不提供该页面").waitFor();
+      expect(await blocked.getByRole("button", { name: "返回总览" }).count()).toBe(1);
+      for (const label of ["成员管理", "任务中心", "知识治理"]) {
+        expect(await page.getByRole("button", { name: label, exact: true }).count()).toBe(0);
+      }
+      expect(rpcMethods).toContain("ops.session");
+      expect(rpcMethods).not.toContain("ops.members.list");
+      await blocked.getByRole("button", { name: "返回总览" }).click();
+      await page.getByText("当前账号没有模型状态读取权限").waitFor();
+      await expectEventually(() => page.url().includes("/ops/overview?workbench=platform"));
+      expect(unexpectedRequests).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
 
 function isReadMethod(method: string): boolean {
@@ -151,3 +203,7 @@ async function expectEventually(predicate: () => boolean): Promise<void> {
 }
 
 function joinPath(...parts: string[]): string { return parts.join("/").replace(/\/+/gu, "/"); }
+
+declare global {
+  interface Window { __initialDomain: string; }
+}

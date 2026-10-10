@@ -177,7 +177,7 @@ export function RoleScopeBar({
             <span id={jitStatusId} className="sr-only" role="status" aria-live="polite" aria-atomic="true">
               临时授权已启用：{activeGrant.access_mode === "write" ? "可写" : "只读"}；
               范围 {activeGrant.resource_scope?.type ?? "workspace"}:{activeGrant.resource_scope?.ids?.join(", ") ?? activeGrant.workspace_id ?? "未返回"}；
-              {activeGrant.expires_at ? `剩余 ${formatJitRemaining(Date.parse(activeGrant.expires_at) - now)}` : "会话结束时失效"}；
+              {activeGrant.expires_at ? `到期时间 ${activeGrant.expires_at}` : "会话结束时失效"}；
               {activeGrant.max_uses !== undefined ? `已使用 ${activeGrant.use_count ?? 0}/${activeGrant.max_uses} 次` : "未提供使用次数上限"}。
             </span>
             <Tag color="gold" icon={<ClockCircleOutlined aria-hidden="true" />} aria-hidden="true">

@@ -46,7 +46,11 @@ export function publicInstallation(identity) {
 }
 
 export function canonicalInstallationTranscript(input) {
-  const ownerHash = createHash('sha256').update(`${input?.accountId}\n${input?.workspaceId}`, 'utf8').digest('base64url')
+  const accountId = input?.accountId
+  const workspaceId = input?.workspaceId
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(accountId ?? '')
+    || !/^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(workspaceId ?? '')) fail()
+  const ownerHash = createHash('sha256').update(`${accountId}\n${workspaceId}`, 'utf8').digest('base64url')
   const fields = ['store-nova.local-plugin.installation-proof', '1', input?.method, input?.path, input?.apiOrigin,
     input?.requestId, input?.challengeId, ownerHash, input?.installationId, input?.keyId, input?.platform,
     input?.pkceChallenge, input?.redirectUri, input?.clientNonce, input?.serverNonce, input?.issuedAt, input?.expiresAt]

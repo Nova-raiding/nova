@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError, type MerchantService, type Platform } from '../../../packages/application/src/service.js'
 import { ERROR_CODES, type ApiEnvelope } from '../../../packages/contracts/src/index.js'
 import type { PersistedRuleAudit, PersistedRuleVersion, PostgresRuleRepository } from '../../../packages/persistence/src/rule-repository.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 type JsonObject = Record<string, unknown>
 type Send = <T>(res: ServerResponse, status: number, workspaceId: string, data: T | null, error?: ApiEnvelope<T>['error'], req?: IncomingMessage) => void
@@ -83,7 +84,7 @@ export async function handleHttpRulesRoute(req: IncomingMessage, res: ServerResp
     const principal = deps.requireRuleAdmin(req)
     const repository = deps.ruleRepository()
     if (!repository) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '规则写入仅允许使用持久化仓储', 503)
-    const packId = decodeURIComponent(createRuleVersionMatch[1]!)
+    const packId = decodeHttpPathSegment(createRuleVersionMatch[1]!)
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(packId)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则包 ID 格式无效', 400)
     if (input.pack_id !== undefined && String(input.pack_id) !== packId) throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, '路径规则包与请求体不一致', 403)
     const name = deps.required(input, 'name')
@@ -159,8 +160,8 @@ export async function handleHttpRulesRoute(req: IncomingMessage, res: ServerResp
     const principal = deps.requireRuleAdmin(req)
     const repository = deps.ruleRepository()
     if (!repository) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '规则写入仅允许使用持久化仓储', 503)
-    const packId = decodeURIComponent(ruleStatusMatch[1]!)
-    const versionName = decodeURIComponent(ruleStatusMatch[2]!)
+    const packId = decodeHttpPathSegment(ruleStatusMatch[1]!)
+    const versionName = decodeHttpPathSegment(ruleStatusMatch[2]!)
     const status = deps.required(input, 'status')
     const reason = deps.required(input, 'reason')
     if (!['active', 'inactive', 'expired'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '规则状态无效', 400)

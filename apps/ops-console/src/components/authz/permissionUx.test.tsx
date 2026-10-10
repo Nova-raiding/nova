@@ -54,7 +54,9 @@ describe("desktop permission UX", () => {
     expect(html).toMatch(/aria-describedby="[^"]+"/);
     expect(html).toContain("范围 workspace:ws_1");
     expect(html).toContain("已使用 1/2 次");
-    expect(html).toContain("剩余");
+    const liveStatus = html.match(/class="sr-only" role="status" aria-live="polite" aria-atomic="true">([\s\S]*?)<\/span>/)?.[1] ?? "";
+    expect(liveStatus).toContain("到期时间 2999-01-01T00:00:00.000Z");
+    expect(liveStatus).not.toContain("剩余");
   });
   it("offers an explicit exit action while a JIT grant is active", () => {
     const html = renderToStaticMarkup(<RoleScopeBar

@@ -4,6 +4,7 @@ import type { Platform } from '../../../packages/application/src/service.js'
 import type { SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import type { assetHttpRuntime } from './server.js'
 import { readImageDimensions } from './image-dimensions.js'
+import { decodeHttpPathSegment } from './http-route-path.js'
 
 type AssetHttpRuntime = ReturnType<typeof assetHttpRuntime>
 
@@ -66,7 +67,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const workspaceId = resolveWorkspace(req)
     const lifecycle = persistence.assetLifecycle
     if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
-    const assetId = decodeURIComponent(assetTrashMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetTrashMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
     const input = await body(req)
@@ -87,7 +88,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const workspaceId = resolveWorkspace(req)
     const lifecycle = persistence.assetLifecycle
     if (!lifecycle) throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
-    const assetId = decodeURIComponent(assetRestoreMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetRestoreMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
     const input = await body(req)
@@ -112,7 +113,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       // Diagnostic evidence never authorizes a write without its implementation.
       throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
     }
-    const assetId = decodeURIComponent(assetPurgeMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetPurgeMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
     const input = await body(req)
@@ -140,7 +141,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
       // Diagnostic evidence never authorizes a write without its implementation.
       throw new DomainError('ASSET_LIFECYCLE_UNAVAILABLE', '服务端素材回收站暂不可用', 503)
     }
-    const assetId = decodeURIComponent(assetPurgeCancelMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetPurgeCancelMatch[1]!)
     const asset = assetForWorkspace(workspaceId, assetId)
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor', { allowTrashed: true })
     const input = await body(req)
@@ -188,7 +189,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'PUT' && assetMaterialMetadataMatch) {
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
-    const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetMaterialMetadataMatch[1]!))
+    const asset = assetForWorkspace(workspaceId, decodeHttpPathSegment(assetMaterialMetadataMatch[1]!))
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
     if (httpOperationPolicyOperation) await enforceHttpCommercialAccess(req, workspaceId, httpOperationPolicyOperation)
     const category = required(input, 'material_category')
@@ -208,7 +209,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const reasons = input.reasons === undefined ? undefined : Array.isArray(input.reasons) && input.reasons.every(reason => typeof reason === 'string') ? input.reasons as string[] : null
     if (reasons === null) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'reasons 必须是字符串数组', 400)
     if (!reasons?.length) throw new DomainError('ASSET_PREFERENCE_REASON_REQUIRED', '素材偏好必须提供至少一个人工原因', 400)
-    const assetId = decodeURIComponent(assetPreferenceMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetPreferenceMatch[1]!)
     await enforceAssetAccess(req, workspaceId, assetId, 'editor')
     if (httpOperationPolicyOperation) await enforceHttpCommercialAccess(req, workspaceId, httpOperationPolicyOperation)
     const updated = service.updateAssetPreference({ workspaceId, assetId, verdict: verdict as 'excellent' | 'disliked' | 'unrated', ...(reasons ? { reasons } : {}), ...(typeof input.note === 'string' ? { note: input.note } : {}), actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) })
@@ -242,7 +243,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     // Scanner routes have a separate machine identity and signed workspace
     // binding. They must not fall back through the merchant membership gate.
     const workspaceId = assetScannerWorkspace(req)
-    const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetScanContentMatch[1]!))
+    const asset = assetForWorkspace(workspaceId, decodeHttpPathSegment(assetScanContentMatch[1]!))
     if (asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith(`quarantine/${workspaceId}/`)) throw new DomainError('ASSET_SCAN_STATE_INVALID', 'asset is not awaiting an automatic platform scan', 409)
     const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey, { includeQuarantine: true })
     if (stored.metadata.sha256 !== asset.sha256 || stored.metadata.sizeBytes !== asset.sizeBytes || stored.metadata.contentType.toLowerCase() !== asset.mimeType.toLowerCase()) throw new DomainError('ASSET_SCAN_SOURCE_INTEGRITY_FAILED', 'quarantined scan source no longer matches asset metadata', 409)
@@ -261,7 +262,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
     const workspaceId = assetScannerWorkspace(req)
     const input = await body(req)
     if (!input.receipt || typeof input.signature !== 'string') throw new DomainError('ASSET_SCAN_RECEIPT_INVALID', 'signed asset scan receipt is required', 400)
-    const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetScanResultMatch[1]!))
+    const asset = assetForWorkspace(workspaceId, decodeHttpPathSegment(assetScanResultMatch[1]!))
     const result = await applySignedAssetScanResult(workspaceId, asset, { receipt: input.receipt as SignedAssetScanReceipt['receipt'], signature: input.signature })
     return send(res, 200, workspaceId, { asset_id: result.id, scan_status: result.scanStatus, receipt_id: result.scanReceiptId, receipt_digest: result.scanReceiptDigest }, null, req)
   }
@@ -281,8 +282,9 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   const assetParseMatch = path.match(/^\/v1\/assets\/([^/]+)\/parse$/)
   if (req.method === 'POST' && assetParseMatch) {
     const workspaceId = resolveWorkspace(req)
-    await enforceAssetAccess(req, workspaceId, decodeURIComponent(assetParseMatch[1]!), 'editor')
-    return send(res, 200, workspaceId, await executeDurableAssetParse(workspaceId, assetParseMatch[1]!, req), null, req)
+    const assetId = decodeHttpPathSegment(assetParseMatch[1]!)
+    await enforceAssetAccess(req, workspaceId, assetId, 'editor')
+    return send(res, 200, workspaceId, await executeDurableAssetParse(workspaceId, assetId, req), null, req)
   }
   if (req.method === 'POST' && path === '/v1/assets/upload') {
     const workspaceId = resolveWorkspace(req)
@@ -383,7 +385,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'PUT' && assetRightsMatch) {
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
-    const asset = assetForWorkspace(workspaceId, decodeURIComponent(assetRightsMatch[1]!))
+    const asset = assetForWorkspace(workspaceId, decodeHttpPathSegment(assetRightsMatch[1]!))
     await enforceAssetAccess(req, workspaceId, asset.id, 'editor')
     const rightsStatus = required(input, 'rights_status')
     if (!['approved', 'rejected', 'pending'].includes(rightsStatus)) throw new DomainError('ASSET_RIGHTS_STATUS_INVALID', 'rights_status 无效', 400)
@@ -399,7 +401,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'POST' && assetFactsMatch) {
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
-    const assetId = decodeURIComponent(assetFactsMatch[1]!)
+    const assetId = decodeHttpPathSegment(assetFactsMatch[1]!)
     await enforceAssetAccess(req, workspaceId, assetId, 'editor')
     if (!isObject(input.facts) || Object.keys(input.facts).length === 0) throw new DomainError('ASSET_FACTS_EMPTY', 'facts 必须是非空对象', 400)
     const reason = required(input, 'reason').trim()

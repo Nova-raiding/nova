@@ -2658,6 +2658,18 @@ describe('API HTTP vertical slice', () => {
     expect(denied.data).toBeNull()
   })
 
+  it('returns a client input error for malformed percent-encoded route identifiers', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/v1/products/%E0%A4%A`, { headers: { 'x-workspace-id': 'ws_bad_route_encoding' } })
+    const envelope = await json(response)
+    expect(response.status).toBe(400)
+    expect(envelope).toMatchObject({
+      workspace_id: 'ws_bad_route_encoding',
+      data: null,
+      error: { code: 'INVALID_REQUEST', message: 'URL 路径参数编码无效' },
+    })
+  })
+
   it('keeps a real empty collection distinct from 403 and 503 envelopes', async () => {
     const base = await start()
     const workspaceId = `ws_empty_products_${Date.now()}`

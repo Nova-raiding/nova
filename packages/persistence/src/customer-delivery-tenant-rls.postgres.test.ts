@@ -55,6 +55,12 @@ describe.skipIf(!source)('customer delivery tenant RLS PostgreSQL regression', (
     const client = await ops!.connect()
     try {
       await client.query('BEGIN')
+
+      // Missing tenant context must fail closed for every protected table.
+      expect((await client.query('SELECT id FROM workspace_customer_deliveries')).rows).toEqual([])
+      expect((await client.query('SELECT id FROM workspace_customer_delivery_videos')).rows).toEqual([])
+      expect((await client.query('SELECT delivery_id,item_key FROM workspace_customer_delivery_checklist_items')).rows).toEqual([])
+
       await client.query("SELECT set_config('app.workspace_id',$1,true)", [workspaceA])
 
       expect((await client.query('SELECT id,workspace_id FROM workspace_customer_deliveries ORDER BY id')).rows)
@@ -63,6 +69,15 @@ describe.skipIf(!source)('customer delivery tenant RLS PostgreSQL regression', (
         .toEqual([{ id: videoA, workspace_id: workspaceA }])
       expect((await client.query('SELECT delivery_id,item_key FROM workspace_customer_delivery_checklist_items ORDER BY item_key')).rows)
         .toEqual([{ delivery_id: deliveryA, item_key: itemA }])
+
+      // A visible row cannot be reassigned into another tenant. Roll back to
+      // the savepoint after the expected WITH CHECK violation so the rest of
+      // this transaction can continue validating isolation.
+      await client.query('SAVEPOINT reject_cross_workspace_delivery_move')
+      await expect(client.query(`UPDATE workspace_customer_deliveries
+        SET workspace_id=$1 WHERE workspace_id=$2 AND id=$3`, [workspaceB, workspaceA, deliveryA]))
+        .rejects.toMatchObject({ code: '42501' })
+      await client.query('ROLLBACK TO SAVEPOINT reject_cross_workspace_delivery_move')
 
       await client.query('SAVEPOINT reject_foreign_delivery_insert')
       await expect(client.query(`

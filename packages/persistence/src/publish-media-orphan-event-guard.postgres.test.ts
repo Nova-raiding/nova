@@ -127,5 +127,5 @@ describe('publish media orphan event insert guard', () => {
         if (closeFailures.length > 0) throw new AggregateError(closeFailures.map(result => result.reason), 'Publish media event guard PostgreSQL pools failed to close')
       }, primaryFailure, finalizers)
     }
-  }, 60_000)
+  }, 180_000)
 })

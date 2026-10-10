@@ -12,6 +12,7 @@ import {
   type PlatformAccount,
   type PlatformId,
 } from './api.js'
+import { productAssetHasTrustedCleanScanEvidence } from './product-assets.js'
 
 type SpreadsheetProduct = {
   platform?: PlatformId
@@ -29,9 +30,10 @@ type SpreadsheetProduct = {
 
 export type SpreadsheetImportMode = 'draft_only' | 'store'
 
-export function spreadsheetImportScanState(status: string | undefined): 'ready' | 'blocked' | 'pending' {
-  if (status === 'clean') return 'ready'
-  if (status === 'blocked' || status === 'rejected' || status === 'failed') return 'blocked'
+export function spreadsheetImportScanState(asset: AssetMetadata | null | undefined): 'ready' | 'blocked' | 'pending' {
+  if (!asset) return 'pending'
+  if (asset.scanStatus === 'blocked' || asset.scanStatus === 'rejected' || asset.scanStatus === 'failed') return 'blocked'
+  if (asset.scanStatus === 'clean') return productAssetHasTrustedCleanScanEvidence(asset) ? 'ready' : 'blocked'
   return 'pending'
 }
 
@@ -106,8 +108,13 @@ export function ProductSpreadsheetImport({
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (run !== runRef.current) return
       const current = (await fetchAssets(baseUrl!)).find((item) => item.id === assetId)
-      const scanState = spreadsheetImportScanState(current?.scanStatus)
-      if (scanState === 'blocked') throw new Error('文件未通过安全检查，请检查内容后重新上传。')
+      const scanState = spreadsheetImportScanState(current)
+      if (scanState === 'blocked') {
+        if (current?.scanStatus === 'clean' && !productAssetHasTrustedCleanScanEvidence(current)) {
+          throw new Error('安全扫描凭据缺失或无效；文件已保留，请重新扫描后再继续。')
+        }
+        throw new Error('文件未通过安全检查，请检查内容后重新上传。')
+      }
       if (scanState === 'ready' && current) {
         setPhase('正在解析商品与 SKU…')
         if (current.parseStatus !== 'succeeded') await parseAsset(baseUrl!, assetId)

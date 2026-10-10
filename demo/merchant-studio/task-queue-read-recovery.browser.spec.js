@@ -69,7 +69,7 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
     failSearch = true
     const search = page.getByRole('searchbox', { name: '搜索任务 ID、商品名称或店铺名称' })
     await search.fill('missing')
-    await page.getByRole('button', { name: '搜索' }).click()
+    await page.getByRole('search', { name: '搜索任务队列' }).getByRole('button', { name: '搜索', exact: true }).click()
     await expect(page.getByText('正在读取新结果；当前列表保留的是第 1 页、全部任务的上次成功结果。')).toBeVisible()
     await expect(page.getByText('上次成功任务商品')).toBeVisible()
     await expect(page.getByRole('alert')).toContainText('任务暂时无法读取')

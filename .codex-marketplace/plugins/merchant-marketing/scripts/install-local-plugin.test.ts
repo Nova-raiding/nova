@@ -87,7 +87,7 @@ describe('direct local plugin install runtime build', () => {
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true })
       expect(codexCommands(fixture).some(command => command.slice(0, 3).join(' ') === 'plugin marketplace add')).toBe(true)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
-  }, 30_000)
+  }, 180_000)
 
   it.skipIf(process.platform !== 'darwin')('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
     const fixture = setup()

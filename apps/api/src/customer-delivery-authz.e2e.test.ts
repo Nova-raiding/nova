@@ -15,10 +15,10 @@ async function start() {
   return `http://127.0.0.1:${address.port}`
 }
 
-async function call<T>(base: string, token: string, method: string, params: Record<string, unknown>) {
+async function call<T>(base: string, token: string, method: string, params: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...extraHeaders },
     body: JSON.stringify({ jsonrpc: '2.0', id: `${method}-${Date.now()}`, method, params }),
   })
   return { response, body: await response.json() as Rpc<T> }
@@ -68,16 +68,22 @@ describe('customer delivery platform authorization and API flow', () => {
     const before = await call<{ items: Array<{ id: string; companyName: string }> }>(base, 'customer-delivery-platform-token', 'ops.customer-delivery.list', { target_workspace_id: targetWorkspace })
     expect(before.response.status).toBe(200)
     const beforeRows = before.body.data?.result.items ?? []
-    const denied = await call(base, 'customer-delivery-workspace-token', 'ops.customer-delivery.list', { target_workspace_id: 'ws_delivery_authz' })
+    const denied = await call(base, 'customer-delivery-workspace-token', 'ops.customer-delivery.list', { target_workspace_id: targetWorkspace }, { 'x-workspace-id': targetWorkspace })
     expect(denied.response.status).toBe(403)
-    expect(denied.body.error?.code).toBe('FORBIDDEN')
+    expect(denied.body.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { capability: 'customer.delivery.read', reason_code: 'AUTHZ_WORKBENCH_MISMATCH' },
+    })
 
     const deniedCreate = await call(base, 'customer-delivery-workspace-token', 'ops.customer-delivery.create', {
       target_workspace_id: targetWorkspace,
       company_name: '不应由商家权限创建的交付档案',
-    })
+    }, { 'x-workspace-id': targetWorkspace })
     expect(deniedCreate.response.status).toBe(403)
-    expect(deniedCreate.body.error?.code).toBe('FORBIDDEN')
+    expect(deniedCreate.body.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { capability: 'customer.delivery.update', reason_code: 'AUTHZ_WORKBENCH_MISMATCH' },
+    })
     const after = await call<{ items: Array<{ id: string; companyName: string }> }>(base, 'customer-delivery-platform-token', 'ops.customer-delivery.list', { target_workspace_id: targetWorkspace })
     expect(after.response.status).toBe(200)
     expect(after.body.data?.result.items).toEqual(beforeRows)

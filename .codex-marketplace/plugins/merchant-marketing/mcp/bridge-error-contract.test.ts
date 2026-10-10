@@ -48,6 +48,148 @@ describe('local stdio bridge JSON-RPC error contract', () => {
   it.each([
     ['canonical', bridgePath],
     ['installable mirror', marketplaceBridgePath],
+  ])('cancels an active remote request from an out-of-band notification on %s', async (_name, entrypoint) => {
+    let markRequestStarted!: () => void
+    let markRequestAborted!: () => void
+    const requestStarted = new Promise<void>(resolve => { markRequestStarted = resolve })
+    const requestAborted = new Promise<void>(resolve => { markRequestAborted = resolve })
+    const forwarded: string[] = []
+    const server = createServer((req, res) => {
+      req.on('aborted', markRequestAborted)
+      void (async () => {
+        let body = ''
+        for await (const chunk of req) body += String(chunk)
+        forwarded.push(String((JSON.parse(body) as { method?: unknown }).method))
+        markRequestStarted()
+        // Keep the API request open so the test proves the bridge aborts the
+        // actual HTTP call instead of merely ignoring the final MCP result.
+        res.on('close', () => markRequestAborted())
+      })()
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('test server did not bind')
+
+    const child = spawn(process.execPath, [entrypoint], {
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        DEPLOY_ENV: 'local_desktop',
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_stdio_cancel',
+        MERCHANT_MCP_TOKEN: 'isolated-test-token',
+        MERCHANT_MCP_REFRESH_TOKEN: '',
+        MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+        MERCHANT_STRICT_AUTH: 'true',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+        MERCHANT_MCP_WRITE_ENABLED: 'false',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', chunk => { output += chunk })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'cancel-me', method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      await requestStarted
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'cancel-queued', method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'cancel-queued' } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'cancel-me', reason: 'user cancelled' } })}\n`)
+      await requestAborted
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(output).toBe('')
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'after-cancel', method: 'ping' })}\n`)
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('bridge did not answer after cancellation')), 2_000)
+        const check = () => {
+          if (output.includes('"id":"after-cancel"')) {
+            clearTimeout(timeout)
+            resolve()
+          }
+        }
+        child.stdout.on('data', check)
+        check()
+      })
+      expect(output).toContain('"id":"after-cancel"')
+      expect(output).not.toContain('"id":"cancel-me"')
+      expect(output).not.toContain('"id":"cancel-queued"')
+      expect(forwarded).toEqual(['workspace.health'])
+    } finally {
+      child.kill()
+      await once(child, 'close')
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  }, 10_000)
+
+  it.each([
+    ['canonical', bridgePath],
+    ['installable mirror', marketplaceBridgePath],
+  ])('records unknown write outcome evidence when cancellation aborts an active write on %s', async (_name, entrypoint) => {
+    let markRequestStarted!: () => void
+    let markRequestAborted!: () => void
+    const requestStarted = new Promise<void>(resolve => { markRequestStarted = resolve })
+    const requestAborted = new Promise<void>(resolve => { markRequestAborted = resolve })
+    let markUnknownOutcome!: () => void
+    const unknownOutcome = new Promise<void>(resolve => { markUnknownOutcome = resolve })
+    const server = createServer((req, res) => {
+      req.on('aborted', markRequestAborted)
+      res.on('close', markRequestAborted)
+      void (async () => {
+        for await (const _chunk of req) { /* consume request body */ }
+        markRequestStarted()
+      })()
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('test server did not bind')
+
+    const child = spawn(process.execPath, [entrypoint], {
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        DEPLOY_ENV: 'local_desktop',
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_stdio_cancel_write',
+        MERCHANT_MCP_TOKEN: 'isolated-test-token',
+        MERCHANT_MCP_REFRESH_TOKEN: '',
+        MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+        MERCHANT_STRICT_AUTH: 'true',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+        MERCHANT_MCP_WRITE_ENABLED: 'true',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let output = ''
+    let diagnostics = ''
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', chunk => { output += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', chunk => {
+      diagnostics += chunk
+      if (diagnostics.includes('"operation_status":"unknown"')) markUnknownOutcome()
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'cancel-write', method: 'tools/call', params: { name: 'catalog.import', arguments: { platform: 'jd', title: 'cancelled write' } } })}\n`)
+      await requestStarted
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'cancel-write', reason: 'user cancelled' } })}\n`)
+      await requestAborted
+      await Promise.race([unknownOutcome, new Promise((_, reject) => setTimeout(() => reject(new Error('cancelled write outcome was not recorded')), 2_000))])
+      expect(output).toBe('')
+      expect(diagnostics).toContain('"error_code":"API_UNAVAILABLE"')
+      expect(diagnostics).toContain('"operation_status":"unknown"')
+      expect(diagnostics).toContain('"method":"catalog.import"')
+    } finally {
+      child.kill()
+      await once(child, 'close')
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  }, 10_000)
+
+  it.each([
+    ['canonical', bridgePath],
+    ['installable mirror', marketplaceBridgePath],
   ])('fails closed on invalid transport configuration for %s', async (_name, entrypoint) => {
     for (const [name, value] of invalidTransportConfigurations) {
       const responses = await runBridge([

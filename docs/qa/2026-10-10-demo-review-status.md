@@ -20,7 +20,7 @@
 - 历史只读快照：HEAD `f1f2d1c88a1279bf6dd1f088f05e6469faf8b590`；当时统计为 **171 dirty paths**（含本账本文件）。工作树随后持续变化；当前仍有大量未提交改动，不是 clean/frozen candidate。不要把历史计数当作当前状态。
 - 本段早期历史阶段的 metadata 目标迁移版本曾为 272、273，随后为 274；这些数值均已被 2026-10-10 09:09 UTC 增量 supersede。当前 `release-metadata.json` 为 `sourceMigrationVersion=270`、`expectedMigrationVersion=275`，源码链包含新增迁移 271–275。migration 273 的隔离 PostgreSQL 回归有历史通过收据；迁移 274/275 均无本轮通过收据。主机观察没有读取 DB migration chain；既有 runbook/摘要提到的 270 不能当成本轮核实的 live baseline。无迁移快速更新必须先由 DB owner 提供 live 完整 `{version,name,checksum}` 链，并与目标链逐行比对；在确认前不批准无迁移路径，任何需要应用 271–275 的候选都须停止，等待另行批准的 migration window。
 - 隔离 PostgreSQL 3/3 通过仅覆盖测试内构造的数据。它尚未覆盖几类历史组合：终态 NULL-scope return 对应已匹配 tenant balance；非空 return workspace 与 balance 不一致；tenant balance 缺少/错配 append-only match fact；source receipt 已有 tenant scope 但 balance 仍为 NULL。DBA 必须先在真实 Demo 只读计数并确认这些状态的合同，必要时补隔离迁移夹具；不能从 3/3 通过推断这些历史行不存在。
-- 当前 runbook 要求唯一 Demo inventory `release_approved=true`、所有运行容器由 owner 分类、既有共享锁来源/权限/唯一 mutator 证明；还要求 API `setup.mode=demo`。健康与 `/releasez` 探针是必要检查，不能代替真实桌面权限、业务读回和插件/模型账单验收。
+- 当前 runbook 要求对唯一 Demo 的新鲜 inventory 逐项分类所有运行容器，并在绑定候选完整 SHA 的受保护任务单/审查记录中由 owner 明确记录 `GO`、批准人、UTC 时间和证据；status 脚本固定 `release_approved=false`，退出 0 仅表示只读 inventory 命令成功，不是批准。还缺既有共享锁来源/权限/唯一 mutator 证明，并要求 API `setup.mode=demo`。健康与 `/releasez` 探针是必要检查，不能代替真实桌面权限、业务读回和插件/模型账单验收。
 - 旧 owner-current-state 报告的 257/258、既有归档提到的 270 与当前源码候选链尾 275 之间仍缺可审计的 live migration history 衔接。不得从 metadata 或旧 runbook 数字推断线上已执行迁移。
 
 ## 插件与本地测试证据边界
@@ -43,7 +43,7 @@
 
 ## 解锁所需的最小新证据
 
-1. Host/release owner 对唯一 `101 / merchant-demo-85575f9c` 提供新鲜只读 inventory 原始结果：exit 0、`release_approved=true`，并对全部运行容器（含 Compose 项目外容器）逐项确认分类。
+1. Host/release owner 对唯一 `101 / merchant-demo-85575f9c` 提供新鲜只读 inventory 原始结果及 SHA-256，并对全部运行容器（含 Compose 项目外容器）逐项确认分类；owner 在绑定候选完整 SHA 的受保护任务单/审查记录中明确写明 `GO`、批准人和 UTC 时间。status 命令的 `release_approved=false` 是固定兼容标记，命令退出 0 不产生批准。
 2. Host owner 提供无 secret 的受保护 Compose/env 来源标识与摘要，以及既有共享锁的 canonical path、owner/mode、逐级目录权限和所有 Demo Compose mutator 共用该锁的证据。
 3. DB owner 提供 live migration 完整 `{version,name,checksum}` 链及当前实际基线，解释 257/258、既有归档 270 与当前源码 275 的差异。只有目标链与核实后的 live 链逐行一致，才可评估无 DDL 的组件候选；若需应用 271–275，必须另行批准迁移窗口，并提供受保护执行器、备份/隔离恢复、前向迁移及旧版兼容/恢复证据。migration 273 的隔离 PostgreSQL 通过不代表 Demo live chain 已到 273，更不证明新 migration 274/275 可安全应用。
 4. 本地整合者在 `main` 形成 clean commit，从精确 SHA 构建，并绑定 archive/source、每个目标镜像 digest、Compose/env 摘要和回滚材料；逐项 semantic owner approval 绑定该 SHA。

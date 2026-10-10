@@ -487,6 +487,29 @@ describe('relay usage normalization', () => {
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
     expect(sink).not.toHaveBeenCalled()
 
+    const splitInconsistentPayload = {
+      usage: { prompt_tokens: 42, cost_cny: 0.001 },
+      data: { usage: { total_tokens: 43 } },
+    }
+    const splitInconsistent = parseRelayUsage(
+      splitInconsistentPayload,
+      new Headers({ 'x-provider-request-id': 'embed-split-inconsistent-42-43' }),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )
+    expect(splitInconsistent).toMatchObject({
+      inputTokens: 42,
+      totalTokens: 43,
+      metadata: { usage_observed: false, token_evidence_invalid: true },
+    })
+    const splitSink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      splitSink,
+      splitInconsistentPayload,
+      new Headers({ 'x-provider-request-id': 'embed-split-inconsistent-42-43' }),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    expect(splitSink).not.toHaveBeenCalled()
+
     const malformedExplicitOutput = parseRelayUsage(
       { usage: { prompt_tokens: 42, total_tokens: 42, completion_tokens: null } },
       new Headers(),

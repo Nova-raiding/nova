@@ -5923,15 +5923,17 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
           {viewMode === 'list' && <div className="catalog-list-header"><span>商品图片</span><span>添加时间</span><span>商品名称</span><span>系列</span><span>商品卖点</span><span>价格</span></div>}
           <div className={`catalog-product-collection ${viewMode}`}>
             {pagedStoreItems.map((product) => (
-              <article className={`catalog-product-card${catalogSelectedIds.includes(product.id) ? ' selected' : ''}`} key={product.id} role="button" tabIndex={0} onClick={() => openProduct(product.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openProduct(product.id) }}>
-                <label className="catalog-product-select" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择${product.title}`} checked={catalogSelectedIds.includes(product.id)} onChange={() => toggleCatalogProduct(product.id)} /><span><Check size={13} /></span></label>
-                <div className="catalog-product-card-media">
-                  {product.images[0]
-                    ? <CatalogProductMediaImage key={product.images[0]} src={product.images[0]} alt={`${product.title}商品图片`} />
-                    : <span role="status">暂无商品图片</span>}
-                </div>
-                <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt || '未读取'}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p><div className="catalog-product-price"><strong>{product.price === null ? '价格未读取' : `¥ ${product.price.toFixed(2)}`}</strong></div></div>
-                <ArrowRight className="catalog-product-arrow" size={18} />
+              <article className={`catalog-product-card${catalogSelectedIds.includes(product.id) ? ' selected' : ''}`} key={product.id}>
+                <button type="button" className="catalog-product-card-open" aria-label={`打开${product.title}商品详情`} onClick={() => openProduct(product.id)}>
+                  <div className="catalog-product-card-media">
+                    {product.images[0]
+                      ? <CatalogProductMediaImage key={product.images[0]} src={product.images[0]} alt={`${product.title}商品图片`} />
+                      : <span role="status">暂无商品图片</span>}
+                  </div>
+                  <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt || '未读取'}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p><div className="catalog-product-price"><strong>{product.price === null ? '价格未读取' : `¥ ${product.price.toFixed(2)}`}</strong></div></div>
+                  <ArrowRight className="catalog-product-arrow" size={18} />
+                </button>
+                <label className="catalog-product-select"><input type="checkbox" aria-label={`选择${product.title}`} checked={catalogSelectedIds.includes(product.id)} onChange={() => toggleCatalogProduct(product.id)} /><span><Check size={13} /></span></label>
               </article>
             ))}
             {!visibleStoreItems.length && (
@@ -12626,7 +12628,11 @@ function TaskWorkspace({
                           ? '审核结果待确认'
                           : blockingFindings
                             ? '存在阻断项'
-                            : '可以进入人工确认'}
+                            : approved
+                              ? '内容已批准，等待发布确认'
+                              : loading || operation
+                                ? '审核已通过，正在完成操作'
+                                : '可以进入人工确认'}
                   </h3>
                   <p>
                     {reviewStatus !== 'succeeded'
@@ -13535,7 +13541,7 @@ function PublishModal({
       submitLockRef.current = false
       setLoading(false)
       setSubmitError(
-        `发布未受理：${describeApiError(cause)} 请保留当前确认状态并重试；系统会复用同一幂等键。`,
+        `提交结果未确认：${describeApiError(cause)}。请先核对发布记录；如需重试，系统会复用同一幂等键。`,
       )
     }
   }

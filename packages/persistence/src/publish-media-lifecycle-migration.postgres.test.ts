@@ -34,8 +34,12 @@ describe('publish media lifecycle migration 274', () => {
       await client.query(
         `INSERT INTO publish_media_orphan_tasks
           (id,workspace_id,publish_job_id,event_id,media_idempotency_key,platform,account_id,visual_ref,role,sha256,state,receipt,reason)
-         VALUES($1,$2,$3,$4,$5,'taobao','acct','visual','main',$6,'uploaded',$7::jsonb,'cleanup_pending')`,
-        [mediaTask,workspace,job,event,mediaKey,receipt.sha256,JSON.stringify(receipt)],
+         VALUES($1,$2,$3,$4,$5,'taobao','acct','visual','main',$6,'intent',NULL,NULL)`,
+        [mediaTask,workspace,job,event,mediaKey,receipt.sha256],
+      )
+      await client.query(
+        "UPDATE publish_media_orphan_tasks SET state='uploaded',receipt=$2::jsonb,reason='cleanup_pending' WHERE id=$1",
+        [mediaTask,JSON.stringify(receipt)],
       )
 
       // Model a valid row left by a 273 deployment before 274 was applied.

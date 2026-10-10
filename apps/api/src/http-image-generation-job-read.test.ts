@@ -4,6 +4,27 @@ import type { MerchantService } from '../../../packages/application/src/service.
 import { handleHttpImageGenerationJobRead, type HttpImageGenerationJobReadDependencies } from './http-image-generation-job-read.js'
 
 describe('HTTP image-generation job tenant projection', () => {
+  it('rejects malformed encoded job IDs as a client input error', async () => {
+    const getImageGenerationJob = vi.fn()
+    const dependencies = {
+      service: { getImageGenerationJob },
+      resolveWorkspace: vi.fn(() => 'workspace-a'),
+      hydrateWorkspace: vi.fn(async () => undefined),
+    } as unknown as HttpImageGenerationJobReadDependencies
+
+    await expect(handleHttpImageGenerationJobRead(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      '/v1/image-generation-jobs/%',
+      new URL('http://localhost/v1/image-generation-jobs/%'),
+      dependencies,
+    )).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+
+    expect(getImageGenerationJob).not.toHaveBeenCalled()
+    expect(dependencies.resolveWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.hydrateWorkspace).not.toHaveBeenCalled()
+  })
+
   it('does not expose display fields for a product owned by another workspace', async () => {
     const foreignProductId = 'product-owned-by-workspace-b'
     const job = { id: 'job-owned-by-workspace-a', productId: foreignProductId } as never

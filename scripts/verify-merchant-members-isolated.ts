@@ -159,7 +159,11 @@ async function verify(context: OpsE2eContext) {
 
     const invited = `invited-${randomUUID()}@fixture.invalid`
     const form = page.getByRole('form', { name: '邀请工作区成员' })
-    await form.getByLabel('用户 ID').fill(invited)
+    const inviteAccount = form.getByLabel('成员登录账号')
+    await expect(inviteAccount).toHaveAttribute('placeholder', '例如：member@example.com 或平台账号')
+    await expect(inviteAccount).toHaveAttribute('aria-describedby', 'merchant-member-invite-account-help')
+    await expect(page.locator('#merchant-member-invite-account-help')).toContainText('系统会按此账号关联成员记录')
+    await inviteAccount.fill(invited)
     await form.getByLabel('显示名').fill('隔离邀请成员')
     await form.getByLabel('邀请原因').fill('隔离浏览器验收邀请')
     await form.getByRole('button', { name: '邀请成员' }).click()

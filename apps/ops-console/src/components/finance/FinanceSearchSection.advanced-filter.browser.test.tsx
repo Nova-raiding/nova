@@ -115,6 +115,8 @@ describe("Finance advanced filters", () => {
     page.setDefaultTimeout(10_000);
     try {
       await page.goto(`${baseUrl}/__finance-advanced-filter`, { waitUntil: "commit", timeout: 60_000 });
+      await page.waitForFunction(() => window.__financeFilterCalls !== undefined && Boolean(document.querySelector("#root")?.firstElementChild));
+      await page.getByRole("button", { name: "高级筛选", exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "高级筛选", exact: true }).click();
       await page.getByLabel("关键词").fill("  recharge_42  ");
       await page.getByLabel("Workspace ID").fill(" ws-a, ws-b  ");

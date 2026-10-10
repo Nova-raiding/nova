@@ -27,6 +27,10 @@ describe('installation identity', () => {
     expect(verifyLocalPluginInstanceProof({ ...transcript, publicKeySpki: first.installation_public_key_spki, signature })).toBe(true)
     expect(verify('sha256', canonicalInstallationTranscript({ ...transcript, workspaceId: 'ws_other' }), publicKey,
       Buffer.from(signature, 'base64url'))).toBe(false)
+    expect(() => canonicalInstallationTranscript({ ...transcript, accountId: undefined })).toThrow('LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID')
+    expect(() => canonicalInstallationTranscript({ ...transcript, workspaceId: undefined })).toThrow('LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID')
+    expect(() => canonicalInstallationTranscript({ ...transcript, accountId: 'account_1\nworkspace_2' })).toThrow('LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID')
+    expect(() => canonicalInstallationTranscript({ ...transcript, workspaceId: 'ws_one\nws_two' })).toThrow('LOCAL_PLUGIN_INSTALLATION_IDENTITY_INVALID')
   })
 
   it('rejects malformed, substituted, and mismatched persisted installation keys', () => {

@@ -73,6 +73,37 @@ describe('installed MCP bridge verification', () => {
     }
   }, installationFixtureTimeoutMs)
 
+  it('reports an older installed bridge version as drift without hiding its live tool surface', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-stale-bridge-verify-'))
+    const installed = resolve(directory, 'installed')
+    try {
+      cpSync(pluginRoot, installed, { recursive: true })
+      const staleVersion = '0.1.0+codex.20261009233435'
+      for (const path of ['.codex-plugin/plugin.json', 'package.json']) {
+        const file = resolve(installed, path)
+        const manifest = JSON.parse(readFileSync(file, 'utf8'))
+        manifest.version = staleVersion
+        writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`)
+      }
+
+      const result = spawnSync(process.execPath, [verifier, '--source', pluginRoot, '--installed', installed], { encoding: 'utf8' })
+      const evidence = JSON.parse(result.stdout)
+      expect(result.status).toBe(1)
+      expect(evidence.manifest.errors).toContain(`installed version does not match expected source version`)
+      expect(evidence.tools.installed_discovery_error).toBeNull()
+      expect(evidence.tools.count).toBeGreaterThan(0)
+      expect(evidence.tools.unconfigured_call).toMatchObject({ blocked: true, error: null })
+      expect(['MCP_AUTH_REQUIRED', 'MCP_CONFIGURATION_REQUIRED']).toContain(evidence.tools.unconfigured_call.code)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, installationFixtureTimeoutMs)
+
+  it('keeps the installable marketplace verifier in sync with the canonical verifier', () => {
+    const mirrorVerifier = resolve(pluginRoot, '../../.codex-marketplace/plugins/merchant-marketing/scripts/verify-installed-bridge.mjs')
+    expect(readFileSync(mirrorVerifier, 'utf8')).toBe(readFileSync(verifier, 'utf8'))
+  })
+
   it('rejects a bundled runtime path when its executable is absent', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-bundled-verify-missing-'))
     const installed = resolve(directory, 'installed')

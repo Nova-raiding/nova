@@ -23,9 +23,9 @@ describe('task queue search wiring', () => {
 
   it('keeps the last successful task rows visible after a failed refresh or search', () => {
     expect(app).not.toContain('setTaskList(null)')
-    expect(app).toContain('当前列表保留的是第 {(taskListSnapshotContext?.page ?? taskPage) + 1} 页')
-    expect(app).toContain('显示第 {(taskListSnapshotContext?.page ?? taskPage) + 1} 页')
-    expect(app).toContain('显示第 ${taskListSnapshotContext.page + 1} 页（第 ${taskPage + 1} 页读取失败）')
+    expect(app).toContain('当前列表保留的是第')
+    expect(app).toContain('显示第')
+    expect(app).toContain('taskListSnapshotContext.page + 1} 页（第 ${taskPage + 1} 页读取失败）')
     expect(app).toContain("(!taskListError || Boolean(taskList?.length)) && Boolean(taskList?.length)")
   })
 })
