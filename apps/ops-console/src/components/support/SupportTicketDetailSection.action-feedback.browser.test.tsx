@@ -65,22 +65,24 @@ describe("support action dialog feedback", () => {
   it("clears a failed assignment message when another action dialog opens", async () => {
     const page = await browser!.newPage();
     const pageErrors: string[] = [];
+    const failedRequests: string[] = [];
+    const consoleErrors: string[] = [];
+    page.on("requestfailed", request => failedRequests.push(`${request.url()} ${request.failure()?.errorText ?? "unknown"}`));
     page.on("pageerror", error => pageErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
     page.setDefaultTimeout(10_000);
     try {
-      await page.goto(`${baseUrl}/__support-action-feedback`, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      try {
-        await page.locator("#root > *").waitFor({ state: "attached", timeout: 20_000 });
-      } catch (cause) {
-        const rootSnapshot = (await page.locator("#root").innerHTML().catch(() => "<root unavailable>")).slice(0, 4_000);
-        throw new Error(`Support action detail did not mount. pageErrors=${JSON.stringify(pageErrors)} root=${rootSnapshot}`, { cause });
-      }
+      // Wait for the HTML response, then use the actionable control as the
+      // readiness signal. Vite can still be compiling the module graph after
+      // document commit on a cold or busy runner.
+      await page.goto(`${baseUrl}/__support-action-feedback`, { waitUntil: "commit", timeout: 60_000 });
       const assignButton = page.getByRole("button", { name: "分配负责人", exact: true });
       try {
-        await assignButton.waitFor({ state: "visible", timeout: 20_000 });
+        await assignButton.waitFor({ state: "visible", timeout: 60_000 });
       } catch (cause) {
-        const rootSnapshot = (await page.locator("#root").innerHTML().catch(() => "<root unavailable>")).slice(0, 4_000);
-        throw new Error(`Support action detail did not render the assignment action. pageErrors=${JSON.stringify(pageErrors)} root=${rootSnapshot}`, { cause });
+        const runtime = await page.evaluate(() => ({ readyState: document.readyState, root: document.querySelector("#root")?.innerHTML ?? "", resources: performance.getEntriesByType("resource").map(entry => entry.name) }))
+          .catch(() => ({ readyState: "unavailable", root: "<root unavailable>", resources: [] as string[] }));
+        throw new Error(`Support action fixture did not become interactive. ${JSON.stringify({ pageErrors, failedRequests, consoleErrors, runtime })}`, { cause });
       }
       await assignButton.click();
       const assignDialog = page.getByRole("dialog", { name: "分配工单" });
@@ -103,5 +105,5 @@ describe("support action dialog feedback", () => {
       expect(await commentDialog.getByRole("alert").count()).toBe(0);
       expect(await commentDialog.getByText("上次分配负责人失败", { exact: true }).count()).toBe(0);
     } finally { await page.close(); }
-  }, 60_000);
+  }, 120_000);
 });

@@ -88,20 +88,33 @@ describe("support ticket create failure feedback", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(10_000);
     const fixtureModuleResponses: Array<{ url: string; status: number }> = [];
-    page.on("requestfailed", request => console.error("support-create-requestfailed", request.url(), request.failure()?.errorText));
+    const fixtureDiagnostics: { failed: string[]; errors: string[]; consoleErrors: string[] } = { failed: [], errors: [], consoleErrors: [] };
+    page.on("requestfailed", request => fixtureDiagnostics.failed.push(`${request.url()} ${request.failure()?.errorText ?? "unknown"}`));
     page.on("response", response => {
       if (response.url().includes("/src/components/support/SupportQueueSection.tsx")) {
         fixtureModuleResponses.push({ url: response.url(), status: response.status() });
       }
     });
-    page.on("pageerror", error => console.error("support-create-pageerror", error));
-    page.on("console", message => { if (message.type() === "error") console.error("support-create-console", message.text()); });
-    await page.addInitScript(() => window.addEventListener("error", event => console.error("support-create-window-error", event.filename, event.lineno, event.colno, event.message)));
+    page.on("pageerror", error => fixtureDiagnostics.errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") fixtureDiagnostics.consoleErrors.push(message.text()); });
+    await page.addInitScript(() => window.addEventListener("error", event => {
+      (window.__supportCreateWindowErrors ??= []).push(`${event.filename}:${event.lineno}:${event.colno} ${event.message}`);
+    }));
     try {
-      await page.goto(`${baseUrl}/__support-create-failure-test`, { waitUntil: "domcontentloaded" });
-      await page.locator("#root > *").waitFor({ state: "attached", timeout: 15_000 });
-      await page.getByRole("button", { name: "新建工单" }).click();
-      await page.waitForTimeout(500);
+      await page.goto(`${baseUrl}/__support-create-failure-test`, { waitUntil: "commit", timeout: 60_000 });
+      const createButton = page.getByRole("button", { name: "新建工单", exact: true });
+      try {
+        await createButton.waitFor({ state: "visible", timeout: 60_000 });
+      } catch (cause) {
+        const runtime = await page.evaluate(() => ({
+          readyState: document.readyState,
+          root: document.querySelector("#root")?.innerHTML ?? "",
+          resources: performance.getEntriesByType("resource").map(entry => entry.name),
+          windowErrors: window.__supportCreateWindowErrors ?? [],
+        })).catch(() => ({ readyState: "unavailable", root: "<root unavailable>", resources: [] as string[], windowErrors: [] as string[] }));
+        throw new Error(`Support create fixture did not become interactive. ${JSON.stringify({ runtime, fixtureModuleResponses, fixtureDiagnostics })}`, { cause });
+      }
+      await createButton.click();
       const dialog = page.locator(".ant-modal").last();
       await dialog.waitFor({ state: "visible" });
       await dialog.getByLabel("主题").fill("支付未到账");
@@ -131,11 +144,12 @@ describe("support ticket create failure feedback", () => {
       expect(fixtureModuleResponses).toHaveLength(1);
       expect(fixtureModuleResponses[0]?.status).toBe(200);
     } finally { await page.close(); }
-  }, 30_000);
+  }, 120_000);
 });
 
 declare global {
   interface Window {
     __supportCreatePayloads?: Array<{ subject: string; description: string; customerId?: string; customerName?: string; idempotencyKey: string }>;
+    __supportCreateWindowErrors?: string[];
   }
 }

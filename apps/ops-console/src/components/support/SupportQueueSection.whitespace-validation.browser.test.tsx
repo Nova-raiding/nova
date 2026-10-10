@@ -90,13 +90,12 @@ describe("support ticket required fields trim validation", () => {
     try {
       await page.goto(`${baseUrl}/__support-whitespace-test`, { waitUntil: "commit" });
       try {
-        await page.locator("#root > *").waitFor({ state: "attached", timeout: 15_000 });
-      } catch {
+        await page.getByRole("button", { name: "新建工单", exact: true }).waitFor({ state: "visible", timeout: 60_000 });
+      } catch (cause) {
         const runtime = await page.evaluate(() => ({ readyState: document.readyState, root: document.querySelector("#root")?.innerHTML ?? "", entryExecuted: window.__supportEntryExecuted ?? false, windowErrors: window.__supportWindowErrors ?? [], resources: performance.getEntriesByType("resource").map(entry => entry.name) }));
-        throw new Error(`Support whitespace fixture failed before React mount: ${JSON.stringify({ runtime, fixtureModuleResponses, fixtureDiagnostics })}`);
+        throw new Error(`Support whitespace fixture did not become interactive: ${JSON.stringify({ runtime, fixtureModuleResponses, fixtureDiagnostics })}`, { cause });
       }
       await page.getByRole("button", { name: "新建工单" }).click();
-      await page.waitForTimeout(500);
       const dialog = page.locator(".ant-modal").last();
       await dialog.waitFor({ state: "visible" });
       await dialog.getByLabel("主题").fill("   ");
@@ -118,7 +117,7 @@ describe("support ticket required fields trim validation", () => {
     } finally {
       await page.close();
     }
-  }, 60_000);
+  }, 120_000);
 });
 
 async function expectNoRequest(page: import("playwright").Page) {
