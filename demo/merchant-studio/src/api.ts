@@ -1783,14 +1783,24 @@ const assetMimeType = (file: File) => file.type || ({
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.json': 'application/json',
   '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.ai': 'application/postscript', '.eps': 'application/postscript',
 } as Record<string, string>)[file.name.slice(file.name.lastIndexOf('.')).toLowerCase()] || 'application/octet-stream'
-export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory'], signal?: AbortSignal) => requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
-  method: 'POST',
-  // HTTP headers are byte-oriented; keep Unicode filenames/categories encoded
-  // on the wire and let the API decode them before validation/persistence.
-  headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': encodeURIComponent(materialCategory) } : {}) },
-  body: await file.arrayBuffer(),
-  signal,
-})
+export const uploadAsset = async (baseUrl: string, file: File, materialCategory?: AssetMetadata['materialCategory'], signal?: AbortSignal) => {
+  // File.arrayBuffer() is asynchronous. Capture the tenant before reading the
+  // bytes so a workspace switch while a large file is being read cannot send
+  // the old page's upload under the newly selected workspace.
+  const workspaceScope = requestWorkspaceScope(baseUrl, '/v1/assets/upload')
+  const body = await file.arrayBuffer()
+  if (workspaceScope.revision !== merchantWorkspaceScopeRevision) {
+    throw workspaceScopeError('API_WORKSPACE_CONTEXT_CHANGED', '工作区已切换，已阻止旧工作区素材上传')
+  }
+  return requestApi<AssetMetadata>(baseUrl, '/v1/assets/upload', {
+    method: 'POST',
+    // HTTP headers are byte-oriented; keep Unicode filenames/categories encoded
+    // on the wire and let the API decode them before validation/persistence.
+    headers: { 'content-type': assetMimeType(file), 'x-asset-name': encodeURIComponent(file.name), ...(materialCategory ? { 'x-asset-category': encodeURIComponent(materialCategory) } : {}) },
+    body,
+    signal,
+  }, workspaceScope.workspaceId ?? undefined)
+}
 export const updateAssetMaterialCategory = (baseUrl: string, assetId: string, materialCategory: NonNullable<AssetMetadata['materialCategory']>, expectedRevision: number) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/metadata`, { method: 'PUT', body: JSON.stringify({ material_category: materialCategory, expected_revision: expectedRevision }) })
 export const fetchBrandProfile = (baseUrl: string) => requestApi<{ profile: BrandProfile | null }>(baseUrl, '/v1/brand-profile')
 export interface ScopedBrandValues { color?: string; persona?: string; sellingPoints?: string; logoAssetId?: string; documentAssetId?: string }

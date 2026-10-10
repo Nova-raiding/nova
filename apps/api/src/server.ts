@@ -14750,7 +14750,13 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     const invitation = await inviteMerchantAccount(req, { repository: passwordAuthRepository, requireOperationsRole, requestActor, readBody: limit => body(req, limit), publicOrigin: publicRequestOrigin(req), production: isProduction() })
     return send(res, invitation.status, 'unknown', invitation.data, null, req)
   }
-  if (await handleHttpMerchantRegistrationRoute(req, res, path, url, { passwordAuthRepository, requireOperationsRole, paginationRequest, body, requestActor, send: (response, status, workspaceId, data, meta, request) => send(response, status, workspaceId, data, meta as never, request) })) return
+  if (await handleHttpMerchantRegistrationRoute(req, res, path, url, { passwordAuthRepository, requireOperationsRole,
+    requireCapability: (request, capability) => {
+      if (!effectiveAuthorizationProjection(requestPrincipals.get(request), 'unknown').capabilities.includes(capability)) {
+        throw new DomainError(ERROR_CODES.FORBIDDEN, '当前身份缺少注册申请管理权限', 403)
+      }
+    },
+    paginationRequest, body, requestActor, send: (response, status, workspaceId, data, meta, request) => send(response, status, workspaceId, data, meta as never, request) })) return
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts/authorize') {
     const response = await authorizeMerchantAccount(req, {
       requireOperationsRole, body, operations: () => persistence.operations ?? memoryOperations,

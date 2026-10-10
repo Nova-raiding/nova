@@ -23,7 +23,7 @@
         <h2 id="preview-title" class="sr-only">图片区域预览</h2>
         <div id="stage" class="stage">
           <div id="empty" class="empty">填写图片地址后即可预览并标注</div>
-          <img id="sourceImage" alt="待局部编辑的商品原图" hidden draggable="false" />
+          <img id="sourceImage" alt="待局部编辑的商品原图" hidden draggable="false" referrerpolicy="no-referrer" />
           <div id="editableLayer" class="overlay" aria-hidden="true"></div>
           <div id="protectedLayer" class="overlay" aria-hidden="true"></div>
           <div id="selection" class="selection" tabindex="0" role="group" aria-roledescription="可移动和缩放的图片编辑区域"></div>
@@ -70,7 +70,7 @@
         <p class="notice">安全边界：原图永久保留；返回结果是“待审核候选”，通过人工检查和选择前不会替换当前图片。</p>
         <section id="candidate" class="candidate" aria-labelledby="candidateTitle">
           <h2 id="candidateTitle" tabindex="-1">候选已创建，等待审核</h2>
-          <img id="candidateImage" alt="局部编辑生成的新候选图" hidden />
+          <img id="candidateImage" alt="局部编辑生成的新候选图" hidden referrerpolicy="no-referrer" />
           <dl><dt>候选 ID</dt><dd id="candidateId">—</dd><dt>模型版本</dt><dd id="candidateModel">—</dd><dt>原图状态</dt><dd>已保留，未覆盖</dd><dt>候选状态</dt><dd>待审核，未发布</dd></dl>
         </section>
         <div id="fallback" class="fallback"><label for="fallbackJson"><strong>无 Host 降级请求</strong></label><textarea id="fallbackJson" readonly></textarea><p class="hint">当前页面未检测到 MCP Host。请求已保留，可复制后由支持 MCP Apps 的宿主调用。</p></div>

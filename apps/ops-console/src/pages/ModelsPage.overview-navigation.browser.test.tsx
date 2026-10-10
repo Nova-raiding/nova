@@ -121,9 +121,13 @@ describe("ModelsPage overview navigation", () => {
       await billingError.getByRole("button", { name: /重\s*试/ }).click();
       await page.getByText("Revision 7").waitFor();
       const multiplier = page.getByRole("spinbutton", { name: "Token 计费倍率" });
-      await multiplier.fill("3.5");
+      await multiplier.fill("0.5");
+      await page.getByRole("alert").filter({ hasText: "计费倍率必须在 1–10 之间" }).waitFor();
       await page.getByRole("textbox", { name: "Token 计费倍率变更原因" }).fill("依据已核验的供应商计价单调整");
       const save = page.getByRole("button", { name: "保存并生效" });
+      expect(await save.isDisabled()).toBe(true);
+      expect(await page.evaluate(() => window.__modelMarkupCalls.saves)).toEqual([]);
+      await multiplier.fill("3.5");
       await expect.poll(() => save.isEnabled()).toBe(true);
       await save.click();
 

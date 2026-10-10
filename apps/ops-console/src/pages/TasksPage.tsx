@@ -18,6 +18,7 @@ export function TasksPage({ model }: TasksPageProps) {
   const [locationSearch, setLocationSearch] = useState(() =>
     typeof window === "undefined" ? "" : window.location.search,
   );
+  const [storeFilterNotice, setStoreFilterNotice] = useState("");
   useEffect(() => {
     const updateSearch = () => setLocationSearch(window.location.search);
     window.addEventListener("popstate", updateSearch);
@@ -45,6 +46,8 @@ export function TasksPage({ model }: TasksPageProps) {
     // value can never become the active account filter.
     if (hasStoreQuery && model.loading) return;
 
+    setStoreFilterNotice("");
+
     let storeFilters: Pick<typeof model.queueFilters, "platform" | "accountId"> = {};
     const validWorkspaceStoreScope = scope.kind === "workspace" &&
       (!model.opsSession?.workspace_id || model.opsSession.workspace_id === scope.id);
@@ -58,6 +61,15 @@ export function TasksPage({ model }: TasksPageProps) {
         );
         if (authorizedStore) storeFilters.accountId = requestedAccountId;
       }
+    } else if (hasStoreQuery && validWorkspaceStoreScope && !requestedPlatform && requestedAccountId) {
+      // The queue selector supports account-only filters. Resolve that deep link
+      // only when the current workspace directory identifies exactly one store;
+      // an account ID that is absent or ambiguous must not select another scope.
+      const matchingStores = model.storeDirectory.filter((store: StoreDirectory) =>
+        store.accountId === requestedAccountId &&
+        (!store.workspaceId || store.workspaceId === scope.id),
+      );
+      if (matchingStores.length === 1) storeFilters.accountId = requestedAccountId;
     }
     const nextUrlFilters: QueueFilters = {
       ...storeFilters,
@@ -83,6 +95,7 @@ export function TasksPage({ model }: TasksPageProps) {
     // from the address bar so a copied or refreshed URL does not keep
     // promising a filter that was never applied. Preserve unrelated context.
     if (hasStoreQuery && (storeFilters.platform !== requestedPlatform || storeFilters.accountId !== requestedAccountId)) {
+      setStoreFilterNotice("链接中的店铺筛选无法在当前授权工作区的店铺目录中确认，已移除店铺参数。请重新选择店铺后再处理队列。");
       if (storeFilters.platform) params.set("platform", storeFilters.platform);
       else params.delete("platform");
       if (storeFilters.accountId) params.set("accountId", storeFilters.accountId);
@@ -134,6 +147,7 @@ export function TasksPage({ model }: TasksPageProps) {
     >
       <div className="ops-tasks-page">
         <OpsPageError error={taskError ?? ""} onRetry={() => void model.load()} />
+        {storeFilterNotice ? <Alert className="ops-tasks-access-note" showIcon closable onClose={() => setStoreFilterNotice("")} type="warning" title="店铺筛选未应用" description={storeFilterNotice} role="status" /> : null}
         {(canReadPlatformTasks && model.platformTaskSummary) || (canReadPlatformMarketing && model.platformMarketingSummary) ? (
           <section className="ops-tasks-overview" aria-labelledby="ops-tasks-overview-title">
             <div className="ops-tasks-section-heading">

@@ -171,7 +171,11 @@ describe('local stdio bridge JSON-RPC error contract', () => {
       if (diagnostics.includes('"operation_status":"unknown"')) markUnknownOutcome()
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'cancel-write', method: 'tools/call', params: { name: 'catalog.import', arguments: { platform: 'jd', title: 'cancelled write' } } })}\n`)
+      // catalog.import requires the explicit, non-publishing draft path. Keep
+      // the fixture valid so this test reaches the remote request and exercises
+      // cancellation's unknown-write outcome instead of stopping at argument
+      // validation.
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'cancel-write', method: 'tools/call', params: { name: 'catalog.import', arguments: { platform: 'jd', title: 'cancelled write', draft_only: 'true' } } })}\n`)
       await requestStarted
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'cancel-write', reason: 'user cancelled' } })}\n`)
       await requestAborted

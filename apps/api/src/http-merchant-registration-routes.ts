@@ -5,6 +5,7 @@ import type { PasswordAuthRepository } from '../../../packages/persistence/src/p
 type Dependencies = {
   passwordAuthRepository: PasswordAuthRepository
   requireOperationsRole: (req: IncomingMessage, roles: readonly string[]) => string
+  requireCapability: (req: IncomingMessage, capability: 'identity.read' | 'identity.update') => void
   paginationRequest: (url: URL) => { limit: number; offset: number }
   body: (req: IncomingMessage, limit?: number) => Promise<Record<string, unknown>>
   requestActor: (req: IncomingMessage) => string
@@ -20,10 +21,11 @@ export async function handleHttpMerchantRegistrationRoute(
   url: URL,
   dependencies: Dependencies,
 ): Promise<boolean> {
-  const { passwordAuthRepository, requireOperationsRole, paginationRequest, body, requestActor, send } = dependencies
+  const { passwordAuthRepository, requireOperationsRole, requireCapability, paginationRequest, body, requestActor, send } = dependencies
 
   if (req.method === 'GET' && path === '/v1/ops/merchant-registration-applications') {
     requireOperationsRole(req, operationsRoles)
+    requireCapability(req, 'identity.read')
     const pagination = paginationRequest(url)
     const page = await passwordAuthRepository.listMerchantRegistrationApplications(pagination)
     send(res, 200, 'unknown', {
@@ -45,6 +47,7 @@ export async function handleHttpMerchantRegistrationRoute(
 
   if (req.method === 'POST' && path === '/v1/ops/merchant-registration-applications/review') {
     requireOperationsRole(req, operationsRoles)
+    requireCapability(req, 'identity.update')
     const input = await body(req, 64 * 1024)
     const decision = input.decision === 'approved' || input.decision === 'rejected' ? input.decision : undefined
     const login = String(input.login ?? '').trim().toLowerCase()

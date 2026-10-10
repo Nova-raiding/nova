@@ -31,8 +31,9 @@ const products = [
   ['product-catalog-8', '陶瓷滤纸架', 20],
 ].map(([id, title, age]) => ({
   id, workspaceId, platform: 'jd', accountId, storeName: '目录搜索验收店', title,
+  ...(id === 'product-catalog-1' ? { remoteId: 'REMOTE-KF-9287', skus: [{ id: 'SKU-KF-9287', name: '燕麦奶咖啡机套装', stock: 10 }] } : {}),
   skuCount: 1, stock: 10, factsConfirmed: true, source: 'manual_import',
-  createdAt: `${localDate(age)}T08:00:00.000Z`, updatedAt: `${localDate(age)}T08:00:00.000Z`, version: 1,
+  ...(id === 'product-catalog-8' ? {} : { createdAt: `${localDate(age)}T08:00:00.000Z`, updatedAt: `${localDate(age)}T08:00:00.000Z` }), version: 1,
 }))
 
 test('catalog search, date filter, empty-state recovery, and pagination use the selected store data', async () => {
@@ -88,6 +89,15 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
     await expect(page.locator('.catalog-product-card')).not.toContainText('云朵手冲壶')
 
+    // Merchants often identify a catalog item by its platform or SKU code.
+    // The generic keyword search should find those server-provided identifiers.
+    await search.fill('SKU-KF-9287')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
+    await search.fill('REMOTE-KF-9287')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
+
     await search.fill('不存在的商品')
     await expect(page.getByText('没有找到符合条件的商品', { exact: true })).toBeVisible()
     await expect(page.getByText('该店铺还没有商品', { exact: true })).toHaveCount(0)
@@ -95,6 +105,24 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await expect(search).toHaveValue('')
     await expect(page).not.toHaveURL(/(?:[?&])(?:q|query|search)=/u)
     await expect(page.locator('.catalog-product-card')).toHaveCount(6)
+
+    // Unknown server dates are displayed as "未读取" and must stay after
+    // dated products in either chronological direction.
+    const sortMenu = page.getByRole('button', { name: '商品排序方式' })
+    const pagination = page.getByRole('navigation', { name: '商品分页' })
+    await sortMenu.click()
+    await page.getByRole('option', { name: '添加时间从旧到新' }).click()
+    await expect(pagination).toContainText('共 8 件 · 第 1 / 2 页')
+    await page.getByRole('button', { name: '下一页' }).click()
+    await expect(pagination).toContainText('第 2 / 2 页')
+    await expect(page.locator('.catalog-product-card h3')).toHaveText(['便携咖啡秤', '陶瓷滤纸架'])
+    await sortMenu.click()
+    await page.getByRole('option', { name: '添加时间从新到旧' }).click()
+    await expect(pagination).toContainText('共 8 件 · 第 1 / 2 页')
+    await page.getByRole('button', { name: '下一页' }).click()
+    await expect(pagination).toContainText('第 2 / 2 页')
+    await expect(page.locator('.catalog-product-card h3')).toHaveText(['晨光磨豆机', '陶瓷滤纸架'])
+    await page.getByRole('button', { name: '上一页' }).click()
 
     await page.getByRole('button', { name: '按添加时间筛选' }).click()
     await page.getByRole('option', { name: '近 7 天添加' }).click()
@@ -116,7 +144,7 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await expect(lastMonthOption).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(dateFilter).toContainText('近 30 天添加')
-    await expect(page.locator('.catalog-product-card')).toHaveCount(6)
+    await expect(page.locator('.catalog-product-card')).toHaveCount(5)
     await dateFilter.focus()
     await page.keyboard.press('Enter')
     await expect(listbox).toBeVisible()

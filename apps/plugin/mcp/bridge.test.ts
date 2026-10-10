@@ -246,6 +246,58 @@ describe('Codex stdio MCP bridge', () => {
     }
   }, 20_000)
 
+  it('publishes and enforces the brand.extract JSON asset ID array constraints', async () => {
+    const forwarded: Array<Record<string, unknown>> = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      forwarded.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: { result: { candidates: [] } }, error: null }))
+    })
+    const address = await listen(server)
+    const { tools, child } = await listBridgeTools({
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_brand_extract_contract',
+      MERCHANT_STRICT_AUTH: 'false',
+      MERCHANT_MCP_WRITE_ENABLED: 'false',
+    })
+    const tool = tools.find(candidate => candidate.name === 'brand.extract')!
+    const schema = tool.inputSchema.properties?.asset_ids_json
+    expect(schema).toMatchObject({
+      type: 'string',
+      contentMediaType: 'application/json',
+      jsonShape: 'array',
+      contentSchema: {
+        type: 'array', minItems: 1, maxItems: 50,
+        items: { type: 'string', minLength: 1, pattern: '\\S' },
+      },
+    })
+    expect(schema.description).toContain('省略时检查全部工作区素材')
+    const call = async (id: number, assetIds: unknown) => {
+      const stdin = child.stdin
+      const stdout = child.stdout
+      if (!stdin || !stdout) throw new Error('bridge stdio is unavailable')
+      stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'brand.extract', arguments: { asset_ids_json: assetIds } } })}\n`)
+      return (await nextLine(stdout)).result
+    }
+    try {
+      const invalid: unknown[] = [null, 42, false, {}, [], '[]', '[""]', JSON.stringify(Array.from({ length: 51 }, (_, index) => `asset_${index + 1}`))]
+      for (const [index, assetIds] of invalid.entries()) {
+        expect(await call(index + 1, assetIds), JSON.stringify(assetIds)).toMatchObject({
+          isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' },
+        })
+      }
+      const one = await call(invalid.length + 1, '["asset_1"]')
+      expect(one.isError).toBe(false)
+      const fifty = await call(invalid.length + 2, JSON.stringify(Array.from({ length: 50 }, (_, index) => `asset_${index + 1}`)))
+      expect(fifty.isError).toBe(false)
+      expect(forwarded).toHaveLength(2)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  }, 20_000)
+
   it('keeps catalog.image.generate public schema modes aligned with local validation', async () => {
     const forwarded: Array<Record<string, unknown>> = []
     const server = createServer(async (req, res) => {
@@ -3276,7 +3328,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_ASSET_RESOURCE_DOMAINS: 'https://assets.example.test', MERCHANT_WORKSPACE_ID: 'ws_test' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -3595,7 +3647,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_ASSET_RESOURCE_DOMAINS: 'https://assets.example.test', MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const call = async (id: number, name: string, args: Record<string, string>) => {
@@ -4909,11 +4961,61 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED' } })
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'MCP_CONFIGURATION_REQUIRED',
+          recovery: {
+            state: 'configuration_required',
+            user_action_required: true,
+            preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
+            resume_message: '继续',
+          },
+        },
+      })
       expect(response.result.structuredContent.message).toMatch(/缺少MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID)/u)
       expect(response.result.structuredContent.message).toContain('未向后端发送请求')
     } finally {
       child.kill()
+    }
+  })
+
+  it('returns actionable configuration recovery when a workspace is bound but the service endpoint is missing', async () => {
+    let requests = 0
+    const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
+    await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...TEST_PROCESS_ENV,
+        MERCHANT_MCP_BASE_URL: '',
+        MERCHANT_WORKSPACE_ID: 'ws_assigned_fixture',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'MCP_CONFIGURATION_REQUIRED',
+          recovery: {
+            state: 'configuration_required',
+            user_action_required: true,
+            preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
+            resume_message: '继续',
+          },
+        },
+      })
+      expect(response.result.content[0].text).toContain('缺少MERCHANT_MCP_BASE_URL')
+      expect(response.result.content[0].text).toContain('重新加载插件连接或重启 ChatGPT')
+      expect(response.result.content[0].text).toContain('未向后端发送请求')
+      expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
     }
   })
 
@@ -5064,10 +5166,18 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
       const text = response.result.content?.[0]?.text ?? ''
+      expect(response.result.structuredContent.recovery).toMatchObject({
+        state: 'authentication_required',
+        user_action_required: true,
+        resume_message: '本地登录完成后继续',
+        next_action: { target: 'local_plugin_login', workspace_id_format: 'ws_...' },
+      })
       expect(text).toContain('没有可用的 Store Nova 工作区登录凭据')
       expect(text).toContain('可能尚未登录或凭据已失效')
       expect(text).not.toContain('登录已失效')
       expect(text).toContain('login.sh --workspace ws_...')
+      expect(text).toContain('login.cmd --workspace ws_...')
+      expect(text).toContain('此操作只登录当前工作区，不会连接店铺、扣费或发布')
     } finally {
       child.kill()
     }

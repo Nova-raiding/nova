@@ -17,6 +17,14 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
     canModelMarkupUpdate,
     saveModelMarkup,
   } = model;
+  const multiplier = modelMarkup?.multiplier;
+  const multiplierError = multiplier === undefined
+    ? ""
+    : !Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10
+      ? "计费倍率必须在 1–10 之间"
+      : Number(multiplier.toFixed(3)) !== multiplier
+        ? "计费倍率最多保留 3 位小数"
+        : "";
 
   return (
     <Card
@@ -44,6 +52,8 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
           <br />
           <InputNumber
             aria-label="Token 计费倍率"
+            aria-describedby="model-markup-multiplier-guidance"
+            aria-invalid={Boolean(multiplierError)}
             disabled={!canModelMarkupUpdate || !modelMarkup || modelMarkupLoading}
             min={1}
             max={10}
@@ -61,6 +71,10 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
               )
             }
           />
+          <br />
+          <Typography.Text id="model-markup-multiplier-guidance" role={multiplierError ? "alert" : undefined} type={multiplierError ? "danger" : "secondary"}>
+            {multiplierError || "范围 1–10，最多 3 位小数"}
+          </Typography.Text>
         </div>
         <div>
           <Typography.Text strong>变更原因</Typography.Text>
@@ -77,7 +91,7 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
         <Button
           type="primary"
           disabled={
-            !canModelMarkupUpdate || !modelMarkup || modelMarkupLoading || !modelMarkupReason.trim()
+            !canModelMarkupUpdate || !modelMarkup || modelMarkupLoading || Boolean(multiplierError) || !modelMarkupReason.trim()
           }
           loading={modelMarkupLoading}
           onClick={() => void saveModelMarkup()}

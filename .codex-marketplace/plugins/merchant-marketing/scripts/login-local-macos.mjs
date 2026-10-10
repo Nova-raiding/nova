@@ -31,6 +31,28 @@ export function localPluginLoginFailureMessage(code) {
   })[code] ?? '登录流程未完成。请运行登录脚本的 --help 查看用法，检查网络和系统凭据库后重试。'
 }
 
+export function localPluginLoginCallbackFailureMessage(failureCode) {
+  const code = /^LOCAL_PLUGIN_LOGIN_([A-Z_]+)$/u.exec(failureCode ?? '')?.[1] ?? 'FAILED'
+  return ({
+    ARGUMENTS_INVALID: '安装参数无效。请按当前平台的安装说明重试。',
+    TARGET_INVALID: '服务地址或工作区 ID 无效。请使用 HTTPS 服务地址和平台分配的 ws_... 工作区 ID。',
+    MACOS_REQUIRED: '此登录入口只适用于 macOS；Windows 请使用对应的 Windows 登录入口。',
+    WINDOWS_REQUIRED: '此登录入口只适用于 Windows；macOS 请使用对应的 macOS 登录入口。',
+    PACKAGE_MISMATCH: '插件安装包文件版本不一致。请重新安装同一版本的完整插件包。',
+    INSTALLATION_PROOF_INVALID: '安装实例校验信息不完整或已过期。请从当前插件安装器重新发起绑定。',
+    REQUEST_ID_INVALID: '一次性连接请求无效或已过期。请重新发起本地插件绑定。',
+    CREDENTIAL_IPC_UNAVAILABLE: '系统钥匙串辅助进程不可用。请关闭其他安装器窗口后，在 macOS 图形终端重试。',
+    KEYCHAIN_VERIFY_FAILED: '本地凭据写入后的读取校验失败。请检查系统凭据库权限，再重新发起绑定。',
+    EXCHANGE_REJECTED: '授权码已过期或工作区授权不匹配。请确认浏览器中的商家账号和工作区后重新登录。',
+    RESPONSE_INVALID: '授权服务返回的数据无法验证，凭据未确认可用。请检查网络后重新发起登录。',
+    ACK_FAILED: '本地凭据可能已保存，但服务端未确认安装实例。请从当前安装器重新发起绑定。',
+    TIMEOUT: '等待浏览器授权超时。请重新发起登录，并在浏览器完成确认。',
+    CANCELLED: '本地插件登录已取消。需要使用时可重新发起登录。',
+    CANCEL_REVOKE_FAILED: '登录取消后的临时凭据撤销未获确认。请联系平台管理员检查会话后再登录。',
+    FAILED: '登录流程未完成。请检查网络、浏览器和系统凭据库后重试；敏感信息不会输出。',
+  })[code] ?? '登录流程未完成。请返回安装器查看错误，并按当前平台的安装说明重试。'
+}
+
 function callbackPage(nonce) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>绑定 Store Nova</title>
@@ -44,13 +66,8 @@ function callbackPage(nonce) {
 function callbackResultScript(nonce, ok, failureCode = '') {
   const title = ok ? '绑定已完成' : '绑定未完成'
   const description = ok ? '本地凭据已保存，插件已配置完成。' : '安装器未能完成绑定，请返回安装器查看错误并重试。'
-  const failureLabels = {
-    LOCAL_PLUGIN_LOGIN_CREDENTIAL_IPC_UNAVAILABLE: '系统钥匙串辅助进程不可用，请在图形终端重试。',
-    LOCAL_PLUGIN_LOGIN_KEYCHAIN_VERIFY_FAILED: '凭据已写入但读取校验失败，请检查钥匙串权限。',
-    LOCAL_PLUGIN_LOGIN_EXCHANGE_REJECTED: '授权码已失效或工作区授权不匹配，请重新发起绑定。',
-    LOCAL_PLUGIN_LOGIN_ACK_FAILED: '服务端未确认安装实例，请重新从当前安装器发起绑定。',
-  }
-  const hint = ok ? '关闭此页面，返回 ChatGPT 并在新对话中验证插件连接。' : `绑定步骤未全部完成。${failureLabels[failureCode] ?? '请查看安装器错误后重新发起绑定。'}`
+  const hint = ok ? '关闭此页面，返回 ChatGPT 并在新对话中验证插件连接。'
+    : `绑定步骤未全部完成。${localPluginLoginCallbackFailureMessage(failureCode)}`
   const values = [nonce, ok ? 'success' : 'error', ok ? '✓' : '!', title, description, hint, ok ? 'success' : 'failure', ok ? '完成，关闭此页面' : '关闭此页面，返回安装器', title]
   const [iconClass, iconText, safeTitle, safeDescription, safeHint, result, buttonText, safeDocumentTitle] = values.slice(1).map(value => JSON.stringify(value))
   return `<script nonce="${nonce}">document.getElementById('icon').className='icon '+${iconClass};document.getElementById('icon').textContent=${iconText};document.getElementById('title').textContent=${safeTitle};document.getElementById('description').textContent=${safeDescription};document.getElementById('hint').textContent=${safeHint};document.getElementById('close').dataset.result=${result};document.getElementById('close').textContent=${buttonText};document.getElementById('close').hidden=false;document.title=${safeDocumentTitle}+' · Store Nova';</script></body></html>`

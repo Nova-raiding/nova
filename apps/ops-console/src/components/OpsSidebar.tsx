@@ -36,6 +36,10 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; description: s
     { domain: "audit", label: "审计中心", description: "查询脱敏审计记录", icon: <SafetyCertificateOutlined /> },
   ];
 
+export function opsDomainNavigationLabel(domain: OpsDomain): string {
+  return mainItems.find((item) => item.domain === domain)?.label ?? "运营内容";
+}
+
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users", "customer-delivery", "stores", "rules", "support"] },
   // These platform routes remain live in opsDomains/opsPageRegistry, but were

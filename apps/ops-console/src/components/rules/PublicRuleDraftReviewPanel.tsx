@@ -69,6 +69,15 @@ export function canReviewPublicRuleDraft(authorization: AuthorizationProjection,
     && ["manual_pending_review", "signed_import"].includes(rule.source.trust);
 }
 
+export function publicRuleSourceHref(reference: string) {
+  try {
+    const url = new URL(reference);
+    return url.protocol === "https:" && !url.username && !url.password ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildPublicRuleStatusParams(rule: ReviewRule, status: "active" | "inactive", reason: string, approval?: { approvalRef: string; approvedBy: string; approvedAt: string }) {
   return {
     pack_id: rule.pack_id,
@@ -231,6 +240,7 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
     } catch (cause) { setError(cause instanceof Error ? cause.message : "公共规则批量审批失败"); }
     finally { setBusy(false); }
   };
+  const sourceHref = detail ? publicRuleSourceHref(detail.rule.source.reference) : undefined;
 
   return <Card title="公共平台规则草稿审核" extra={<Typography.Text type="secondary">平台工作台 · 仅展示待审核公共草稿</Typography.Text>}>
     <Alert type="warning" showIcon title="审核会影响所有商家" description="激活前请核对官方依据、规则内容和校验和。人工审批仅记录运营审核，不代表系统独立验证来源网站。" style={{ marginBottom: 16 }} />
@@ -271,7 +281,12 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
     }}>关闭详情</Button>} style={{ marginTop: 16 }}>
       <Descriptions size="small" column={2} items={[
         { key: "platform", label: "平台", children: platformLabels[detail.rule.platform] ?? detail.rule.platform }, { key: "creator", label: "提交人", children: detail.rule.created_by },
-        { key: "source", label: "依据来源", children: <Typography.Text copyable>{detail.rule.source.reference}</Typography.Text> }, { key: "source-trust", label: "来源状态", children: detail.rule.source.trust },
+        { key: "source", label: "依据来源", children: <Space wrap>
+          <Typography.Text copyable>{detail.rule.source.reference}</Typography.Text>
+          {sourceHref && <a href={sourceHref.toString()} target="_blank" rel="noreferrer">
+            打开来源（{sourceHref.hostname}）
+          </a>}
+        </Space> }, { key: "source-trust", label: "来源状态", children: detail.rule.source.trust },
         { key: "checksum", label: "SHA-256", children: <Typography.Text code copyable>{detail.rule.checksum}</Typography.Text> }, { key: "integrity", label: "校验结果", children: detail.rule.checksum_valid ? "通过" : "失败，禁止激活" },
         { key: "checks", label: "规则内容", span: 2, children: <Typography.Paragraph copyable={{ text: JSON.stringify(detail.rule.checks ?? {}, null, 2) }} style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(detail.rule.checks ?? {}, null, 2)}</Typography.Paragraph> },
         { key: "audit", label: "审核历史", span: 2, children: detail.audit.length ? detail.audit.map(event => `${new Date(event.occurred_at).toLocaleString()} · ${event.action} · ${event.actor_id}${event.reason ? ` · ${event.reason}` : ""}`).join("\n") : "暂无审核事件" },

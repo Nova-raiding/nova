@@ -1,13 +1,13 @@
 import { readFile } from 'node:fs/promises';
-import { chromium, type Browser, type BrowserServer, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const html = await readFile(new URL('./image-local-edit.html', import.meta.url), 'utf8');
 let browser: Browser;
-let browserServer: BrowserServer | undefined;
 
 async function openEditor(): Promise<Page> {
   const page = await browser.newPage();
+  page.setDefaultTimeout(5_000);
   const mock = '<script>window.openai={callTool:async()=>{window.__toolCalls=(window.__toolCalls||0)+1;return {}}};</script>';
   await page.setContent(html.replace('<script>', `${mock}<script>`));
   await page.evaluate(() => {
@@ -26,13 +26,11 @@ async function openEditor(): Promise<Page> {
 }
 
 beforeAll(async () => {
-  browserServer = await chromium.launchServer({ headless: true });
-  browser = await chromium.connect(browserServer.wsEndpoint());
+  browser = await chromium.launch({ headless: true });
 });
 
 afterAll(async () => {
   await browser?.close();
-  await browserServer?.close();
 });
 
 describe('图片局部编辑表单输入边界', () => {
@@ -40,6 +38,7 @@ describe('图片局部编辑表单输入边界', () => {
     const page = await openEditor();
     try {
       await page.locator('#submit').click();
+      await page.locator('#formError').waitFor({ state: 'visible' });
 
       expect(await page.locator('#formError').isVisible()).toBe(true);
       expect(await page.locator('#rulesJson').getAttribute('aria-invalid')).toBe('true');

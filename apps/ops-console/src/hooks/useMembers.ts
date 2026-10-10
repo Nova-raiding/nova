@@ -149,7 +149,7 @@ function membersError(cause: unknown) {
   return describeOpsError(cause);
 }
 
-export function useMembers(workspaceId: string | undefined, client: MembersClient = createMembersClient()) {
+export function useMembers(workspaceId: string | undefined, client: MembersClient = createMembersClient(), readAllowed = true) {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [page, setPage] = useState<WorkspaceMemberPage>({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
   const [loading, setLoading] = useState(false);
@@ -166,6 +166,15 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     // pagination/refresh request invalidate an audited write while it is in
     // flight; the write owns the post-mutation refresh until it settles.
     if (mutationInFlight.current) return;
+    if (!readAllowed) {
+      gate.current.invalidate();
+      setMembers([]);
+      setPage({ items: [], total: 0, offset: 0, limit: requestedLimit, hasMore: false });
+      setError("");
+      setErrorKind(undefined);
+      setLoading(false);
+      return;
+    }
     if (!workspaceId) {
       gate.current.invalidate();
       setMembers([]);
@@ -188,7 +197,7 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     } finally {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setLoading(false);
     }
-  }, [client, page.limit, workspaceId]);
+  }, [client, page.limit, readAllowed, workspaceId]);
 
   useEffect(() => {
     setMembers([]);

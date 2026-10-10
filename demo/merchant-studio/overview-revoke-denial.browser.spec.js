@@ -35,8 +35,19 @@ test('overview revoke cancellation sends no request and a server denial preserve
   const externalRequests = []
   const apiRequests = []
   const accountReads = []
+  const syncRequests = []
+  const syncResponses = []
   const revokeRequests = []
+  const pageErrors = []
+  const failedRequests = []
+  const consoleErrors = []
+  const browserRequests = []
   let stage = 'install-api-fixture'
+
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
+  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+  page.on('request', (request) => browserRequests.push({ method: request.method(), url: request.url() }))
 
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
@@ -55,6 +66,14 @@ test('overview revoke cancellation sends no request and a server denial preserve
       data = { account: { id: 'overview-revoke-user', login: 'overview@example.invalid', accountType: 'merchant', status: 'active', roles: ['merchant_owner'], workspaceIds: [workspaceId] } }
     } else if (path === '/v1/auth/mcp-token') {
       data = { access_token: 'local-fixture', refresh_token: 'local-fixture', expires_in: 300, workspace_id: workspaceId }
+    } else if (path === '/v1/platform-accounts/jd/sync' && request.method() === 'POST') {
+      syncRequests.push({ method: request.method(), accountId: request.headers()['x-account-id'] })
+      if (syncRequests.length === 1) {
+        syncResponses.push({ status: 503, code: 'SYNC_TEMPORARILY_UNAVAILABLE' })
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'SYNC_TEMPORARILY_UNAVAILABLE', message: '本地夹具同步暂不可用。' })) })
+      }
+      syncResponses.push({ status: 200 })
+      data = { platform: 'jd', source: 'fixture', simulated: true, items: [] }
     } else if (path === '/v1/platform-accounts' || /^\/v1\/platform-accounts\/(?:jd|taobao|tmall|pdd|xiaohongshu|douyin)$/u.test(path)) {
       if (request.method() === 'DELETE' && path !== '/v1/platform-accounts') {
         revokeRequests.push({ method: request.method(), path, accountId: request.headers()['x-account-id'] })
@@ -84,6 +103,25 @@ test('overview revoke cancellation sends no request and a server denial preserve
     }).toContain('/v1/platform-accounts')
     stage = 'wait-for-readable-platform-row'
     await expectUi(platformRow).toContainText('可读取')
+    stage = 'verify-sync-failure-retry-is-scoped'
+    await platformRow.getByRole('button', { name: '同步' }).click()
+    // `describeApiError` deliberately maps all HTTP 503 responses to stable,
+    // safe user-facing recovery copy instead of echoing provider details.
+    const syncFailure = page.getByRole('alert').filter({ hasText: '服务暂不可用。当前操作未确认完成' }).first()
+    await expectUi(syncFailure).toBeVisible()
+    expect(await syncFailure.innerText()).not.toContain('本地夹具同步暂不可用')
+    expect(syncResponses).toEqual([{ status: 503, code: 'SYNC_TEMPORARILY_UNAVAILABLE' }])
+    await page.getByRole('button', { name: '重试当前操作' }).click()
+    await expect.poll(() => syncRequests.length).toBe(2)
+    await expectUi(page.getByRole('alert').filter({ hasText: '服务暂不可用。当前操作未确认完成' })).toHaveCount(0)
+    expect(syncRequests).toEqual([
+      { method: 'POST', accountId },
+      { method: 'POST', accountId },
+    ])
+    expect(syncResponses).toEqual([
+      { status: 503, code: 'SYNC_TEMPORARILY_UNAVAILABLE' },
+      { status: 200 },
+    ])
     stage = 'open-revoke-confirmation'
     const revokeButton = platformRow.locator('button.text-button.danger')
     expect(await revokeButton.count(), `revoke action missing; row=${await platformRow.innerHTML()}`).toBe(1)
@@ -106,6 +144,7 @@ test('overview revoke cancellation sends no request and a server denial preserve
     await platformRow.locator('button.text-button.danger').click()
     await page.getByTestId('revoke-platform-dialog').getByRole('button', { name: '确认撤销连接' }).click()
     await expectUi(dialog.getByRole('alert')).toContainText('本地夹具拒绝撤销')
+    expect(await page.getByRole('button', { name: '重试当前操作' }).count()).toBe(0)
     await expectUi(platformRow).toContainText('可读取')
     await expectUi(dialog).toBeVisible()
     expect(revokeRequests).toEqual([{ method: 'DELETE', path: '/v1/platform-accounts/jd', accountId }])
@@ -122,7 +161,7 @@ test('overview revoke cancellation sends no request and a server denial preserve
     expect(externalRequests).toEqual([])
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`${message}\nFixture checkpoint: ${JSON.stringify({ stage, url: page.url(), apiRequests, accountReads, revokeRequests, externalRequests })}`, { cause: error })
+    throw new Error(`${message}\nFixture checkpoint: ${JSON.stringify({ stage, url: page.url(), title: await page.title(), bodyText: (await page.locator('body').innerText()).slice(0, 1_000), browserRequests: browserRequests.slice(-30), pageErrors, consoleErrors, failedRequests, apiRequests, accountReads, syncRequests, syncResponses, revokeRequests, externalRequests })}`, { cause: error })
   } finally {
     await context.close()
     await browser.close()

@@ -399,7 +399,7 @@ const idempotencyKeyProperty = { type: 'string', minLength: 8, maxLength: 200, p
 const sha256HashProperty = { type: 'string', pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64 }
 const booleanString = { type: 'string', enum: ['true', 'false'] }
 const jsonObject = description => ({ type: 'string', contentMediaType: 'application/json', jsonShape: 'object', description })
-const jsonArray = description => ({ type: 'string', contentMediaType: 'application/json', jsonShape: 'array', description })
+const jsonArray = (description, contentSchema) => ({ type: 'string', contentMediaType: 'application/json', jsonShape: 'array', ...(contentSchema ? { contentSchema } : {}), description })
 const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计原因。')
 // This set only decides whether the bridge requires an explicit interactive
 // write confirmation. It is not a commercial recovery allowlist and cannot
@@ -902,7 +902,7 @@ const METHODS = {
   },
   'brand.extract': {
     description: '从已读取的品牌素材提取候选字段、来源和置信度；只读且不会自动写入品牌档案。',
-    inputSchema: { type: 'object', properties: { asset_ids_json: { type: 'string', description: '可选：1～50 个素材 ID 的 JSON 字符串数组；省略时检查全部工作区素材。' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { asset_ids_json: jsonArray('可选：1～50 个非空素材 ID 的 JSON 字符串数组；省略时检查全部工作区素材。', { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string', minLength: 1, pattern: '\\S' } }) }, additionalProperties: false },
   },
   'brand.upsert': {
     description: '保存品牌档案新版本及已确认的 Logo、品牌色和字体强规则；brand_unit_id 用于显式关联已确认的批量生产品牌单元，不会自动猜测。',
@@ -1640,6 +1640,11 @@ function userFacingToolText(method, result) {
     : ''
   const decisionSummary = detailDecisionSummary(method, result)
   if (decisionSummary) return decisionSummary
+  if (method === 'content.review' && typeof result?.blocking === 'boolean') {
+    return result.blocking
+      ? '规则检查发现阻断项；请查看结构化 findings 并修订后重新审核。'
+      : '规则检查已完成，当前版本未发现阻断项；请核对 findings 后继续。'
+  }
   // knowledge.rule.list and rule.list return a bare array from the API/MCP
   // contract. Normalize both the array form and the newer envelope-shaped
   // form before the generic object guard, otherwise a valid rule response is
@@ -2096,6 +2101,15 @@ function validateToolArguments(name, args) {
   }
   if (name === 'commercial.notifications.mark-read' && 'workspace_id' in args) return fail('通知读状态不接受调用方工作区；使用已绑定会话')
   if (name === 'commercial.order.create' && args.purchase_kind === 'upgrade' && (typeof args.upgrade_quote_id !== 'string' || !args.upgrade_quote_id.trim())) return fail('升级需要服务端 upgrade_quote_id；请更新客户端并先获取升级报价')
+  if (name === 'brand.extract' && Object.hasOwn(args, 'asset_ids_json')) {
+    if (typeof args.asset_ids_json !== 'string') return fail('asset_ids_json 必须是 1 至 50 个非空素材 ID 的 JSON 字符串数组')
+    let assetIds
+    try { assetIds = JSON.parse(args.asset_ids_json) } catch { return fail('asset_ids_json 必须是 1 至 50 个非空素材 ID 的 JSON 字符串数组') }
+    if (!Array.isArray(assetIds) || assetIds.length < 1 || assetIds.length > 50
+      || assetIds.some(assetId => typeof assetId !== 'string' || !assetId.trim())) {
+      return fail('asset_ids_json 必须是 1 至 50 个非空素材 ID 的 JSON 字符串数组')
+    }
+  }
   const validate = (value, propertySchema, path) => {
     if (!propertySchema || typeof propertySchema !== 'object') return undefined
     if (Array.isArray(propertySchema.anyOf)) {
@@ -3641,10 +3655,22 @@ function safeImageSubjectLabel(result, job, candidate) {
 
 function isDisplayImageUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return false
-  if (/^https:\/\//iu.test(value) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(value) || /^\//u.test(value)) return true
+  const candidate = value.trim()
+  // Root-relative URLs stay on the trusted API origin. WHATWG URL treats a
+  // backslash as a slash for special schemes, so reject it before resolution;
+  // protocol-relative and parser-escaping forms must never select another host.
+  if (candidate.startsWith('/')) {
+    if (candidate.startsWith('//') || candidate.includes('\\')) return false
+    try {
+      const base = new URL(process.env.MERCHANT_MCP_BASE_URL ?? '')
+      const resolved = new URL(candidate, base)
+      return resolved.origin === base.origin && imageResourceDomains().includes(resolved.origin)
+    } catch { return false }
+  }
   try {
-    const allowedHost = new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname
-    return Boolean(allowedHost) && new URL(value).hostname === allowedHost
+    const url = new URL(candidate)
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname))) return false
+    return imageResourceDomains().includes(url.origin)
   } catch { return false }
 }
 

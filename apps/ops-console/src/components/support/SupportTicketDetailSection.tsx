@@ -20,6 +20,7 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
   const [assignOpen, setAssignOpen] = useState(false);
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
+  const [commentPreview, setCommentPreview] = useState(false);
   const [assignee, setAssignee] = useState("");
   const [status, setStatus] = useState<SupportTicketStatus>("in_progress");
   const [reason, setReason] = useState("");
@@ -40,6 +41,7 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
     setAssignOpen(false);
     setTransitionOpen(false);
     setCommentOpen(false);
+    setCommentPreview(false);
     setAssignee("");
     setStatus(selectedTicket ? transitionOptionsFor(selectedTicket.status)[0]?.value ?? selectedTicket.status : "open");
     setReason("");
@@ -141,7 +143,7 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
       <Space wrap style={{ marginBottom: 24 }}>
         <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => openActionDialog(setAssignOpen)}>分配负责人</Button>
         <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => { setStatus(transitionOptionsFor(ticket.status)[0]?.value ?? ticket.status); setReason(""); openActionDialog(setTransitionOpen); }}>变更状态</Button>
-        <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => openActionDialog(setCommentOpen)}>添加备注</Button>
+        <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => { setCommentPreview(false); openActionDialog(setCommentOpen); }}>添加备注</Button>
       </Space>
       <Typography.Title level={5}>不可变事件历史</Typography.Title>
       {events.length === 0 ? <Alert type="warning" showIcon title="事件历史为空" description="工单投影存在但事件缺失，请停止修改并检查事件存储。" /> : (
@@ -168,13 +170,22 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
           <Form.Item label="变更原因" required><Input.TextArea aria-label="变更原因" value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
         </Form>
       </Modal>
-      <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okText="添加备注" okButtonProps={{ disabled: !canMutate || !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>
+      <Modal title={commentPreview ? "核对客户可见回复" : "添加工单备注"} open={commentOpen} confirmLoading={model.mutating} okText={commentPreview ? "确认添加客户可见回复" : visibility === "customer" ? "预览客户可见回复" : "添加备注"} cancelText={commentPreview ? "返回修改" : "取消"} closable={!commentPreview && !model.mutating} maskClosable={!commentPreview && !model.mutating} keyboard={!commentPreview && !model.mutating} cancelButtonProps={{ disabled: model.mutating }} okButtonProps={{ disabled: !canMutate || !comment.trim() || model.mutating }} onCancel={() => { if (commentPreview) { setCommentPreview(false); return; } setCommentOpen(false); }} onOk={() => {
+        if (visibility === "customer" && !commentPreview) { setComment(comment.trim()); setCommentPreview(true); return; }
+        setActionError(""); setActionErrorDismissed(false);
+        void model.comment(comment.trim(), visibility).then(() => { setComment(""); setCommentPreview(false); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。"));
+      }}>
         {!canMutate ? <Alert type="warning" showIcon role="status" title="工单变更权限已失效" description="当前会话已失去工单变更权限；请刷新权限或重新登录后再继续。" /> : null}
         {renderActionError(commentOpen)}
-        <Form layout="vertical">
-          <Form.Item label="可见范围" required><Select value={visibility} onChange={setVisibility} options={[{ value: "internal", label: "仅内部" }, { value: "customer", label: "客户可见" }]} /></Form.Item>
-          <Form.Item label="备注内容" required><Input.TextArea value={comment} rows={5} maxLength={10000} showCount onChange={event => setComment(event.target.value)} /></Form.Item>
-        </Form>
+        {commentPreview ? <div aria-label="客户可见回复预览">
+          <Alert type="warning" showIcon title={`此内容将作为客户可见回复记录到 ${ticket.ticketNumber}`} description="请核对收件对象和正文；确认后会立即写入工单事件历史。" style={{ marginBottom: 16 }} />
+          <Typography.Paragraph strong>客户：{ticket.customerName}（{ticket.customerId}）</Typography.Paragraph>
+          <Card size="small" title="回复正文"><Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{comment}</Typography.Paragraph></Card>
+          <Button style={{ marginTop: 12 }} disabled={model.mutating} onClick={() => { setComment(""); setCommentPreview(false); setCommentOpen(false); }}>取消回复并丢弃</Button>
+        </div> : <Form layout="vertical">
+          <Form.Item label="可见范围" required><Select aria-label="可见范围" value={visibility} disabled={model.mutating} onChange={setVisibility} options={[{ value: "internal", label: "仅内部" }, { value: "customer", label: "客户可见回复" }]} /></Form.Item>
+          <Form.Item label={visibility === "customer" ? "客户可见回复正文" : "内部备注内容"} required><Input.TextArea aria-label={visibility === "customer" ? "客户可见回复正文" : "内部备注内容"} value={comment} disabled={model.mutating} rows={5} maxLength={10000} showCount onChange={event => setComment(event.target.value)} /></Form.Item>
+        </Form>}
       </Modal>
     </Card>
   );

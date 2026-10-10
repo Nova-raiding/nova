@@ -28,8 +28,8 @@ test('a delayed brand asset upload cannot cross store scopes or replace a newer 
     schemaVersion: 1,
     global: { enabled: true, values: {} },
     stores: {
-      'store-a': { enabled: true, values: { persona: 'A 服务端画像' } },
-      'store-b': { enabled: true, values: { persona: 'B 服务端画像' } },
+      'store-a': { enabled: true, values: { persona: 'A 服务端画像', color: '#aabbcc' } },
+      'store-b': { enabled: true, values: { persona: 'B 服务端画像', color: '#aabbcc' } },
     }, series: {}, images: {},
   }
   await page.route('**/api/**', async route => {
@@ -65,6 +65,18 @@ test('a delayed brand asset upload cannot cross store scopes or replace a newer 
     const storePicker = page.getByRole('button', { name: '选择配置店铺' })
     await expect(page.getByRole('region', { name: '品牌资产配置' })).toBeVisible()
     await expect(page.getByRole('textbox', { name: '店铺 A用户画像' })).toHaveValue('A 服务端画像')
+    // An unconfirmed color is only a local draft. Moving to another mounted
+    // scope with the same saved color must clear that draft rather than let it
+    // leak into the next store's editor.
+    await page.getByRole('textbox', { name: '店铺 A品牌色值' }).fill('112233')
+    await storePicker.click()
+    await page.getByRole('option', { name: '店铺 B' }).click()
+    const storeBColor = page.getByRole('textbox', { name: '店铺 B品牌色值' })
+    await expect(storeBColor).toHaveValue('aabbcc')
+    await expect(page.locator('.material-brand-color-field').filter({ has: storeBColor }).getByRole('button', { name: '确定' })).toBeDisabled()
+    await storePicker.click()
+    await page.getByRole('option', { name: '店铺 A' }).click()
+
     const logoInput = page.locator('.material-brand-logo-field input[type="file"]').nth(1)
     await logoInput.setInputFiles({ name: 'delayed-logo.png', mimeType: 'image/png', buffer: png })
     await expect.poll(() => uploadAttempts).toBe(1)
@@ -83,6 +95,7 @@ test('a delayed brand asset upload cannot cross store scopes or replace a newer 
     expect(savedSettings.stores['store-a'].values.persona).toBe('A 服务端画像')
     expect(savedSettings.stores['store-a'].values.logoAssetId).toBeUndefined()
     expect(savedSettings.stores['store-b'].values.persona).toBe('B 上传期间的新画像')
+    expect(savedSettings.stores['store-b'].values.color).toBe('#aabbcc')
     expect(savedSettings.stores['store-b'].values.logoAssetId).toBeUndefined()
 
     const firstSave = structuredClone(savedSettings)

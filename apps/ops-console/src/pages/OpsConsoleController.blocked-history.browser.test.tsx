@@ -94,7 +94,7 @@ describe("OpsConsoleController blocked workbench browser-history boundary", () =
       });
 
       await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
-      const blocked = page.getByRole("status").filter({ hasText: "此页面需要商家工作区权限" });
+      const blocked = page.getByRole("status").filter({ hasText: "平台运营控制台不提供此页面" });
       await blocked.waitFor({ state: "visible" });
       expect(rpcMethods).toEqual(["ops.session"]);
 
@@ -106,7 +106,7 @@ describe("OpsConsoleController blocked workbench browser-history boundary", () =
       await page.getByRole("heading", { name: "平台运营实时概况" }).waitFor({ state: "visible" });
       expect(new URL(page.url()).pathname).toBe("/ops/overview");
       expect(new URL(page.url()).searchParams.get("workbench")).toBe("platform");
-      expect(await page.getByRole("heading", { name: "此页面需要商家工作区权限" }).count()).toBe(0);
+      expect(await page.getByRole("heading", { name: "平台运营控制台不提供此页面" }).count()).toBe(0);
       expect(rpcMethods).toEqual(["ops.session"]);
       expect(unexpectedRequests).toEqual([]);
       expect(browserErrors).toEqual([]);

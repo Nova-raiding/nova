@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, App as AntApp, Button, Layout, Modal, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
 import { PlatformOpsLoginPage } from "../components/PlatformOpsLogin.js";
-import { mainItems, OpsSidebar } from "../components/OpsSidebar";
+import { mainItems, OpsSidebar, opsDomainNavigationLabel } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { pushOpsNavigationEntry, replaceOpsNavigationEntry, useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
@@ -399,7 +399,7 @@ function Dashboard({
               void model.loadUsers();
           }}
         />
-        <Content id="ops-main-content" className="ops-content" role="main" tabIndex={-1} aria-busy={Boolean(loadingMessage)}>
+        <Content id="ops-main-content" className="ops-content" role="main" tabIndex={-1} aria-label={opsDomainNavigationLabel(activeDomain)} aria-busy={Boolean(loadingMessage)}>
           <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {loadingMessage}
           </span>
@@ -435,7 +435,7 @@ function Dashboard({
               type="info"
               showIcon
               role="status"
-              title="此页面需要商家工作区权限"
+              title="平台运营控制台不提供此页面"
               description={blockedDomain}
               action={blockedRecoveryDomain ? (
                 <Button onClick={() => navigateToDomain(blockedRecoveryDomain)}>

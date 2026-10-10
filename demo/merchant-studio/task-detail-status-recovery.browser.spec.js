@@ -120,52 +120,62 @@ test('image task detail recovers from a failed status read using its explicit re
 
   try {
     const deepLink = `${studioUrl}/merchant/tasks?image_job=${encodeURIComponent(jobId)}`
-    await page.goto(deepLink, { waitUntil: 'domcontentloaded' })
     const error = page.locator('#image-job-read-error')
-    await expect(error).toBeVisible()
-    await expect(error).toContainText('任务状态读取失败')
-    expect(detailResponses[0]).toBe('503')
-
-    allowJobRead = true
-    await page.getByRole('button', { name: '刷新任务状态' }).click()
     const panel = page.locator('.image-generation-job-panel')
-    await expect(panel.getByText('生成完成，等待候选选择')).toBeVisible()
-    await expect(page.getByRole('img', { name: /图片候选 1，可进入后续选择/u })).toBeVisible()
-    await expect(error).toHaveCount(0)
-    expect(new URL(page.url()).searchParams.get('image_job')).toBe(jobId)
-    expect(detailResponses).toContain('200')
-    expect(detailResponses.length).toBeGreaterThanOrEqual(2)
-
     const selection = panel.locator('.image-selection-panel')
     const candidateCheckbox = panel.getByRole('checkbox', { name: '选择候选图片 1' })
-    await expect(panel.getByText('选择候选图', { exact: true })).toBeVisible()
-    await candidateCheckbox.check()
-    await expect(candidateCheckbox).toBeChecked()
-    await expect(panel.getByText('已选择为主图', { exact: true })).toBeVisible()
-    await selection.getByLabel('选图原因（必填）').fill('首张候选通过门禁，作为审核版本主图')
-    const submitSelection = selection.getByRole('button', { name: '提交选择（1/6）' })
-    await expect(submitSelection).toBeEnabled()
-    await submitSelection.click()
-    await expect(selection.getByRole('alert')).toContainText('提交结果尚未确认')
-    await expect(candidateCheckbox).toBeDisabled()
-    await expect(selection.getByLabel('选图原因（必填）')).toBeDisabled()
-    const recoverSelection = selection.getByRole('button', { name: '使用原请求恢复任务' })
-    await recoverSelection.click()
-    await expect(selection.locator('.info-notice[role="status"]')).toContainText('生成新的待审核内容版本 content_task_detail_selected')
-    expect(visualSelectionRequests).toHaveLength(2)
-    expect(visualSelectionRequests[0]).toMatchObject({
-      content_version_id: job.content_version_id,
-      visual_refs_json: JSON.stringify(['visual_task_detail_status']),
-      expected_revision: '4',
-      idempotency_key: `merchant-studio-visual-selection-${jobId}-4`,
-      reason: '首张候选通过门禁，作为审核版本主图',
+
+    await test.step('open the deep link and expose the failed read', async () => {
+      await page.goto(deepLink, { waitUntil: 'domcontentloaded' })
+      await expect(error).toBeVisible()
+      await expect(error).toContainText('任务状态读取失败')
+      expect(detailResponses[0]).toBe('503')
     })
-    expect(visualSelectionRequests[1]).toEqual(visualSelectionRequests[0])
-    await selection.getByRole('button', { name: '进入新版本审核' }).click()
-    await expect(page).toHaveURL(new RegExp(`/merchant/tasks/${job.task_id}$`))
-    await expect(page.getByRole('heading', { name: '任务协作线程' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: '选图后的待审核版本', exact: true }).first()).toBeVisible()
-    expect(pageErrors).toEqual([])
+
+    await test.step('refresh the same deep-linked task status', async () => {
+      allowJobRead = true
+      await page.getByRole('button', { name: '刷新任务状态' }).click()
+      await expect(panel.getByText('生成完成，等待候选选择')).toBeVisible()
+      await expect(page.getByRole('img', { name: /图片候选 1，可进入后续选择/u })).toBeVisible()
+      await expect(error).toHaveCount(0)
+      expect(new URL(page.url()).searchParams.get('image_job')).toBe(jobId)
+      expect(detailResponses).toContain('200')
+      expect(detailResponses.length).toBeGreaterThanOrEqual(2)
+    })
+
+    await test.step('select the candidate and preserve the uncertain write intent', async () => {
+      await expect(panel.getByText('选择候选图', { exact: true })).toBeVisible()
+      await candidateCheckbox.check()
+      await expect(candidateCheckbox).toBeChecked()
+      await expect(panel.getByText('已选择为主图', { exact: true })).toBeVisible()
+      await selection.getByLabel('选图原因（必填）').fill('首张候选通过门禁，作为审核版本主图')
+      const submitSelection = selection.getByRole('button', { name: '提交选择（1/6）' })
+      await expect(submitSelection).toBeEnabled()
+      await submitSelection.click()
+      await expect(selection.getByRole('alert')).toContainText('提交结果尚未确认')
+      await expect(candidateCheckbox).toBeDisabled()
+      await expect(selection.getByLabel('选图原因（必填）')).toBeDisabled()
+      const recoverSelection = selection.getByRole('button', { name: '使用原请求恢复任务' })
+      await recoverSelection.click()
+      await expect(selection.locator('.info-notice[role="status"]')).toContainText('生成新的待审核内容版本 content_task_detail_selected')
+      expect(visualSelectionRequests).toHaveLength(2)
+      expect(visualSelectionRequests[0]).toMatchObject({
+        content_version_id: job.content_version_id,
+        visual_refs_json: JSON.stringify(['visual_task_detail_status']),
+        expected_revision: '4',
+        idempotency_key: `merchant-studio-visual-selection-${jobId}-4`,
+        reason: '首张候选通过门禁，作为审核版本主图',
+      })
+      expect(visualSelectionRequests[1]).toEqual(visualSelectionRequests[0])
+    })
+
+    await test.step('open the resulting content version for review', async () => {
+      await selection.getByRole('button', { name: '进入新版本审核' }).click()
+      await expect(page).toHaveURL(new RegExp(`/merchant/tasks/${job.task_id}$`))
+      await expect(page.getByRole('heading', { name: '任务协作线程' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '选图后的待审核版本', exact: true }).first()).toBeVisible()
+      expect(pageErrors).toEqual([])
+    })
   } finally {
     await context.close()
     await browser.close()

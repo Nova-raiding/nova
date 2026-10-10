@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { DomainError, type ContentVersion, type MerchantService, type Task } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { optionalMcpExpectedVersion } from './mcp-expected-version.js'
 
 type JsonObject = Record<string, unknown>
 type ScopedContent = { version: ContentVersion; task: Task }
@@ -28,18 +29,19 @@ export async function handleMcpContentReview(method: string, params: JsonObject,
       return (service.reviewContentReport(workspaceId, scoped.version.id, await rulesForTask(workspaceId, scoped.task)))
     }
     case 'content.review.decide': {
+      const expectedRevision = optionalMcpExpectedVersion(params, 'expected_revision')
       const scoped = scopeContentVersion(req, required(params, 'content_version_id'))
       await assertCanonicalTaskScopeForAction(scoped.task)
       const status = required(params, 'status')
       if (!['acknowledged', 'waived'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 acknowledged 或 waived', 400)
       const reviewRules = await rulesForTask(workspaceId, scoped.task)
-      assertReviewDecisionPreflight({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status, ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}), rules: reviewRules })
+      assertReviewDecisionPreflight({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status, ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), ...(expectedRevision === undefined ? {} : { expectedRevision }), rules: reviewRules })
       // This operation is excluded from the central gate above, so it re-runs
       // the effective gate here, immediately before the durable write. Without
       // it a workspace with an unknown or exhausted balance could still waive
       // blocking review findings and unlock publishing.
       await enforceMcpCommercialAccess(req, workspaceId, method)
-      const decided = service.setReviewFindingDecision({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), actorId: requestActor(req), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) }, reviewRules)
+      const decided = service.setReviewFindingDecision({ workspaceId, contentVersionId: scoped.version.id, code: required(params, 'code'), field: required(params, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof params.reason === 'string' ? { reason: params.reason } : {}), actorId: requestActor(req), ...(expectedRevision === undefined ? {} : { expectedRevision }) }, reviewRules)
       await persistSnapshot(workspaceId, 'content_version', decided.version, decided.version as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, decided.version.id, 'content.review_decided', decided.version.revision, { content_version_id: decided.version.id, finding_key: decided.decision.key, status: decided.decision.status, reason: decided.decision.reason, actor_id: decided.decision.actorId })
       return (decided)

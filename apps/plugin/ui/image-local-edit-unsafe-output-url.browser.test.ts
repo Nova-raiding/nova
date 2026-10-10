@@ -47,6 +47,8 @@ describe('图片局部编辑候选输出安全边界', () => {
 
       expect(await page.locator('#candidateId').textContent()).toBe('candidate-local-1');
       expect(await page.locator('#candidateImage').isHidden()).toBe(true);
+      expect(await page.locator('#candidateImage').getAttribute('referrerpolicy')).toBe('no-referrer');
+      expect(await page.locator('#sourceImage').getAttribute('referrerpolicy')).toBe('no-referrer');
       expect(await page.locator('#regionStatus').textContent()).toContain('候选已创建');
       expect(await page.evaluate(() => window.__calls.map((call) => call.name))).toEqual(['multimodal.image.edit']);
       const requestJson = await page.evaluate(() => window.__calls[0]?.args.request_json as string);

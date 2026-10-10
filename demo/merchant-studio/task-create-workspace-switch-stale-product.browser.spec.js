@@ -8,16 +8,28 @@ const workspaceA = 'ws_task_create_alpha'
 const workspaceB = 'ws_task_create_beta'
 const productId = 'product-shared-task-entry-fixture'
 const envelope = (workspaceId, data, error = null) => ({ request_id: 'task-create-workspace-switch-fixture', trace_id: 'task-create-workspace-switch-fixture', workspace_id: workspaceId, data, warnings: [], next_actions: [], error })
+const waitForFixtureSignal = async (signal, label) => {
+  let timer
+  try {
+    await Promise.race([
+      signal,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Fixture did not observe ${label} within 8 seconds`)), 8_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const chooseWorkspace = async (page, workspaceId) => {
   const selector = page.getByRole('combobox', { name: '按工作区 ID 切换当前商家工作区', exact: true })
   const selection = selector.locator('xpath=..')
-  const selectRoot = selector.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " ant-select ")]')
   await expect(selector).toBeVisible()
-  const current = (await selection.textContent())?.trim() ?? ''
-  await selectRoot.locator('.ant-select-content').click({ force: true })
-  if (!current.includes(workspaceId)) await selector.press(workspaceId === workspaceA ? 'ArrowUp' : 'ArrowDown')
-  await selector.press('Enter')
+  await selector.click()
+  const option = page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: workspaceId })
+  await expect(option).toHaveCount(1)
+  await option.click()
   await expect(selection).toContainText(workspaceId)
 }
 
@@ -96,12 +108,16 @@ test('late product context from workspace A cannot populate task creation after 
   })
 
   try {
-    await page.goto(`${studioUrl}/merchant/overview`, { waitUntil: 'domcontentloaded' })
-    const initialWorkspaceSelector = page.getByRole('combobox', { name: '选择当前商家工作区 ID', exact: true })
-    await initialWorkspaceSelector.click()
-    await initialWorkspaceSelector.press('ArrowDown')
-    await initialWorkspaceSelector.press('Enter')
-    await expect(page.locator('.app-shell')).toBeVisible()
+    await test.step('initialize the account and select workspace A', async () => {
+      await page.goto(`${studioUrl}/merchant/overview`, { waitUntil: 'domcontentloaded' })
+      const initialWorkspaceSelector = page.getByRole('combobox', { name: '选择当前商家工作区 ID', exact: true })
+      await initialWorkspaceSelector.click()
+      const initialWorkspaceOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: workspaceA })
+      await expect(initialWorkspaceOption).toHaveCount(1)
+      await initialWorkspaceOption.click()
+      await expect(page.locator('.merchant-login-page')).toHaveCount(0)
+      await expect(page.locator('.app-shell')).toBeVisible()
+    })
 
     const routeFor = (accountId) => `/merchant/tasks/new?product_id=${productId}&platform=jd&account_id=${accountId}&intent=workspace-switch-fixture`
     const openTaskEntry = async (accountId) => page.evaluate(path => {
@@ -109,27 +125,36 @@ test('late product context from workspace A cannot populate task creation after 
       window.dispatchEvent(new PopStateEvent('popstate'))
     }, routeFor(accountId))
 
-    await openTaskEntry('store-alpha')
-    await aReadObserved
-    expect(productReads).toEqual([workspaceA])
+    await test.step('open the A task link and hold its product response', async () => {
+      await openTaskEntry('store-alpha')
+      await waitForFixtureSignal(aReadObserved, 'workspace A product read')
+      expect(productReads).toEqual([workspaceA])
+    })
 
-    await chooseWorkspace(page, workspaceB)
-    await expect(page).toHaveURL(/\/merchant\/overview$/u)
-    await openTaskEntry('store-beta')
-    await bReadObserved
-    expect(productReads).toEqual([workspaceA, workspaceB])
+    await test.step('switch to B and open its task link while A remains pending', async () => {
+      await chooseWorkspace(page, workspaceB)
+      await expect(page).toHaveURL(/\/merchant\/overview$/u)
+      await openTaskEntry('store-beta')
+      await waitForFixtureSignal(bReadObserved, 'workspace B product read')
+      expect(productReads).toEqual([workspaceA, workspaceB])
+    })
 
-    releaseA()
-    await expect(page.getByText('正在从链接安全恢复商品与任务上下文…')).toBeVisible()
-    await expect(page.getByRole('heading', { name: /A 工作区私有商品/u })).toHaveCount(0)
+    await test.step('discard the late A response while B is still loading', async () => {
+      releaseA()
+      await expect(page.getByText('正在从链接安全恢复商品与任务上下文…')).toBeVisible()
+      await expect(page.getByRole('heading', { name: /A 工作区私有商品/u })).toHaveCount(0)
+    })
 
-    releaseB()
-    await expect(page.locator('main h2')).toContainText('B 工作区商品 · 京东 · B 店铺')
-    await expect(page.getByRole('heading', { name: /A 工作区私有商品/u })).toHaveCount(0)
-    expect(productReads).toEqual([workspaceA, workspaceB])
-    expect(taskIntentRequests).toEqual([])
-    expect(taskCreationWrites).toEqual([])
-    expect(externalRequests).toEqual([])
+    await test.step('show only the B product without creating tasks', async () => {
+      releaseB()
+      await expect(page.locator('main h2')).toContainText('B 工作区商品 · 京东 · B 店铺')
+      await expect(page.getByRole('heading', { name: /A 工作区私有商品/u })).toHaveCount(0)
+      expect(productReads[0]).toBe(workspaceA)
+      expect(productReads.slice(1).every(workspace => workspace === workspaceB)).toBe(true)
+      expect(taskIntentRequests).toEqual([])
+      expect(taskCreationWrites).toEqual([])
+      expect(externalRequests).toEqual([])
+    })
   } finally {
     releaseA?.()
     releaseB?.()

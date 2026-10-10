@@ -20,6 +20,19 @@ describe('MCP method contract', () => {
     }
   })
 
+  it('bounds optimistic versions to JavaScript safe integers', () => {
+    const creative = 'creative.directions.update'
+    const review = 'content.review.decide'
+    for (const method of [creative, review]) {
+      const field = method === creative ? 'expected_version' : 'expected_revision'
+      const required = method === creative
+        ? { task_id: 'task_1', action: 'merge' }
+        : { content_version_id: 'version_1', code: 'rule_1', field: 'title', status: 'acknowledged' }
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'max-safe-version', method, params: { ...required, [field]: '9007199254740991' } }).valid).toBe(true)
+      expect(validateMcpRequest({ jsonrpc: '2.0', id: 'too-large-version', method, params: { ...required, [field]: '9007199254740992' } }).valid).toBe(false)
+    }
+  })
+
   const productionEvidenceMethods = [
     'platform.media.spec.list',
     'platform.media.spec.get',

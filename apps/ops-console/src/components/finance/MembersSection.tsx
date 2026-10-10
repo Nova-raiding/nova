@@ -46,14 +46,14 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
   const workspaceId = model.opsSession?.workspace_id;
   const actorId = model.opsSession?.actor_id;
   const stableClient = useMemo(() => client ?? createMembersClient(), [client]);
-  const state = useMembers(workspaceId, stableClient);
+  const canReadMembers = model.authorization.can("workspace.member.read");
+  const state = useMembers(workspaceId, stableClient, canReadMembers);
   const [inviteForm] = Form.useForm();
   const [actionForm] = Form.useForm();
   const [pending, setPending] = useState<PendingAction>();
   const [notice, setNotice] = useState("");
   const initialErrorRef = useRef<HTMLDivElement>(null);
   const generalCapabilities = memberCapabilities(model.authorization, actorId);
-  const canReadMembers = model.authorization.can("workspace.member.read");
   const workspaceUnavailable = !workspaceId;
   const memberDirectoryUnavailable = Boolean(workspaceId && state.error && state.errorKind !== "mutation" && !state.loading && state.members.length === 0);
   useEffect(() => {
@@ -109,7 +109,10 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
   };
 
   return (
-    <Card title="当前企业主体成员" extra={<Typography.Text type="secondary" className="ops-token">Workspace ID：{workspaceId ?? "未选择"}</Typography.Text>} aria-busy={state.loading}>
+    <Card title="当前企业主体成员" extra={<Space wrap>
+      <Typography.Text type="secondary" className="ops-token">Workspace ID：{workspaceId ?? "未选择"}</Typography.Text>
+      <Button style={{ minHeight: 44 }} disabled={workspaceUnavailable || !canReadMembers || state.mutating} loading={state.loading} title={!workspaceId ? "当前会话尚未绑定企业主体" : !canReadMembers ? "当前会话没有成员查看权限" : undefined} onClick={() => void state.load()}>刷新成员</Button>
+    </Space>} aria-busy={state.loading}>
       <Space orientation="vertical" size="middle" className="full-width">
         <Typography.Text strong>当前租户成员</Typography.Text>
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -119,7 +122,7 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
         {!generalCapabilities.canManage && <Alert showIcon type="info" title="当前角色只有成员查看权限" description="只有企业所有者、企业管理员或平台运营可以邀请成员和调整权限。" />}
         {assignmentPolicyUnavailable && <Alert role="alert" showIcon type="warning" title="成员角色策略尚未取得" description="服务端授权策略未返回前，邀请和角色调整入口保持关闭；请刷新会话后重试。" />}
         {workspaceId && !canReadMembers && <Alert showIcon type="warning" title="缺少成员查看权限" description="当前会话不能读取成员目录。邀请前需要先核对重复成员；请联系管理员授予“查看成员”权限后再进行成员管理。" />}
-        {workspaceId && state.error && <div ref={initialErrorRef} tabIndex={memberDirectoryUnavailable ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={memberDirectoryUnavailable ? "成员列表加载错误摘要" : undefined}>
+        {workspaceId && canReadMembers && state.error && <div ref={initialErrorRef} tabIndex={memberDirectoryUnavailable ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={memberDirectoryUnavailable ? "成员列表加载错误摘要" : undefined}>
           <Alert showIcon type="error" title={state.errorKind === "refresh" ? "成员已变更，但列表刷新失败" : state.errorKind === "read" ? "成员列表加载失败" : "成员操作失败"} description={<Space orientation="vertical">{state.errorKind === "refresh" ? <span>变更已提交成功，列表未能刷新；请刷新列表核对最新状态。</span> : null}<span>{state.error}</span><Button style={{ minHeight: 44 }} aria-label="刷新成员列表" onClick={() => void state.load()}>刷新成员</Button></Space>} />
         </div>}
         {notice && <Alert role="status" aria-live="polite" showIcon type="success" title={notice} closable onClose={() => setNotice("")} />}

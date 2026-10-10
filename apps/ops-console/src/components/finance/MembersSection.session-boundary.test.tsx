@@ -65,7 +65,7 @@ describe("members session boundary", () => {
               },
               async reactivate(...args) { mutations.push(['reactivate', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected reactivation'); },
             };
-            const capabilities = new Set(['workspace.member.read', 'workspace.member.manage', 'workspace.status.update']);
+            const capabilities = new Set(new URLSearchParams(location.search).has('no-member-read') ? ['workspace.member.manage', 'workspace.status.update'] : ['workspace.member.read', 'workspace.member.manage', 'workspace.status.update']);
             function makeModel(actor, sessionId, workspaceId) {
               return {
                 opsSession: { actor_id: actor, identity_id: actor + '-identity', session_id: sessionId, context_id: sessionId, context_version: 'v1', workspace_id: workspaceId, workbench: 'workspace', scope: { type: 'workspace', id: workspaceId }, roles: ['workspace_owner'], canonical_roles: ['workspace_owner'], workspace_granted: true, capabilities: [...capabilities], assignable_roles: ['merchant_admin', 'workspace_owner'], effective_permissions: [] },
@@ -117,7 +117,7 @@ describe("members session boundary", () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(10_000);
     await page.goto(`${baseUrl}/__members-boundary-test${query}`, { waitUntil: "domcontentloaded" });
-    if (!query.includes("fail-initial-read")) await page.getByText("成员甲", { exact: true }).first().waitFor();
+    if (!query.includes("fail-initial-read") && !query.includes("no-member-read")) await page.getByText("成员甲", { exact: true }).first().waitFor();
     return page;
   }
 
@@ -147,6 +147,27 @@ describe("members session boundary", () => {
       await page.getByText("成员乙", { exact: true }).first().waitFor();
       expect(await page.getByText("成员甲", { exact: true }).count()).toBe(0);
       await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]").map((item: { workspaceId: string }) => item.workspaceId))).toEqual(["ws-a", "ws-b"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("refreshes the member directory from its own control", async () => {
+    const page: Page = await openPage();
+    try {
+      await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]"))).toHaveLength(1);
+      await page.getByRole("button", { name: "刷新成员", exact: true }).click();
+      await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]"))).toHaveLength(2);
+      expect(JSON.parse(await page.locator("html").getAttribute("data-members-reads") ?? "[]").map((item: { workspaceId: string }) => item.workspaceId)).toEqual(["ws-a", "ws-a"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("does not read or expose a retry for the directory without member-read permission", async () => {
+    const page: Page = await openPage("?no-member-read");
+    try {
+      await page.getByText("缺少成员查看权限", { exact: true }).waitFor();
+      expect(await page.locator("html").getAttribute("data-members-reads")).toBeNull();
+      expect(await page.getByRole("button", { name: "刷新成员", exact: true }).isDisabled()).toBe(true);
+      expect(await page.getByRole("button", { name: "刷新成员列表", exact: true }).count()).toBe(0);
+      expect(await page.getByRole("alert", { name: "成员列表加载错误摘要" }).count()).toBe(0);
     } finally { await page.close(); }
   }, 45_000);
 

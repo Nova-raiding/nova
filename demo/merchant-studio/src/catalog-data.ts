@@ -171,6 +171,8 @@ export type CatalogProductSku = {
 export type CatalogProduct = {
   id: string
   title: string
+  /** The platform's product identifier is useful when merchants search by code. */
+  remoteId?: string
   /** Server facts only: category, stock and SKU count. */
   subtitle: string
   /** `null` when the server did not publish a price — never a placeholder number. */
@@ -253,6 +255,7 @@ export function catalogProductsForStore(
     .map((product, index) => ({
       id: product.id,
       title: product.title,
+      ...(product.remoteId ? { remoteId: product.remoteId } : {}),
       subtitle: catalogProductSubtitle(product),
       price: finiteServerNumber(product.price),
       addedAt: catalogProductAddedAt(product),

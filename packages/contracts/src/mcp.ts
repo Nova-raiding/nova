@@ -602,6 +602,11 @@ const boundedString = (maxLength: number, minLength = 1, description?: string): 
 })
 
 const positiveIntegerString: McpFieldSchema = { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 }
+const positiveSafeIntegerString: McpFieldSchema = {
+  type: 'string',
+  pattern: '^(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|900[0-6][0-9]{12}|9007[0-0][0-9]{11}|90071[0-8][0-9]{10}|900719[0-8][0-9]{9}|9007199[0-1][0-9]{8}|90071992[0-4][0-9]{7}|900719925[0-3][0-9]{6}|9007199254[0-6][0-9]{5}|90071992547[0-3][0-9]{4}|9007199254740[0-8][0-9]{2}|90071992547409[0-8][0-9]|900719925474099[0-1])$',
+  maxLength: 16,
+}
 const nonNegativeIntegerString: McpFieldSchema = { type: 'string', pattern: '^(?:0|[1-9][0-9]*)$', maxLength: 10 }
 const pageLimit100: McpFieldSchema = { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 }
 const pageLimit200: McpFieldSchema = { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|1[0-9]{2}|200)$', maxLength: 3 }
@@ -1491,7 +1496,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'creative.directions.update',
     description: 'Regenerate, merge, or modify creative directions while preserving immutable task revisions.',
-    params: params({ action: { type: 'string', enum: ['regenerate', 'merge', 'modify'] }, task_id: { type: 'string' }, direction_ids_json: { type: 'string' }, direction_id: { type: 'string' }, changes_json: { type: 'string' }, feedback: { type: 'string' }, expected_version: { type: 'string' } }, ['task_id', 'action']),
+    params: params({ action: { type: 'string', enum: ['regenerate', 'merge', 'modify'] }, task_id: { type: 'string' }, direction_ids_json: { type: 'string' }, direction_id: { type: 'string' }, changes_json: { type: 'string' }, feedback: { type: 'string' }, expected_version: positiveSafeIntegerString }, ['task_id', 'action']),
   },
   {
     method: 'task.select_direction',
@@ -1541,7 +1546,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'content.review.decide',
     description: 'Acknowledge or accept a non-blocking P1/P2 review finding with an auditable reason; P0 findings cannot be bypassed.',
-    params: params({ content_version_id: { type: 'string' }, code: { type: 'string' }, field: { type: 'string' }, status: { type: 'string', enum: ['acknowledged', 'waived'] }, reason: { type: 'string' }, expected_revision: { type: 'string' } }, ['content_version_id', 'code', 'field', 'status']),
+    params: params({ content_version_id: { type: 'string' }, code: { type: 'string' }, field: { type: 'string' }, status: { type: 'string', enum: ['acknowledged', 'waived'] }, reason: { type: 'string' }, expected_revision: positiveSafeIntegerString }, ['content_version_id', 'code', 'field', 'status']),
   },
   {
     method: 'content.visual.select',

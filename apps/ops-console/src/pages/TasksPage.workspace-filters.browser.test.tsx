@@ -62,7 +62,14 @@ describe("TasksPage workspace filters browser journey", () => {
           queueFilters,
           setQueueFilters,
           alertFilters: {}, setAlertFilters: () => {},
-          storeDirectory: [{ workspaceId: 'ws-fixture', platform: 'jd', accountId: 'acct-jd-1', label: '京东旗舰店' }],
+          storeDirectory: [
+            { workspaceId: 'ws-fixture', platform: 'jd', accountId: 'acct-jd-1', label: '京东旗舰店' },
+            // Deliberately model a malformed health projection: the route
+            // guard must not turn a foreign workspace account into a filter.
+            { workspaceId: 'ws-other', platform: 'taobao', accountId: 'acct-foreign-workspace', label: '外部淘宝店' },
+            { workspaceId: 'ws-fixture', platform: 'jd', accountId: 'acct-ambiguous', label: '京东重复标识店' },
+            { workspaceId: 'ws-fixture', platform: 'taobao', accountId: 'acct-ambiguous', label: '淘宝重复标识店' },
+          ],
           canQueue: true,
           marketingQueue,
           marketingQueueLoadedAt,
@@ -262,6 +269,128 @@ describe("TasksPage workspace filters browser journey", () => {
     }
   }, 60_000);
 
+  it("applies an account-only deep link when it uniquely matches the current workspace directory", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&accountId=acct-jd-1`, { waitUntil: "domcontentloaded" });
+      await page.getByText("任务队列（2）", { exact: true }).waitFor({ state: "visible" });
+
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?view=compact&accountId=acct-jd-1");
+      expect(observed.filters).toEqual({ accountId: "acct-jd-1" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", account_id: "acct-jd-1" },
+      }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("rejects an account-only deep link when current-workspace matches are ambiguous", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&accountId=acct-ambiguous`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("status").filter({ hasText: "店铺筛选未应用" }).waitFor({ state: "visible" });
+      await page.getByText("任务队列（2）", { exact: true }).waitFor({ state: "visible" });
+
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?view=compact");
+      expect(observed.filters).toEqual({});
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20" },
+      }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("rejects an account-only deep link that exists only in a foreign workspace", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&accountId=acct-foreign-workspace`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("status").filter({ hasText: "店铺筛选未应用" }).waitFor({ state: "visible" });
+      await page.getByText("任务队列（2）", { exact: true }).waitFor({ state: "visible" });
+
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?view=compact");
+      expect(observed.filters).toEqual({});
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20" },
+      }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("explains when an unrecognized store deep link is discarded instead of silently broadening the queue", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&platform=jd&accountId=acct-from-another-workspace`, { waitUntil: "domcontentloaded" });
+      const notice = page.getByRole("status").filter({ hasText: "店铺筛选未应用" });
+      await notice.waitFor({ state: "visible" });
+      await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
+
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?view=compact&platform=jd");
+      expect(observed.filters).toEqual({ platform: "jd" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "jd" },
+      }]);
+      await notice.locator("button.ant-alert-close-icon").click();
+      expect(await page.getByRole("status").filter({ hasText: "店铺筛选未应用" }).count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("rejects a store deep link that resolves to a directory row from another workspace", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&platform=taobao&accountId=acct-foreign-workspace`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("status").filter({ hasText: "店铺筛选未应用" }).waitFor({ state: "visible" });
+      await page.getByText("任务队列（0）", { exact: true }).waitFor({ state: "visible" });
+
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?view=compact&platform=taobao");
+      expect(observed.filters).toEqual({ platform: "taobao" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "taobao" },
+      }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("clears URL-owned filters on Back to the base URL and preserves manual filters", async () => {
     const page = await browser!.newPage();
     page.setDefaultTimeout(15_000);
@@ -329,7 +458,30 @@ describe("TasksPage workspace filters browser journey", () => {
       await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
       await page.waitForFunction(() => (window as any).__tasksFixture.rpcCalls.length === 1);
 
-      await page.getByRole("button", { name: "清除筛选" }).click();
+      // Keep the deep-link scope, then use the task ID field from the keyboard
+      // to produce a legitimate empty result. This distinguishes "no match"
+      // from a failed or not-yet-loaded queue before the user resets filters.
+      const taskId = page.getByRole("textbox", { name: "按营销队列任务 ID 筛选" });
+      await taskId.fill("task-does-not-exist");
+      await taskId.press("Enter");
+      await page.getByText("任务队列（0）", { exact: true }).waitFor({ state: "visible" });
+      const queueTab = page.getByRole("tab", { name: "任务队列（0）" });
+      const queuePanelId = await queueTab.getAttribute("aria-controls");
+      expect(queuePanelId).toBeTruthy();
+      await page.locator(`#${queuePanelId}`).locator(".ant-table-placeholder .ant-empty").waitFor({ state: "visible" });
+      const emptyResult = await page.evaluate(() => ({
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(emptyResult.filters).toEqual({ platform: "jd", accountId: "acct-jd-1", productId: "product-1", taskId: "task-does-not-exist", state: "failed" });
+      expect(emptyResult.calls[1]).toEqual({
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "jd", account_id: "acct-jd-1", product_id: "product-1", task_id: "task-does-not-exist", state: "failed" },
+      });
+
+      const clear = page.getByRole("button", { name: "清除筛选" });
+      await clear.focus();
+      await clear.press("Enter");
       await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
       const cleared = await page.evaluate(() => ({
         search: window.location.search,
@@ -338,8 +490,8 @@ describe("TasksPage workspace filters browser journey", () => {
       }));
       expect(cleared.search).toBe("?view=compact");
       expect(cleared.filters).toEqual({});
-      expect(cleared.calls).toHaveLength(2);
-      expect(cleared.calls[1]).toEqual({ method: "ops.marketing.queue", params: { limit: "20" } });
+      expect(cleared.calls).toHaveLength(3);
+      expect(cleared.calls[2]).toEqual({ method: "ops.marketing.queue", params: { limit: "20" } });
     } finally {
       await page.close();
     }

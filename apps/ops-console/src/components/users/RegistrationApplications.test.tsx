@@ -58,7 +58,11 @@ describe("registration applications error state", () => {
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             function Probe() {
               const [actor, setActor] = useState('operator-a');
-              const model = { authorization: { can: () => true }, loadUsers: async () => undefined, opsSession: { actor_id: actor, session_id: actor + '-session', workspace_id: '', roles: ['platform_ops'], capabilities: ['identity.read'], workbench: 'platform', scope: { type: 'platform' } } };
+              const mode = new URLSearchParams(location.search).get('mode');
+              const readOnly = mode === 'read-only';
+              const capabilities = readOnly ? ['identity.read'] : ['identity.read', 'identity.update'];
+              const roles = mode === 'role-denied' ? ['security_admin'] : ['platform_ops'];
+              const model = { authorization: { can: capability => capabilities.includes(capability), roles }, loadUsers: async () => undefined, opsSession: { actor_id: actor, session_id: actor + '-session', workspace_id: '', roles, capabilities, workbench: 'platform', scope: { type: 'platform' } } };
               return React.createElement(App, null,
                 React.createElement('button', { 'data-testid': 'switch-actor', onClick: () => setActor('operator-b') }, '切换账号'),
                 React.createElement(RegistrationApplications, { model }));
@@ -68,7 +72,7 @@ describe("registration applications error state", () => {
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
-            if (req.url !== "/__registration-applications-test") return next();
+            if (!req.url?.startsWith("/__registration-applications-test")) return next();
             const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
             void server.transformIndexHtml(req.url, html).then(output => {
               res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -109,8 +113,8 @@ describe("registration applications error state", () => {
   // The card is mounted by text, not by the refresh button's accessible name:
   // Ant Design leaves the loading icon in the DOM, and its `aria-label="loading"`
   // then rides along in the button's computed name.
-  async function open(page: Page) {
-    await page.goto(`${baseUrl}/__registration-applications-test`);
+  async function open(page: Page, mode = "") {
+    await page.goto(`${baseUrl}/__registration-applications-test${mode ? `?mode=${mode}` : ""}`);
     await page.getByText("刷新申请", { exact: true }).waitFor();
   }
 
@@ -165,6 +169,41 @@ describe("registration applications error state", () => {
     } finally { await page.close(); }
   }, 45_000);
 
+  it("keeps stale rows disabled and the warning visible while the retry is pending", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let reads = 0;
+    let releaseRetry: (() => void) | undefined;
+    try {
+      await page.route(applicationsUrl(), async route => {
+        reads += 1;
+        if (reads === 1) return succeed(route, [application]);
+        if (reads === 2) return fail(route);
+        await new Promise<void>(resolve => { releaseRetry = resolve; });
+        return succeed(route, [application]);
+      });
+      await open(page);
+      const row = page.getByRole("row").filter({ hasText: application.login });
+      await row.getByRole("button").filter({ hasText: /审\s*核/u }).waitFor();
+      await page.getByText("刷新申请", { exact: true }).click();
+      await expect.poll(() => page.locator('.ops-page-error[data-state="error"]').count()).toBe(1);
+      const review = row.getByRole("button").filter({ hasText: /审\s*核/u });
+      expect(await review.isDisabled()).toBe(true);
+
+      await page.getByRole("button", { name: "重试加载运营数据", exact: true }).click();
+      await expect.poll(() => reads).toBe(3);
+      await page.getByText("当前申请列表读取失败，显示的是上次读取结果；审核操作已暂停，请先重新读取。", { exact: true }).waitFor();
+      expect(await page.locator('.ops-page-error[data-state="error"]').count()).toBe(1);
+      expect(await review.isDisabled()).toBe(true);
+
+      releaseRetry?.();
+      await expect.poll(() => page.locator('.ops-page-error[data-state="error"]').count()).toBe(0);
+      expect(await review.isDisabled()).toBe(false);
+    } finally {
+      releaseRetry?.();
+      await page.close();
+    }
+  }, 45_000);
+
   it("keeps a genuine empty answer as an empty state, not as a failure", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
@@ -173,6 +212,34 @@ describe("registration applications error state", () => {
       await expect.poll(() => page.getByText("暂无入驻申请", { exact: false }).count()).toBe(1);
       expect(await page.locator('.ops-page-error[data-state="error"]').count()).toBe(0);
       expect(await page.getByText(/这不是空表/u).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("shows the application list to read-only operators without review controls", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.route(applicationsUrl(), route => succeed(route, [application]));
+      await open(page, "read-only");
+      await page.getByText(application.login, { exact: true }).waitFor();
+      await page.getByText("当前为只读视图", { exact: true }).waitFor();
+      const row = page.getByRole("row").filter({ hasText: application.login });
+      expect(await row.getByText("只读", { exact: true }).count()).toBe(1);
+      expect(await row.getByRole("button").filter({ hasText: /审\s*核/u }).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("does not request registration data for a role outside the operations allowlist", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const reads: string[] = [];
+    try {
+      await page.route(applicationsUrl(), async route => {
+        reads.push(route.request().url());
+        return succeed(route, [application]);
+      });
+      await page.goto(`${baseUrl}/__registration-applications-test?mode=role-denied`);
+      await page.waitForLoadState("networkidle");
+      expect(reads).toEqual([]);
+      expect(await page.getByText("入驻申请", { exact: true }).count()).toBe(0);
     } finally { await page.close(); }
   }, 45_000);
 

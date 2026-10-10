@@ -159,6 +159,35 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     }))
     expect(directions).toMatchObject({ task: { id: creativeTask.id }, directions: expect.arrayContaining([expect.objectContaining({ id: expect.stringContaining('-v1') })]) })
 
+    const beforeInvalidDirectionsTask = structuredClone(api.service.getTask(creativeTask.id))
+    const beforeInvalidDirections = structuredClone(api.service.listCreativeDirections(workspaceId, creativeTask.id))
+    const updateDirections = vi.spyOn(api.service, 'updateCreativeDirections')
+    for (const expected_version of ['not-a-version', '', true, 1, '1.5', '1e2', '0', '9007199254740992']) {
+      const invalidDirections = await callMcp(tokens.rules, workspaceId, 'creative.directions.update', {
+        task_id: creativeTask.id, action: 'regenerate', expected_version,
+      })
+      expect(invalidDirections.status).toBe(400)
+      expect(invalidDirections.body.error?.code).toBe('INVALID_REQUEST')
+    }
+    expect(updateDirections).not.toHaveBeenCalled()
+    expect(api.service.getTask(creativeTask.id)).toEqual(beforeInvalidDirectionsTask)
+    expect(api.service.listCreativeDirections(workspaceId, creativeTask.id)).toEqual(beforeInvalidDirections)
+    updateDirections.mockRestore()
+
+    const beforeInvalidReviewVersion = structuredClone(api.service.getContentVersion(workspaceId, sourceVersion.id))
+    const decideReview = vi.spyOn(api.service, 'setReviewFindingDecision')
+    for (const expected_revision of ['not-a-revision', '', false, 1, '1.5', '1e2', '0', '9007199254740992']) {
+      const invalidDecision = await callMcp(tokens.rules, workspaceId, 'content.review.decide', {
+        content_version_id: sourceVersion.id, code: 'MAIN_IMAGE_REQUIRED', field: 'images[0]', status: 'acknowledged',
+        expected_revision,
+      })
+      expect(invalidDecision.status).toBe(400)
+      expect(invalidDecision.body.error?.code).toBe('INVALID_REQUEST')
+    }
+    expect(decideReview).not.toHaveBeenCalled()
+    expect(api.service.getContentVersion(workspaceId, sourceVersion.id)).toEqual(beforeInvalidReviewVersion)
+    decideReview.mockRestore()
+
     const generation = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'generation.get', { job_id: generationJob.id }))
     expect(generation).toMatchObject({ id: generationJob.id, workspaceId, taskId: generationTask.id, state: 'queued' })
 

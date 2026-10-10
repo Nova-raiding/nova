@@ -175,10 +175,10 @@ describe("Ops controller identity route authorization", () => {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
       });
       await page.goto(`${baseUrl}/${harnessName}.html?route=${routeDomain}`, { waitUntil: "domcontentloaded" });
-      const blocked = page.getByRole("status").filter({ hasText: "此页面需要商家工作区权限" });
+      const blocked = page.getByRole("status").filter({ hasText: "平台运营控制台不提供此页面" });
       await blocked.waitFor({ state: "visible" });
       await expectEventually(() => page.url().includes(`/ops/${routeDomain}?workbench=platform`));
-      await blocked.getByText("平台运营控制台不提供该页面").waitFor();
+      await blocked.getByText("属于商家工作区，平台运营控制台不提供该页面。", { exact: false }).waitFor();
       expect(await blocked.getByRole("button", { name: "返回总览" }).count()).toBe(1);
       expect(await page.getByRole("button", { name: navLabel, exact: true }).count()).toBe(0);
       expect(rpcMethods).toEqual(["ops.session"]);

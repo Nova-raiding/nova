@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Product, type Task } from '../../../packages/application/src/service.js'
 import type { CanonicalProductReadMode } from '../../../packages/application/src/canonical-product-consistency.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { optionalMcpExpectedVersion } from './mcp-expected-version.js'
 
 type JsonObject = Record<string, unknown>
 type BriefResult = { id: string; version: number; assetType: string; platform: Platform; skuIds: string[] }
@@ -77,6 +78,7 @@ export async function handleMcpCreative(method: string, params: JsonObject, req:
       return (preview)
     }
     case 'creative.directions.update': {
+      const expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
       const task = scopeTask(req, required(params, 'task_id'))
       let directionIds: string[] | undefined
       let changes: Record<string, string> | undefined
@@ -92,7 +94,7 @@ export async function handleMcpCreative(method: string, params: JsonObject, req:
           changes = parsed as Record<string, string>
         }
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '方向参数 JSON 无效', 400) }
-      const updated = service.updateCreativeDirections({ workspaceId, taskId: task.id, action: required(params, 'action') as 'regenerate' | 'merge' | 'modify', ...(directionIds ? { directionIds } : {}), ...(typeof params.direction_id === 'string' ? { directionId: params.direction_id } : {}), ...(changes ? { changes } : {}), ...(typeof params.feedback === 'string' ? { feedback: params.feedback } : {}), ...(typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? { expectedVersion: Number(params.expected_version) } : {}) })
+      const updated = service.updateCreativeDirections({ workspaceId, taskId: task.id, action: required(params, 'action') as 'regenerate' | 'merge' | 'modify', ...(directionIds ? { directionIds } : {}), ...(typeof params.direction_id === 'string' ? { directionId: params.direction_id } : {}), ...(changes ? { changes } : {}), ...(typeof params.feedback === 'string' ? { feedback: params.feedback } : {}), ...(expectedVersion === undefined ? {} : { expectedVersion }) })
       await persistSnapshot(workspaceId, 'task', updated.task, updated.task as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, updated.task.id, 'task.directions_updated', updated.task.version, { task_id: updated.task.id, action: params.action, direction_id: updated.newDirection?.id ?? null })
       return (updated)

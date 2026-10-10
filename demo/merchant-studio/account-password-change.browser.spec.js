@@ -59,9 +59,27 @@ test('password change blocks mismatched confirmation and preserves the form afte
   })
 
   try {
-    await page.goto(`${studioUrl}/merchant/overview`, { waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: '打开账号菜单' }).click()
-    await page.getByRole('menu', { name: '账号菜单' }).getByRole('button', { name: '修改密码' }).click()
+    const pairingFragment = Buffer.from(JSON.stringify({
+      installation_id: '2158e96e-2b5b-4f6f-bc98-a2cf0665d221',
+      pairing_token: 'A'.repeat(43),
+      workspace_id: workspaceId,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    })).toString('base64url')
+    await page.goto(`${studioUrl}/merchant/overview#plugin_pair=${pairingFragment}`, { waitUntil: 'domcontentloaded' })
+    const accountTrigger = page.getByRole('button', { name: '打开账号菜单' })
+    const accountPanel = page.getByRole('region', { name: '账号菜单' })
+    await expect(accountPanel).toBeVisible()
+    const pairingDialog = page.getByRole('dialog', { name: '连接本地插件' })
+    await expect(pairingDialog).toBeVisible()
+    await expect.poll(() => new URL(page.url()).hash).toBe('')
+    await page.keyboard.press('Escape')
+    await expect(pairingDialog).toHaveCount(0)
+    await expect(accountPanel).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(accountPanel).toHaveCount(0)
+    await expect(accountTrigger).toBeFocused()
+    await accountTrigger.click()
+    await page.getByRole('region', { name: '账号菜单' }).getByRole('button', { name: '修改密码' }).click()
     const dialog = page.getByRole('dialog', { name: '修改商家账号密码' })
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText('修改成功后当前账号的其他登录会话会失效')

@@ -124,9 +124,19 @@ describe("Finance advanced filters", () => {
       const kindSelect = page.locator("#finance-advanced-filters .ant-select").nth(0);
       await kindSelect.click();
       await page.getByText("充值订单", { exact: true }).last().click();
+      await page.getByText("钱包流水", { exact: true }).last().click();
       const statusSelect = page.locator("#finance-advanced-filters .ant-select").nth(1);
       await statusSelect.locator("input").fill("paid");
       await statusSelect.locator("input").press("Enter");
+      await statusSelect.locator("input").fill("manual_attention");
+      await statusSelect.locator("input").press("Enter");
+      const advancedToggle = page.getByRole("button", { name: "收起筛选（已选 4 项）", exact: true });
+      await advancedToggle.waitFor({ state: "visible" });
+      await advancedToggle.click();
+      const collapsedToggle = page.getByRole("button", { name: "高级筛选（已选 4 项）", exact: true });
+      await collapsedToggle.waitFor({ state: "visible" });
+      expect(await page.locator("#finance-advanced-filters").isVisible()).toBe(false);
+      await collapsedToggle.click();
       const submit = page.locator('form[aria-label="财务检索筛选"] button[type="submit"]');
       await submit.waitFor({ state: "visible" });
       expect(await submit.innerText()).toContain("检索");
@@ -137,8 +147,8 @@ describe("Finance advanced filters", () => {
       expect(await page.evaluate(() => window.__financeFilterCalls?.at(-1))).toEqual({
         text: "recharge_42",
         workspaceIds: ["ws-a", "ws-b"],
-        kinds: ["recharge_order"],
-        statuses: ["paid"],
+        kinds: ["recharge_order", "wallet_transaction"],
+        statuses: ["paid", "manual_attention"],
       });
     } finally { await page.close(); }
   }, 60_000);

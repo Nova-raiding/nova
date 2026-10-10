@@ -38,12 +38,12 @@ function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel 
   // table's own "暂无数据" placeholder, which reads as "no applications".
   const load = async (nextOffset = offset) => {
     setLoading(true);
-    setLoadError("");
     try {
       const result = await opsRestGet<{ items: Registration[]; total: number; limit: number; offset: number }>(`/v1/ops/merchant-registration-applications?limit=${pageSize}&offset=${nextOffset}`);
       setItems(result?.items ?? []);
       setTotal(result?.total ?? 0);
       setOffset(result?.offset ?? nextOffset);
+      setLoadError("");
     } catch (error) {
       const failure = describeOpsError(error);
       setLoadError(failure);
@@ -52,7 +52,9 @@ function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel 
       setLoading(false);
     }
   };
-  const canRead = model.authorization.can("identity.read");
+  const hasOpsRegistrationRole = model.authorization.roles.some(role => ["platform_ops", "platform_admin", "ops_admin"].includes(role));
+  const canRead = hasOpsRegistrationRole && model.authorization.can("identity.read");
+  const canUpdate = canRead && model.authorization.can("identity.update");
   useEffect(() => { if (canRead) void load(0); }, [canRead]);
   if (!canRead) return <></>;
   const submit = async () => {
@@ -90,12 +92,12 @@ function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel 
     {
       title: "操作",
       render: (_: unknown, row: Registration) => row.status === "merchant_pending"
-        ? <Button disabled={Boolean(loadError)} onClick={() => {
+        ? canUpdate ? <Button disabled={Boolean(loadError) || loading} onClick={() => {
           setTarget(row);
           setReviewError("");
           setReason("");
           setDecision("undecided");
-        }}>审核</Button>
+        }}>审核</Button> : <Typography.Text type="secondary">只读</Typography.Text>
         : <Typography.Text type="secondary">已处理</Typography.Text>,
     },
   ];
@@ -103,6 +105,7 @@ function RegistrationApplicationsForSession({ model }: { model: OpsConsoleModel 
   return (
     <Card title="入驻申请" extra={<Button onClick={() => void load()} loading={loading}>刷新申请</Button>} style={{ marginBottom: 16 }}>
       <Alert type="info" showIcon title="入驻申请与已入驻用户不是两套账号" description="通过审批当前暂不可用；拒绝申请仍可在这里完成。" style={{ marginBottom: 16 }} />
+      {!canUpdate && <Alert type="info" showIcon title="当前为只读视图" description="可以查看入驻申请；拒绝申请需要 identity.update 权限。" style={{ marginBottom: 16 }} />}
       <OpsPageError error={loadError} onRetry={() => void load()} />
       {loadError && items.length > 0 && <Typography.Text role="status" type="warning">当前申请列表读取失败，显示的是上次读取结果；审核操作已暂停，请先重新读取。</Typography.Text>}
       <Table
@@ -164,10 +167,11 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader, 
   if (authorization.can("workspace.directory.read")) sections.push("workspaces");
   if (authorization.can("workspace.member.read")) sections.push("members");
   if (canViewAuthorizationGovernance(authorization, accountLogin)) sections.push("authorization");
-  // The review screen needs both the list read and review write capabilities.
-  // Showing it with update-only access rendered an empty tab because the list
-  // component correctly refused to read without identity.read.
-  if (authorization.can("identity.read") && authorization.can("identity.update")) sections.push("registrations");
+  // Listing and reviewing are separate capabilities: read-only operators can
+  // inspect applications, while the component hides review actions without
+  // identity.update. Update-only access cannot load the list and stays hidden.
+  if (authorization.roles.some(role => ["platform_ops", "platform_admin", "ops_admin"].includes(role))
+    && authorization.can("identity.read")) sections.push("registrations");
   return sections;
 }
 

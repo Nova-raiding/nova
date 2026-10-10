@@ -237,12 +237,20 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     const detailImage = page.locator('.material-detail-preview img')
     await expect(detailImage).toBeVisible()
     await expect.poll(() => detailImage.evaluate((image) => image.naturalWidth)).toBe(1)
-    await page.getByRole('button', { name: '放大真实解码样图.png' }).click()
+    const detailPreviewTrigger = page.getByRole('button', { name: '放大真实解码样图.png' })
+    await detailPreviewTrigger.click()
     const lightboxImage = page.locator('.material-upload-lightbox img')
     await expect(lightboxImage).toBeVisible()
     await expect.poll(() => lightboxImage.evaluate((image) => image.naturalWidth)).toBe(1)
     await page.getByRole('button', { name: '关闭素材图片预览' }).click()
-    await expect(page.getByRole('button', { name: `放大${'真实解码样图.png'}` })).toBeFocused()
+    await expect(detailPreviewTrigger).toBeFocused()
+
+    await detailPreviewTrigger.click()
+    const detailPreviewClose = page.getByRole('button', { name: '关闭素材图片预览' })
+    await expect(detailPreviewClose).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(detailPreviewClose).toHaveCount(0)
+    await expect(detailPreviewTrigger).toBeFocused()
 
     // The nested upload preview is dismissible from the keyboard, and the
     // containing dialog keeps its focus rather than dropping it to the page.

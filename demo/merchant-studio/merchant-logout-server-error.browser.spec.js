@@ -62,7 +62,7 @@ test('logout server failure remains visible after the local workspace is cleared
     await page.goto(`http://127.0.0.1:${address.port}/merchant/overview`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
     await expect(page.locator('.app-shell')).toBeVisible()
     await page.getByRole('button', { name: '打开账号菜单' }).click()
-    await page.getByRole('menu', { name: '账号菜单' }).getByRole('button', { name: '退出登录' }).click()
+    await page.getByRole('region', { name: '账号菜单' }).getByRole('button', { name: '退出登录' }).click()
 
     await expect(page.getByRole('form', { name: '商家账号登录' })).toBeVisible()
     await expect(page.locator('.app-shell')).toHaveCount(0)

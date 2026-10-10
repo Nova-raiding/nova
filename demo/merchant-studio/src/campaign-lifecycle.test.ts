@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { buildCampaignLifecycleParams, campaignActionAvailability, campaignActionOutcomeUnknown, campaignDialogDescriptionIds, campaignDialogFocusEdge, campaignOptionScopeLabel, campaignReasonDescriptionIds, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
+import { buildCampaignLifecycleParams, campaignActionAvailability, campaignActionOutcomeUnknown, campaignActionSubmitDisabled, campaignDialogDescriptionIds, campaignDialogFocusEdge, campaignOptionScopeLabel, campaignReasonDescriptionIds, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
 
 const campaign = parseCampaignSnapshot({ id: 'campaign-1', state: 'running', revision: 7, items: [{ id: 'item-1', productId: 'product-1', platform: 'jd', accountId: 'store-1', state: 'failed' }] })
 
@@ -47,5 +47,17 @@ describe('merchant campaign lifecycle controls', () => {
     expect(campaignActionOutcomeUnknown(Object.assign(new Error('conflict'), { status: 409, code: 'CAMPAIGN_REVISION_CONFLICT' }))).toBe(false)
     expect(campaignActionOutcomeUnknown(Object.assign(new Error('invalid reason'), { code: 'INVALID_REQUEST', status: 400 }))).toBe(false)
     expect(campaignActionOutcomeUnknown(new TypeError('network connection reset'))).toBe(true)
+  })
+  it('allows exact-intent replay while unknown and blocks new writes after definitive rejection', () => {
+    const base = { submitting: false, reason: '核对后暂停', confirmed: true, action: 'pause' as const, selectedCount: 0 }
+    expect(campaignActionSubmitDisabled({ ...base, outcomeUnknown: true, rejectedAfterUnknown: false })).toBe(false)
+    expect(campaignActionSubmitDisabled({ ...base, outcomeUnknown: false, rejectedAfterUnknown: true })).toBe(true)
+  })
+  it('keeps the campaign identity visible and offers a read-only exit after a definitive retry rejection', () => {
+    const source = readFileSync(new URL('./CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
+    expect(source).toContain('setRejectedAfterUnknown(true)')
+    expect(source).toContain('计划 {campaign.id} 的重试已被服务端明确拒绝')
+    expect(source).toContain('读取计划最新状态')
+    expect(source).toContain('void load(id)')
   })
 })

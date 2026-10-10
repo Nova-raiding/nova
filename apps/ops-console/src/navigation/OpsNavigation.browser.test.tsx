@@ -26,14 +26,14 @@ describe("Ops Console route navigation", () => {
     await writeFile(harnessEntry, `
       import React from 'react';
       import { createRoot } from 'react-dom/client';
-      import { OpsSidebar } from '/src/components/OpsSidebar.tsx';
+      import { OpsSidebar, opsDomainNavigationLabel } from '/src/components/OpsSidebar.tsx';
       import { useOpsNavigation } from '/src/navigation/useOpsNavigation.ts';
       function Probe() {
         const navigation = useOpsNavigation();
         return React.createElement(React.Fragment, null,
           React.createElement(OpsSidebar, { activeDomain: navigation.activeDomain, visibleDomains: ['overview', 'finance'], onNavigate: navigation.navigate }),
           React.createElement('button', { onClick: () => navigation.navigateWithQuery('finance', { accountId: 'acct-42' }) }, '打开指定账户'),
-          React.createElement('main', { id: 'ops-main-content', tabIndex: -1 }, navigation.activeDomain)
+          React.createElement('main', { id: 'ops-main-content', tabIndex: -1, 'aria-label': opsDomainNavigationLabel(navigation.activeDomain) }, navigation.activeDomain)
         );
       }
       createRoot(document.getElementById('root')).render(React.createElement(Probe));
@@ -79,6 +79,7 @@ describe("Ops Console route navigation", () => {
       await financeNavigation.press("Enter");
       await expectDomain(page, "finance");
       await expect.poll(() => page.locator("#ops-main-content").evaluate((element) => element === document.activeElement)).toBe(true);
+      await expect.poll(() => page.getByRole("main", { name: "账务与退款" }).evaluate((element) => element === document.activeElement)).toBe(true);
       expect(new URL(page.url()).pathname).toBe("/ops/finance");
       expect(new URL(page.url()).searchParams.get("workspaceId")).toBe("workspace-a");
       await expect.poll(() => page.getByRole("button", { name: "账务与退款" }).getAttribute("aria-current")).toBe("page");
@@ -89,6 +90,7 @@ describe("Ops Console route navigation", () => {
       await page.goBack();
       await expectDomain(page, "overview");
       await expect.poll(() => page.locator("#ops-main-content").evaluate((element) => element === document.activeElement)).toBe(true);
+      await expect.poll(() => page.getByRole("main", { name: "总览" }).evaluate((element) => element === document.activeElement)).toBe(true);
       expect(new URL(page.url()).pathname).toBe("/ops/overview");
       expect(new URL(page.url()).searchParams.get("workspaceId")).toBe("workspace-a");
       await expect.poll(() => page.getByRole("button", { name: "总览" }).getAttribute("aria-current")).toBe("page");

@@ -319,6 +319,7 @@ import {
 import { DeliveryReadinessPanel } from './DeliveryReadinessPanel.js'
 import { MerchantMembersPage } from './MerchantMembersPage.js'
 import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
+import { campaignGenerationFailureMessage, campaignGenerationOutcomeUnknown } from './campaign-generation-outcome.js'
 import { PublishHistoryPanel } from './PublishHistoryPanel.js'
 import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBatchTarget } from './batch-target.js'
 import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
@@ -1072,6 +1073,7 @@ function Topbar({
   const issueReadScope = workspaceIssueReadScope(apiBaseUrl, activeWorkspaceId)
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
   const accountMenuRef = useRef<HTMLDivElement>(null)
+  const accountMenuTriggerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (account?.accountType === 'merchant' && window.location.hash.startsWith('#plugin_pair=')) setAccountMenuOpen(true)
   }, [account?.id, account?.accountType])
@@ -1085,7 +1087,10 @@ function Topbar({
         setAccountMenuOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAccountMenuOpen(false)
+      if (event.key !== 'Escape') return
+      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal')) return
+      setAccountMenuOpen(false)
+      window.requestAnimationFrame(() => accountMenuTriggerRef.current?.focus())
     }
     document.addEventListener('mousedown', closeOnOutside)
     document.addEventListener('keydown', closeOnEscape)
@@ -1182,10 +1187,11 @@ function Topbar({
         <div className="account-menu" ref={accountMenuRef}>
           <button
             className="account-trigger"
+            ref={accountMenuTriggerRef}
             onClick={() => setAccountMenuOpen((open) => !open)}
             aria-label="打开账号菜单"
             aria-expanded={accountMenuOpen}
-            aria-haspopup="menu"
+            aria-controls="merchant-account-panel"
           >
             <span className="avatar-button" aria-hidden="true">{accountInitial}</span>
             <span className="account-trigger-copy">
@@ -1194,7 +1200,7 @@ function Topbar({
             <ChevronDown size={16} aria-hidden="true" />
           </button>
           {accountMenuOpen && (
-            <div className="account-dropdown" role="menu" aria-label="账号菜单">
+            <div id="merchant-account-panel" className="account-dropdown" role="region" aria-label="账号菜单">
               <div className="account-dropdown-header">
                 <span className="account-dropdown-avatar" aria-hidden="true">{accountInitial}</span>
                 <div>
@@ -1707,6 +1713,36 @@ export function CustomerSupportPanel({
   const [supportQuery, setSupportQuery] = useState<SupportQuery | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const supportDialogRef = useRef<HTMLDivElement>(null)
+  const supportTicketInputRef = useRef<HTMLInputElement>(null)
+  const closeSupportRef = useRef(onClose)
+  closeSupportRef.current = onClose
+  useEffect(() => {
+    supportTicketInputRef.current?.focus({ preventScroll: true })
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeSupportRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(supportDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled)',
+      ) ?? [])
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
   const loadReplies = async (association?: SupportQuery, cursor?: string) => {
     const id = ticketId.trim()
     const query = cursor && supportQuery
@@ -1748,7 +1784,7 @@ export function CustomerSupportPanel({
   }
   return (
     <div className="modal-layer" role="presentation">
-      <div className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="support-panel-title">
+      <div ref={supportDialogRef} className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="support-panel-title">
         <div className="modal-head">
           <div className="modal-icon"><CircleHelp size={20} /></div>
           <div><span className="section-kicker">帮助支持</span><h2 id="support-panel-title">支持消息</h2></div>
@@ -1760,11 +1796,12 @@ export function CustomerSupportPanel({
           {relatedTaskId && <button className="secondary" onClick={() => void loadReplies({ relatedTaskId })} disabled={loading || !apiBaseUrl}>{loading ? '读取中…' : '查看当前任务关联工单'}</button>}
           {relatedOrderId && <button className="secondary" onClick={() => void loadReplies({ relatedOrderId })} disabled={loading || !apiBaseUrl}>{loading ? '读取中…' : '查看当前订单关联工单'}</button>}
           <label className="field-label" htmlFor="support-ticket-id">客服工单 ID</label>
-          <input id="support-ticket-id" value={ticketId} onChange={event => setTicketId(event.target.value)} placeholder="可选：已有工单才填写 UUID" onKeyDown={event => { if (event.key === 'Enter') void loadReplies() }} />
+          <input ref={supportTicketInputRef} id="support-ticket-id" value={ticketId} onChange={event => setTicketId(event.target.value)} placeholder="可选：已有工单才填写 UUID" onKeyDown={event => { if (event.key === 'Enter') void loadReplies({ ticketId: event.currentTarget.value.trim() }) }} />
           <label className="field-label" htmlFor="support-order-id">订单 ID（可选）</label>
-          <input id="support-order-id" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="按订单发现关联工单" onKeyDown={event => { if (event.key === 'Enter') void loadReplies() }} />
+          <input id="support-order-id" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="按订单发现关联工单" onKeyDown={event => { if (event.key === 'Enter') void loadReplies({ relatedOrderId: event.currentTarget.value.trim() }) }} />
           {error && <p className="error-text" role="alert">{error}</p>}
           {associatedTickets.length > 0 && <div className="utility-list">{associatedTickets.map(item => <div key={item.ticket_id}><CheckCircle2 size={15} /><span>{item.ticket_number} · {item.subject} · {item.status}{item.replies.length ? item.replies.map(reply => <small key={reply.id}>{reply.body} · {new Date(reply.created_at).toLocaleString()}</small>) : <small>当前暂无客户可见回复</small>}</span></div>)}</div>}
+          {supportQuery && !loading && !error && !ticket && associatedTickets.length === 0 && <p className="muted" role="status">未找到与当前查询关联的客服工单。</p>}
           {ticket && <div className="utility-list"><div><CheckCircle2 size={15} /><span>{ticket.ticket_number} · {ticket.subject} · {ticket.status}</span></div></div>}
           {ticket && !replies.length && <p className="muted">当前工单暂无客户可见回复。</p>}
           {replies.length > 0 && <div className="utility-list">{replies.map(reply => <div key={reply.id}><CheckCircle2 size={15} /><span>{reply.body}<small>{new Date(reply.created_at).toLocaleString()}</small></span></div>)}</div>}
@@ -2446,6 +2483,7 @@ export function Overview({
     }
     setAction(`sync-${platform}`)
     setActionError('')
+    setActionRetry(null)
     setActionMessage('')
     syncPlatform(baseUrl, platform, accountId)
       .then(() => setActionError(''))
@@ -2470,6 +2508,7 @@ export function Overview({
     }
     setAction('sync-all')
     setActionError('')
+    setActionRetry(null)
     setActionMessage('')
     try {
       const results = await Promise.allSettled(
@@ -2501,6 +2540,7 @@ export function Overview({
     const { platform, accountId } = revokeTarget
     setAction(`revoke-${platform}`)
     setActionError('')
+    setActionRetry(null)
     setActionMessage('')
     revokePlatform(baseUrl, platform, accountId)
       .then(() => {
@@ -5605,11 +5645,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     setManualStoreSubmitting(true)
     setManualStoreError('')
     setManualStoreMessage('')
+    const pendingRecord = { platform: selectedPlatform as PlatformId, accountId, storeName }
+    // A rejected/ambiguous response does not prove the server skipped the
+    // write. Lock this identity to read-only reconciliation before sending so
+    // the form cannot submit a duplicate registration after an unknown result.
+    setManualStorePendingRecord(pendingRecord)
     let createResponseReceived = false
     try {
       const result = await registerManualStoreRecord(baseUrl, selectedPlatform as PlatformId, { accountId, storeName })
       createResponseReceived = true
-      const pendingRecord = { platform: selectedPlatform as PlatformId, accountId, storeName }
       // The create response means the write may already be committed. Keep its
       // identity and switch to read-only reconciliation if later checks fail;
       // never encourage another create to recover a failed list refresh.
@@ -5635,7 +5679,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     } catch (cause) {
       setManualStoreError(createResponseReceived
         ? `登记请求已成功返回，但店铺列表尚未核实。${describeApiError(cause)} 请使用“重新核对登记结果”读取列表，不要重复登记。`
-        : describeApiError(cause))
+        : `登记结果尚未确认。${describeApiError(cause)} 请使用“重新核对登记结果”读取店铺列表，不要重复登记。`)
     } finally {
       setManualStoreSubmitting(false)
     }
@@ -5710,7 +5754,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     const normalizedQuery = catalogQuery.trim().toLocaleLowerCase()
     const now = Date.now()
     const filtered = storeProducts.filter((product) => {
-      const matchesQuery = !normalizedQuery || `${product.title} ${product.subtitle}`.toLocaleLowerCase().includes(normalizedQuery)
+      const searchableText = [product.title, product.subtitle, product.remoteId, ...product.skus.flatMap((sku) => [sku.id, sku.name])]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase()
+      const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery)
       // "Added in the last N days" excludes dates in the future. A product
       // whose server date was not returned is unknown, not recent.
       const ageInDays = product.addedAt ? Math.floor((now - new Date(`${product.addedAt}T00:00:00`).getTime()) / 86_400_000) : Number.POSITIVE_INFINITY
@@ -5720,8 +5768,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
         || (ageInDays >= 0 && catalogAddedTime === '90-days' && ageInDays <= 90)
       return matchesQuery && matchesAddedTime
     })
-    if (catalogSort === 'added-asc') return [...filtered].sort((left, right) => left.addedAt.localeCompare(right.addedAt))
-    return [...filtered].sort((left, right) => right.addedAt.localeCompare(left.addedAt))
+    return [...filtered].sort((left, right) => {
+      // Missing dates are unknown, not the oldest or newest. Keep them after
+      // dated products in either direction so sort order doesn't invent facts.
+      if (!left.addedAt) return right.addedAt ? 1 : 0
+      if (!right.addedAt) return -1
+      return catalogSort === 'added-asc'
+        ? left.addedAt.localeCompare(right.addedAt)
+        : right.addedAt.localeCompare(left.addedAt)
+    })
   }, [catalogAddedTime, catalogQuery, catalogSort, storeProducts])
   const catalogPageSize = 6
   const catalogPageCount = Math.max(1, Math.ceil(visibleStoreItems.length / catalogPageSize))
@@ -6190,7 +6245,11 @@ export function MaterialBrandFields({ value, onChange, label, logoLabel, leading
   const [assetUploadStatus, setAssetUploadStatus] = useState('')
   const [assetUploadError, setAssetUploadError] = useState('')
   const [assetUploading, setAssetUploading] = useState<'logo' | 'document' | ''>('')
-  useEffect(() => setDraftColor(value.color), [value.color])
+  // A store/series editor can stay mounted while its scope changes. Reset the
+  // uncommitted color input on that transition even when both scopes happen to
+  // have the same saved color; otherwise a draft typed in scope A can be
+  // confirmed accidentally into scope B.
+  useEffect(() => setDraftColor(value.color), [scopeKey, value.color])
   useEffect(() => {
     setAssetUploadStatus('')
     setAssetUploadError('')
@@ -7034,6 +7093,24 @@ export function MaterialLibraryWorkspace({
   const [detailMaterialId, setDetailMaterialId] = useState<string | null>(null)
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false)
   const detailPreviewTriggerRef = useRef<HTMLButtonElement>(null)
+  const detailPreviewCloseRef = useRef<HTMLButtonElement>(null)
+  const closeDetailPreview = () => {
+    setDetailPreviewOpen(false)
+    window.requestAnimationFrame(() => detailPreviewTriggerRef.current?.focus({ preventScroll: true }))
+  }
+  useEffect(() => {
+    if (!detailPreviewOpen) return
+    window.requestAnimationFrame(() => detailPreviewCloseRef.current?.focus({ preventScroll: true }))
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setDetailPreviewOpen(false)
+      window.requestAnimationFrame(() => detailPreviewTriggerRef.current?.focus({ preventScroll: true }))
+    }
+    document.addEventListener('keydown', closeOnEscape, true)
+    return () => document.removeEventListener('keydown', closeOnEscape, true)
+  }, [detailPreviewOpen])
   // The global brand slot starts empty, like every other level of the stack.
   //
   // It used to open with `logoUrl: storeNovaLogo` and
@@ -7137,7 +7214,7 @@ export function MaterialLibraryWorkspace({
       setImageBrandEnabled(Object.fromEntries(Object.entries(read.settings.images ?? {}).map(([id, entry]) => [id, entry.enabled])))
       setActiveBrandSeries((current) => read.series.some((entry) => entry.accountId === activeStoreId && entry.name === current) ? current : '未分类')
       setScopedBrandLoading(false)
-    }).catch((cause) => { if (active) { setScopedBrandError(`品牌配置读取失败：${describeApiError(cause)}`); setScopedBrandLoading(false) } })
+    }).catch((cause) => { if (active) { setScopedBrandError(`品牌配置读取失败：${describeApiError(cause, { operation: 'read' })}`); setScopedBrandLoading(false) } })
     return () => { active = false }
   }, [baseUrl, activeStoreId, scopedBrandReadAttempt])
 
@@ -7738,7 +7815,7 @@ export function MaterialLibraryWorkspace({
         <MaterialBrandOutput value={effectiveDetailImageBrand} label="单图配置" enabled={detailImageBrandEnabled} disabled={scopedBrandLoading} onEnabledChange={(enabled) => { setImageBrandEnabled((current) => ({ ...current, [detailMaterial.id]: enabled })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} context={{ label: '当前图片', value: detailMaterial.name }} assets={remoteAssets ?? []} baseUrl={baseUrl} brandLogoPreviews={brandLogoPreviews} />
         </article>
       </section>}
-      {detailPreviewOpen && <button type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={() => { setDetailPreviewOpen(false); window.requestAnimationFrame(() => detailPreviewTriggerRef.current?.focus({ preventScroll: true })) }}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>点击任意位置关闭</small></span></button>}
+      {detailPreviewOpen && <button ref={detailPreviewCloseRef} type="button" className="material-upload-lightbox" aria-label="关闭素材图片预览" onClick={closeDetailPreview}><span>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{detailMaterial.name}</strong><small>按 Escape 或点击关闭</small></span></button>}
     </div>
   }
 
@@ -8527,13 +8604,22 @@ export function Products({
       const campaignId = campaign.id ?? campaign.campaignId
       if (!campaignId) throw new Error('批量计划已返回，但缺少 campaign_id，无法进入逐项生产。')
       let generated: typeof campaign | undefined
+      let generationFailed = false
+      let generationFailure: unknown
       try {
         generated = await generateCampaignBatch(baseUrl, campaignId, '按商品事实和品牌规则逐项生成营销内容，等待审核。', `merchant-studio-campaign-generate-${campaignId}`)
       } catch (cause) {
-        // The plan is durable even when a precondition (facts, canonical
-        // listing, points, or provider readiness) blocks generation. Keep the
-        // campaign visible so the operator can resolve and resume it.
-        setGroupMessage(`批量计划已创建（${campaignId}），逐项生成被门禁阻止：${describeApiError(cause)}。请处理阻断项后在营销任务中继续。`)
+        generationFailed = true
+        generationFailure = cause
+      }
+      if (generationFailed) {
+        setGroupMessage(campaignGenerationFailureMessage(campaignId, describeApiError(generationFailure), campaignGenerationOutcomeUnknown(generationFailure)))
+        // Keep this recovery instruction visible on the product page. The
+        // persisted campaign can be read from the task page; do not navigate
+        // away and lose the only explanation for the failed/uncertain result.
+        setSelectedTargets([])
+        setGroupConfirmOpen(false)
+        return
       }
       const taskIds = generated?.taskIds ?? []
       const generatedState = generated ? resolveBatchResultState(generated) : 'empty'
@@ -10281,6 +10367,7 @@ function TaskWorkspace({
   )
   const [timeline, setTimeline] = useState<TaskTimelineEvent[]>([])
   const [timelineError, setTimelineError] = useState('')
+  const [timelineLoading, setTimelineLoading] = useState(false)
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [findingDecision, setFindingDecision] = useState<ReviewFinding | null>(
     null,
@@ -10359,6 +10446,7 @@ function TaskWorkspace({
   const isTaskComposerInitializing = taskComposerInitializing || Boolean(
     baseUrl && targetProductId && taskComposerReadyScope !== taskComposerScope,
   )
+  const isTaskComposerBusy = Boolean(operation)
   const targetTitle = target?.title ?? '轻云防晒外套 2026'
   const factProofBlockers = productFactConfirmationBlockers(product?.sellingPoints)
   const topLevelDraft = evidenceSafeTopLevelContent(content?.body)
@@ -10469,6 +10557,7 @@ function TaskWorkspace({
     setFeedbackError('')
     setTimeline([])
     setTimelineError('')
+    setTimelineLoading(false)
     setUnderstanding(null)
     setQuestionAnswers({})
     setConversationReplies([])
@@ -10550,6 +10639,7 @@ function TaskWorkspace({
             },
           })
         if (!target.taskId) return null
+        setTimelineLoading(true)
         const [versions, feedbackResult, timelineResult] = await Promise.all([
           fetchContentVersions(baseUrl, current.id),
           fetchTaskFeedback(baseUrl, current.id)
@@ -10582,6 +10672,7 @@ function TaskWorkspace({
           )
           setTimelineError('')
         } else setTimelineError(timelineResult.error)
+        setTimelineLoading(false)
         setContentVersions(
           versions.slice().sort((left, right) => right.version - left.version),
         )
@@ -10915,6 +11006,7 @@ function TaskWorkspace({
   }
   const reloadTimeline = () => {
     if (!baseUrl || !task) return
+    setTimelineLoading(true)
     fetchTaskTimeline(baseUrl, task.id)
       .then((value) => {
         setTimeline(
@@ -10926,6 +11018,7 @@ function TaskWorkspace({
         setTimelineError('')
       })
       .catch((cause) => setTimelineError(describeApiError(cause)))
+      .finally(() => setTimelineLoading(false))
   }
   const decideFinding = (
     finding: ReviewFinding,
@@ -11667,6 +11760,9 @@ function TaskWorkspace({
                   onRetry={reloadTimeline}
                 />
               )}
+              {timelineLoading && !timelineError && (
+                <div className="empty-state" role="status">正在读取历史事件…</div>
+              )}
               {timeline.length
                 ? timeline
                     .slice()
@@ -11694,7 +11790,7 @@ function TaskWorkspace({
                         </time>
                       </div>
                     ))
-                : !timelineError && (
+                : !timelineError && !timelineLoading && (
                     <div className="empty-state">
                       <History size={18} />
                       暂无可用历史事件
@@ -12175,13 +12271,15 @@ function TaskWorkspace({
                     }
                   }}
                   placeholder="例如：把这件商品同步到淘宝和拼多多，主推防晒卖点"
-                  readOnly={Boolean(task) || isTaskComposerInitializing}
+                  readOnly={Boolean(task) || isTaskComposerInitializing || isTaskComposerBusy}
                   title={
                     task
                       ? '任务已创建；如需更换商品或平台，请返回商品列表重新选择'
                       : isTaskComposerInitializing
                         ? '正在读取商品身份，完成前无法编辑'
-                        : undefined
+                        : isTaskComposerBusy
+                          ? `${operation}，完成前无法编辑任务描述。`
+                          : undefined
                   }
                 />
                 <small id="task-composer-help">
@@ -12189,6 +12287,8 @@ function TaskWorkspace({
                     ? '任务已创建；当前请求已锁定。请在下方回答待补充问题。'
                     : isTaskComposerInitializing
                       ? '正在核对商品身份，完成后即可编辑任务描述。'
+                      : isTaskComposerBusy
+                        ? `${operation}，任务描述暂时锁定。`
                       : '按 Enter 分析需求，Shift+Enter 换行'}
                 </small>
               </div>
@@ -12203,7 +12303,15 @@ function TaskWorkspace({
                   Boolean(task)
                 }
               >
-                {understanding ? '重新分析' : '分析需求'}
+                {operation === '分析任务需求中…'
+                  ? '分析中…'
+                  : operation === '创建任务中…' || operation === '重新提交同一任务请求…'
+                    ? '创建中…'
+                    : operation
+                      ? '处理中…'
+                      : understanding
+                        ? '重新分析'
+                        : '分析需求'}
               </button>
             </form>
             {understanding && (
@@ -13162,6 +13270,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
   const [selectedCategory, setSelectedCategory] =
     useState<CatalogCategory | null>(null)
   const selectedCategoryTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const rulesSearchRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     setPlatform(rulesPlatform ?? ruleContext.platform)
   }, [ruleContext.platform, rulesPlatform])
@@ -13359,7 +13468,22 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
         <div className="empty-state">
           <Search size={20} />
           <b>没有匹配规则</b>
-          <span>请调整关键词。</span>
+          <span>请调整规则分类或关键词，或清除这两项筛选。</span>
+          {(ruleCategory !== 'all' || query.trim()) && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setRuleCategory('all')
+                setQuery('')
+                window.requestAnimationFrame(() =>
+                  rulesSearchRef.current?.focus({ preventScroll: true }),
+                )
+              }}
+            >
+              清除关键词和类目筛选
+            </button>
+          )}
         </div>
       )}
       <DeliveryReadinessPanel baseUrl={baseUrl} />
@@ -13562,6 +13686,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
           <Search size={15} />
           <span className="sr-only">搜索规则或品类</span>
           <input
+            ref={rulesSearchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={
@@ -14189,12 +14314,14 @@ export default function App() {
     if (apiBaseUrl && authState !== 'authenticated') return
     if (!routeCanonicalized.current) {
       routeCanonicalized.current = true
-      const canonicalUrl = urlForMerchantRoute(window.location, initialRoute)
-      if (
-        `${window.location.pathname}${window.location.search}` !==
-          canonicalUrl ||
-        window.location.hash
-      )
+      // The local-plugin callback is consumed by LocalPluginConnection after
+      // authentication. Keep its fragment while canonicalizing the merchant
+      // route; clearing it here opens the account panel but drops the pairing.
+      const pluginPairFragment = window.location.hash.startsWith('#plugin_pair=')
+        ? window.location.hash
+        : ''
+      const canonicalUrl = `${urlForMerchantRoute(window.location, initialRoute)}${pluginPairFragment}`
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== canonicalUrl)
         window.history.replaceState(null, '', canonicalUrl)
     }
     applyLocation(window.location)

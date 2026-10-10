@@ -150,7 +150,10 @@ export function ProductSpreadsheetImport({
     assetFactsConfirmedRef.current = false
     setBusy(true); setError(''); setAsset(null); setProducts([]); setImportedIds([]); setUnconfirmedIds([]); setPhase('正在上传表格…')
     try {
-      const uploaded = await uploadAsset(baseUrl, new File([await file.arrayBuffer()], file.name, { type: spreadsheetMime(file.name) }))
+      // Pass the selected Blob directly. Reading its bytes before calling
+      // uploadAsset would let a workspace switch happen before that helper can
+      // capture the upload's tenant scope.
+      const uploaded = await uploadAsset(baseUrl, new File([file], file.name, { type: spreadsheetMime(file.name) }))
       setAsset(uploaded)
       await inspect(uploaded.id, run)
     } catch (cause) {

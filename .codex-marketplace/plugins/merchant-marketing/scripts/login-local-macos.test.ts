@@ -3,9 +3,39 @@ import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error Native Node installer module intentionally has no build step.
-import { credentialFromResponse, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
+import { credentialFromResponse, localPluginLoginCallbackFailureMessage, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
 
 describe('local plugin login installer runtime', () => {
+  it.each([
+    ['TARGET_INVALID', '平台分配的 ws_... 工作区 ID'],
+    ['EXCHANGE_REJECTED', '重新运行登录脚本'],
+    ['TIMEOUT', '浏览器授权超时'],
+    ['ACK_FAILED', '本地凭据可能已保存'],
+  ])('turns login failure %s into a concrete recovery instruction', (code, guidance) => {
+    expect(localPluginLoginFailureMessage(code)).toContain(guidance)
+  })
+
+  it.each([
+    ['LOCAL_PLUGIN_LOGIN_TIMEOUT', '浏览器授权超时'],
+    ['LOCAL_PLUGIN_LOGIN_CANCELLED', '重新发起登录'],
+    ['LOCAL_PLUGIN_LOGIN_RESPONSE_INVALID', '授权服务返回的数据无法验证'],
+    ['LOCAL_PLUGIN_LOGIN_EXCHANGE_REJECTED', '授权码已过期'],
+    ['LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED', '临时凭据撤销未获确认'],
+    ['LOCAL_PLUGIN_LOGIN_ACK_FAILED', '服务端未确认安装实例'],
+  ])('shows a user-safe recovery hint in the browser for %s', (code, guidance) => {
+    expect(localPluginLoginCallbackFailureMessage(code)).toContain(guidance)
+  })
+
+  it('does not reflect arbitrary callback error text into the browser', () => {
+    expect(localPluginLoginCallbackFailureMessage('password=secret-token')).toContain('登录流程未完成')
+    expect(localPluginLoginCallbackFailureMessage('password=secret-token')).not.toContain('secret-token')
+  })
+
+  it('keeps browser recovery guidance valid for both desktop platforms', () => {
+    expect(localPluginLoginCallbackFailureMessage('LOCAL_PLUGIN_LOGIN_ARGUMENTS_INVALID')).toContain('当前平台')
+    expect(localPluginLoginCallbackFailureMessage('LOCAL_PLUGIN_LOGIN_ARGUMENTS_INVALID')).not.toContain('login.sh')
+  })
+
   it.each(['https://u:p@example.test', 'https://example.test/?token=x', 'https://example.test/mcp', 'http://example.test', 'http://localhost:1234', ' https://example.test', 'https://example.test/#x'])('rejects unsafe target %s', base => {
     expect(() => validateLoginTarget(base, 'ws_test')).toThrow('TARGET_INVALID')
   })
@@ -187,9 +217,43 @@ describe('local plugin login installer runtime', () => {
       result += new TextDecoder().decode(chunk.value)
     }
     expect(result).toContain(shouldFail ? '绑定未完成' : '绑定已完成')
-    if (shouldFail) expect(result).toContain('钥匙串权限')
+    if (shouldFail) expect(result).toContain('系统凭据库权限')
     expect(result).not.toMatch(/one-time-code|synthetic-access|synthetic-refresh/u)
   })
+
+  it('shows actionable recovery in the actual browser callback when authorization exchange fails', async () => {
+    let revealPage!: (page: { response: Response; reader: ReadableStreamDefaultReader<Uint8Array>; first: string }) => void
+    const pageReady = new Promise<{ response: Response; reader: ReadableStreamDefaultReader<Uint8Array>; first: string }>(resolve => { revealPage = resolve })
+    const login = loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test',
+      openBrowser: async (url: string) => {
+        const authorization = new URL(url)
+        const callback = new URL(authorization.searchParams.get('redirect_uri')!)
+        callback.searchParams.set('code', 'one-time-code-long-enough')
+        callback.searchParams.set('state', authorization.searchParams.get('state')!)
+        const response = await fetch(callback)
+        const reader = response.body!.getReader()
+        const first = new TextDecoder().decode((await reader.read()).value)
+        revealPage({ response, reader, first })
+      },
+      fetchImpl: async () => new Response(JSON.stringify({ error: { code: 'EXCHANGE_REJECTED' } }), { status: 401 }),
+      storeCredential: () => { throw new Error('credentials must not be written after rejected exchange') },
+      configureSession: () => { throw new Error('session must not be configured after rejected exchange') },
+      timeoutMs: 2000,
+    })
+    const { response, reader, first } = await pageReady
+    expect(response.status).toBe(200)
+    expect(first).toContain('正在完成绑定')
+    await expect(login).rejects.toThrow('LOCAL_PLUGIN_LOGIN_EXCHANGE_REJECTED')
+    let result = ''
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      result += new TextDecoder().decode(chunk.value)
+    }
+    expect(result).toContain('授权码已过期或工作区授权不匹配')
+    expect(result).toContain('确认浏览器中的商家账号和工作区后重新登录')
+    expect(result).not.toMatch(/one-time-code|secret|access_token|refresh_token/u)
+  }, 5_000)
 
   it('times out without touching credentials or launchd', async () => {
     let writes = 0
@@ -255,7 +319,8 @@ describe('local plugin login installer runtime', () => {
   })
 
   it('provides a runnable help command without touching credentials', () => {
-    const result = spawnSync(process.execPath, ['apps/plugin/scripts/login-local-macos.mjs', '--help'], { encoding: 'utf8' })
+    // login.sh prepends --base-url before forwarding user arguments.
+    const result = spawnSync(process.execPath, ['apps/plugin/scripts/login-local-macos.mjs', '--base-url', 'https://yxsona.com', '--help'], { encoding: 'utf8' })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('不需要 ChatGPT OAuth')
     expect(result.stdout).toContain('--workspace')

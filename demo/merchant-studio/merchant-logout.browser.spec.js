@@ -67,7 +67,7 @@ test('account menu logout revokes the local session and returns to sign-in', asy
     await page.goto(`http://127.0.0.1:${address.port}/merchant/overview`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
     await expect(page.locator('.app-shell')).toBeVisible()
     await page.getByRole('button', { name: '打开账号菜单' }).click()
-    const menu = page.getByRole('menu', { name: '账号菜单' })
+    const menu = page.getByRole('region', { name: '账号菜单' })
     await expect(menu.getByRole('button', { name: '退出登录' })).toBeVisible()
     await menu.getByRole('button', { name: '退出登录' }).click()
 

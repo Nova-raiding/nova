@@ -119,13 +119,17 @@ describe("customer delivery archive conflict", () => {
         return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) });
       });
 
-      await page.goto(`${baseUrl}/__delivery-archive-conflict-test`, { waitUntil: "domcontentloaded" });
+      await page.goto(`${baseUrl}/__delivery-archive-conflict-test`, { waitUntil: "domcontentloaded", timeout: 30_000 });
       await page.getByRole("cell", { name: "并发归档客户", exact: true }).waitFor();
       await page.getByRole("button", { name: "查看详情", exact: true }).click();
       await page.getByRole("button", { name: "停用并删除记录", exact: true }).click();
       await page.getByRole("button", { name: "确认停用并删除", exact: true }).click();
 
-      await page.getByText("共 0 条", { exact: true }).waitFor();
+      // Wait for the authoritative post-mutation list readback. The Ant Design
+      // pagination summary is presentation copy and can be absent while the
+      // table is transitioning between loading and empty states.
+      await expect.poll(() => workspaceScopedRequests.filter(request => request.method === "ops.customer-delivery.list").length).toBe(2);
+      await page.getByRole("cell", { name: "并发归档客户", exact: true }).waitFor({ state: "detached" });
       expect(await page.getByRole("cell", { name: "并发归档客户", exact: true }).count()).toBe(0);
       expect(archiveWrites).toBe(1);
       expect(workspaceScopedRequests.filter(request => request.method === "ops.customer-delivery.list")).toHaveLength(2);

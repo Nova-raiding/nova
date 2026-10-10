@@ -294,6 +294,53 @@ describe('security and access-control acceptance gates', () => {
     ]))
   })
 
+  it('enforces identity.read and identity.update capability denies on merchant registration endpoints', async () => {
+    const workspaceId = `ws_registration_capability_${Date.now()}`
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('ALLOW_MERCHANT_SELF_REGISTRATION', 'true')
+    const auth = new MemoryPasswordAuthRepository(undefined, async id => id === workspaceId ? 'active' : undefined)
+    setPasswordAuthRepositoryForTests(auth)
+    await auth.register({ login: 'registration-capability@example.com', password: 'MerchantPass123', enterpriseName: '企业', contactName: '联系人', termsAgreed: true })
+    await auth.register({ login: 'registration-other-tenant@example.com', password: 'MerchantPass123', enterpriseName: '另一企业', contactName: '另一联系人', termsAgreed: true })
+    await configureBearerMembers([
+      { token: 'registration-read-denied', workspaceId, actorId: 'read-denied-ops', role: 'platform_ops', gatewayRoles: ['platform_ops'], deniedCapabilities: ['identity.read'] },
+      { token: 'registration-update-denied', workspaceId, actorId: 'update-denied-ops', role: 'platform_ops', gatewayRoles: ['platform_ops'], deniedCapabilities: ['identity.update'] },
+      // security_admin has both identity capabilities, so this proves the
+      // route's separate operations-role check also blocks access.
+      { token: 'registration-role-denied', workspaceId, actorId: 'role-denied-ops', role: 'platform_ops', gatewayRoles: ['security_admin'], workbenches: ['platform'] },
+    ])
+    const base = await start()
+    try {
+      const deniedList = await fetch(`${base}/v1/ops/merchant-registration-applications`, { headers: { authorization: 'Bearer registration-read-denied', 'x-ops-workbench': 'platform' } })
+      const deniedListBody = await json(deniedList)
+      expect(deniedList.status).toBe(403)
+      expect(deniedListBody.body.error?.code).toBe('FORBIDDEN')
+
+      const deniedReview = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, {
+        method: 'POST', headers: { authorization: 'Bearer registration-update-denied', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'registration-capability@example.com', decision: 'approved', workspace_ids: [workspaceId], reason: '审核权限回归检查' }),
+      })
+      const deniedReviewBody = await json(deniedReview)
+      expect(deniedReview.status).toBe(403)
+      expect(deniedReviewBody.body.error?.code).toBe('FORBIDDEN')
+      const roleDeniedList = await fetch(`${base}/v1/ops/merchant-registration-applications`, { headers: { authorization: 'Bearer registration-role-denied', 'x-ops-workbench': 'platform' } })
+      expect(roleDeniedList.status).toBe(403)
+      const roleDeniedReview = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, {
+        method: 'POST', headers: { authorization: 'Bearer registration-role-denied', 'x-ops-workbench': 'platform', 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'registration-capability@example.com', decision: 'approved', workspace_ids: [`ws_foreign_${Date.now()}`], reason: '角色权限回归检查' }),
+      })
+      expect(roleDeniedReview.status).toBe(403)
+      const applications = (await auth.listMerchantRegistrationApplications({ limit: 10, offset: 0 })).items
+      expect(applications).toHaveLength(2)
+      expect(applications).toEqual(expect.arrayContaining([
+        expect.objectContaining({ login: 'registration-capability@example.com', status: 'merchant_pending', workspaceIds: [] }),
+        expect.objectContaining({ login: 'registration-other-tenant@example.com', status: 'merchant_pending', workspaceIds: [] }),
+      ]))
+    } finally {
+      setPasswordAuthRepositoryForTests(undefined)
+    }
+  })
+
   it('fails closed when an enforced authorization decision cannot be persisted to the audit sink', async () => {
     const workspaceId = `ws_authz_audit_failure_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')

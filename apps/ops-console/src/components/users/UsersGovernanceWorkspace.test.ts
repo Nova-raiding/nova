@@ -10,16 +10,20 @@ function authorization(capabilities: string[], roles: string[] = [], scope: "pla
 }
 
 describe("visibleUsersGovernanceSections", () => {
-  it("keeps read-only identity users in the user directory without exposing write-only sections", () => {
-    expect(visibleUsersGovernanceSections(authorization(["identity.read"]))).toEqual(["directory"]);
+  it("keeps read-only identity users in the directory and registration list without review controls", () => {
+    expect(visibleUsersGovernanceSections(authorization(["identity.read"], ["platform_ops"]))).toEqual(["directory", "registrations"]);
+  });
+
+  it("does not render registration data to a non-operations role even when it has identity capabilities", () => {
+    expect(visibleUsersGovernanceSections(authorization(["identity.read", "identity.update"], ["security_admin"]))).toEqual(["directory"]);
   });
 
   it("does not show an empty registration tab to users with write but no read access", () => {
     expect(visibleUsersGovernanceSections(authorization(["identity.update"]))).toEqual([]);
   });
 
-  it("shows registration review only when both list reading and review writing are allowed", () => {
-    expect(visibleUsersGovernanceSections(authorization(["identity.read", "identity.update"]))).toEqual(["directory", "registrations"]);
+  it("shows registration review when list reading and review writing are allowed", () => {
+    expect(visibleUsersGovernanceSections(authorization(["identity.read", "identity.update"], ["platform_ops"]))).toEqual(["directory", "registrations"]);
   });
 
   it("shows only the task areas backed by server capabilities", () => {

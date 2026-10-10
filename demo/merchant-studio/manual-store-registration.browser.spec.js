@@ -120,3 +120,72 @@ test('商家可登记店铺识别资料，并清楚看到该记录仍未授权',
     await browser.close()
   }
 })
+
+test('登记返回未知结果时先核对已有记录，不能重复创建', async () => {
+  test.setTimeout(60_000)
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await context.newPage()
+  const accounts = []
+  const writes = []
+  let postCount = 0
+  await page.route('**/api/**', async route => {
+    const request = route.request()
+    const parsed = new URL(request.url())
+    const pathname = parsed.pathname.replace(/^\/api/u, '')
+    const method = request.method()
+    const mcpMethod = pathname === '/mcp' && method === 'POST' ? request.postDataJSON()?.method : undefined
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && pathname !== '/v1/auth/mcp-token'
+      && pathname !== '/v1/platform-accounts/taobao/manual-record'
+      && !(pathname === '/mcp' && ['billing.transactions', 'creative-points.balance.get', 'platform.model.status', 'workspace.metrics'].includes(mcpMethod))) {
+      return route.fulfill({ status: 405, body: 'unexpected fixture write' })
+    }
+    const envelope = data => ({ request_id: 'manual-store-unknown', trace_id: 'manual-store-unknown', workspace_id: workspaceId, data, warnings: [], next_actions: [], error: null })
+    let data = {}
+    if (pathname === '/v1/auth/session') data = { account: { id: 'manual-unknown-user', login: 'fixture@example.invalid', accountType: 'merchant', displayName: '本地验收', status: 'active', workspaceIds: [workspaceId] } }
+    else if (pathname === '/v1/auth/mcp-token') data = { access_token: 'fixture-token', refresh_token: 'fixture-refresh', expires_in: 300 }
+    else if (pathname === '/healthz') data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
+    else if (pathname === '/v1/platform-accounts' && method === 'GET') data = { items: accounts.map(item => ({ ...item })) }
+    else if (pathname === '/v1/platform-accounts/taobao/manual-record' && method === 'POST') {
+      postCount += 1
+      writes.push(request.postDataJSON())
+      if (postCount === 1) {
+        accounts.push({ platform: 'taobao', accountId: 'taobao-unknown-42', storeName: '未知结果店铺', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'account_record_only' })
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ request_id: 'manual-store-post-unknown', error: { code: 'TEMPORARY_UNAVAILABLE', message: '响应丢失，结果未知' } }) })
+      }
+      return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'DUPLICATE', message: 'already exists' } }) })
+    } else if (pathname === '/v1/products') data = { items: [], total: 0, limit: 50, offset: 0 }
+    else if (pathname === '/v1/platform-capabilities') data = { items: [] }
+    else if (pathname === '/mcp') {
+      const results = {
+        'billing.transactions': { balance_cny: '0.00', transactions: [] },
+        'creative-points.balance.get': { balance_state: 'unknown', available_points: null, reserved_points: null, settled_points: null, access_revision: null },
+        'platform.model.status': { state: 'unconfigured', capabilities: {} },
+        'workspace.metrics': { date_from: '', date_to: '', generated_at: '', metrics: [], risks: [] },
+      }
+      data = { result: results[mcpMethod] ?? {} }
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
+  })
+  try {
+    await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '选择平台与店铺' })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: /淘宝/u }).click()
+    const form = page.locator('form').filter({ has: page.locator('#merchant-manual-store-id') })
+    await form.locator('#merchant-manual-store-id').fill('taobao-unknown-42')
+    await form.locator('#merchant-manual-store-name').fill('未知结果店铺')
+    await form.getByRole('button', { name: '登记店铺资料' }).click()
+
+    await expect(page.getByRole('alert')).toContainText('登记结果尚未确认')
+    await expect(page.getByRole('alert')).toContainText('不要重复登记')
+    await expect(form.getByRole('button', { name: '登记店铺资料' })).toBeDisabled()
+    await page.getByRole('button', { name: '重新核对登记结果' }).click()
+    await expect(page.locator('.ant-alert-success')).toContainText('人工登记（未授权）')
+    await expect(page.getByRole('heading', { name: '未知结果店铺' })).toBeVisible()
+    expect(postCount).toBe(1)
+    expect(writes).toEqual([{ account_id: 'taobao-unknown-42', store_name: '未知结果店铺' }])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})

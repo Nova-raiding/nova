@@ -364,3 +364,106 @@ test('a partial product-fact confirmation failure can be retried without importi
     await vite.close()
   }
 }, 60_000)
+
+test('a spreadsheet selected in workspace A is not uploaded after the workspace switches to B during byte reading', async () => {
+  test.setTimeout(60_000)
+  const entryPath = '/__merchant-product-import-workspace-test.tsx'
+  const vite = await createServer({
+    configFile: false,
+    envDir: false,
+    root: studioRoot,
+    plugins: [react(), {
+      name: 'merchant-product-import-workspace-test-entry',
+      resolveId(id) { if (id === entryPath) return '\0merchant-product-import-workspace-test-entry' },
+      load(id) {
+        if (id !== '\0merchant-product-import-workspace-test-entry') return
+        return `
+          import React, { useState } from 'react';
+          import { createRoot } from 'react-dom/client';
+          import { ProductSpreadsheetImport } from '/src/ProductSpreadsheetImport.tsx';
+          import { activateMerchantWorkspace, configureMerchantWorkspaceScope } from '/src/api.ts';
+          configureMerchantWorkspaceScope(['ws_import_alpha', 'ws_import_beta'], 'ws_import_alpha');
+          function Harness() {
+            const [workspace, setWorkspace] = useState('ws_import_alpha');
+            return React.createElement(React.Fragment, null,
+              React.createElement('p', { role: 'status' }, workspace),
+              React.createElement('button', { type: 'button', onClick: () => { activateMerchantWorkspace('ws_import_beta'); setWorkspace('ws_import_beta'); } }, '切换到工作区 B'),
+              React.createElement(ProductSpreadsheetImport, { baseUrl: '/api', accounts: [], canWrite: true })
+            );
+          }
+          createRoot(document.getElementById('root')).render(React.createElement(Harness));
+        `
+      },
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url !== '/__merchant-product-import-workspace-test') return next()
+          const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`
+          void server.transformIndexHtml(req.url, html).then(output => {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(output)
+          }).catch(next)
+        })
+      },
+    }],
+    server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false },
+  })
+  await vite.listen()
+  const address = vite.httpServer?.address()
+  if (!address || typeof address === 'string') {
+    await vite.close()
+    throw new Error('Product import workspace fixture failed to bind an ephemeral port')
+  }
+  const studioUrl = `http://127.0.0.1:${address.port}`
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const page = await context.newPage()
+  const uploadRequests = []
+  const unexpectedRequests = []
+  await page.addInitScript(() => {
+    const readBytes = File.prototype.arrayBuffer
+    window.__delayedImportRead = false
+    window.__releaseImportRead = undefined
+    File.prototype.arrayBuffer = function () {
+      if (this.name !== 'delayed-products.csv' || window.__delayedImportRead) return readBytes.call(this)
+      window.__delayedImportRead = true
+      return new Promise((resolve, reject) => {
+        window.__releaseImportRead = () => readBytes.call(this).then(resolve, reject)
+      })
+    }
+  })
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url())
+    if (url.origin !== studioUrl) {
+      unexpectedRequests.push(`blocked external request ${url.origin}${url.pathname}`)
+      return route.abort('blockedbyclient')
+    }
+    if (url.pathname.startsWith('/api/')) {
+      if (url.pathname === '/api/v1/assets/upload') {
+        uploadRequests.push({ method: route.request().method(), workspaceId: route.request().headers()['x-workspace-id'] ?? null })
+      }
+      return route.fulfill({ status: 599, body: 'No API requests are expected after the tenant changes' })
+    }
+    return route.fallback()
+  })
+
+  try {
+    await page.goto(`${studioUrl}/__merchant-product-import-workspace-test`, { waitUntil: 'domcontentloaded' })
+    const importer = page.getByTestId('merchant-product-spreadsheet-import')
+    await importer.locator('input[type="file"]').setInputFiles({
+      name: 'delayed-products.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('platform,title\ntaobao,old workspace product'),
+    })
+    await page.waitForFunction(() => window.__delayedImportRead === true)
+    await page.getByRole('button', { name: '切换到工作区 B' }).click()
+    await expect(page.locator('p[role="status"]')).toHaveText('ws_import_beta')
+    await page.evaluate(() => window.__releaseImportRead?.())
+    await expect(importer.getByRole('alert')).toContainText('工作区已切换')
+    expect(uploadRequests).toEqual([])
+    expect(unexpectedRequests).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+    await vite.close()
+  }
+})
