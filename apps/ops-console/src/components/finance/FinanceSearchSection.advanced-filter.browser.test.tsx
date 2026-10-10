@@ -1,0 +1,96 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium, type Browser } from "playwright";
+import { createServer, type ViteDevServer } from "vite";
+
+declare global {
+  interface Window { __financeFilterCalls?: Array<{ kinds?: string[]; statuses?: string[] }> }
+}
+
+describe("Finance advanced filters", () => {
+  let browser: Browser | undefined;
+  let vite: ViteDevServer | undefined;
+  let cacheDirectory = "";
+  let baseUrl = "";
+
+  beforeAll(async () => {
+    cacheDirectory = await mkdtemp(joinPath(tmpdir(), "ops-finance-advanced-filter-"));
+    const entry = "/__finance-advanced-filter-entry.tsx";
+    vite = await createServer({
+      configFile: false,
+      root: resolve(dirname(fileURLToPath(import.meta.url)), "../../.."),
+      cacheDir: cacheDirectory,
+      logLevel: "error",
+      server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
+      plugins: [{
+        name: "finance-advanced-filter-test",
+        resolveId(id) { if (id === entry) return `\0${entry}`; },
+        load(id) {
+          if (id !== `\0${entry}`) return;
+          return `
+            import React from 'react';
+            import { createRoot } from 'react-dom/client';
+            import { App } from 'antd';
+            import { FinanceSearchSection } from '/src/components/finance/FinanceSearchSection.tsx';
+            import { useFinanceSearch } from '/src/hooks/useFinanceSearch.ts';
+            window.__financeFilterCalls = [];
+            const client = {
+              search: async query => { window.__financeFilterCalls.push({ kinds: query.kinds, statuses: query.statuses }); return { records: [], summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 0, customerChargeCny: 0, byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: '2026-10-10T00:00:00.000Z', scope: { role: 'platform_ops', workspaceCount: 0 } }; },
+              detail: async () => ({}), exportCsv: async () => ({ csv: '', contentType: 'text/csv', fileName: 'finance.csv' }),
+            };
+            function Harness() {
+              const controller = useFinanceSearch(client, { limit: 20 }, true);
+              return React.createElement(App, null, React.createElement(FinanceSearchSection, { controller }));
+            }
+            createRoot(document.getElementById('root')).render(React.createElement(Harness));
+          `;
+        },
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            if (req.url !== "/__finance-advanced-filter") return next();
+            const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entry}"></script></body></html>`;
+            void server.transformIndexHtml(req.url, html).then(output => { res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(output); }).catch(next);
+          });
+        },
+      }],
+    });
+    await vite.listen();
+    const address = vite.httpServer?.address();
+    if (!address || typeof address === "string") throw new Error("Finance advanced filter listener did not bind");
+    baseUrl = `http://127.0.0.1:${address.port}`;
+    browser = await chromium.launch({ channel: "chrome", headless: true });
+  }, 60_000);
+
+  afterAll(async () => {
+    try { await browser?.close(); }
+    finally {
+      try { await vite?.close(); }
+      finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }
+    }
+  }, 60_000);
+
+  it("shows the advanced filter controls when the operator expands them", async () => {
+    const page = await browser!.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    page.setDefaultTimeout(10_000);
+    try {
+      await page.goto(`${baseUrl}/__finance-advanced-filter`, { waitUntil: "commit", timeout: 60_000 });
+      await page.waitForTimeout(1000);
+      expect(pageErrors).toEqual([]);
+      const toggle = page.getByRole("button", { name: "高级筛选", exact: true });
+      await toggle.waitFor({ state: "visible" });
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      await toggle.click();
+      expect(await page.getByRole("button", { name: "收起筛选", exact: true }).getAttribute("aria-expanded")).toBe("true");
+      const advanced = page.locator("#finance-advanced-filters");
+      await advanced.waitFor({ state: "visible" });
+      expect(await advanced.locator(".ant-select").count()).toBe(2);
+    } finally { await page.close(); }
+  }, 60_000);
+});
+
+function joinPath(...parts: string[]): string { return parts.join("/"); }
