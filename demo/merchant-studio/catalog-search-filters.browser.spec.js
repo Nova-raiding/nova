@@ -100,6 +100,15 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await page.getByRole('button', { name: '下一页' }).click()
     await expect(page.getByRole('navigation', { name: '商品分页' })).toContainText('共 8 件 · 第 2 / 2 页')
     await expect(page.locator('.catalog-product-card')).toHaveCount(2)
+
+    await search.fill('轻云咖啡机')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.getByRole('navigation', { name: '商品分页' })).toContainText('共 1 件 · 第 1 / 1 页')
+    await page.getByRole('button', { name: '按添加时间筛选' }).click()
+    await page.getByRole('option', { name: '近 7 天添加' }).click()
+    await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+    await expect(page.locator('.catalog-product-card')).toContainText('轻云咖啡机')
+    await expect(page.getByRole('navigation', { name: '商品分页' })).toContainText('共 1 件 · 第 1 / 1 页')
     expect(unmockedApiRequests).toEqual([])
   } finally {
     await context.close()
