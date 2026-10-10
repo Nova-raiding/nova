@@ -182,6 +182,26 @@ Owner `git diff --check HEAD` 通过；首次全局 `npm run typecheck` 暴露�
 
 本轮工作树维持大量共享 dirty paths，未提交、未直装到 ChatGPT 宿主、未部署。orphan 运维列表/恢复界面、真实 ChatGPT host reload 与 provider 用量/成本/归档闭环、Finance 高级筛选在真实页面上的浏览器复现、唯一 Demo 的 owner 和 DB 证据仍未完成。Demo **NO-GO**。
 
+## 2026-10-10 第九轮页面交互与恢复路径复核
+
+按用户要求继续用 10 个角色（owner + 9 个页面域角色）检查 Merchant 与 Ops 桌面页面。使用 PM dogfood/gstack 维度复核表单、权限、下一步入口、错误提示、重试、焦点、深链和工作区边界；使用 CodeGraph 追踪素材权益、图片候选、Support/Audit/Incidents、Models、Knowledge、Stores 与规则同步调用链。工作树沿用既有 `main` checkout 和大量 dirty paths，没有重置、清理、提交或部署。
+
+本轮修复：
+
+- Merchant 图片候选成功提交后，旧任务页仍允许改选和再次提交。成功态现锁定候选 checkbox、原因输入和再次提交，并在 handler 增加早退保护；进入新版本审核入口仍保留。缺陷先由专属 Chromium 用例复现，修复后单项 1/1 通过。完整图片生成浏览器套件在修复前 15/15；修复后只重跑了该单项。
+- Merchant 素材权益入口现覆盖真实可见的 MaterialLibraryWorkspace。服务端拒绝在 `internal_only`/`limited_use` scope 下写入通用商用或 AI 生成范围；受限选择器限制为保留/收窄；修正已批准的 restricted scope 投影被事实确认动作遮挡的问题。相关投影和权益用例 10/10，单 Chromium 保存拒绝/重试/GET 回读 1/1，Merchant Studio TS 检查通过。
+- Merchant 登录与首次 workspace bootstrap 增加提交期间禁用、workspace 名称自动聚焦；浏览器覆盖登录失败与恢复、bootstrap 503 与重试，1/1；相关 Vitest 6/6。
+- Merchant 交付准备错误文案与错误恢复修正，Chromium 1/1、相关单测 7/7。
+- Ops Models 页新增“查看平台总览”可点击入口，模型单测 4/4，Chromium 1/1。Knowledge 学习建议确认增加 single-flight，组件及页面测试 11/11；但当前 Ops 路由权限策略明确阻止 `/ops/knowledge?workbench=workspace`，审批页面旅程在本控制台无法验收，页面归属仍需产品判断。
+- Ops Support 删除页面/队列重复错误块，并统一错误重试说明。页面浏览器回归 1/1，页面单测 2/2。Incidents/Audit/Support 定向浏览器矩阵 9 文件 11 tests 中 8 通过、3 失败：Support whitespace fixture 在 mount 前未建立 root；Audit 导出截断等待标题超时；另一个 Support locator 的超时已调整并单项通过。Audit 相关单测通过（Page 4、Center 10、Filters 2），导出专项单项重跑 2/2。
+- Ops Stores 撤权失败会在确认框展示错误并保留目标。浏览器断言已证明错误提示和目标保留；隔离 BrowserContext 后整文件出现两次 2/2、一次重试按钮可见性超时，失败时诊断看到按钮可见且未禁用，尚无法将不稳定归因于产品缺陷或稳定排除 harness 问题。
+- Finance 套餐事实读取 503 后提供刷新恢复；隔离浏览器 1/1，验证 workspace header、成功恢复、不创建订单或付款。
+- Rules sync 错误可留在页面并重试；本轮单测 fixture 增补 promise 透传断言。
+
+Owner 运行 `packages/application/src/service.test.ts` 186/186 通过，`git diff --check HEAD` 通过。API `product-image-review.e2e.test.ts` 两次运行均卡在 `beforeAll` 动态导入服务：分别 30 秒和 60 秒超时，11 个断言全部 skip；不能计作 API 回归通过。新增投影测试 fixture 的必需字段和类型已修复，随后全局 `npm run typecheck` 被重复启动造成执行结果未能由工具完整回传，故不声称全局 typecheck 通过；需用单一进程重跑并拿到 exit code。CodeGraph 当前同步后为 2,975 files、40,281 nodes、159,809 edges，仍有 1 个新增文件 pending，需再同步一次。
+
+UI 页面清单已更新在 [`ui-page-coverage-inventory-2026-10-10.md`](ui-page-coverage-inventory-2026-10-10.md)。本轮仍是本地隔离 fixture，不是真实租户/生产模型/唯一 Demo 运行验收；未进行容器健康检查或部署。页面矩阵仍有明确失败、缺少路由级旅程与 API 初始化超时；不代表全项目每页、每组件、每个按钮或所有代码文件已逐项完成审查。唯一 Demo **NO-GO**。
+
 ## 2026-10-10 第九轮提交后回归与 Demo 门禁复核
 
 用户要求先提交，再继续修复、验证和部署。本轮在 `main` 连续形成三个窄提交：`99715416` 新增 Store Nova 安全路由的商品图片技能并纳入源/marketplace 镜像与本地打包清单；`151072d1` 增加 Finance 高级筛选显示与展开的 Chromium 覆盖；`0bb86b02` 增加 Merchant 商品目录翻页后组合搜索/日期筛选的回归场景。
@@ -198,3 +218,19 @@ Owner `git diff --check HEAD` 通过；首次全局 `npm run typecheck` 暴露�
 2026-10-10 07:28 UTC 通过固定 101 只读 inventory 脚本重新采样：覆盖 94 个容器，79 个仍被分类为未分类外部 consumer，并出现预期服务重复、非运行或不健康项。该脚本明确是 inventory-only、`release_approved=false`，不构成部署批准。随后 API 与 Ops healthz 均为 HTTP 200，但业务投影显示 `setup.mode=production`、`productionGate=true`、`writesEnabled=false`，与唯一 Demo runbook 所需 `demo` 模式不符。
 
 Demo 仍为 **NO-GO，未进行同步、构建、重启、迁移或部署**。此外，数据库 owner 尚未提供 live `{version,name,checksum}` 迁移全链，host owner 尚未提供容器归属与共享锁证据；当前工作树仍有大量未提交改动，不能构建候选。缺少对应 host/DB owner 证据时，不能用本地隔离 PG、HTTP 200 或静态代码替代 Demo 运行态验收。真实 ChatGPT host reload、真实 API/RLS 租户读写、provider 请求回执/usage/cost/结算/归档及媒体人工恢复流程也未验收。
+
+## 2026-10-10 第十轮未决回归与插件版本核对
+
+本轮以 10 个并行角色（owner + 9 个角色）复核尚未通过或没有明确收据的路径；没有重跑账本中已通过的 catalog 组合筛选、Finance 控件显隐、manifest gate 或 install-smoke，除非当前候选版本变更会使原收据失效。
+
+- Merchant 全局商品搜索新增 `q` 深链直达并刷新恢复 fixture，定向 Chromium 测试 **1/1 通过**。该测试依赖尚未提交的 `App.tsx` 与 `navigation.ts` 商品详情深链行为，不能作为 test-only 提交；此前文件内其他深链及跨店场景没有重跑。
+- Ops `StoresPage` 品牌绑定新增隔离浏览器用例。成功路径首轮 **1/1 通过**，覆盖 workspace header、品牌 revision、RPC 参数及成功刷新。409 场景首轮只因读取 Ant Design 隐藏 input 的断言失败，已改为检查可见选择器文本；修正后的共享 Vitest 执行缺少可归因的输出，当前不记通过。该新测试未修改产品代码。
+- Customer Delivery PostgreSQL RLS 新增测试的隔离运行未到达断言：`artifacts/isolated-postgres/run-3JKfvH/run-result.json` 记录唯一断言 skipped、0 passed，runner 因跳过断言拒绝该次运行。执行报告没有收集到完整 hook 错误；运行 agent 观察到 `beforeAll` 在创建临时数据库时连接断开。隔离容器 disposal 产物只记录通用身份核验/精确停止失败，不能确认具体环节；随后 Colima socket 启动返回 `context canceled`。未手动清理容器。此项不是 RLS 通过，也不能把 API 授权用例当作数据库 RLS 证据。
+- 本轮另一组 publish-media PostgreSQL 测试在容器启动阶段超时，见 `artifacts/isolated-postgres/run-tB2Ua1/run-result.json`；其结果不代表 SQL 断言失败。之前 migration 272 隔离测试曾有 1/1 通过收据，但本次 fixture 故障没有新收据。
+- 插件元数据发现版本 `0.1.0+codex.20261010030424` 已被禁用的 merchant-local cache 使用，而该 cache 不含新增图片技能。source、marketplace 两端及 release metadata 已同步改为新的唯一候选版本 `0.1.0+codex.20261010154450`。更新后的 plugin install-smoke 正在由外部测试队列执行，当前未取得明确汇总；release-manifest gate 尚待队列执行。当前启用的 personal cache 仍是旧版本，ChatGPT 宿主未安装/加载候选技能。
+- worker 的正常清理逻辑仅在 adapter 返回 `deleted: true` 时记录删除；失败维持 orphan。但签名 worker 可以直接提交相同上传回执和固定 reason，仓储/API 仍无法证明平台确实删除。固定 reason 是 worker 声明，不能当作独立 provider 删除证据；生产环境也没有已证实的媒体删除适配器注入。
+- 视频请求、relay、异步 usage/cost 结算、隔离归档与扫描有 mock/fixture 合同覆盖；当前没有唯一 Demo 的真实 provider 请求、结算、clean scan、归档与下载证据。Merchant Studio 缺少视频播放/抽帧的成片验收表面，因此不能声称视频内容、时长或商品保真已通过。
+
+本轮全局 `npm run typecheck` 正在执行，但前序同名进程没有被 owner 收到 exit code；当前新进程也尚无收据。不要将其记为通过。工作树仍有约 284 条 dirty/untracked 路径，Merchant 深链测试依赖混合在 `App.tsx` 的大批未提交改动；本轮没有创建可部署候选或进行提交/部署。
+
+Demo 继续 **NO-GO**：没有新鲜、原始的全容器 owner 分类与 host/release 批准，没有共享锁证明，没有两 API 副本 `setup.mode=demo` 证据，也没有 Demo live 全迁移链。任何这些门禁都不能由本地 fixture、类型检查或插件打包测试替代。
