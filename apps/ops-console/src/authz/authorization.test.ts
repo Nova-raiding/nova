@@ -170,6 +170,26 @@ describe("authorization projection", () => {
     expect(authorization.scopeFor("workspace.member.read")).toBeUndefined();
   });
 
+  it("validates a multi-workbench session against the scope for its active workbench", () => {
+    const workspace = createAuthorizationProjection(session(["workspace_owner"], {
+      workbench: "workspace",
+      scopes: [{ type: "platform", ids: ["*"] }, { type: "workspace", ids: ["ws_1"] }],
+      effective_permissions: [
+        { capability: "workspace.member.read", effect: "allow", scope: { type: "workspace", ids: ["ws_1"] } },
+      ],
+    }), true);
+    expect(workspace.can("workspace.member.read")).toBe(true);
+
+    const platform = createAuthorizationProjection(session(["platform_ops"], {
+      workbench: "platform",
+      scopes: [{ type: "workspace", ids: ["ws_1"] }, { type: "platform", ids: ["*"] }],
+      effective_permissions: [
+        { capability: "identity.read", effect: "allow", scope: { type: "platform", ids: ["*"] } },
+      ],
+    }), true);
+    expect(platform.can("identity.read")).toBe(true);
+  });
+
   it("denies the entire projection for a platform workbench with a workspace session scope", () => {
     const authorization = createAuthorizationProjection(session(["platform_ops"], {
       workbench: "platform",

@@ -124,13 +124,24 @@ export function createAuthorizationProjection(
   const projected = session
     ? serverPermissions(session)
     : { allow: new Set<string>(), deny: new Set<string>(), present: false, scopes: new Map<string, OpsScope>() };
+  const activeScopedGrant = session?.workbench === "platform"
+    ? session.scopes?.find((candidate) => candidate.type === "platform")
+    : session?.workbench === "workspace"
+      ? session.scopes?.find((candidate) => candidate.type === "workspace")
+      : undefined;
+  // A multi-workbench actor can have both kinds of grants in the session. Use
+  // the grant for the active workbench when validating the session boundary;
+  // otherwise a platform grant listed first would incorrectly deny a valid
+  // workspace context (and vice versa). Keep the opposite grant as fallback
+  // when no matching grant exists so the boundary still fails closed.
+  const fallbackScopedGrant = session?.scopes?.find((candidate) => candidate.type === "platform")
+    ?? session?.scopes?.find((candidate) => candidate.type === "workspace");
+  const selectedScopedGrant = activeScopedGrant ?? fallbackScopedGrant;
   const sessionScope = session?.scope
     ? { kind: session.scope.type, id: session.scope.id ?? session.scope.ids?.[0], ids: session.scope.ids } satisfies OpsScope
-    : session?.scopes?.find((candidate) => candidate.type === "platform")
-      ? { kind: "platform" as const, id: session.scopes.find((candidate) => candidate.type === "platform")?.ids[0], ids: session.scopes.find((candidate) => candidate.type === "platform")?.ids }
-      : session?.scopes?.find((candidate) => candidate.type === "workspace")
-        ? { kind: "workspace" as const, id: session.scopes.find((candidate) => candidate.type === "workspace")?.ids[0], ids: session.scopes.find((candidate) => candidate.type === "workspace")?.ids }
-        : undefined;
+    : selectedScopedGrant
+      ? { kind: selectedScopedGrant.type as "platform" | "workspace", id: selectedScopedGrant.ids[0], ids: selectedScopedGrant.ids }
+      : undefined;
   const workbenchScopeValid = scopeMatchesWorkbench(sessionScope, session?.workbench);
   for (const capability of [...projected.allow]) {
     if (!workbenchScopeValid || !scopeMatchesWorkbench(projected.scopes.get(capability), session?.workbench)) {
