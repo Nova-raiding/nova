@@ -156,6 +156,52 @@ describe("UsersPage controller global identity access journey", () => {
       await page.close();
     }
   }, 90_000);
+
+  it("keeps global identity access changes disabled for a read-only session", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    page.setDefaultTimeout(8_000);
+    const calls: Array<{ method: string }> = [];
+    const unexpectedRequests: string[] = [];
+    try {
+      await page.route("**/*", async route => {
+        const url = new URL(route.request().url());
+        if (url.origin === new URL(baseUrl).origin) return route.fallback();
+        unexpectedRequests.push(url.origin);
+        await route.abort();
+      });
+      await page.route(url => url.origin === new URL(baseUrl).origin && url.pathname === "/api/mcp", async route => {
+        const rpc = route.request().postDataJSON() as { id?: string | number | null; method?: string; params?: Record<string, unknown> };
+        const method = rpc.method ?? "";
+        const params = rpc.params ?? {};
+        calls.push({ method });
+        let result: unknown = null;
+        if (method === "ops.session") result = {
+          actor_id: "read-only-operator", workspace_id: "", roles: ["platform_ops"], workspace_granted: false,
+          workbench: "platform", scope: { type: "platform" }, capabilities: ["identity.read"],
+        };
+        else if (method === "ops.users.list") result = {
+          items: [{ id: "member-readonly", identityId: "identity-readonly-17", externalSubject: "readonly@example.test", displayName: "Read Only", role: "operator", status: "active", updatedAt: "2026-10-11T08:00:00.000Z", createdAt: "2026-10-01T08:00:00.000Z", workspaceId: "workspace-readonly", enterpriseName: "Read Only Co", accountType: "merchant", scope: "workspace", revision: 2, workspaceStatus: "active" }],
+          total: 1, identityCount: 1, workspaceCount: 1, offset: Number(params.offset ?? 0), limit: Number(params.limit ?? 10), truncated: false,
+        };
+        else if (method === "ops.user.detail") result = {
+          identity: { id: "identity-readonly-17", externalSubject: "readonly@example.test", displayName: "Read Only", accessStatus: "active", riskLevel: "low", riskDecision: "allow", revision: 2, membershipCount: 1, activeMembershipCount: 1, firstSeenAt: "2026-10-01T08:00:00.000Z", lastUpdatedAt: "2026-10-11T08:00:00.000Z" },
+          memberships: [], audits: [], sessions: [], lifecycleEvents: [],
+        };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
+      });
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: "已接入用户" }).waitFor({ state: "visible" });
+      await page.getByRole("row").filter({ hasText: "readonly@example.test" }).getByRole("button", { name: "查看 Read Only 的用户详情" }).click();
+      await page.getByText("identity-readonly-17", { exact: true }).waitFor({ state: "visible" });
+      const action = page.getByRole("button", { name: "全局停用身份", exact: true });
+      await action.waitFor({ state: "visible" });
+      expect(await action.isDisabled()).toBe(true);
+      expect(calls.some(call => call.method === "ops.user.suspend" || call.method === "ops.user.activate")).toBe(false);
+      expect(unexpectedRequests).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 90_000);
 });
 
 async function expectEventually(predicate: () => boolean | Promise<boolean>): Promise<void> {
