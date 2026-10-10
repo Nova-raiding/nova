@@ -13,7 +13,8 @@ export function StoragePage({ model }: StoragePageProps) {
   // its empty state would tell the operator to go run the reconciliation job -
   // an instruction for a capability the session does not have, about data that
   // was never read.
-  const canReadPlatformReconciliation = model.authorization.can("storage.reconciliation.read");
+  const canReadPlatformReconciliation = model.authorization.scope.kind === "platform"
+    && model.authorization.can("storage.reconciliation.read");
   const canRefreshPageData = canReadPlatformReconciliation || model.authorization.can("workspace.summary.read");
   const storageError = canReadPlatformReconciliation ? model.dataSetError("ops.storage.reconciliation.list") : undefined;
   return (

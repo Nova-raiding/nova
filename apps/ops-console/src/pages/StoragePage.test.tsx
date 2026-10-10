@@ -44,8 +44,28 @@ describe("StoragePage platform reconciliation list", () => {
     expect(markup).not.toContain("重试加载对账结果");
   });
 
+  it("does not treat a workspace-scoped storage grant as platform reconciliation access", () => {
+    const dataSetError = vi.fn(() => "跨工作区读取被拒绝");
+    const markup = renderToStaticMarkup(<StoragePage model={model(["storage.reconciliation.read"], { dataSetError })} />);
+
+    expect(markup).toContain("当前会话没有平台存储对账读取权限");
+    expect(markup).toContain("storage.reconciliation.read");
+    expect(markup).not.toContain("重试加载对账结果");
+    expect(dataSetError).not.toHaveBeenCalled();
+  });
+
   it("keeps the reconciliation empty state for a session that may read the list", () => {
-    const markup = renderToStaticMarkup(<StoragePage model={model(["storage.reconciliation.read"])} />);
+    const markup = renderToStaticMarkup(<StoragePage model={model(["storage.reconciliation.read"], {
+      authorization: createAuthorizationProjection({
+        actor_id: "platform-viewer",
+        workspace_id: "",
+        workbench: "platform",
+        scope: { type: "platform" },
+        roles: [],
+        workspace_granted: true,
+        capabilities: ["storage.reconciliation.read"],
+      }, true),
+    })} />);
 
     expect(markup).not.toContain("当前会话没有平台存储对账读取权限");
     expect(markup).toContain("暂无可验证的对象清单对账结果");
