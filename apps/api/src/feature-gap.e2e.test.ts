@@ -53,8 +53,20 @@ describe('new commercial and operations capabilities', () => {
     expect(task.error).toBeNull()
     expect(task.data.result).toMatchObject({ candidate_only: true, storeContext: null })
     expect(task.data.result.accountId).toBeUndefined()
+    const unselected = service.getTask(task.data.result.id)
+    for (const expected_version of ['not-a-version', '', '0', '9007199254740992']) {
+      const invalid = await call(base, workspaceId, 'task.select_direction', { task_id: task.data.result.id, direction_id: 'A', expected_version })
+      expect(invalid.error?.code).toBe('INVALID_REQUEST')
+      expect(service.getTask(task.data.result.id)).toMatchObject({ state: unselected.state, version: unselected.version })
+    }
     const selected = await call(base, workspaceId, 'task.select_direction', { task_id: task.data.result.id, direction_id: 'A' })
     expect(selected.error).toBeNull()
+    const selectedTask = service.getTask(task.data.result.id)
+    for (const expected_version of ['stale', '', '0', '9007199254740992']) {
+      const invalid = await call(base, workspaceId, 'task.plan.confirm', { task_id: task.data.result.id, expected_version })
+      expect(invalid.error?.code).toBe('INVALID_REQUEST')
+      expect(service.getTask(task.data.result.id)).toMatchObject({ state: selectedTask.state, version: selectedTask.version })
+    }
     const plan = await call(base, workspaceId, 'task.plan.confirm', { task_id: task.data.result.id })
     expect(plan.error).toBeNull()
     const factSourceId = `product:${productId}:v2`

@@ -33,6 +33,12 @@ describe('task answers API', () => {
       ]),
       state: 'ready_for_direction',
     })
+    const taskBeforeInvalidMcpAnswer = api.service.getTask(created.data.id)
+    for (const expected_version of ['stale', '', '0', '9007199254740992']) {
+      const invalid = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'task.answer', params: { workspace_id: 'ws_task_answers', task_id: created.data.id, answers_json: JSON.stringify({ defer_questions: ['audience'] }), expected_version } }) }).then(response => response.json()) as { error?: { code?: string } }
+      expect(invalid.error?.code).toBe('INVALID_REQUEST')
+      expect(api.service.getTask(created.data.id)).toMatchObject({ state: taskBeforeInvalidMcpAnswer.state, version: taskBeforeInvalidMcpAnswer.version })
+    }
     const deferred = await fetch(`${base}/v1/tasks/${created.data.id}/answers`, { method: 'POST', headers, body: JSON.stringify({ answers: { defer_questions: ['audience'] }, expected_version: created.data.version }) }).then(response => response.json()) as { data: { version: number } }
     expect(deferred.data.version).toBe(created.data.version + 1)
     const resumed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'task.resume', params: { task_id: created.data.id } }) }).then(response => response.json()) as { data?: { result?: { pendingQuestions?: Array<{ id: string; status: string; prompt: string }> } } }

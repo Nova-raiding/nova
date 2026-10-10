@@ -100,6 +100,14 @@ export class PostgresReconciliationStatusRepository implements ReconciliationSta
   async upsert(input: Parameters<ReconciliationStatusRepository['upsert']>[0]) {
     const value = validate(input)
     return withWorkspaceTransaction(this.pool, value.workspaceId, async client => {
+      // SELECT FOR UPDATE cannot lock a row that has not been inserted yet.
+      // Serialize the first projection write by its full logical identity so
+      // idempotency and observedAt ordering are rechecked after a concurrent
+      // creator commits. Hash collisions only cause harmless extra waiting.
+      await client.query(
+        'SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext($1),pg_catalog.hashtext($2))',
+        ['workspace_reconciliation_status', JSON.stringify([value.workspaceId, value.resourceType, value.resourceId])],
+      )
       const existing = await client.query<Row>(`SELECT ${projection} FROM workspace_reconciliation_status WHERE workspace_id=$1 AND resource_type=$2 AND resource_id=$3 FOR UPDATE`, [value.workspaceId, value.resourceType, value.resourceId])
       if (existing.rows[0]?.last_idempotency_key === value.idempotencyKey) {
         const row = existing.rows[0]!

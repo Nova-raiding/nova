@@ -1,20 +1,11 @@
 import type { IncomingMessage } from 'node:http'
 import { DomainError, type ContentVersion, type MerchantService, type Task } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
+import { optionalMcpExpectedVersion } from './mcp-expected-version.js'
 
 type JsonObject = Record<string, unknown>
 type ScopedContent = { version: ContentVersion; task: Task }
 type ApprovalRules = Parameters<MerchantService['approveContent']>[2]
-
-function optionalExpectedVersion(params: JsonObject, key: string): number | undefined {
-  const value = params[key]
-  if (value === undefined) return undefined
-  const parsed = typeof value === 'string' && /^\d+$/u.test(value) ? Number(value) : Number.NaN
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是正安全整数`, 400)
-  }
-  return parsed
-}
 
 export interface McpContentVersionDependencies {
   service: MerchantService
@@ -68,7 +59,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       const taskId = required(params, 'task_id')
       const task = scopeTask(req, taskId)
       await assertCanonicalTaskScopeForAction(task)
-      const expectedVersion = optionalExpectedVersion(params, 'expected_version')
+      const expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
       const approved = service.approveContent(taskId, required(params, 'content_version_id'), await rulesForTask(workspaceId, task), expectedVersion)
       await persistSnapshot(workspaceId, 'content_version', approved.version, approved.version as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', approved.task, approved.task as unknown as Record<string, unknown>)
@@ -93,7 +84,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       if (typeof params.locked_fields_json === 'string') {
         try { const parsed = JSON.parse(params.locked_fields_json); if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string')) throw new Error('locked_fields_json must be array'); lockedFields = parsed } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'locked_fields_json 必须是字符串数组', 400) }
       }
-      const expectedRevision = optionalExpectedVersion(params, 'expected_revision')
+      const expectedRevision = optionalMcpExpectedVersion(params, 'expected_revision')
       const modified = typeof params.module_key === 'string' && params.module_key.trim()
         ? service.regenerateContentModule({ workspaceId, sourceVersionId: scoped.version.id, moduleKey: params.module_key, ...(lockedFields ? { lockedFields } : {}), reason: required(params, 'reason'), ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
         : (() => {
@@ -114,7 +105,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       const scoped = scopeContentVersion(req, required(params, 'content_version_id'))
       await assertCanonicalTaskScopeForAction(scoped.task)
       let expectedVersion: number | undefined
-      expectedVersion = optionalExpectedVersion(params, 'expected_version')
+      expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
       const restored = service.restoreContentVersion(workspaceId, scoped.version.id, expectedVersion)
       await persistSnapshot(workspaceId, 'content_version', restored.version, restored.version as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', restored.task, restored.task as unknown as Record<string, unknown>)

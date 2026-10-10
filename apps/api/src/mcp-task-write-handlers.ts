@@ -3,6 +3,7 @@ import { DomainError, type MerchantService, type Platform, type Task } from '../
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import { validateExpectedTaskRequestScopes } from './task-request-scopes.js'
 import { persistTaskGroupOrRollback } from './task-group-persistence.js'
+import { optionalMcpExpectedVersion } from './mcp-expected-version.js'
 
 type JsonObject = Record<string, unknown>
 type Understanding = ReturnType<MerchantService['understandTaskRequest']>
@@ -86,6 +87,7 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
     }
     case 'task.answer': {
       const task = scopeTask(req, required(params, 'task_id'))
+      const expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
       const raw = required(params, 'answers_json')
       let answers: Record<string, string | number | boolean | string[]>
       try {
@@ -95,7 +97,7 @@ export async function handleMcpTaskWrite(method: string, params: JsonObject, req
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'answers_json 必须是 JSON 对象', 400) }
       const answeredProductId = typeof answers.product_id === 'string' && answers.product_id.trim() ? answers.product_id.trim() : task.productId
       const factsConfirmedBefore = service.products.get(answeredProductId)?.factsConfirmed === true
-      const answered = service.answerTask(workspaceId, task.id, answers, typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
+      const answered = service.answerTask(workspaceId, task.id, answers, expectedVersion)
       await persistSnapshot(workspaceId, 'task', answered, answered as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, task.id, 'task.answers_submitted', answered.version, { task_id: task.id, input_snapshot_id: answered.inputSnapshotId, answers: answered.answers, missing_questions: answered.missingQuestions })
       await persistTaskAnswerFactConfirmation({ workspaceId, productId: answered.productId, factsConfirmedBefore, confirmationRequested: answers.confirm_facts === true })

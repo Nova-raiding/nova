@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http'
 import { DomainError, type MerchantService, type Platform, type Product, type Task } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { OperationAudit } from '../../../packages/persistence/src/index.js'
+import { optionalMcpExpectedVersion } from './mcp-expected-version.js'
 
 type JsonObject = Record<string, unknown>
 type CanonicalScope = { brandId: string; canonicalProductId: string; listingId: string } | undefined
@@ -59,7 +60,8 @@ export async function handleMcpTaskContinuation(method: string, params: JsonObje
     }
     case 'task.select_direction': {
       const task = scopeTask(req, required(params, 'task_id'))
-      const selected = service.selectDirection(task.id, required(params, 'direction_id'), typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
+      const expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
+      const selected = service.selectDirection(task.id, required(params, 'direction_id'), expectedVersion)
       await persistSnapshot(workspaceId, 'task', selected, selected as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, selected.id, 'task.direction_selected', selected.version, { task_id: selected.id, direction_id: selected.selectedDirectionId ?? null })
       return ({ ...selected, task_id: selected.id, expected_version: selected.version })
@@ -67,11 +69,12 @@ export async function handleMcpTaskContinuation(method: string, params: JsonObje
     case 'task.plan.confirm': {
       const task = scopeTask(req, required(params, 'task_id'))
       await assertCanonicalTaskScopeForAction(task)
+      const expectedVersion = optionalMcpExpectedVersion(params, 'expected_version')
       const priceImpactConfirmed = params.price_impact_confirmed === true || params.price_impact_confirmed === 'true'
       const planProduct = service.products.get(task.productId)
       if (planProduct) await hydrateDurableRuleSnapshot(workspaceId, planProduct)
       if (deps.hydrateScopedBrandForTask) await deps.hydrateScopedBrandForTask(workspaceId, task)
-      const confirmed = service.confirmProductionPlan(workspaceId, task.id, requestActor(req, typeof params.actor_id === 'string' && params.actor_id.trim() ? params.actor_id.trim() : 'merchant'), typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined, priceImpactConfirmed)
+      const confirmed = service.confirmProductionPlan(workspaceId, task.id, requestActor(req, typeof params.actor_id === 'string' && params.actor_id.trim() ? params.actor_id.trim() : 'merchant'), expectedVersion, priceImpactConfirmed)
       await persistSnapshot(workspaceId, 'task', confirmed, confirmed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, confirmed.id, 'task.plan_confirmed', confirmed.version, { task_id: confirmed.id, plan_id: confirmed.productionPlan?.id ?? null, actor_id: confirmed.productionPlan?.confirmedBy ?? null })
       await recordOperationAudit({ workspaceId, actorId: confirmed.productionPlan?.confirmedBy ?? requestActor(req), action: 'task.plan_confirmed', resourceType: 'task', resourceId: confirmed.id, before: { state: task.state, version: task.version }, after: { state: confirmed.state, version: confirmed.version, plan_id: confirmed.productionPlan?.id ?? null }, reason: '确认生产方案' })
