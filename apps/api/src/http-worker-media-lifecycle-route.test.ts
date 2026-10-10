@@ -137,8 +137,9 @@ describe('worker publish media lifecycle callback',()=>{
     let persistence: Awaited<typeof import('./server.js').persistenceReady> | undefined
     let originalRepository: Awaited<typeof import('./server.js').persistenceReady>['publishMediaOrphans'] | undefined
     try {
-      api=await import('./server.js')
-      persistence=await api.persistenceReady
+      const loadedApi=await import('./server.js')
+      api=loadedApi
+      persistence=await loadedApi.persistenceReady
       originalRepository=persistence.publishMediaOrphans
       expect(persistence.mode).toBe('memory')
       const repository=new MemoryPublishMediaOrphanRepository()
@@ -149,10 +150,10 @@ describe('worker publish media lifecycle callback',()=>{
       const payload=JSON.stringify({...body,event_id:'event_reconcile_a',state:'retained'})
       const proof=createWorkerRequestProof({secret:'lifecycle-reconcile-secret',role:'reconcile',workerId:'lifecycle-http-test',method:'POST',requestTarget:path,workspaceId,body:payload})
       await new Promise<void>((resolve,reject)=>{
-        api.server.once('error',reject)
-        api.server.listen(0,'127.0.0.1',()=>{api.server.removeListener('error',reject);resolve()})
+        loadedApi.server.once('error',reject)
+        loadedApi.server.listen(0,'127.0.0.1',()=>{loadedApi.server.removeListener('error',reject);resolve()})
       })
-      const address=api.server.address()
+      const address=loadedApi.server.address()
       if(!address||typeof address==='string') throw new Error('loopback API failed to bind')
       const response=await fetch(`http://127.0.0.1:${address.port}${path}`,{method:'POST',headers:{
         authorization:'Bearer lifecycle-publish-token','content-type':'application/json','x-workspace-id':workspaceId,...proof.headers,
@@ -162,9 +163,10 @@ describe('worker publish media lifecycle callback',()=>{
       expect(transition).not.toHaveBeenCalled()
     } finally {
       try {
-        if(api?.server.listening) await new Promise<void>(resolve=>{
-          api.server.close(()=>resolve())
-          api.server.closeAllConnections()
+        const server=api?.server
+        if(server?.listening) await new Promise<void>(resolve=>{
+          server.close(()=>resolve())
+          server.closeAllConnections()
         })
       } finally {
         if(persistence && originalRepository) persistence.publishMediaOrphans=originalRepository
