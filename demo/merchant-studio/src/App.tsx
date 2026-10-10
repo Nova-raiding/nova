@@ -14187,6 +14187,14 @@ export default function App() {
             onSearchQuery={setGlobalSearch}
             onSearch={searchProducts}
           />
+          <EnvironmentStatusBanner
+            apiOnline={apiOnline}
+            apiBaseUrl={apiBaseUrl}
+            apiHealth={apiHealth}
+            modelStatus={modelStatus}
+            modelStatusRead={modelStatusRead}
+            onOpenHealth={() => openUtility('health')}
+          />
           <main
             ref={mainContentRef}
             tabIndex={-1}

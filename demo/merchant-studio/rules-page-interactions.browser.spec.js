@@ -30,7 +30,7 @@ test('rules page supports direct load, filtering, detail close, empty and retry 
     } else if (pathname === '/v1/auth/mcp-token') {
       data = { access_token: 'rules-fixture-token', refresh_token: 'rules-fixture-refresh', expires_in: 300, workspace_id: workspaceId }
     } else if (pathname === '/healthz') {
-      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { platformOperations: { mode: 'manual', ready: true } } }
+      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: { mode: 'demo', productionGate: false, platformOperations: { mode: 'manual', ready: true, automatedWritesEnabled: false } } }
     } else if (pathname === '/v1/rules') {
       rulesRequests += 1
       observedRuleUrls.push(url.toString())
@@ -52,6 +52,7 @@ test('rules page supports direct load, filtering, detail close, empty and retry 
   try {
     await page.goto(`${studioUrl}/merchant/rules?platform=taobao`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('heading', { name: '规则库与品类库' })).toBeVisible()
+    await expect(page.locator('[data-environment-state="demo"]')).toContainText('演示环境 · 不可上线')
     await expect(page.getByText('淘宝广告表达规则')).toBeVisible()
     await expect(page.getByText('京东商品事实规则')).toHaveCount(0)
     await expect.poll(() => new URL(page.url()).searchParams.get('platform')).toBe('taobao')
