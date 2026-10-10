@@ -36,13 +36,15 @@ describe("support ticket detail status controls", () => {
               const [status,setStatus] = useState('open');
               const [ticketId,setTicketId] = useState('ticket-1');
               const [error,setError] = useState('');
+              const [canMutate,setCanMutate] = useState(true);
               const failNextTransition = useRef(false);
               window.__setSupportStatus = setStatus;
               window.__setSupportTicket = (id, nextStatus) => { setTicketId(id); setStatus(nextStatus); };
               window.__setSupportError = setError;
+              window.__setSupportCanMutate = setCanMutate;
               window.__failNextSupportTransition = () => { failNextTransition.current = true; };
               const model = { workspaceId:'ws-1', tickets:[], selected:{ticket:{...baseTicket,id:ticketId,status},events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, error, hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{}, transition:async()=>{ if (failNextTransition.current) { failNextTransition.current = false; throw new Error('权限已失效，请刷新权限后重试。'); } }, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
-              return React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate:true}));
+              return React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate}));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Harness));
           `;
@@ -155,6 +157,15 @@ describe("support ticket detail status controls", () => {
       await errorDialog.waitFor({ state: "hidden" });
       await page.evaluate(() => window.__setSupportError("工单状态已更新，请刷新后重试。"));
       await page.locator('[aria-labelledby="support-detail-error-title"]').getByText("工单状态已更新", { exact: false }).waitFor();
+
+      await page.getByRole("button", { name: "变更状态" }).click();
+      const permissionDialog = page.getByRole("dialog");
+      await permissionDialog.getByLabel("变更原因").fill("需要继续处理该工单");
+      await page.evaluate(() => window.__setSupportCanMutate(false));
+      await permissionDialog.getByRole("status").getByText("工单变更权限已失效", { exact: true }).waitFor();
+      expect(await permissionDialog.getByRole("button", { name: "确认变更" }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      await permissionDialog.waitFor({ state: "hidden" });
     } finally { await page.close(); }
   }, 60_000);
 });
@@ -164,6 +175,7 @@ declare global {
     __setSupportStatus: (status: string) => void;
     __setSupportTicket: (id: string, status: string) => void;
     __setSupportError: (error: string) => void;
+    __setSupportCanMutate: (allowed: boolean) => void;
     __failNextSupportTransition: () => void;
   }
 }

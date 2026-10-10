@@ -81,6 +81,20 @@ export function campaignReasonDescriptionIds(hasError: boolean) {
   return hasError ? 'campaign-action-reason-hint campaign-action-error' : 'campaign-action-reason-hint'
 }
 
+export function campaignActionOutcomeUnknown(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false
+  const error = cause as { code?: unknown; status?: unknown; details?: Record<string, unknown> }
+  const code = typeof error.code === 'string' ? error.code : ''
+  if (typeof error.status !== 'number' && !code) return true
+  return code === 'API_REQUEST_TIMEOUT'
+    || code === 'MCP_TRANSPORT_CLOSED'
+    || code.includes('OUTCOME_UNKNOWN')
+    || (typeof error.status === 'number' && error.status >= 500)
+    || error.details?.outcome === 'unknown'
+    || error.details?.outcome_unknown === true
+    || error.details?.reconciliationRequired === true
+}
+
 export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
   const [campaignId, setCampaignId] = useState('')
   const [campaignOptions, setCampaignOptions] = useState<CampaignOption[]>([])
@@ -94,6 +108,7 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
   const [confirmed, setConfirmed] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false)
   const statusRef = useRef<HTMLDivElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const actionErrorRef = useRef<HTMLDivElement>(null)
@@ -129,7 +144,7 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
     if (!action) return
     window.requestAnimationFrame(() => document.getElementById('merchant-campaign-reason')?.focus())
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) { setAction(undefined); window.requestAnimationFrame(() => triggerRef.current?.focus()); return }
+      if (event.key === 'Escape' && !submitting && !outcomeUnknown) { setAction(undefined); window.requestAnimationFrame(() => triggerRef.current?.focus()); return }
       if (event.key !== 'Tab') return
       const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
       const first = focusable[0]; const last = focusable[focusable.length - 1]
@@ -141,26 +156,29 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [action, submitting])
+  }, [action, submitting, outcomeUnknown])
   const open = (next: CampaignLifecycleAction, trigger: HTMLButtonElement) => {
-    triggerRef.current = trigger; setAction(next); setReason(''); setConfirmed(false); setError('')
+    triggerRef.current = trigger; setAction(next); setReason(''); setConfirmed(false); setError(''); setOutcomeUnknown(false); actionIntentRef.current = null
     setSelected(campaign?.items.filter(item => item.state === 'failed').map(item => item.id) ?? [])
   }
-  const close = () => { if (!submitting) { setAction(undefined); window.requestAnimationFrame(() => triggerRef.current?.focus()) } }
+  const close = () => { if (!submitting && !outcomeUnknown) { setAction(undefined); window.requestAnimationFrame(() => triggerRef.current?.focus()) } }
   const submit = async () => {
     if (!baseUrl || !campaign || !action) return
     setSubmitting(true); setError('')
+    let dispatched = false
     try {
       const intentSignature = JSON.stringify({ campaignId: campaign.id, action, reason: reason.trim(), selectedItemIds: action === 'retry_failed' ? [...selected].sort() : [] })
       const idempotencyKey = actionIntentRef.current?.signature === intentSignature
         ? actionIntentRef.current.idempotencyKey
         : `merchant:${action}:${campaign.id}:${crypto.randomUUID()}`
       actionIntentRef.current = { signature: intentSignature, idempotencyKey }
-      const params = buildCampaignLifecycleParams({ campaign, action, reason, selectedItemIds: selected, idempotencyKey })
+      const params = buildCampaignLifecycleParams({ campaign, action, reason, selectedItemIds: action === 'retry_failed' ? [...selected].sort() : selected, idempotencyKey })
+      dispatched = true
       const next = parseCampaignSnapshot(await requestMcp(baseUrl, `campaign.batch.${action}`, params))
       setCampaign(next); setAction(undefined); setReason(''); setConfirmed(false)
       actionIntentRef.current = null
-    } catch (cause) { setError(describeApiError(cause)) }
+      setOutcomeUnknown(false)
+    } catch (cause) { setError(describeApiError(cause)); if (dispatched && campaignActionOutcomeUnknown(cause)) setOutcomeUnknown(true) }
     finally { setSubmitting(false) }
   }
   const failed = campaign?.items.filter(item => item.state === 'failed') ?? []
@@ -184,12 +202,13 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
     </div></div>}
     {campaign && <div className="campaign-items" aria-label="任务批次逐项状态">{campaign.items.map(item => <div key={item.id}><b>{item.productId ? '商品任务' : '任务项'}</b><span>{item.platform ?? '平台未返回'} · {item.accountId ? '店铺身份已确认' : '店铺身份待确认'}</span><strong data-state={item.state}>{campaignStateLabel(item.state)}</strong></div>)}</div>}
     <div className="sr-only" role="status" aria-live="polite">{loading ? '正在读取任务批次' : submitting ? '正在提交批量任务操作' : campaign ? `已读取当前状态版本 ${campaign.revision}` : error ? '任务批次读取失败' : ''}</div>
-    {action && campaign && <div className="modal-layer" role="presentation"><div ref={dialogRef} className="modal campaign-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-action-title" aria-describedby={campaignDialogDescriptionIds(Boolean(error))}><div className="modal-head"><div><span className="section-kicker">当前状态版本 {campaign.revision}</span><h2 id="campaign-action-title">{action === 'pause' ? '确认暂停批量任务' : action === 'resume' ? '确认恢复批量任务' : '确认重试失败项'}</h2></div><button className="icon-button" onClick={close} disabled={submitting} aria-label="关闭批量任务操作"><X size={18} aria-hidden="true"/></button></div><div className="modal-body dialog-form">
+    {action && campaign && <div className="modal-layer" role="presentation"><div ref={dialogRef} className="modal campaign-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-action-title" aria-describedby={campaignDialogDescriptionIds(Boolean(error))}><div className="modal-head"><div><span className="section-kicker">当前状态版本 {campaign.revision}</span><h2 id="campaign-action-title">{action === 'pause' ? '确认暂停批量任务' : action === 'resume' ? '确认恢复批量任务' : '确认重试失败项'}</h2></div><button className="icon-button" onClick={close} disabled={submitting || outcomeUnknown} aria-label="关闭批量任务操作"><X size={18} aria-hidden="true"/></button></div><div className="modal-body dialog-form">
       <p id="campaign-action-description">提交时固定使用当前读取的状态版本 {campaign.revision}；如果服务端已有变化，操作会失败并要求刷新。</p>
-      {action === 'retry_failed' && <fieldset><legend>选择失败项</legend>{failed.map(item => <label key={item.id} className="campaign-check"><input type="checkbox" checked={selected.includes(item.id)} disabled={submitting} onChange={event => setSelected(values => event.target.checked ? [...values, item.id] : values.filter(value => value !== item.id))}/><span>{item.productId ? '商品任务' : '任务项'} · {item.platform ?? '平台未返回'} · {item.accountId ? '店铺身份已确认' : '店铺身份待确认'}</span></label>)}</fieldset>}
-      <label htmlFor="merchant-campaign-reason">操作原因<textarea id="merchant-campaign-reason" data-dialog-initial-focus autoFocus rows={4} maxLength={1000} value={reason} disabled={submitting} aria-invalid={Boolean(error)} aria-describedby={campaignReasonDescriptionIds(Boolean(error))} onChange={event => setReason(event.target.value)} /></label><small id="campaign-action-reason-hint">必填，至少 3 个字符；将进入审计记录。</small>
-      <label className="campaign-check"><input type="checkbox" checked={confirmed} disabled={submitting} onChange={event => setConfirmed(event.target.checked)}/><span>我已核对任务批次、失败项和当前状态版本；该操作不会伪造撤销外部进行中的工作。</span></label>
+      {outcomeUnknown && <div className="info-notice" role="status">提交结果尚未确认。为避免重复执行，原因和失败项已锁定；点击“按原参数重试”会沿用同一幂等键。</div>}
+      {action === 'retry_failed' && <fieldset disabled={submitting || outcomeUnknown}><legend>选择失败项</legend>{failed.map(item => <label key={item.id} className="campaign-check"><input type="checkbox" checked={selected.includes(item.id)} disabled={submitting || outcomeUnknown} onChange={event => setSelected(values => event.target.checked ? [...values, item.id] : values.filter(value => value !== item.id))}/><span>{item.productId ? '商品任务' : '任务项'} · {item.platform ?? '平台未返回'} · {item.accountId ? '店铺身份已确认' : '店铺身份待确认'}</span></label>)}</fieldset>}
+      <label htmlFor="merchant-campaign-reason">操作原因<textarea id="merchant-campaign-reason" data-dialog-initial-focus autoFocus rows={4} maxLength={1000} value={reason} disabled={submitting || outcomeUnknown} aria-invalid={Boolean(error)} aria-describedby={campaignReasonDescriptionIds(Boolean(error))} onChange={event => setReason(event.target.value)} /></label><small id="campaign-action-reason-hint">必填，至少 3 个字符；将进入审计记录。</small>
+      <label className="campaign-check"><input type="checkbox" checked={confirmed} disabled={submitting || outcomeUnknown} onChange={event => setConfirmed(event.target.checked)}/><span>我已核对任务批次、失败项和当前状态版本；该操作不会伪造撤销外部进行中的工作。</span></label>
       {error && <div id="campaign-action-error" ref={actionErrorRef} tabIndex={-1} className="inline-error compact" role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="campaign-action-error-message"><AlertCircle size={16} aria-hidden="true"/><span id="campaign-action-error-message">{error}</span></div>}
-    </div><div className="modal-actions"><button type="button" className="secondary" onClick={close} disabled={submitting}>取消</button><button type="button" className={action === 'pause' ? 'danger-action' : 'primary'} onClick={() => void submit()} disabled={submitting || reason.trim().length < 3 || !confirmed || (action === 'retry_failed' && !selected.length)}>{submitting ? '提交中…' : '确认并提交'}</button></div></div></div>}
+    </div><div className="modal-actions"><button type="button" className="secondary" onClick={close} disabled={submitting || outcomeUnknown}>取消</button><button type="button" className={action === 'pause' ? 'danger-action' : 'primary'} onClick={() => void submit()} disabled={submitting || reason.trim().length < 3 || !confirmed || (action === 'retry_failed' && !selected.length)}>{submitting ? '提交中…' : outcomeUnknown ? '按原参数重试' : '确认并提交'}</button></div></div></div>}
   </section>
 }

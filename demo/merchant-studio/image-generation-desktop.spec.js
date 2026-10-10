@@ -205,7 +205,7 @@ test('shows blocked candidates and keeps selection disabled', async () => {
     await expect(page.getByRole('heading', { name: '图片生成任务' })).toBeVisible()
     await expect(page.getByText('暂不可选择', { exact: true })).toBeVisible()
     await expect(page.getByText(/不可选择：安全扫描未通过；真实性未确认/)).toBeVisible()
-    await expect(page.getByRole('checkbox', { name: /选择为/ })).toBeDisabled()
+    await expect(page.getByRole('checkbox', { name: '选择候选图片 1' })).toBeDisabled()
     await expect(page.getByText('等待安全扫描', { exact: false })).toBeVisible()
   } finally {
     await context.close(); await browser.close()
@@ -240,6 +240,7 @@ test('surfaces a failed job and exposes only the safe retry recovery', async () 
     const retryError = page.locator('#image-job-retry-error')
     await expect(retryError).toContainText('安全重试结果未确认')
     await expect(retryError).toContainText('服务端没有返回确认')
+    await expect(retryError).toBeFocused()
     await expect(page.locator('#image-job-read-error')).toHaveCount(0)
     expect(retryRequests).toHaveLength(1)
 
@@ -319,8 +320,10 @@ test('submits the reasoned candidate choice and exposes the next review step', a
   })
   try {
     await expect(page.getByRole('img', { name: /图片候选 1/ })).toBeVisible({ timeout: 15_000 })
-    const checkbox = page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })
+    const checkbox = page.getByRole('checkbox', { name: '选择候选图片 1' })
+    await expect(page.getByText('选择候选图', { exact: true })).toBeVisible()
     await checkbox.check({ force: true })
+    await expect(page.getByText('已选择为主图', { exact: true })).toBeVisible()
     await expect(page.getByText('已选择 1 张候选')).toBeAttached()
     const submit = page.getByRole('button', { name: '提交选择（1/6）' })
     await expect(submit).toBeEnabled()
@@ -352,7 +355,7 @@ test('switching deep-linked image jobs drops old candidates and ignores the late
   })
   try {
     await expect(page.getByText(/任务 job_image_a · 商品 product_a/)).toBeVisible({ timeout: 15_000 })
-    const checkbox = page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })
+    const checkbox = page.getByRole('checkbox', { name: '选择候选图片 1' })
     await checkbox.check({ force: true })
     await expect(page.getByText('已选择 1 张候选')).toBeAttached()
     const aReadCountBeforeRefresh = requestedJobs.filter(id => id === 'job_image_a').length
@@ -364,12 +367,12 @@ test('switching deep-linked image jobs drops old candidates and ignores the late
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     await expect(page.getByText(/任务 job_image_b · 商品 product_b/)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })).not.toBeChecked()
+    await expect(page.getByRole('checkbox', { name: '选择候选图片 1' })).not.toBeChecked()
     await expect.poll(() => requestedJobs).toContain('job_image_b')
     await expect(page.getByText(/任务 job_image_a · 商品 product_a/)).toHaveCount(0)
     await page.waitForTimeout(1_000)
     await expect(page.getByText(/任务 job_image_b · 商品 product_b/)).toBeVisible()
-    await expect(page.getByRole('checkbox', { name: /选择为(?:主图|辅图)/ })).not.toBeChecked()
+    await expect(page.getByRole('checkbox', { name: '选择候选图片 1' })).not.toBeChecked()
   } finally {
     await context.close(); await browser.close()
   }

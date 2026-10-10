@@ -5,6 +5,16 @@ import { reviewProductImages } from '../../../packages/review/src/review.js'
 
 type JsonObject = Record<string, unknown>
 type ReviewRules = Parameters<MerchantService['setReviewFindingDecision']>[1]
+
+function optionalExpectedInteger(input: JsonObject, key: string): number | undefined {
+  const value = input[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是正安全整数`, 400)
+  }
+  return value
+}
+
 interface HttpContentVersionDependencies {
   service: MerchantService
   scopeTask: (req: IncomingMessage, taskId: string) => Task
@@ -34,7 +44,8 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
     const task = scopeTask(req, approvalMatch[1]!)
     await assertCanonicalTaskScopeForAction(task)
     const input = await body(req)
-    const approved = service.approveContent(approvalMatch[1]!, required(input, 'content_version_id'), await evaluationRules(task.workspaceId, task), typeof input.expected_version === 'number' ? input.expected_version : undefined)
+    const expectedVersion = optionalExpectedInteger(input, 'expected_version')
+    const approved = service.approveContent(approvalMatch[1]!, required(input, 'content_version_id'), await evaluationRules(task.workspaceId, task), expectedVersion)
     await persistSnapshot(task.workspaceId, 'content_version', approved.version, approved.version as unknown as Record<string, unknown>)
     await persistSnapshot(task.workspaceId, 'task', approved.task, approved.task as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, approved.version.id, 'content.approved', approved.version.revision, { task_id: approved.task.id, content_version_id: approved.version.id, version: approved.version.version })
@@ -51,13 +62,14 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
     const scoped = scopeContentVersion(req, versionModifyMatch[1]!)
     await assertCanonicalTaskScopeForAction(scoped.task)
     const input = await body(req)
+    const expectedRevision = optionalExpectedInteger(input, 'expected_revision')
     const lockedFields = Array.isArray(input.locked_fields) ? input.locked_fields.filter((value): value is string => typeof value === 'string') : undefined
     const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : 'user_edit'
     const modified = typeof input.module_key === 'string' && input.module_key.trim()
-      ? service.regenerateContentModule({ workspaceId: scoped.task.workspaceId, sourceVersionId: scoped.version.id, moduleKey: input.module_key, ...(lockedFields ? { lockedFields } : {}), reason, ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) })
+      ? service.regenerateContentModule({ workspaceId: scoped.task.workspaceId, sourceVersionId: scoped.version.id, moduleKey: input.module_key, ...(lockedFields ? { lockedFields } : {}), reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
       : (() => {
         if (!input.changes || typeof input.changes !== 'object' || Array.isArray(input.changes)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'changes 必须是对象', 400)
-        return service.modifyContentVersion({ workspaceId: scoped.task.workspaceId, sourceVersionId: scoped.version.id, changes: input.changes as Partial<import('../../../packages/application/src/service.js').ContentVersion['body']>, ...(lockedFields ? { lockedFields } : {}), reason, ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) })
+        return service.modifyContentVersion({ workspaceId: scoped.task.workspaceId, sourceVersionId: scoped.version.id, changes: input.changes as Partial<import('../../../packages/application/src/service.js').ContentVersion['body']>, ...(lockedFields ? { lockedFields } : {}), reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
       })()
     await persistSnapshot(scoped.task.workspaceId, 'content_version', modified.version, modified.version as unknown as Record<string, unknown>)
     await persistSnapshot(scoped.task.workspaceId, 'task', modified.task, modified.task as unknown as Record<string, unknown>)
@@ -80,13 +92,14 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
     const input = await body(req)
     const status = required(input, 'status')
     if (!['acknowledged', 'waived'].includes(status)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'status 必须是 acknowledged 或 waived', 400)
+    const expectedRevision = optionalExpectedInteger(input, 'expected_revision')
     const reviewRules = await evaluationRules(scoped.task.workspaceId, scoped.task)
-    assertReviewDecisionPreflight({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status, ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}), rules: reviewRules })
+    assertReviewDecisionPreflight({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status, ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), ...(expectedRevision !== undefined ? { expectedRevision } : {}), rules: reviewRules })
     // `POST /v1/content-versions/{id}/review-decisions` is deferred from the
     // shared HTTP gate, so it re-runs the same effective gate here, before the
     // durable write, exactly like `PUT /v1/assets/{id}/preference`.
     if (httpOperationPolicy) await enforceHttpCommercialAccess(req, scoped.task.workspaceId, httpOperationPolicy.operation)
-    const decided = service.setReviewFindingDecision({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), actorId: requestActor(req), ...(typeof input.expected_revision === 'number' ? { expectedRevision: input.expected_revision } : {}) }, reviewRules)
+    const decided = service.setReviewFindingDecision({ workspaceId: scoped.task.workspaceId, contentVersionId: scoped.version.id, code: required(input, 'code'), field: required(input, 'field'), status: status as 'acknowledged' | 'waived', ...(typeof input.reason === 'string' ? { reason: input.reason } : {}), actorId: requestActor(req), ...(expectedRevision !== undefined ? { expectedRevision } : {}) }, reviewRules)
     await persistSnapshot(scoped.task.workspaceId, 'content_version', decided.version, decided.version as unknown as Record<string, unknown>)
     await persistEvent(scoped.task.workspaceId, decided.version.id, 'content.review_decided', decided.version.revision, { content_version_id: decided.version.id, finding_key: decided.decision.key, status: decided.decision.status, reason: decided.decision.reason, actor_id: decided.decision.actorId })
     return send(res, 200, scoped.task.workspaceId, decided, null, req)

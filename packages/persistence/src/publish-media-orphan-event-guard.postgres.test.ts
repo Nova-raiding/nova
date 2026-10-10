@@ -31,7 +31,58 @@ describe('publish media orphan event insert guard', () => {
       expect(migrations.find(migration => migration.version === 275)).toMatchObject({ name: 'publish_media_orphan_event_guard' })
       const roleBootstrap = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await database.query(roleBootstrap)
-      await new MigrationRunner(database, migrations).run()
+      const through276 = migrations.filter(migration => migration.version <= 276)
+      expect(through276.at(-1)).toMatchObject({ version: 276, name: 'outbox_execution_reservation' })
+      await new MigrationRunner(database, through276).run()
+      const appliedBefore277 = await database.query<{ version: number }>(
+        'SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1',
+      )
+      expect(appliedBefore277.rows[0]?.version).toBe(276)
+      const functionSecurityBefore277 = await database.query<{
+        owner: string
+        acl: string | null
+        security_definer: boolean
+        config: string[] | null
+        trigger_function_oid: string
+      }>(`
+        SELECT pg_catalog.pg_get_userbyid(p.proowner) AS owner,
+          p.proacl::text AS acl,p.prosecdef AS security_definer,p.proconfig AS config,
+          t.tgfoid::text AS trigger_function_oid
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        JOIN pg_catalog.pg_trigger t ON t.tgfoid=p.oid
+        WHERE n.nspname='public' AND p.proname='append_publish_media_orphan_event_from_task'
+          AND t.tgname='publish_media_orphan_task_event_append'
+      `)
+      expect(functionSecurityBefore277.rows).toHaveLength(1)
+      expect(functionSecurityBefore277.rows[0]).toMatchObject({
+        owner: 'merchant_schema_owner',
+        security_definer: true,
+        config: ['search_path=pg_catalog'],
+      })
+      const migration277 = migrations.find(migration => migration.version === 277)!
+      expect(await new MigrationRunner(database, [migration277]).run()).toEqual([277])
+      const appliedAfter277 = await database.query<{ version: number }>(
+        'SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1',
+      )
+      expect(appliedAfter277.rows[0]?.version).toBe(277)
+      const functionSecurityAfter277 = await database.query<{
+        owner: string
+        acl: string | null
+        security_definer: boolean
+        config: string[] | null
+        trigger_function_oid: string
+      }>(`
+        SELECT pg_catalog.pg_get_userbyid(p.proowner) AS owner,
+          p.proacl::text AS acl,p.prosecdef AS security_definer,p.proconfig AS config,
+          t.tgfoid::text AS trigger_function_oid
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        JOIN pg_catalog.pg_trigger t ON t.tgfoid=p.oid
+        WHERE n.nspname='public' AND p.proname='append_publish_media_orphan_event_from_task'
+          AND t.tgname='publish_media_orphan_task_event_append'
+      `)
+      expect(functionSecurityAfter277.rows).toEqual(functionSecurityBefore277.rows)
       // Exercise the same post-migration bootstrap pass used by deployment:
       // broad compatibility grants must not reopen the append-only ledger.
       await database.query(roleBootstrap)
@@ -78,9 +129,11 @@ describe('publish media orphan event insert guard', () => {
       // The task trigger derives receipt presence from the persisted row, so
       // the inherited receipt remains visible in retained-state history.
       await repository.transition({...binding,state:'retained',reason:'platform_write_confirmed'})
+      const mediaTaskId = (await repository.getByKey(workspace,job,binding.mediaIdempotencyKey))?.id
+      expect(mediaTaskId).toBeTruthy()
       const rows = await database.query<{state:string;detail:Record<string,unknown>}>(
         'SELECT state,detail FROM publish_media_orphan_events WHERE workspace_id=$1 AND task_id=$2 ORDER BY created_at',
-        [workspace, (await repository.getByKey(workspace,job,binding.mediaIdempotencyKey))?.id],
+        [workspace, mediaTaskId],
       )
       expect(rows.rows).toHaveLength(3)
       expect(rows.rows).toEqual(expect.arrayContaining([
@@ -88,6 +141,64 @@ describe('publish media orphan event insert guard', () => {
         {state:'uploaded',detail:{reason:null,hasReceipt:true}},
         {state:'retained',detail:{reason:'platform_write_confirmed',hasReceipt:true}},
       ]))
+
+      // UPDATE OF fires when a watched column is named in SET, even when its
+      // value is unchanged. A workspace-scoped app no-op must not append a
+      // duplicate lifecycle event; an actual watched-field change still must.
+      const scopedWriter = await app.connect()
+      try {
+        await scopedWriter.query('BEGIN')
+        await scopedWriter.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
+        expect((await scopedWriter.query('SELECT current_user AS role')).rows[0]?.role).toBe('merchant_app')
+        await scopedWriter.query('UPDATE publish_media_orphan_tasks SET state=state WHERE workspace_id=$1 AND id=$2', [workspace,mediaTaskId])
+        await scopedWriter.query('COMMIT')
+        const afterNoop = await database.query<{count:string}>(
+          'SELECT count(*)::text AS count FROM publish_media_orphan_events WHERE workspace_id=$1 AND task_id=$2',
+          [workspace,mediaTaskId],
+        )
+        expect(afterNoop.rows[0]?.count).toBe('3')
+
+        await scopedWriter.query('BEGIN')
+        await scopedWriter.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
+        await scopedWriter.query("UPDATE publish_media_orphan_tasks SET reason='no_op_guard_regression' WHERE workspace_id=$1 AND id=$2", [workspace,mediaTaskId])
+        await scopedWriter.query('COMMIT')
+      } catch (error) {
+        await scopedWriter.query('ROLLBACK')
+        throw error
+      } finally {
+        scopedWriter.release()
+      }
+      const afterRealChange = await database.query<{state:string;detail:Record<string,unknown>}>(
+        `SELECT state,detail FROM publish_media_orphan_events
+          WHERE workspace_id=$1 AND task_id=$2 AND detail->>'reason'='no_op_guard_regression'`,
+        [workspace,mediaTaskId],
+      )
+      const afterRealCount = await database.query<{count:string}>(
+        'SELECT count(*)::text AS count FROM publish_media_orphan_events WHERE workspace_id=$1 AND task_id=$2',
+        [workspace,mediaTaskId],
+      )
+      expect(afterRealCount.rows[0]?.count).toBe('4')
+      expect(afterRealChange.rows).toEqual([{state:'retained',detail:{reason:'no_op_guard_regression',hasReceipt:true}}])
+
+      // Runtime-role probes below prove ACL denial. This admin-path probe also
+      // reaches the insert trigger and proves that valid-looking history cannot
+      // be appended outside the lifecycle task trigger.
+      const triggerProbe = await database.connect()
+      try {
+        await triggerProbe.query('BEGIN')
+        await triggerProbe.query('SET LOCAL ROLE merchant_schema_owner')
+        await triggerProbe.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
+        await triggerProbe.query('SAVEPOINT reject_top_level_event')
+        await expect(triggerProbe.query(
+          `INSERT INTO publish_media_orphan_events(id,workspace_id,task_id,state,detail)
+           VALUES($1,$2,$3,'retained',$4::jsonb)`,
+          [id('forged_top_level'),workspace,mediaTaskId,JSON.stringify({reason:'platform_write_confirmed',hasReceipt:true})],
+        )).rejects.toMatchObject({code:'23514',constraint:'publish_media_orphan_event_state'})
+        await triggerProbe.query('ROLLBACK TO SAVEPOINT reject_top_level_event')
+        await triggerProbe.query('ROLLBACK')
+      } finally {
+        triggerProbe.release()
+      }
 
       // Boundary: the database prevents direct ledger INSERT and derives each
       // event from the bound task under workspace RLS. merchant_app still has
@@ -112,7 +223,7 @@ describe('publish media orphan event insert guard', () => {
       const finalCount = await database.query<{count:string}>(
         'SELECT count(*)::text AS count FROM publish_media_orphan_events WHERE workspace_id=$1', [workspace],
       )
-      expect(finalCount.rows[0]?.count).toBe('3')
+      expect(finalCount.rows[0]?.count).toBe('4')
     } catch (error) {
       primaryFailure = error
       throw error

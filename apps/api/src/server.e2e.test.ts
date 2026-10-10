@@ -2556,6 +2556,21 @@ describe('API HTTP vertical slice', () => {
       const unchanged = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
       expect((unchanged.data as Array<{ id: string }>).map(item => item.id)).toEqual([firstId])
     }
+    for (const expected_revision of ['not-a-revision', '', true, 1.5]) {
+      const invalidResponse = await fetch(`${base}/v1/content-versions/${firstId}/modify`, { method: 'POST', headers, body: JSON.stringify({ changes: { title: '不能因无效版本条件而写入' }, expected_revision }) })
+      const invalid = await invalidResponse.json() as { error?: { code?: string } }
+      expect(invalidResponse.status).toBe(400)
+      expect(invalid.error?.code).toBe('INVALID_REQUEST')
+      expect(service.getTask(taskId).version).toBe(taskVersionBeforeInvalidRestore)
+      expect(service.getContentVersion('ws_demo', firstId).body.title).not.toBe('不能因无效版本条件而写入')
+      const unchanged = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
+      expect((unchanged.data as Array<{ id: string }>).map(item => item.id)).toEqual([firstId])
+    }
+    const invalidApproval = await fetch(`${base}/v1/tasks/${taskId}/approve`, { method: 'POST', headers, body: JSON.stringify({ content_version_id: firstId, expected_version: 'not-a-version' }) })
+    const invalidApprovalBody = await invalidApproval.json() as { error?: { code?: string } }
+    expect(invalidApproval.status).toBe(400)
+    expect(invalidApprovalBody.error?.code).toBe('INVALID_REQUEST')
+    expect(service.getTask(taskId).version).toBe(taskVersionBeforeInvalidRestore)
     // Omitting expected_version remains supported for clients that do not use optimistic concurrency.
     const restored = await fetch(`${base}/v1/content-versions/${firstId}/restore`, { method: 'POST', headers }).then(json)
     expect(restored.error).toBeNull()

@@ -234,6 +234,12 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'task.history', arguments: { [field]: value } } })}\n`)
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       }
+      const catalogImageGenerate = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.generate')
+      expect(catalogImageGenerate.inputSchema.anyOf).toEqual([
+        { required: ['product_id'] },
+        { required: ['title', 'asset_ids_json'] },
+      ])
+      expect(catalogImageGenerate.inputSchema.oneOf).toBeUndefined()
       expect(await readFile(BRIDGE_PATH, 'utf8')).toBe(await readFile(join(repositoryRoot, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), 'utf8'))
     } finally {
       child.kill()

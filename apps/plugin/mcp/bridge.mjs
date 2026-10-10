@@ -1275,7 +1275,7 @@ const METHODS = {
 // Keep the direct-install ChatGPT artifact's advertised alternative aligned
 // with the marketplace bridge: either bind to a product, or provide a title
 // and non-empty uploaded asset IDs for an unbound candidate.
-METHODS['catalog.image.generate'].inputSchema.oneOf = [
+METHODS['catalog.image.generate'].inputSchema.anyOf = [
   { required: ['product_id'] },
   { required: ['title', 'asset_ids_json'] },
 ]

@@ -29,7 +29,6 @@ test('顶部购买结果通知显示服务端状态，确认已读后才更新�
   const reads = []
   const writes = []
   let readAt = null
-  let releaseRead
 
   await page.route('**/*', async route => {
     const url = new URL(route.request().url())
@@ -51,7 +50,6 @@ test('顶部购买结果通知显示服务端状态，确认已读后才更新�
       const method = request.postDataJSON()?.method
       if (method === 'commercial.notifications.list') {
         reads.push(request.postDataJSON())
-        if (releaseRead) await new Promise(resolve => { releaseRead = resolve })
         data = { result: { items: [{ id: notificationId, event_id: 'purchase-event-fixture', sku_code: 'fixture-plan', version: 1, title: '本地购买处理结果', body: '夹具订单已经完成权益处理。', published_at: '2026-10-10T02:00:00.000Z', notification_kind: 'purchase_result', order_id: 'order-fixture-1', result_state: 'active', read_at: readAt }], next_cursor: null } }
       } else if (method === 'workspace.metrics') data = { result: { source: 'fixture', stores: [], productSummary: { total: 0, lowStock: 0, missingImages: 0 }, riskSummary: { total: 0, returned: 0, truncated: false }, riskItems: [], taskFunnel: {} } }
       else if (method === 'platform.model.status') data = { result: { state: 'ready', capabilities: {} } }
@@ -81,17 +79,24 @@ test('顶部购买结果通知显示服务端状态，确认已读后才更新�
     await page.route(`**/v1/commercial/notifications/${notificationId}/read`, async route => {
       writes.push(route.request().postDataJSON())
       await writeStarted
-      await new Promise(resolve => { releaseRead = resolve })
+      if (writes.length === 1) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ...envelope(null), error: { code: 'NOTIFICATION_READ_OUTCOME_UNKNOWN', message: '本地夹具模拟已读已落库但响应丢失。' } }) })
+        return
+      }
       readAt = '2026-10-11T03:00:00.000Z'
-      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ notification_id: notificationId, read_at: readAt, replayed: false })) })
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ notification_id: notificationId, read_at: readAt, replayed: true })) })
     })
     await panel.getByRole('button', { name: '标记已读' }).click()
     await expect.poll(() => writes.length).toBe(1)
-    await expect(panel.getByRole('button', { name: '标记已读' })).toBeVisible()
+    await expect(panel.getByRole('alert')).toContainText('已读结果待确认')
+    await expect(panel.getByRole('button', { name: '用原标识重试已读登记' })).toBeVisible()
+    await expect(panel.getByText('未读', { exact: true })).toBeVisible()
     expect(writes[0]?.idempotency_key).toMatch(/^notification-read:/u)
-    releaseRead()
+    await panel.getByRole('button', { name: '用原标识重试已读登记' }).click()
+    await expect.poll(() => writes.length).toBe(2)
     await expect(panel.getByText('已读', { exact: true })).toBeVisible()
     await expect(panel.getByRole('button', { name: '标记已读' })).toHaveCount(0)
+    expect(writes[1]?.idempotency_key).toBe(writes[0]?.idempotency_key)
     expect(reads.length).toBeGreaterThan(0)
     expect(externalRequests).toEqual([])
   } finally {

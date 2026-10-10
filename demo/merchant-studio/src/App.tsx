@@ -2734,7 +2734,7 @@ export function Overview({
                   <small>{platform.sync}</small>
                 </div>
                 {baseUrl ? (
-                  <>
+                  <div className="platform-actions">
                     {platform.canSync && (
                       <button
                         className="text-button"
@@ -2782,7 +2782,7 @@ export function Overview({
                           : '连接'}
                         </button>
                       )}
-                  </>
+                  </div>
                 ) : (
                   <button
                     className="icon-button"
@@ -5061,7 +5061,7 @@ function ProductAssetRelationDialog({
         setAssets(nextAssets)
       })
       .catch((cause) => {
-        if (active) setError(describeApiError(cause))
+        if (active) setError(describeApiError(cause, { operation: 'read' }))
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -5100,7 +5100,7 @@ function ProductAssetRelationDialog({
         })
         setAssets(nextAssets)
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => setError(describeApiError(cause, { operation: 'read' })))
       .finally(() => setLoading(false))
   }
   const mutateBinding = (assetId: string, mode: 'bind' | 'unbind') => {
@@ -5522,7 +5522,6 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [catalogAddedTime, setCatalogAddedTime] = useState('all')
   const [catalogSort, setCatalogSort] = useState('default')
   const [catalogPage, setCatalogPage] = useState(1)
-  const [catalogSelectedIds, setCatalogSelectedIds] = useState<string[]>([])
   const [manualStoreId, setManualStoreId] = useState('')
   const [manualStoreName, setManualStoreName] = useState('')
   const [manualStoreSubmitting, setManualStoreSubmitting] = useState(false)
@@ -5726,7 +5725,6 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const catalogPageCount = Math.max(1, Math.ceil(visibleStoreItems.length / catalogPageSize))
   const pagedStoreItems = visibleStoreItems.slice((catalogPage - 1) * catalogPageSize, catalogPage * catalogPageSize)
   const hasCatalogFilters = Boolean(catalogQuery.trim()) || catalogAddedTime !== 'all' || catalogSort !== 'default'
-  const allVisibleCatalogSelected = pagedStoreItems.length > 0 && pagedStoreItems.every((product) => catalogSelectedIds.includes(product.id))
 
   useEffect(() => {
     setCatalogPage(1)
@@ -5747,14 +5745,12 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     onCatalogStoreOpen({ platform: store.platformId as MerchantPlatformId, accountId: store.id })
     setCatalogAddedTime('all')
     setCatalogSort('default')
-    setCatalogSelectedIds([])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const returnToStoreSelection = () => {
     setSelectedStoreId(null)
     setSelectedProductId(null)
     setCatalogQuery('')
-    setCatalogSelectedIds([])
     onCatalogStoreSelection()
   }
   const openProduct = (productId: string) => {
@@ -5813,9 +5809,6 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     } finally {
       setImageGenerationBusy(false)
     }
-  }
-  const toggleCatalogProduct = (productId: string) => {
-    setCatalogSelectedIds((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId])
   }
   useEffect(() => {
     if (!imageGenerationError || imageGenerationBusy || !imageGenerationOpen) return
@@ -6008,11 +6001,11 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
               <button className={viewMode === 'list' ? 'active' : ''} aria-pressed={viewMode === 'list'} onClick={() => setViewMode('list')}><Rows3 size={16} />列表</button>
             </div>
           </div>
-          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={returnToStoreSelection}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>重置条件</button>}</div></div><div className="catalog-batch-operation-card"><span className={catalogSelectedIds.length ? 'active' : ''}>已选 <strong>{catalogSelectedIds.length}</strong> 件</span><button type="button" onClick={() => setCatalogSelectedIds(allVisibleCatalogSelected ? catalogSelectedIds.filter((id) => !pagedStoreItems.some((product) => product.id === id)) : Array.from(new Set([...catalogSelectedIds, ...pagedStoreItems.map((product) => product.id)])))}>{allVisibleCatalogSelected ? '取消全选' : '全选当前'}</button><button type="button" className="danger" disabled aria-label="批量删除（服务端未提供商品删除接口）" title="服务端未提供商品删除接口，当前不能删除服务端商品"><Trash2 size={13} />批量删除</button></div></div>
+          <div className="catalog-search-summary"><div className="catalog-summary-leading"><button className="catalog-back catalog-back-inline" onClick={returnToStoreSelection}><ArrowLeft size={15} />返回店铺选择</button><div className="catalog-result-count-card"><span>共找到 <strong>{visibleStoreItems.length}</strong> 件商品</span>{hasCatalogFilters && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default') }}>重置条件</button>}</div></div></div>
           {viewMode === 'list' && <div className="catalog-list-header"><span>商品图片</span><span>添加时间</span><span>商品名称</span><span>系列</span><span>商品卖点</span><span>价格</span></div>}
           <div className={`catalog-product-collection ${viewMode}`}>
             {pagedStoreItems.map((product) => (
-              <article className={`catalog-product-card${catalogSelectedIds.includes(product.id) ? ' selected' : ''}`} key={product.id}>
+              <article className="catalog-product-card" key={product.id}>
                 <button type="button" className="catalog-product-card-open" aria-label={`打开${product.title}商品详情`} onClick={() => openProduct(product.id)}>
                   <div className="catalog-product-card-media">
                     {product.images[0]
@@ -6022,7 +6015,6 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                   <div className="catalog-product-copy"><div className="catalog-product-meta"><span className="catalog-product-date">添加于 {product.addedAt || '未读取'}</span><span className="catalog-product-series">{product.series}</span></div><h3>{product.title}</h3><p>{product.subtitle || '服务端未返回该商品的品类、库存与规格事实。'}</p><div className="catalog-product-price"><strong>{product.price === null ? '价格未读取' : `¥ ${product.price.toFixed(2)}`}</strong></div></div>
                   <ArrowRight className="catalog-product-arrow" size={18} />
                 </button>
-                <label className="catalog-product-select"><input type="checkbox" aria-label={`选择${product.title}`} checked={catalogSelectedIds.includes(product.id)} onChange={() => toggleCatalogProduct(product.id)} /><span><Check size={13} /></span></label>
               </article>
             ))}
             {!visibleStoreItems.length && (
@@ -6030,7 +6022,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 <PackageSearch size={25} />
                 <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
                 <span>{!storeItemsRead ? '请使用上方重新读取操作重试。' : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
-                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
+                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default') }}>清除全部条件</button>}
               </div>
             )}
           </div>
@@ -10201,7 +10193,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
       const selected = selectedVisualRefs.includes(visualRef)
       return <figure key={visualRef} className={`${gate?.selectable ? 'candidate-ready' : 'candidate-blocked'}${selected ? ' candidate-selected' : ''}`}>
         {failed ? <div className="image-candidate-fallback" role="alert" aria-labelledby={`candidate-image-error-${index}`}><span id={`candidate-image-error-${index}`}>候选图片读取失败，当前任务状态和候选门禁仍保留。</span><button className="text-button image-candidate-retry" type="button" onClick={() => { setFailedImages(current => { const next = new Set(current); next.delete(visualRef); return next }); setImageReloads(current => ({ ...current, [visualRef]: (current[visualRef] ?? 0) + 1 })) }} aria-label={`重新读取图片候选 ${index + 1}`} aria-describedby={`candidate-image-error-${index}`}>重新读取</button></div> : <img key={`${visualRef}-${imageReloads[visualRef] ?? 0}`} src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} {...imageCandidateLoading(candidatePageData.page, visibleIndex)} decoding="async" onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
-        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting' || selectionState === 'succeeded' || selectionOutcomeUnknown} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
+        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" aria-label={`选择候选图片 ${index + 1}`} checked={selected} disabled={!gate?.selectable || selectionState === 'submitting' || selectionState === 'succeeded' || selectionOutcomeUnknown} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} /><span>{selected ? `已选择为${selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}` : '选择候选图'}</span></label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
       </figure>
     })}</div>
       {candidatePageData.pageCount > 1 && <nav className="image-candidate-pagination" aria-label="图片候选分页"><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page - 1)} disabled={candidatePageData.page === 1}>上一页</button><span aria-live="polite">第 {candidatePageData.page} / {candidatePageData.pageCount} 页 · 共 {candidatePageData.total} 张候选</span><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page + 1)} disabled={candidatePageData.page === candidatePageData.pageCount}>下一页</button></nav>}
@@ -14036,6 +14028,7 @@ export default function App() {
       window.requestAnimationFrame.bind(window),
       () =>
         Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')) ||
+        Boolean(document.querySelector('[data-testid="route-recovery-error"] [role="alert"]')) ||
         Boolean(mainContentRef.current?.closest('[inert]')),
     )
   useEffect(

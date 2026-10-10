@@ -780,6 +780,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const unverifiedPublishMediaDeletion = await readFile(new URL('./migrations/274_unverified_publish_media_deletion.sql', import.meta.url), 'utf8')
   const publishMediaOrphanEventGuard = await readFile(new URL('./migrations/275_publish_media_orphan_event_guard.sql', import.meta.url), 'utf8')
   const outboxExecutionReservation = await readFile(new URL('./migrations/276_outbox_execution_reservation.sql', import.meta.url), 'utf8')
+  const publishMediaEventNoopGuard = await readFile(new URL('./migrations/277_publish_media_event_noop_guard.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1057,6 +1058,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 274, name: 'unverified_publish_media_deletion', sql: unverifiedPublishMediaDeletion },
     { version: 275, name: 'publish_media_orphan_event_guard', sql: publishMediaOrphanEventGuard },
     { version: 276, name: 'outbox_execution_reservation', sql: outboxExecutionReservation },
+    { version: 277, name: 'publish_media_event_noop_guard', sql: publishMediaEventNoopGuard },
   ]
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { buildCampaignLifecycleParams, campaignActionAvailability, campaignDialogDescriptionIds, campaignDialogFocusEdge, campaignOptionScopeLabel, campaignReasonDescriptionIds, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
+import { buildCampaignLifecycleParams, campaignActionAvailability, campaignActionOutcomeUnknown, campaignDialogDescriptionIds, campaignDialogFocusEdge, campaignOptionScopeLabel, campaignReasonDescriptionIds, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
 
 const campaign = parseCampaignSnapshot({ id: 'campaign-1', state: 'running', revision: 7, items: [{ id: 'item-1', productId: 'product-1', platform: 'jd', accountId: 'store-1', state: 'failed' }] })
 
@@ -40,5 +40,12 @@ describe('merchant campaign lifecycle controls', () => {
     expect(campaignActionAvailability('unknown')).toEqual({ canPause: false, canResume: false, canRetryFailed: false })
     expect(campaignActionAvailability('reconciling')).toEqual({ canPause: false, canResume: false, canRetryFailed: false })
     expect(campaignActionAvailability('paused')).toMatchObject({ canPause: false, canResume: true })
+  })
+  it('classifies ambiguous write failures as requiring exact-intent recovery', () => {
+    expect(campaignActionOutcomeUnknown(Object.assign(new Error('timeout'), { code: 'API_REQUEST_TIMEOUT' }))).toBe(true)
+    expect(campaignActionOutcomeUnknown(Object.assign(new Error('server unavailable'), { status: 503 }))).toBe(true)
+    expect(campaignActionOutcomeUnknown(Object.assign(new Error('conflict'), { status: 409, code: 'CAMPAIGN_REVISION_CONFLICT' }))).toBe(false)
+    expect(campaignActionOutcomeUnknown(Object.assign(new Error('invalid reason'), { code: 'INVALID_REQUEST', status: 400 }))).toBe(false)
+    expect(campaignActionOutcomeUnknown(new TypeError('network connection reset'))).toBe(true)
   })
 })

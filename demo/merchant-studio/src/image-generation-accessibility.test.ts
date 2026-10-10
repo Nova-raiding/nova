@@ -14,7 +14,7 @@ describe('image generation desktop accessibility contract', () => {
   it('makes candidate images and selection feedback understandable to assistive technology', () => {
     expect(app).toContain('alt={`图片候选 ${index + 1}，${gate?.selectable ? \'可进入后续选择\' : \'尚不可选择\'}`}')
     expect(app).toContain('role="status" aria-live="polite" aria-atomic="true">已选择')
-    expect(app).toContain('disabled={!gate?.selectable || selectionState === \'submitting\'}')
+    expect(app).toContain('disabled={!gate?.selectable || selectionState === \'submitting\' || selectionState === \'succeeded\' || selectionOutcomeUnknown}')
     expect(app).toContain('aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined}')
     expect(app).toContain('不可选择：{gate?.blockers.length ? gate.blockers.join(\'；\') : \'尚未满足全部候选门禁\'}')
   })
@@ -26,10 +26,9 @@ describe('image generation desktop accessibility contract', () => {
   })
 
   it('moves focus to a user-triggered safe-retry error while retaining the trusted job', () => {
-    expect(app).toContain('const retryErrorFocusRequestedRef = useRef(false)')
-    expect(app).toContain('retryErrorFocusRequestedRef.current = true')
-    expect(app).toContain('(!job || retryErrorFocusRequestedRef.current)')
-    expect(app).toContain('retryErrorFocusRequestedRef.current = false')
+    expect(app).toContain('if (retryError) window.requestAnimationFrame(() => retryActionErrorRef.current?.focus())')
+    expect(app).toContain('ref={retryActionErrorRef} id="image-job-retry-error"')
+    expect(app).toContain('role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"')
   })
 
   it('keeps the initial async wait visibly occupied without adding duplicate announcements', () => {

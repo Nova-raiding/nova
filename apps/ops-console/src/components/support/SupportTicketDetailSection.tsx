@@ -154,19 +154,22 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
         }))} />
       )}
 
-      <Modal title="分配工单" open={assignOpen} confirmLoading={model.mutating} okText="确认分配" okButtonProps={{ disabled: !assignee.trim() }} onCancel={() => setAssignOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.assign(assignee).then(() => { setAssignee(""); setAssignOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "分配工单失败，请重试。")); }}>
+      <Modal title="分配工单" open={assignOpen} confirmLoading={model.mutating} okText="确认分配" okButtonProps={{ disabled: !canMutate || !assignee.trim() }} onCancel={() => setAssignOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.assign(assignee).then(() => { setAssignee(""); setAssignOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "分配工单失败，请重试。")); }}>
+        {!canMutate ? <Alert type="warning" showIcon role="status" title="工单变更权限已失效" description="当前会话已失去工单变更权限；请刷新权限或重新登录后再继续。" /> : null}
         {renderActionError(assignOpen)}
         <label htmlFor="support-assignee">负责人 ID</label>
         <Input id="support-assignee" value={assignee} maxLength={256} onChange={event => setAssignee(event.target.value)} autoFocus />
       </Modal>
-      <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okText="确认变更" okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "变更工单状态失败，请重试。")); }}>
+      <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okText="确认变更" okButtonProps={{ disabled: !canMutate || reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "变更工单状态失败，请重试。")); }}>
+        {!canMutate ? <Alert type="warning" showIcon role="status" title="工单变更权限已失效" description="当前会话已失去工单变更权限；请刷新权限或重新登录后再继续。" /> : null}
         {renderActionError(transitionOpen)}
         <Form layout="vertical">
           <Form.Item label="目标状态" required><Select aria-label="目标状态" value={status} options={transitionOptionsFor(ticket.status)} onChange={setStatus} /></Form.Item>
           <Form.Item label="变更原因" required><Input.TextArea aria-label="变更原因" value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
         </Form>
       </Modal>
-      <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okText="添加备注" okButtonProps={{ disabled: !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>
+      <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okText="添加备注" okButtonProps={{ disabled: !canMutate || !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>
+        {!canMutate ? <Alert type="warning" showIcon role="status" title="工单变更权限已失效" description="当前会话已失去工单变更权限；请刷新权限或重新登录后再继续。" /> : null}
         {renderActionError(commentOpen)}
         <Form layout="vertical">
           <Form.Item label="可见范围" required><Select value={visibility} onChange={setVisibility} options={[{ value: "internal", label: "仅内部" }, { value: "customer", label: "客户可见" }]} /></Form.Item>

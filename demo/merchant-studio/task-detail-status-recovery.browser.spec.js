@@ -137,9 +137,11 @@ test('image task detail recovers from a failed status read using its explicit re
     expect(detailResponses.length).toBeGreaterThanOrEqual(2)
 
     const selection = panel.locator('.image-selection-panel')
-    const candidateCheckbox = panel.getByRole('figure', { name: /候选 1/u }).locator('input[type="checkbox"]')
+    const candidateCheckbox = panel.getByRole('checkbox', { name: '选择候选图片 1' })
+    await expect(panel.getByText('选择候选图', { exact: true })).toBeVisible()
     await candidateCheckbox.check()
     await expect(candidateCheckbox).toBeChecked()
+    await expect(panel.getByText('已选择为主图', { exact: true })).toBeVisible()
     await selection.getByLabel('选图原因（必填）').fill('首张候选通过门禁，作为审核版本主图')
     const submitSelection = selection.getByRole('button', { name: '提交选择（1/6）' })
     await expect(submitSelection).toBeEnabled()
