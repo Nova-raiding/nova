@@ -73,11 +73,9 @@ export class OpsLoadRerunGate<T> {
   }
 
   /**
-   * Load only when the key is idle. Reactive hydration (for example the
-   * bootstrap effect re-firing when the resolved roles land while the first
-   * load is still fanning out — that load already hydrates with the new
-   * projection) is already covered by the in-flight run, and queueing a
-   * follow-up there would double every bootstrap fan-out.
+   * Load only when the key is idle. A same-key reactive request while the
+   * first load is still fanning out is already covered by that in-flight run;
+   * queueing a follow-up would double the bootstrap fan-out.
    */
   runIfIdle(key: string, payload: T, execute: (payload: T) => Promise<void>): Promise<void> {
     const inFlight = this.flights.get(key);
