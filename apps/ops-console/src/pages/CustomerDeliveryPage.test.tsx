@@ -630,6 +630,27 @@ describe("customer delivery read-only desktop interaction", () => {
     } finally { release?.(); await page.close(); }
   }, 45_000);
 
+  it("keeps customer creation and detail mutations unavailable in read-only mode", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      const methods = await prepare(page);
+      const create = page.getByRole("button", { name: "新建客户", exact: true });
+      expect(await create.isDisabled()).toBe(true);
+      // Disabled native controls must remain inert even when callers invoke
+      // click() directly instead of following the normal pointer path.
+      await create.evaluate(element => (element as HTMLButtonElement).click());
+      await settle(page);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+
+      await row(page).getByRole("button", { name: "查看详情", exact: true }).click();
+      const details = page.getByRole("dialog").filter({ hasText: "只读客户" });
+      await details.waitFor();
+      expect(await details.getByRole("button", { name: "编辑客户档案", exact: true }).count()).toBe(0);
+      expect(await details.getByRole("button", { name: "确认培训完成", exact: true }).count()).toBe(0);
+      await assertNoWrites(page, methods);
+    } finally { await page.close(); }
+  }, 45_000);
+
   it("keeps Ant Design form instances connected through idle and drawer lifecycles", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {
