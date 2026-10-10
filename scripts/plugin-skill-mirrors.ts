@@ -4,6 +4,7 @@
  * plugin intentionally does not mirror every app/plugin development asset.
  */
 export const pluginSkillMirrors = [
+  ['apps/plugin/skills/ecommerce-image-workflow/SKILL.md', '.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-image-workflow/SKILL.md'],
   ['apps/plugin/skills/ecommerce-video-marketing/SKILL.md', '.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-video-marketing/SKILL.md'],
   ['apps/plugin/skills/ecommerce-video-marketing/references/culture_adaptation.md', '.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-video-marketing/references/culture_adaptation.md'],
   ['apps/plugin/skills/ecommerce-video-marketing/references/shot_guide.md', '.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-video-marketing/references/shot_guide.md'],

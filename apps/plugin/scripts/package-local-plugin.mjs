@@ -134,7 +134,7 @@ const required = [
   'scripts/install-chatgpt-bundled.mjs', 'scripts/install-all-macos.mjs', 'scripts/verify-chatgpt-macos.mjs', 'scripts/launch-verified-chatgpt-macos.mjs',
   'scripts/bundle-provenance.mjs', 'scripts/verify-bundle-provenance.mjs',
   'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
-  'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
+  'skills/ecommerce-image-workflow/SKILL.md', 'skills/ecommerce-video-marketing/SKILL.md', 'skills/merchant-marketing/SKILL.md',
   'skills/six-platform-public-import/SKILL.md', 'skills/storyboard-prompt-assistant/SKILL.md',
   'skills/ecommerce-video-marketing/references/culture_adaptation.md',
   'skills/ecommerce-video-marketing/references/shot_guide.md',
