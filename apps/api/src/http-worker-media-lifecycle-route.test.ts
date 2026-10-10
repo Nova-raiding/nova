@@ -133,12 +133,12 @@ describe('worker publish media lifecycle callback',()=>{
       publish:{token:'lifecycle-publish-token',signing_secret:'lifecycle-publish-secret'},
       reconcile:{token:'lifecycle-reconcile-token',signing_secret:'lifecycle-reconcile-secret'},
     }))
-    let api: typeof import('./server.js') | undefined
+    let apiServer: typeof import('./server.js')['server'] | undefined
     let persistence: Awaited<typeof import('./server.js').persistenceReady> | undefined
     let originalRepository: Awaited<typeof import('./server.js').persistenceReady>['publishMediaOrphans'] | undefined
     try {
       const loadedApi=await import('./server.js')
-      api=loadedApi
+      apiServer=loadedApi.server
       persistence=await loadedApi.persistenceReady
       originalRepository=persistence.publishMediaOrphans
       expect(persistence.mode).toBe('memory')
@@ -163,7 +163,7 @@ describe('worker publish media lifecycle callback',()=>{
       expect(transition).not.toHaveBeenCalled()
     } finally {
       try {
-        const server=api?.server
+        const server=apiServer
         if(server?.listening) await new Promise<void>(resolve=>{
           server.close(()=>resolve())
           server.closeAllConnections()
