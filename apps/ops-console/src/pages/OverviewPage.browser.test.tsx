@@ -28,12 +28,14 @@ describe("Ops Overview page read-only journey", () => {
       import { createRoot } from 'react-dom/client';
       import { App } from 'antd';
       import { OverviewPage } from '/src/pages/OverviewPage.tsx';
-      window.__overviewCalls = { loads: 0, navigations: [] };
+      window.__overviewCalls = { loads: 0, navigations: [], holdNextLoad: false, releaseLoad: undefined };
       const canReadModel = new URLSearchParams(location.search).get('modelRead') === 'true';
       function Root() {
         const [financeReadFails, setFinanceReadFails] = React.useState(new URLSearchParams(location.search).get('financeFailure') === 'true');
         const [platformFinanceSummary, setPlatformFinanceSummary] = React.useState(undefined);
+        const [loading, setLoading] = React.useState(false);
         const model = {
+          loading,
           authorization: { can: capability => capability === 'model.status.read' && canReadModel },
           workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
           platformFinanceSummary,
@@ -47,6 +49,11 @@ describe("Ops Overview page read-only journey", () => {
           dataSetError: method => method === 'platform.model.status' ? '本地fixture：状态尚未读取' : method === 'ops.finance.search' && financeReadFails ? '本地fixture：财务读取失败' : undefined,
           load: async () => {
             window.__overviewCalls.loads += 1;
+            if (window.__overviewCalls.holdNextLoad) {
+              window.__overviewCalls.holdNextLoad = false;
+              setLoading(true);
+              await new Promise(resolve => { window.__overviewCalls.releaseLoad = () => { setLoading(false); resolve(); }; });
+            }
             if (financeReadFails) {
               setPlatformFinanceSummary({ onboardingOrderCny: 432.1 });
               setFinanceReadFails(false);
@@ -106,9 +113,18 @@ describe("Ops Overview page read-only journey", () => {
       await expectMetric(page, "累计平台消耗金额", "—");
       await page.getByText("当前账号没有模型状态读取权限").waitFor();
       expect(await page.getByText("真实生成尚未验证").count()).toBe(0);
-      expect(await page.getByRole("button").count()).toBe(0);
+      const refresh = page.getByRole("button", { name: "刷新总览数据" });
+      await refresh.waitFor({ state: "visible" });
       expect(await page.evaluate(() => window.__overviewCalls.navigations)).toEqual([]);
       expect(await page.evaluate(() => window.__overviewCalls.loads)).toBe(0);
+      await page.evaluate(() => { window.__overviewCalls.holdNextLoad = true; });
+      await refresh.focus();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
+      await expect.poll(() => refresh.isDisabled()).toBe(true);
+      expect(await page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
+      await page.evaluate(() => window.__overviewCalls.releaseLoad?.());
+      expect(await refresh.isEnabled()).toBe(true);
     } finally {
       await page.close();
     }
@@ -124,7 +140,8 @@ describe("Ops Overview page read-only journey", () => {
       await retry.click();
       await expect.poll(() => page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
       expect(await page.evaluate(() => window.__overviewCalls.navigations)).toEqual([]);
-      expect(await page.getByRole("button").count()).toBe(1);
+      expect(await page.getByRole("button", { name: "刷新总览数据" }).isVisible()).toBe(true);
+      expect(await retry.isVisible()).toBe(true);
     } finally {
       await page.close();
     }
@@ -160,6 +177,6 @@ async function expectMetric(page: import("playwright").Page, label: string, expe
 
 declare global {
   interface Window {
-    __overviewCalls: { loads: number; navigations: unknown[] };
+    __overviewCalls: { loads: number; navigations: unknown[]; holdNextLoad?: boolean; releaseLoad?: () => void };
   }
 }

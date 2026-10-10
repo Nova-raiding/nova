@@ -46,14 +46,18 @@ export function TasksPage({ model }: TasksPageProps) {
     if (hasStoreQuery && model.loading) return;
 
     let storeFilters: Pick<typeof model.queueFilters, "platform" | "accountId"> = {};
-    if (hasStoreQuery && requestedPlatform && requestedAccountId &&
-      platforms.includes(requestedPlatform as Platform) && scope.kind === "workspace" &&
-      (!model.opsSession?.workspace_id || model.opsSession.workspace_id === scope.id)) {
-      const authorizedStore = model.storeDirectory.some((store: StoreDirectory) =>
-        store.platform === requestedPlatform && store.accountId === requestedAccountId &&
-        (!store.workspaceId || store.workspaceId === scope.id),
-      );
-      if (authorizedStore) storeFilters = { platform: requestedPlatform as Platform, accountId: requestedAccountId };
+    const validWorkspaceStoreScope = scope.kind === "workspace" &&
+      (!model.opsSession?.workspace_id || model.opsSession.workspace_id === scope.id);
+    const validPlatform = requestedPlatform && platforms.includes(requestedPlatform as Platform);
+    if (hasStoreQuery && validWorkspaceStoreScope && validPlatform) {
+      storeFilters = { platform: requestedPlatform as Platform };
+      if (requestedAccountId) {
+        const authorizedStore = model.storeDirectory.some((store: StoreDirectory) =>
+          store.platform === requestedPlatform && store.accountId === requestedAccountId &&
+          (!store.workspaceId || store.workspaceId === scope.id),
+        );
+        if (authorizedStore) storeFilters.accountId = requestedAccountId;
+      }
     }
     const nextUrlFilters: QueueFilters = {
       ...storeFilters,
@@ -78,9 +82,11 @@ export function TasksPage({ model }: TasksPageProps) {
     // current workspace's authorized directory. Remove rejected parameters
     // from the address bar so a copied or refreshed URL does not keep
     // promising a filter that was never applied. Preserve unrelated context.
-    if (hasStoreQuery && Object.keys(storeFilters).length === 0) {
-      params.delete("platform");
-      params.delete("accountId");
+    if (hasStoreQuery && (storeFilters.platform !== requestedPlatform || storeFilters.accountId !== requestedAccountId)) {
+      if (storeFilters.platform) params.set("platform", storeFilters.platform);
+      else params.delete("platform");
+      if (storeFilters.accountId) params.set("accountId", storeFilters.accountId);
+      else params.delete("accountId");
       const query = params.toString();
       const normalizedUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
       window.history.replaceState(window.history.state, "", normalizedUrl);

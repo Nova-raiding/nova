@@ -10,6 +10,7 @@ interface StorageReconciliationSectionProps {
   summaries?: StorageReconciliationSummary[];
   onRetry?: () => void;
   fixtureDataPresent?: boolean;
+  unavailableReason?: string;
 }
 
 function bytes(value?: number | null) {
@@ -24,7 +25,7 @@ const knownStorageStatuses = ["clean", "attention_required", "failed", "unavaila
 const knownStorageFreshness = ["fresh", "stale", "expired"];
 const knownStorageRunStatuses = ["succeeded", "failed"];
 
-export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry, fixtureDataPresent = false }: StorageReconciliationSectionProps) {
+export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry, fixtureDataPresent = false, unavailableReason }: StorageReconciliationSectionProps) {
   const errorRef = useRef<HTMLDivElement>(null);
   const [workspacePage, setWorkspacePage] = useState(1);
   const errorTitleId = useId();
@@ -85,7 +86,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
         <Alert type="error" showIcon title={<span id={errorTitleId}>对账结果加载失败</span>} description={<span id={errorDescriptionId}>{error}</span>} action={onRetry ? <Button type="primary" icon={<ReloadOutlined aria-hidden />} aria-label="重试加载对账结果" style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
       </div> : null}
       {error && hasSnapshot ? <Alert type="warning" showIcon title="以下是上次成功快照，不能视为当前对账结果" description="本次刷新失败；容量、计数和 workspace 状态可能已过期，请恢复对账读取后再据此处理。" /> : null}
-      {unavailable ? <Alert type="info" showIcon title="暂无可验证的对象清单对账结果" description={summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
+      {unavailable ? <Alert type="info" showIcon title={unavailableReason ? "当前会话无法读取平台对账列表" : "暂无可验证的对象清单对账结果"} description={unavailableReason ?? summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
       {attention ? <Alert type="warning" showIcon title="发现存储一致性问题" description="请由存储负责人查看受控对账证据；此页面不展示客户对象详情。" /> : null}
       {failed ? <Alert type="error" showIcon title="最近一次对账失败" description="对账没有产出可验证结果；请检查对象清单、数据库和定时任务后重试。" /> : null}
       {expired ? <Alert type="warning" showIcon title="对账结果已过期" description="当前汇总不能代表最新对象状态；请先恢复对账任务，再据此处理容量或一致性问题。" /> : null}

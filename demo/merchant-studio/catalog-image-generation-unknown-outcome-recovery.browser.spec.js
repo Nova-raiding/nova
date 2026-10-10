@@ -107,7 +107,34 @@ test('未知图片生成结果锁定创意参数；原请求重放恢复既有�
     const dialog = page.getByTestId('catalog-image-generation-dialog')
     const direction = dialog.getByLabel('生成方向')
     await expect(direction).toBeVisible()
+
+    // Invalid form input must be explained at the form, point back to the
+    // field that needs attention, and never reach the generation RPC.
+    await direction.fill('')
+    await dialog.getByRole('button', { name: '确认生成' }).click()
+    const directionError = dialog.getByRole('alert').filter({ hasText: '请填写图片生成方向。' })
+    await expect(directionError).toBeVisible()
+    await expect(directionError).toBeFocused()
+    await expect(direction).toHaveAttribute('aria-invalid', 'true')
+    expect(generationRequests).toHaveLength(0)
+    await directionError.getByRole('button', { name: '跳转到需要修正的字段' }).click()
+    await expect(dialog).toBeVisible()
+    await expect(direction).toBeFocused()
+    expect(new URL(page.url()).hash).toBe('')
+
     await direction.fill('保留商品本体并生成简洁春日主图')
+    await dialog.getByLabel('候选数量').fill('7')
+    await dialog.getByRole('button', { name: '确认生成' }).click()
+    const countError = dialog.getByRole('alert').filter({ hasText: '候选数量必须是 1–6。' })
+    await expect(countError).toBeVisible()
+    await expect(countError).toBeFocused()
+    await expect(dialog.getByLabel('候选数量')).toHaveAttribute('aria-invalid', 'true')
+    expect(generationRequests).toHaveLength(0)
+    await countError.getByRole('button', { name: '跳转到需要修正的字段' }).click()
+    await expect(dialog.getByLabel('候选数量')).toBeFocused()
+    await expect(dialog).toBeVisible()
+    expect(new URL(page.url()).hash).toBe('')
+
     await dialog.getByLabel('候选数量').fill('2')
     await dialog.getByRole('button', { name: '确认生成' }).click()
 

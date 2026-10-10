@@ -1,4 +1,4 @@
-import { Alert, Card } from "antd";
+import { Alert, Button, Card } from "antd";
 import { OpsPage } from "../components/OpsPage";
 import { ModelStatusSection } from "../components/models/ModelStatusSection";
 import { PlatformOverviewSnapshot } from "../components/sections/overview/PlatformOverviewSnapshot";
@@ -16,6 +16,7 @@ export function OverviewPage({ model, onNavigate, onNavigateWithQuery }: Overvie
     <OpsPage
       title="运营总览"
       hideTitle
+      actions={<Button type="primary" disabled={model.loading} loading={model.loading} onClick={() => void model.load()}>刷新总览数据</Button>}
     >
       <div className="ops-overview-page">
         <PlatformOverviewSnapshot model={model} onNavigate={onNavigate} />

@@ -1105,6 +1105,7 @@ describe('MerchantService', () => {
     expect(jdNorth).toMatchObject({ storeAlias: '北区', authRevision, grantedScopes: ['product.read', 'product.write'], accessTokenExpiresAt: '2026-09-01T00:00:00.000Z', credentialRefreshable: true, lastAuthorizedAt: expect.any(String), tokenStateUpdatedAt: expect.any(String) })
     expect(() => service.setPlatformAccountAlias({ workspaceId: 'ws_alias', platform: 'jd', accountId: jdSouth.id, alias: '  北区  ', expectedRevision: jdSouth.revision })).toThrowError(expect.objectContaining({ code: 'STORE_ALIAS_CONFLICT' }))
     expect(() => service.setPlatformAccountAlias({ workspaceId: 'ws_alias', platform: 'jd', accountId: jdSouth.id, alias: '隐\u200B形', expectedRevision: jdSouth.revision })).toThrowError(expect.objectContaining({ code: 'STORE_ALIAS_INVALID' }))
+    expect(() => service.setPlatformAccountAlias({ workspaceId: 'ws_alias', platform: 'jd', accountId: jdSouth.id, alias: '一'.repeat(41), expectedRevision: jdSouth.revision })).toThrowError(expect.objectContaining({ code: 'STORE_ALIAS_INVALID', message: '店铺别名必须输入 1 到 40 个字符，不能包含控制或零宽格式字符' }))
     expect(service.setPlatformAccountAlias({ workspaceId: 'ws_alias', platform: 'taobao', accountId: taobaoNorth.id, alias: '北区', expectedRevision: taobaoNorth.revision }).storeAlias).toBe('北区')
     const revoked = service.revokePlatformAccount('ws_alias', jdNorth.id, 'jd')
     expect(revoked).toMatchObject({ tokenState: 'revoked', revokedAt: expect.any(String), tokenStateUpdatedAt: expect.any(String) })

@@ -66,7 +66,9 @@ describe('visual generation permission preflight through local stdio MCP', () =>
         MERCHANT_STRICT_AUTH: 'false',
         MERCHANT_MCP_WRITE_ENABLED: 'true',
         MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
-        MERCHANT_MCP_RETRY_ATTEMPTS: '0',
+        // Retry configuration rejects zero; one attempt proves that a 403 is
+        // returned directly without the bridge repeating the denied call.
+        MERCHANT_MCP_RETRY_ATTEMPTS: '1',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })

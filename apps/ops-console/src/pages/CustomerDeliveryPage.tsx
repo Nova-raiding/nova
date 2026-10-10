@@ -11,7 +11,7 @@ import { accountLabel } from "../authz/accountLabel.js";
 import { useUnsavedChanges } from "../components/authz/UnsavedChangesContext.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
-import { recoverCustomerDeliveryArchiveConflict } from "./customerDeliveryArchiveConflict.js";
+import { recoverCustomerDeliveryArchiveConflict, recoverCustomerDeliveryRestoreConflict } from "./customerDeliveryArchiveConflict.js";
 
 export function isCustomerDeliveryRevisionConflict(cause: unknown) {
   return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
@@ -459,11 +459,29 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     }
   };
   const restoreRecord = async (record: CustomerDeliveryRecord) => {
-    if (!canRead || !currentCanUpdate.current || currentWorkspace.current !== targetWorkspaceId) throw new Error("客户交付恢复权限或工作区已变更，请刷新后重试");
-    if (!Number.isSafeInteger(record.revision) || (record.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+    const assertCurrentRestoreScope = () => {
+      if (hasCurrentReadAccess(targetWorkspaceId) && currentCanUpdate.current) return;
+      throw new Error("客户交付恢复权限或工作区已变更，请刷新后重试");
+    };
+    const persist = (candidate: CustomerDeliveryRecord) => {
+      assertCurrentRestoreScope();
+      if (!Number.isSafeInteger(candidate.revision) || (candidate.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
+      return customerDeliveryClient.update({ targetWorkspaceId, deliveryId: candidate.id, patch: { archivedAt: null }, expectedRevision: candidate.revision as number });
+    };
     const generation = loadRequest.current.generation;
     try {
-      const restored = await customerDeliveryClient.update({ targetWorkspaceId, deliveryId: record.id, patch: { archivedAt: null }, expectedRevision: record.revision as number });
+      assertCurrentRestoreScope();
+      let restored: CustomerDeliveryRecord;
+      try {
+        restored = await persist(record);
+      } catch (cause) {
+        if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
+        assertCurrentRestoreScope();
+        const latest = await customerDeliveryClient.get(targetWorkspaceId, record.id);
+        assertCurrentRestoreScope();
+        if (!latest) throw new Error("归档记录已无法读取；请刷新归档列表确认恢复状态");
+        restored = await recoverCustomerDeliveryRestoreConflict(latest, persist);
+      }
       if (restored.archivedAt !== null) throw new Error("服务端未确认记录已恢复；请刷新归档列表核对状态");
       if (!hasCurrentReadAccess(targetWorkspaceId, generation) || !currentCanUpdate.current) return;
       setRecords((current) => current.filter((candidate) => candidate.id !== record.id));
@@ -549,6 +567,13 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
             <Form.Item name="afterSalesOwner" label="售后负责人" rules={[{ required: true, message: "请输入售后负责人" }]}><Input placeholder="例如：韩先晓" /></Form.Item>
             </div>
         </Card>
+        <Alert
+          style={{ marginTop: 16 }}
+          type="info"
+          showIcon
+          title="提交前请完成两组确认"
+          description={`系统接入 ${integrationChecks.length}/${INTEGRATION_ITEMS.length} 项；功能验收 ${acceptanceChecks.length}/${ACCEPTANCE_ITEMS.length} 项。全部勾选后才能创建客户。`}
+        />
         <div className="customer-delivery-check-card-row">
         <Card title={<span>系统接入确认 <em className="customer-delivery-required-mark">*</em></span>}>
           <div className="customer-delivery-check-grid customer-delivery-check-grid-five">

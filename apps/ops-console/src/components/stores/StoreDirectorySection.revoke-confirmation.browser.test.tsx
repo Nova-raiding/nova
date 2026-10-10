@@ -32,11 +32,19 @@ describe("store authorization revoke confirmation", () => {
             import { App } from 'antd';
             import { StoreDirectorySection } from '/src/components/stores/StoreDirectorySection.tsx';
             const store = { platform: 'taobao', accountId: 'store-1', label: '撤销回归店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1 };
-            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [store], canManageStoreConnections: true,
-              onSaveAlias: async () => true,
-              onRevoke: async () => { const response = await fetch('/__store-revoke', { method: 'POST' }); if (!response.ok) throw new Error('revoke failed'); },
-            })));
+            const revokedStore = { platform: 'jd', accountId: 'revoked-store-1', label: '已撤销的平台店', state: 'revoked', dataMode: 'account_record_only', readable: false, writeEnabled: false, revision: 3 };
+            function Harness() {
+              const [canManage, setCanManage] = React.useState(true);
+              const [scopeAllowed, setScopeAllowed] = React.useState(true);
+              window.__setRevokePermission = allowed => setScopeAllowed(allowed);
+              return React.createElement(App, null, React.createElement(StoreDirectorySection, {
+                storeDirectory: [store, revokedStore], canManageStoreConnections: canManage,
+                canManageStoreConnection: () => scopeAllowed,
+                onSaveAlias: async () => true,
+                onRevoke: async () => { const response = await fetch('/__store-revoke', { method: 'POST' }); if (!response.ok) throw new Error('revoke failed'); },
+              }));
+            }
+            createRoot(document.getElementById('root')).render(React.createElement(Harness));
           `;
         },
         configureServer(server) {
@@ -84,6 +92,47 @@ describe("store authorization revoke confirmation", () => {
       await dialog.waitFor({ state: "hidden" });
       expect(await page.evaluate(() => (window as any).__storeConfirmCount)).toBe(1);
       expect(revokeRequests).toBe(1);
+    } finally { await context.close(); }
+  }, 45_000);
+
+  it("shows a revoked account-record-only platform row without exposing another revoke action", async () => {
+    const context = await browser!.newContext();
+    const page = await context.newPage();
+    let revokeRequests = 0;
+    await page.route("**/__store-revoke", async route => {
+      revokeRequests += 1;
+      await route.fulfill({ status: 200, body: "{}", contentType: "application/json" });
+    });
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      const revokedRow = page.getByRole("row").filter({ hasText: "已撤销的平台店" });
+      await revokedRow.waitFor({ state: "visible" });
+      await revokedRow.getByText("已撤销", { exact: true }).waitFor({ state: "visible" });
+      expect(await revokedRow.getByRole("button").count()).toBe(0);
+      expect(await page.getByRole("button", { name: "撤销登记", exact: true }).count()).toBe(0);
+      expect(revokeRequests).toBe(0);
+    } finally { await context.close(); }
+  }, 45_000);
+
+  it("disables an open revoke confirmation when its account scope is withdrawn", async () => {
+    const context = await browser!.newContext();
+    const page = await context.newPage();
+    let revokeRequests = 0;
+    await page.route("**/__store-revoke", async route => {
+      revokeRequests += 1;
+      await route.fulfill({ status: 200, body: "{}", contentType: "application/json" });
+    });
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      await page.getByRole("button", { name: "撤销", exact: true }).click();
+      const dialog = dialogByTitle(page, "确认撤销平台授权？");
+      await dialog.waitFor();
+      await page.evaluate(() => window.__setRevokePermission(false));
+      await dialog.getByRole("status").getByText("店铺撤销权限已失效", { exact: true }).waitFor();
+      expect(await dialog.getByRole("button", { name: "确认撤销", exact: true }).isDisabled()).toBe(true);
+      expect(revokeRequests).toBe(0);
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
     } finally { await context.close(); }
   }, 45_000);
 
@@ -160,4 +209,10 @@ describe("store authorization revoke confirmation", () => {
 function dialogByTitle(page: import("playwright").Page, title: string) {
   // rc-component's NODE_ENV=test useId stub reuses "test-id" across dialogs.
   return page.locator('[role="dialog"]').filter({ has: page.locator(".ant-modal-title").getByText(title, { exact: true }) });
+}
+
+declare global {
+  interface Window {
+    __setRevokePermission: (allowed: boolean) => void;
+  }
 }

@@ -25,10 +25,18 @@ export function StoragePage({ model }: StoragePageProps) {
             type="warning"
             showIcon
             title="当前会话没有平台存储对账读取权限"
-            description="这不是空结果；平台级 workspace 对账列表需要 storage.reconciliation.read，未授权时本页不会发起该读取。下面的空列表只代表没有读取到平台数据，不能解读为对账任务未运行。"
+            description="平台级 workspace 对账列表需要 storage.reconciliation.read；未授权时不会发起读取。当前空白或破折号不代表用量为零、对账未运行或状态正常。"
           />
         ) : null}
-        <StorageReconciliationSection loading={model.loading} error={storageError} fixtureDataPresent={model.dataSource?.fixtureDataPresent} onRetry={canReadPlatformReconciliation ? () => void model.load() : undefined} summary={model.workspaceMetrics?.storageReconciliation} summaries={model.storageReconciliationWorkspaces} />
+        <StorageReconciliationSection
+          loading={model.loading}
+          error={storageError}
+          fixtureDataPresent={model.dataSource?.fixtureDataPresent}
+          onRetry={canReadPlatformReconciliation ? () => void model.load() : undefined}
+          unavailableReason={!canReadPlatformReconciliation ? "本次平台列表读取未执行。空白或破折号不能说明存储用量为零、对账未运行或状态正常；请联系平台管理员申请 storage.reconciliation.read。" : undefined}
+          summary={model.workspaceMetrics?.storageReconciliation}
+          summaries={model.storageReconciliationWorkspaces}
+        />
       </div>
     </OpsPage>
   );

@@ -3,6 +3,7 @@ import type { InputRef } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { platformLabels, platforms, type Platform, type StoreDirectory, type WorkspaceSummary } from "../../types/ops";
 import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
+import { storeRevocationCopy } from "./storeRevocationCopy.js";
 
 interface StoreDirectorySectionProps {
   storeDirectory: StoreDirectory[];
@@ -92,13 +93,17 @@ export function StoreDirectorySection({
   const confirmRevoke = async () => {
     if (!revokeTarget) return;
     setRevokeError("");
+    if (!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(revokeTarget))) {
+      setRevokeError("当前会话已无权撤销此店铺记录，请刷新权限后重试。");
+      return;
+    }
     try {
       await revoke(revokeTarget);
       setRevokeTarget(undefined);
     } catch (error) {
       setRevokeError(error instanceof Error && error.message.trim()
         ? error.message
-        : "撤销授权失败，请检查权限和网络后重试。");
+        : revokeTarget ? storeRevocationCopy(revokeTarget).errorFallback : "撤销授权失败，请检查权限和网络后重试。");
     }
   };
   const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
@@ -309,7 +314,7 @@ export function StoreDirectorySection({
                     disabled={!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true || Boolean(revokingKey)}
                     onClick={() => { setRevokeError(""); setRevokeTarget(row); }}
                   >
-                    撤销
+                    {storeRevocationCopy(row).actionLabel}
                   </Button>
                 </Space>
               )
@@ -359,7 +364,7 @@ export function StoreDirectorySection({
           <Input id="manual-store-account" aria-required="true" autoComplete="off" placeholder="填写平台返回的店铺账号 ID" value={manualAccountId} onChange={event => setManualAccountId(event.target.value)} maxLength={256} />
           <label htmlFor="manual-store-alias">店铺别名（可选）</label>
           <Input id="manual-store-alias" aria-describedby="manual-store-alias-limit" value={manualAlias} onChange={event => setManualAlias(event.target.value)} maxLength={40} showCount />
-          <Typography.Text id="manual-store-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
+          <Typography.Text id="manual-store-alias-limit" type="secondary">最多输入 40 个字符，与平台店铺别名规则一致。</Typography.Text>
           <label htmlFor="manual-store-reason">登记理由</label>
           <Input.TextArea id="manual-store-reason" aria-required="true" placeholder="说明登记依据，便于后续审计" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
         </Space>
@@ -369,22 +374,29 @@ export function StoreDirectorySection({
         {aliasError ? <Alert role="alert" type="error" showIcon title="别名保存失败" description={aliasError} /> : null}
         <label htmlFor="store-display-alias">店铺展示别名</label>
         <Input id="store-display-alias" aria-describedby="store-display-alias-limit" autoFocus maxLength={40} showCount value={alias} onChange={(event) => { setAlias(event.target.value); setAliasError(""); }} />
-        <Typography.Text id="store-display-alias-limit" type="secondary">最多 40 个可见字符，与平台店铺别名规则一致。</Typography.Text>
+        <Typography.Text id="store-display-alias-limit" type="secondary">最多输入 40 个字符，与平台店铺别名规则一致。</Typography.Text>
       </Modal>
       <Modal
-        title="确认撤销平台授权？"
+        title={revokeTarget ? storeRevocationCopy(revokeTarget).dialogTitle : "确认撤销平台授权？"}
         open={Boolean(revokeTarget)}
-        okText="确认撤销"
+        okText={revokeTarget ? storeRevocationCopy(revokeTarget).confirmLabel : "确认撤销"}
         cancelText="取消"
         {...confirmPolicyPropsFor("store.revoke")}
+        okButtonProps={{
+          ...confirmPolicyPropsFor("store.revoke").okButtonProps,
+          disabled: !canManageStoreConnections || Boolean(revokeTarget && canManageStoreConnection && !canManageStoreConnection(revokeTarget)),
+        }}
         confirmLoading={Boolean(revokingKey)}
         onCancel={() => { if (!revokingKey) { setRevokeTarget(undefined); setRevokeError(""); } }}
         onOk={() => void confirmRevoke()}
       >
+        {revokeTarget && (!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(revokeTarget)))
+          ? <Alert role="status" type="warning" showIcon title="店铺撤销权限已失效" description="当前会话已无权撤销此店铺记录；请刷新权限后重试。" />
+          : null}
         <Typography.Paragraph>
-          将撤销 {revokeTarget?.label ?? "该店铺"} 的平台授权，后续同步和发布会停止；如需继续使用，必须重新授权。该操作会写入审计记录。
+          {revokeTarget ? storeRevocationCopy(revokeTarget).description : "请选择店铺后确认操作。"}
         </Typography.Paragraph>
-        {revokeError ? <Alert role="alert" type="error" showIcon title="撤销授权失败" description={revokeError} /> : null}
+        {revokeError ? <Alert role="alert" type="error" showIcon title={revokeTarget ? storeRevocationCopy(revokeTarget).errorTitle : "撤销授权失败"} description={revokeError} /> : null}
       </Modal>
     </Card>
   );

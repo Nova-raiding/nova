@@ -88,6 +88,21 @@ describe('merchant new-session entry points', () => {
     expect(main.focus).not.toHaveBeenCalled()
   })
 
+  it('keeps focus on a deep-link recovery alert when the route focus task runs later', () => {
+    const frames: FrameRequestCallback[] = []
+    const scheduleFrame = (callback: FrameRequestCallback) => { frames.push(callback); return frames.length }
+    const main = { focus: vi.fn() }
+    let recoveryAlertMounted = false
+
+    focusMainAfterMerchantNavigation(main, scheduleFrame, () => recoveryAlertMounted)
+    frames.shift()?.(0)
+    // The async route resolution renders and focuses ErrorNotice between frames.
+    recoveryAlertMounted = true
+    frames.shift()?.(1)
+
+    expect(main.focus).not.toHaveBeenCalled()
+  })
+
   it('keeps the screenshot-backed knowledge and image destinations on the shared server asset collection', () => {
     expect(assetMatchesEntry('application/pdf', 'knowledge')).toBe(true)
     expect(assetMatchesEntry('image/png', 'knowledge')).toBe(true)

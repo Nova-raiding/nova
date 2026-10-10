@@ -71,7 +71,7 @@ describe("overview page structure", () => {
   it("does not reintroduce the removed page header banner", () => {
     expect(overviewSource).not.toContain("OpsPageError");
     expect(overviewSource).not.toContain("当前工作区数据");
-    expect(overviewSource).not.toContain("刷新总览");
+    expect(overviewSource).toContain("刷新总览数据");
     expect(overviewSource).not.toContain("首屏查看平台规模");
     expect(overviewSource).not.toContain('eyebrow="OVERVIEW"');
   });

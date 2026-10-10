@@ -140,7 +140,7 @@ type ListedTool = {
   description?: string
   annotations?: Record<string, unknown>
   _meta?: Record<string, unknown>
-  inputSchema: { properties?: Record<string, any>; required?: string[] }
+  inputSchema: { properties?: Record<string, any>; required?: string[]; anyOf?: Array<{ required?: string[] }>; oneOf?: Array<{ required?: string[] }>; not?: { required?: string[] } }
 }
 
 // Spawns the real bridge exactly as the host does and performs one tools/list,
@@ -235,14 +235,95 @@ describe('Codex stdio MCP bridge', () => {
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
       }
       const catalogImageGenerate = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.generate')
-      expect(catalogImageGenerate.inputSchema.anyOf).toEqual([
+      expect(catalogImageGenerate.inputSchema.oneOf).toEqual([
         { required: ['product_id'] },
         { required: ['title', 'asset_ids_json'] },
       ])
-      expect(catalogImageGenerate.inputSchema.oneOf).toBeUndefined()
+      expect(catalogImageGenerate.inputSchema.anyOf).toBeUndefined()
       expect(await readFile(BRIDGE_PATH, 'utf8')).toBe(await readFile(join(repositoryRoot, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), 'utf8'))
     } finally {
       child.kill()
+    }
+  }, 20_000)
+
+  it('keeps catalog.image.generate public schema modes aligned with local validation', async () => {
+    const forwarded: Array<Record<string, unknown>> = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      forwarded.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({
+        error: { code: 'TEST_SCHEMA_SENTINEL', message: 'stop after local schema validation' },
+      }))
+    })
+    const address = await listen(server)
+    const { tools, child } = await listBridgeTools({
+      MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_image_mode_schema',
+      MERCHANT_STRICT_AUTH: 'false',
+      MERCHANT_MCP_WRITE_ENABLED: 'true',
+    })
+    const tool = tools.find(candidate => candidate.name === 'catalog.image.generate')!
+    const publicSchemaAccepts = (args: Record<string, unknown>) => {
+      const oneOf = tool.inputSchema.oneOf ?? []
+      const matchingModes = oneOf.filter(alternative => (alternative.required ?? []).every(key => Object.hasOwn(args, key)))
+      const properties = tool.inputSchema.properties ?? {}
+      const validValues = Object.entries(args).every(([key, value]) => {
+        const field = properties[key]
+        if (field?.type === 'string' && (typeof value !== 'string' || value.length < (field.minLength ?? 0) || (field.pattern === '\\S' && !/\S/.test(value)))) return false
+        if (field?.jsonShape === 'array' && typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value)
+            return Array.isArray(parsed) && parsed.length > 0 && parsed.every(item => typeof item === 'string' && Boolean(item.trim()))
+          } catch { return false }
+        }
+        return true
+      })
+      return matchingModes.length === 1 && validValues
+    }
+    const call = async (id: number, args: Record<string, unknown>) => {
+      const stdin = child.stdin
+      const stdout = child.stdout
+      if (!stdin || !stdout) throw new Error('bridge stdio is unavailable')
+      stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: args } })}\n`)
+      return nextLine(stdout)
+    }
+    try {
+      const cases = [
+        { args: { product_id: 'product_1' }, accepted: true },
+        { args: { product_id: 'product_1', title: '商品标题' }, accepted: true },
+        { args: { product_id: 'product_1', asset_ids_json: '["asset_1"]' }, accepted: true },
+        { args: { title: '商品标题', asset_ids_json: '["asset_1"]' }, accepted: true },
+        { args: { product_id: 'product_1', title: '商品标题', asset_ids_json: '["asset_1"]' }, accepted: false },
+        { args: { product_id: 'product_1', title: '商品标题', asset_ids_json: 'not-json' }, accepted: false },
+        { args: {}, accepted: false },
+        { args: { title: '商品标题' }, accepted: false },
+        { args: { asset_ids_json: '["asset_1"]' }, accepted: false },
+        { args: { product_id: '' }, accepted: false },
+        { args: { product_id: '   ' }, accepted: false },
+        { args: { title: '', asset_ids_json: '["asset_1"]' }, accepted: false },
+        { args: { title: '   ', asset_ids_json: '["asset_1"]' }, accepted: false },
+        { args: { title: '商品标题', asset_ids_json: '' }, accepted: false },
+        { args: { title: '商品标题', asset_ids_json: 'not-json' }, accepted: false },
+        { args: { title: '商品标题', asset_ids_json: '[]' }, accepted: false },
+        { args: { product_id: 'product_1', title: '' }, accepted: false },
+        { args: { product_id: 'product_1', asset_ids_json: '' }, accepted: false },
+        { args: { product_id: 'product_1', asset_ids_json: 'not-json' }, accepted: false },
+      ]
+      for (const [index, candidate] of cases.entries()) {
+        expect(publicSchemaAccepts(candidate.args), JSON.stringify(candidate.args)).toBe(candidate.accepted)
+        const result = (await call(index + 1, candidate.args)).result
+        if (!candidate.accepted) {
+          expect(result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+        } else {
+          expect(result.isError).toBe(true)
+          expect(result.structuredContent.code).not.toBe('TOOL_ARGUMENTS_INVALID')
+        }
+      }
+      expect(forwarded).toHaveLength(4)
+    } finally {
+      child.kill()
+      await close(server)
     }
   }, 20_000)
 

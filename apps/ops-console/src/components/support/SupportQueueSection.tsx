@@ -40,6 +40,10 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
   const [form] = Form.useForm<CreateForm>();
   const createIdempotencyKeyRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
+  const hasActiveFilters = Boolean(
+    model.filters.query.trim() || model.filters.customerId?.trim() || model.filters.status
+    || model.filters.priority || model.filters.slaState || model.filters.assigneeId?.trim(),
+  );
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -161,7 +165,11 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
         loading={model.loading}
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={model.tickets}
-        locale={{ emptyText: <Empty description="暂无符合条件的客服工单" /> }}
+        locale={{ emptyText: <Empty description={hasActiveFilters ? <Space orientation="vertical" align="center">
+          <Typography.Text>没有符合当前筛选条件的工单</Typography.Text>
+          <Typography.Text type="secondary">调整筛选条件，或清除筛选后查看全部工单。</Typography.Text>
+          <Button onClick={() => model.setFilters({ query: "" })}>清除所有筛选条件</Button>
+        </Space> : "暂无客服工单"} /> }}
         scroll={{ x: 980 }}
         onRow={ticket => ({
           onClick: event => {

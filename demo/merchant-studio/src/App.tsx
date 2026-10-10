@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import './capability.css'
 import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'
+import { MerchantSupportRequestPanel } from './MerchantSupportRequestPanel'
 import { MaterialRightsControl } from './MaterialRightsControl'
 import { BrandScopeSaveControls } from './BrandScopeSaveControls'
 import { CommercialNotificationPanel, notificationPanelScope } from './CommercialNotificationPanel'
@@ -325,6 +326,7 @@ import { resolveRuleContext, resolveRuleExecutionState, shouldShowSelectedCatego
 import { resolveDataConsistency } from './data-consistency.js'
 import { canApproveReviewedContent, contentApprovalBlockerMessage } from './content-approval-readiness.js'
 import { imageJobForRoute, isImageJobRequestCurrent, updateVisualRefsForRoute, visualRefsForRoute } from './image-generation-job-route-state.js'
+import { focusImageGenerationField } from './image-generation-field-focus'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
 import { productAssetGenerationBlockers, productAssetGenerationBlockersForAsset, productAssetGenerationSourceStatus, productAssetHasTrustedCleanScanEvidence, resolveProductAssetRelation, type ProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
@@ -3291,8 +3293,8 @@ export function FinanceOverview({ baseUrl, billing, billingLoading = false, bill
               : `该区间已读取 ${entriesInRange?.length ?? 0} 条创意点流水，其中没有消耗记录（只有消耗类流水计入趋势），不显示趋势图。`}</p>
         )}
       </section>
-      <Modal title={pricingDialog === 'points' ? '套餐与权益包' : '储存空间购买'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => setPricingDialog(null)}>
-        {pricingDialog === 'points' ? <><p>本页“购买套餐与权益包”展示服务端当前上架商品。关闭后可核对已购套餐并选择商品。</p><Button type="primary" onClick={() => { setPricingDialog(null); document.querySelector('.commercial-center')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>查看当前目录</Button></> : <div className="finance-storage-contact"><Boxes size={28} /><strong>请咨询客服</strong></div>}
+      <Modal title={pricingDialog === 'points' ? '套餐与权益包' : '储存空间扩容咨询'} open={Boolean(pricingDialog)} footer={null} width={720} onCancel={() => setPricingDialog(null)}>
+        {pricingDialog === 'points' ? <><p>本页“购买套餐与权益包”展示服务端当前上架商品。关闭后可核对已购套餐并选择商品。</p><Button type="primary" onClick={() => { setPricingDialog(null); document.querySelector('.commercial-center')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>查看当前目录</Button></> : <div className="finance-storage-contact"><Boxes size={28} /><strong>储存扩容需人工评估</strong><p>提交支持请求后，运营人员会通过工单回复确认可用方案。此表单只登记咨询，不会创建订单或发起付款。</p><MerchantSupportRequestPanel baseUrl={baseUrl} workspaceKey={`${account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'}:${activeWorkspaceId ?? 'unselected'}`} step="储存空间扩容咨询" /></div>}
       </Modal>
     </section>
   )
@@ -5951,7 +5953,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 <option value="1024x4096">完整详情长图 · 1024×4096</option>
               </select></label>
               <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
-              {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#catalog-image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}</div>}
+              {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <button type="button" className="text-button" onClick={() => focusImageGenerationField(`catalog-image-generation-${imageGenerationErrorField}`)}>跳转到需要修正的字段</button>}</div>}
             </div>
           </DialogFrame>
         )}
@@ -6058,7 +6060,17 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
           ) : catalogPlatformOrder.map((id) => {
             const label = catalogPlatformLabel(id)
             const platform = platforms?.find((item) => item.id === id)
-            return <button className={`${selectedPlatform === id ? 'active ' : ''}${platform?.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === id} key={id} onClick={() => setSelectedPlatform(id)}>
+            return <button className={`${selectedPlatform === id ? 'active ' : ''}${platform?.connected ? 'connected' : 'disconnected'}`} type="button" aria-pressed={selectedPlatform === id} key={id} disabled={manualStoreSubmitting} onClick={() => {
+              if (selectedPlatform !== id && !manualStorePendingRecord) {
+                // Store IDs are platform-scoped. Never carry an unsubmitted ID
+                // or name into another platform's registration form.
+                setManualStoreId('')
+                setManualStoreName('')
+                setManualStoreError('')
+                setManualStoreMessage('')
+              }
+              setSelectedPlatform(id)
+            }}>
               <span className="catalog-platform-mark" aria-hidden="true">{platform?.mark ?? label.slice(0, 1)}</span><span className="catalog-platform-list-copy"><strong>{platform?.label ?? label}</strong><small>{platform?.stores.length ?? 0} 家店铺</small></span><span className="catalog-platform-connection"><i />{platform?.statusLabel ?? '未登记'}</span><ChevronRight size={16} aria-hidden="true" />
             </button>
           })}
@@ -6590,9 +6602,10 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       if (!focusable.length) { event.preventDefault(); dialog.focus({ preventScroll: true }); return }
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      const active = document.activeElement
+      if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
         event.preventDefault(); last.focus()
-      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      } else if (!event.shiftKey && (active === last || active === dialog || !dialog.contains(active))) {
         event.preventDefault(); first.focus()
       }
     }
@@ -6792,7 +6805,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
         <label>输入“彻底删除”确认<input value={purgeConfirmation} disabled={busy} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
         <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
       </section></div>}
-      {previewItem && <div ref={previewDialogRef} className="material-upload-lightbox" role="dialog" aria-modal="true" aria-label={`素材预览：${previewItem.name}`} tabIndex={-1} onClick={closePreview}><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>点击任意位置关闭，按 Escape 返回</small></span></div>}
+      {previewItem && <div ref={previewDialogRef} className="material-upload-lightbox" role="dialog" aria-modal="true" aria-label={`素材预览：${previewItem.name}`} tabIndex={-1} onClick={closePreview}><button type="button" className="material-recycle-preview-close" aria-label="关闭素材预览" onClick={(event) => { event.stopPropagation(); closePreview() }}>关闭预览</button><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>按 Escape 返回</small></span></div>}
       {recycleError && readState !== 'error' && !purgeDialogOpen && <p role="alert">{recycleError}</p>}
     </div>
   )
@@ -9469,7 +9482,7 @@ export function Products({
               <option value="1024x4096">完整详情长图 · 1024×4096</option>
             </select></label>
             <label htmlFor="image-generation-count">候选数量<input id="image-generation-count" inputMode="numeric" aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} value={imageGenerationCount} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
-            {imageGenerationError && <div id="image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}<span className="sr-only">请修正表单后重新提交。</span></div>}
+            {imageGenerationError && <div id="image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <button type="button" className="text-button" onClick={() => focusImageGenerationField(`image-generation-${imageGenerationErrorField}`)}>跳转到需要修正的字段</button>}<span className="sr-only">请修正表单后重新提交。</span></div>}
           </div>
         </DialogFrame>
       )}

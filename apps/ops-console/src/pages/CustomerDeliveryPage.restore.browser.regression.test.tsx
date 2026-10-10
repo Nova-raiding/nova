@@ -140,4 +140,62 @@ describe("customer delivery archive restore", () => {
       expect(restored).toBe(true);
     } finally { await page.close(); }
   }, 45_000);
+
+  it("recovers a revision conflict using the latest archived revision and confirms the restored readback", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(8_000);
+    const requests: Array<{ method: string; workspace: string | undefined; revision?: string }> = [];
+    let current: { id: string; companyName: string; paymentStatus: string; profile: boolean; integration: boolean; acceptance: boolean; training: boolean; revision: number; archivedAt: string | null; videos: never[] } = {
+      id: "delivery-restore-conflict",
+      companyName: "并发恢复客户",
+      paymentStatus: "paid",
+      profile: true,
+      integration: true,
+      acceptance: true,
+      training: true,
+      revision: 7,
+      archivedAt: "2026-10-09T10:00:00.000Z",
+      videos: [],
+    };
+    try {
+      await page.route(`${baseUrl}/api/mcp`, async route => {
+        const request = route.request().postDataJSON() as { id: string; method: string; params: Record<string, string> };
+        requests.push({ method: request.method, workspace: request.params.target_workspace_id, revision: request.params.expected_revision });
+        if (request.method === "ops.customer-delivery.list") {
+          const archivedOnly = request.params.archived_only === "true";
+          const items = archivedOnly && current.archivedAt ? [current] : [];
+          return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { items, total: items.length, offset: Number(request.params.offset), limit: Number(request.params.limit), hasMore: false, project_owner_options: [], support_owner_options: [] } }) });
+        }
+        if (request.method === "ops.customer-delivery.update") {
+          if (request.params.expected_revision === "7") {
+            // Another operator updated the archived record first; the UI must
+            // read revision 8 and retry against that exact revision.
+            current = { ...current, revision: 8 };
+            return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: "REVISION_CONFLICT", message: "revision conflict", retryable: true } }) });
+          }
+          expect(request.params.expected_revision).toBe("8");
+          current = { ...current, archivedAt: null, revision: 9 };
+          return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result: current }) });
+        }
+        if (request.method === "ops.customer-delivery.get") {
+          expect(request.params.delivery_id).toBe(current.id);
+          return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: request.id, result: current }) });
+        }
+        return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN", message: `Unexpected operation: ${request.method}` } }) });
+      });
+
+      await page.goto(`${baseUrl}/__delivery-restore-test`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await page.getByRole("checkbox", { name: "查看已归档记录" }).check();
+      await page.getByRole("cell", { name: "并发恢复客户", exact: true }).waitFor();
+      await page.getByRole("button", { name: "恢复记录", exact: true }).click();
+      await page.getByRole("button", { name: "确认恢复", exact: true }).click();
+      await page.getByText("客户交付记录已恢复", { exact: true }).waitFor();
+      await page.getByText("暂无已归档客户交付记录", { exact: true }).waitFor();
+
+      expect(requests.filter(request => request.method === "ops.customer-delivery.update").map(request => request.revision)).toEqual(["7", "8"]);
+      expect(requests.filter(request => request.method === "ops.customer-delivery.get")).toHaveLength(1);
+      expect(requests.every(request => request.workspace === "ws-regression")).toBe(true);
+      expect(current).toMatchObject({ archivedAt: null, revision: 9 });
+    } finally { await page.close(); }
+  }, 45_000);
 });

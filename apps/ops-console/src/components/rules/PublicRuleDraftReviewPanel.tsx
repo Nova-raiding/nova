@@ -119,6 +119,7 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
   const [detail, setDetail] = useState<ReviewDetail>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
@@ -130,6 +131,7 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
   const [approvalToken, setApprovalToken] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchApprovalOpen, setBatchApprovalOpen] = useState(false);
+  const [detailRetryItem, setDetailRetryItem] = useState<ReviewRule>();
   const validApprovalTime = isPublicRuleApprovalTimestamp(approvedAt.trim());
 
   const clearReviewInputs = () => {
@@ -161,7 +163,7 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
   useEffect(() => {
     listRequest.current += 1;
     detailRequest.current += 1;
-    setItems([]); setNextCursor(undefined); setPageIndex(0); setPageCursors([undefined]); setDetail(undefined); setLoading(false);
+    setItems([]); setNextCursor(undefined); setPageIndex(0); setPageCursors([undefined]); setDetail(undefined); setDetailRetryItem(undefined); setLoading(false); setDetailLoading(false);
     setBatchApprovalOpen(false);
     setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
     void load(undefined, 0);
@@ -170,6 +172,8 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
   if (!visible) return null;
   const openDetail = async (item: ReviewRule) => {
     const requestId = ++detailRequest.current;
+    setDetailRetryItem(item);
+    setDetailLoading(true);
     setError(""); setDetail(undefined);
     clearReviewInputs();
     try {
@@ -178,7 +182,9 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
       if (requestId !== detailRequest.current) return;
       if (result.rule.checksum !== item.checksum || result.rule.id !== item.id) throw new Error("规则列表与详情不一致，请刷新后重新选择");
       setDetail(result);
+      setDetailRetryItem(undefined);
     } catch (cause) { if (requestId === detailRequest.current) setError(cause instanceof Error ? cause.message : "公共规则详情读取失败"); }
+    finally { if (requestId === detailRequest.current) setDetailLoading(false); }
   };
   const transition = async (status: "active" | "inactive") => {
     if (!detail || busy || !canWrite) return;
@@ -238,7 +244,10 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
         {items.length > 0 && <Typography.Text>列表保留最近一次成功读取的数据，可能已过期；请刷新并重新核对后再操作。 </Typography.Text>}
         {error}
       </>}
-      action={<Button htmlType="button" disabled={loading || busy} loading={loading} onClick={() => void load(pageCursors[pageIndex], pageIndex)}>刷新审核数据</Button>}
+      action={<Button htmlType="button" disabled={loading || busy || detailLoading} loading={detailLoading || loading} onClick={() => {
+        if (detailRetryItem) void openDetail(detailRetryItem);
+        else void load(pageCursors[pageIndex], pageIndex);
+      }}>{detailRetryItem ? "重试读取详情" : "刷新审核数据"}</Button>}
       style={{ marginBottom: 12 }}
     />}
     {items.length ? <Table rowKey="id" size="small" dataSource={items} rowSelection={canApprove ? {
@@ -270,7 +279,7 @@ export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { 
       {canWrite && <Space direction="vertical" style={{ width: "100%" }}>
         <Input aria-label="审核原因" placeholder="审核原因（必填）" value={reason} onChange={event => setReason(event.target.value)} />
         {canApprove && <><Input aria-label="审批凭证编号" placeholder="审批凭证编号" value={approvalRef} onChange={event => setApprovalRef(event.target.value)} /><Input aria-label="独立审批人" placeholder="独立审批人" value={approvedBy} onChange={event => setApprovedBy(event.target.value)} /><Input aria-label="审批时间" placeholder="例如 2026-10-09T08:00:00.000Z" status={approvedAt && !validApprovalTime ? "error" : undefined} value={approvedAt} onChange={event => setApprovedAt(event.target.value)} />{approvedAt && !validApprovalTime && <Typography.Text type="danger" role="alert">请输入包含时区的有效 ISO 8601 日期时间。</Typography.Text>}<Input.Password aria-label="规则审批凭证" placeholder="服务端签发的规则审批凭证" value={approvalToken} onChange={event => setApprovalToken(event.target.value)} /></>}
-        <Space><Button danger disabled={!reason.trim() || detail.rule.status !== "draft"} loading={busy} onClick={() => void transition("inactive")}>拒绝并归档</Button>{canApprove && <Button type="primary" disabled={!reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim() || !canReviewPublicRuleDraft(authorization, detail.rule)} loading={busy} onClick={() => void transition("active")}>审批并激活</Button>}</Space>
+        <Space><Button danger aria-label="拒绝并归档" disabled={!reason.trim() || detail.rule.status !== "draft"} loading={busy} onClick={() => void transition("inactive")}>拒绝并归档</Button>{canApprove && <Button type="primary" aria-label="审批并激活" disabled={!reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim() || !canReviewPublicRuleDraft(authorization, detail.rule)} loading={busy} onClick={() => void transition("active")}>审批并激活</Button>}</Space>
       </Space>}
     </Card>}
     <Modal title={`一键审批选中的 ${approvableSelectedRules.length} 条公共规则`} open={batchApprovalOpen} okText="审批并激活" cancelText="取消" confirmLoading={busy} okButtonProps={{ disabled: !approvableSelectedRules.length || !reason.trim() || !approvalRef.trim() || !approvedBy.trim() || !validApprovalTime || !approvalToken.trim() }} onOk={() => void approveBatch()} onCancel={() => { if (!busy) { setBatchApprovalOpen(false); clearReviewInputs(); } }}>

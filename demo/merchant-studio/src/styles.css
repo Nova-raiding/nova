@@ -908,6 +908,7 @@ body {
 .overview-page .platform-meta span { color: #6b7871; font-size: 11px; }
 .overview-page .platform-sync { gap: 6px; }
 .overview-page .platform-sync small { color: #748179; font-size: 10px; }
+.overview-page .platform-actions { display:flex; min-width:0; align-items:center; justify-content:flex-end; gap:4px; }
 
 @media (min-width: 1200px) {
   .overview-page { padding: 22px 32px 36px; }
@@ -926,6 +927,8 @@ body {
 }
 
 @media (max-width: 760px) {
+  .overview-page .platform-row { grid-template-columns:auto minmax(0,1fr) auto; }
+  .overview-page .platform-actions { grid-column:2 / -1; justify-content:flex-start; }
   .today-dashboard-heading { align-items:flex-start; flex-direction:column; padding:19px; }
   .today-dashboard-grid { grid-template-columns:1fr; }
   .today-board-card { border-right:0; border-bottom:1px solid rgba(255,255,255,.11); padding:19px; }
@@ -950,8 +953,7 @@ body {
 
 /* Overview simplification requested during visual review. */
 .overview-page .overview-sync-actions,
-.overview-page .data-integrity-panel,
-.overview-page .dashboard-grid {
+.overview-page .data-integrity-panel {
   display: none;
 }
 
@@ -1592,6 +1594,8 @@ body {
 .material-upload-lightbox img { display:block; max-width:88vw; max-height:72vh; border-radius:12px; object-fit:contain; box-shadow:0 24px 70px rgba(0,0,0,.38); }
 .material-upload-lightbox strong { max-width:760px; overflow:hidden; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
 .material-upload-lightbox small { color:#c5d3cc; font-size:10px; }
+.material-recycle-preview-close { position:absolute; top:18px; right:18px; min-height:40px; padding:0 14px; border:1px solid rgba(255,255,255,.4); border-radius:8px; color:#fff; background:rgba(255,255,255,.12); cursor:pointer; }
+.material-recycle-preview-close:hover,.material-recycle-preview-close:focus-visible { background:rgba(255,255,255,.24); outline:2px solid #fff; outline-offset:2px; }
 .material-upload-video-preview { display:grid; width:min(720px,82vw); height:min(420px,62vh); place-items:center; border-radius:12px; color:#d4e5dc; background:#173c2e; }
 .material-upload-confirm { display:inline-flex; min-height:38px; align-items:center; justify-content:center; gap:6px; padding:0 13px; border:1px solid #17543c; border-radius:8px; color:#fff; background:#17543c; font-size:10px; font-weight:800; }
 .material-upload-confirm:disabled { cursor:not-allowed; border-color:#dce3df; color:#9ca7a1; background:#edf1ef; }

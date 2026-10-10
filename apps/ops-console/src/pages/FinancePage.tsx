@@ -71,7 +71,15 @@ export function FinancePage({ model }: FinancePageProps) {
       nextStep={isPlatformWorkbench ? undefined : "先处理阻断与待对账事项；支付成功后仍需核验权益发放与新的访问版本。"}
     >
       <div className="ops-finance-page">
-        {workspaceDraft ? <Alert type="info" showIcon title={`当前企业：${selectedWorkspace?.enterpriseName?.trim() || `未命名企业主体 · ${workspaceDraft}`}`} description={`财务和商业操作范围：${workspaceDraft}`} style={{ marginBottom: 16 }} /> : null}
+        {workspaceDraft ? <Alert
+          type="info"
+          showIcon
+          title={`${isPlatformWorkbench ? "当前商业目标" : "当前企业"}：${selectedWorkspace?.enterpriseName?.trim() || `未命名企业主体 · ${workspaceDraft}`}`}
+          description={isPlatformWorkbench
+            ? `代购、收款分配和商业操作目标：${workspaceDraft}。跨企业主体财务检索由「Workspace ID」筛选单独控制。`
+            : `账务和商业操作范围：${workspaceDraft}`}
+          style={{ marginBottom: 16 }}
+        /> : null}
         {isPlatformWorkbench ? <>
           {canSearchFinance ? <FinanceSearchSection controller={financeSearch} canExport={canExportFinance} showProviderStatementStatus={false} compactSummary /> : (
             <Alert

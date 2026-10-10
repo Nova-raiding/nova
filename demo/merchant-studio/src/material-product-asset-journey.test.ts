@@ -6,6 +6,20 @@ const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const productRoutes = readFileSync(new URL('../../../apps/api/src/http-product-write-routes.ts', import.meta.url), 'utf8')
 
 describe('merchant material-to-product asset journey contract', () => {
+  it('keeps relationship actions unavailable after a failed read and retries the complete relation snapshot', () => {
+    const start = app.indexOf('function ProductAssetRelationDialog(')
+    const end = app.indexOf('\n/**\n * The material workspace', start)
+    const dialog = app.slice(start, end)
+    expect(dialog).toContain(`.catch((cause) => {\n        if (active) setError(describeApiError(cause))`)
+    expect(dialog).toContain('message={`关系读取失败：${error}`}')
+    expect(dialog).toContain('onRetry={reload}')
+    expect(dialog).toContain('{!loading && !error && product && (')
+    expect(dialog).toContain('disabled={!product || loading || Boolean(error) || Boolean(saveError) || generationBlockers.length > 0}')
+    expect(dialog).toContain('fetchProduct(baseUrl, productId)')
+    expect(dialog).toContain('fetchProductAssetBindings(baseUrl, productId)')
+    expect(dialog).toContain('fetchAssets(baseUrl)')
+    expect(dialog).toContain('onClick={reload}')
+  })
   it('loads persisted workspace assets when the product import form opens and renders their eligibility', () => {
     const openImport = app.slice(app.indexOf('const loadImportAssets = () =>'), app.indexOf('const importLocalProduct = async () =>'))
     const picker = app.slice(app.indexOf('<fieldset className="import-asset-picker">'), app.indexOf('</fieldset>', app.indexOf('<fieldset className="import-asset-picker">')))

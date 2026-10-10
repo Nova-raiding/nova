@@ -64,6 +64,7 @@ export function MarketingQueueFiltersSection({
           placeholder="商品 ID"
           style={{ width: 180 }}
           value={queueFilters.productId ?? ""}
+          onPressEnter={() => void load()}
           onChange={(event) =>
             setQueueFilters((current) => ({
               ...current,
@@ -77,6 +78,7 @@ export function MarketingQueueFiltersSection({
           placeholder="任务 ID"
           style={{ width: 180 }}
           value={queueFilters.taskId ?? ""}
+          onPressEnter={() => void load()}
           onChange={(event) =>
             setQueueFilters((current) => ({
               ...current,
@@ -104,7 +106,7 @@ export function MarketingQueueFiltersSection({
             "visual_review",
           ].map((state) => ({ value: state, label: queueStateLabel(state) }))}
         />
-        <Button type="primary" onClick={() => void load()}>
+        <Button type="primary" loading={model.loading} onClick={() => void load()}>
           应用筛选
         </Button>
         <Button

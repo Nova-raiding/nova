@@ -148,7 +148,7 @@ export function isManualStoreRecord(account: { tokenState: string }): boolean {
 
 function validateStoreAlias(alias: string): string {
   const normalized = alias.normalize('NFKC').trim().replace(/\s+/gu, ' ')
-  if (!normalized || normalized.length > 40 || /[\u0000-\u001f\u007f\p{Cf}]/u.test(normalized)) throw new DomainError('STORE_ALIAS_INVALID', '店铺别名必须是 1 到 40 个可见字符，不能包含控制或零宽格式字符', 400)
+  if (!normalized || normalized.length > 40 || /[\u0000-\u001f\u007f\p{Cf}]/u.test(normalized)) throw new DomainError('STORE_ALIAS_INVALID', '店铺别名必须输入 1 到 40 个字符，不能包含控制或零宽格式字符', 400)
   return normalized
 }
 

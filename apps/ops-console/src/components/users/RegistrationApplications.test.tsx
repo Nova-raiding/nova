@@ -5,7 +5,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page, type Route } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
-import { authorizeRegistrationWorkspaces } from "./UsersGovernanceWorkspace.js";
 
 const application = {
   application_id: "app_1",
@@ -59,7 +58,7 @@ describe("registration applications error state", () => {
             localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: '', workbench: 'platform' }));
             function Probe() {
               const [actor, setActor] = useState('operator-a');
-              const model = { authorization: { can: () => true }, opsSession: { actor_id: actor, session_id: actor + '-session', workspace_id: '', roles: ['platform_ops'], capabilities: ['identity.read'], workbench: 'platform', scope: { type: 'platform' } } };
+              const model = { authorization: { can: () => true }, loadUsers: async () => undefined, opsSession: { actor_id: actor, session_id: actor + '-session', workspace_id: '', roles: ['platform_ops'], capabilities: ['identity.read'], workbench: 'platform', scope: { type: 'platform' } } };
               return React.createElement(App, null,
                 React.createElement('button', { 'data-testid': 'switch-actor', onClick: () => setActor('operator-b') }, '切换账号'),
                 React.createElement(RegistrationApplications, { model }));
@@ -212,26 +211,25 @@ describe("registration applications error state", () => {
       expect(reads).toBe(2);
     } finally { await page.close(); }
   }, 45_000);
-});
 
-describe("registration authorization retry", () => {
-  it("remembers partial success and skips already bound workspaces on retry", async () => {
-    const calls: string[] = [];
-    const stored: string[][] = [];
-    await expect(authorizeRegistrationWorkspaces({ applicationId: "app-1", login: "merchant@example.com", workspaceIds: ["ws-a", "ws-b"], alreadyBound: [], reason: "合同已核验", skuCode: "sku-monthly-2000", amountFen: 200000, memberRole: "merchant_admin" }, async request => {
-      calls.push(request.workspaceId);
-      if (request.workspaceId === "ws-b") return null;
-      expect(request.idempotencyKey).toBe("registration-authorize-app-1-ws-a");
-      return { entitlement_status: "pending_payment_verification" };
-    }, values => stored.push(values))).rejects.toThrow("工作区 ws-b 的角色和套餐绑定未完成");
-    expect(stored).toEqual([["ws-a"]]);
-
-    const selected = await authorizeRegistrationWorkspaces({ applicationId: "app-1", login: "merchant@example.com", workspaceIds: ["ws-a", "ws-b"], alreadyBound: stored.at(-1) ?? [], reason: "合同已核验", skuCode: "sku-monthly-2000", amountFen: 200000, memberRole: "merchant_admin" }, async request => {
-      calls.push(request.workspaceId);
-      expect(request.idempotencyKey).toBe(`registration-authorize-app-1-${request.workspaceId}`);
-      return { entitlement_status: "pending_payment_verification" };
-    }, values => stored.push(values));
-    expect(selected).toEqual(["ws-a", "ws-b"]);
-    expect(calls).toEqual(["ws-a", "ws-b", "ws-b"]);
-  });
+  it("keeps approval visibly blocked and makes no write through the retired API", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    const writes: string[] = [];
+    try {
+      await page.route(applicationsUrl(), route => succeed(route, [application]));
+      await page.route(`${baseUrl}/api/v1/ops/**`, async route => {
+        if (route.request().method() === "GET") return route.fallback();
+        writes.push(new URL(route.request().url()).pathname);
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { ok: true } }) });
+      });
+      await open(page);
+      const row = page.getByRole("row").filter({ hasText: application.login });
+      await row.getByRole("button").filter({ hasText: /审\s*核/u }).click();
+      await page.getByText("通过审批暂不可用", { exact: true }).waitFor();
+      await page.getByText(/旧授权接口返回 HTTP 410/u).waitFor();
+      expect(await page.getByRole("button", { name: "提交审核" }).isDisabled()).toBe(true);
+      expect(writes).toEqual([]);
+      expect(await page.getByText(application.login, { exact: false }).count()).toBeGreaterThan(0);
+    } finally { await page.close(); }
+  }, 45_000);
 });

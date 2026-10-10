@@ -63,6 +63,7 @@ import { platformMonthlyFinanceRequest } from "../components/sections/overview/f
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { confirmPolicyPropsFor } from "../utils/destructiveConfirm.js";
+import { storeRevocationCopy } from "../components/stores/storeRevocationCopy.js";
 import { mergeRechargeOrderPages, paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator, OpsLoadRerunGate } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
@@ -1626,7 +1627,7 @@ export function useOpsConsoleModel() {
         platform: row.platform,
         account_id: row.accountId,
       }),
-      onSuccess: () => message.success("店铺授权已撤销"),
+      onSuccess: () => message.success(storeRevocationCopy(row).successMessage),
       refresh: load,
     });
   };

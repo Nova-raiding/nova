@@ -119,7 +119,7 @@ describe("manual store registration failure recovery", () => {
       await waitForDialog(page, registrationDialog);
       const manualAlias = registrationDialog.getByLabel("店铺别名（可选）", { exact: true });
       expect(await manualAlias.getAttribute("maxlength")).toBe("40");
-      expect(await registrationDialog.getByText("最多 40 个可见字符，与平台店铺别名规则一致。", { exact: true }).count()).toBe(1);
+      expect(await registrationDialog.getByText("最多输入 40 个字符，与平台店铺别名规则一致。", { exact: true }).count()).toBe(1);
       await page.keyboard.press("Escape");
       await registrationDialog.waitFor({ state: "hidden" });
 
@@ -127,7 +127,7 @@ describe("manual store registration failure recovery", () => {
       const editedAlias = page.locator("#store-display-alias");
       await editedAlias.waitFor({ state: "visible" });
       expect(await editedAlias.getAttribute("maxlength")).toBe("40");
-      expect(await page.locator("#store-display-alias-limit").textContent()).toBe("最多 40 个可见字符，与平台店铺别名规则一致。");
+      expect(await page.locator("#store-display-alias-limit").textContent()).toBe("最多输入 40 个字符，与平台店铺别名规则一致。");
     } finally { await page.close(); }
   }, 45_000);
 

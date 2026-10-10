@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { chromium, type Browser } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
-describe("UsersPage platform registration application approval route journey", () => {
+describe("UsersPage platform registration review route journey", () => {
   let browser: Browser | undefined;
   let vite: ViteDevServer | undefined;
   let cacheDirectory: string | undefined;
@@ -61,7 +61,7 @@ describe("UsersPage platform registration application approval route journey", (
     }
   }, 60_000);
 
-  it("approves a pending registration with one scoped authorization and reads back the reviewed application", async () => {
+  it("blocks unsupported approval writes and keeps rejection available", async () => {
     const page = await browser!.newPage();
     page.setDefaultTimeout(20_000);
     const rpcCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -71,7 +71,7 @@ describe("UsersPage platform registration application approval route journey", (
     let reviewed = false;
     const application = () => ({
       application_id: "application-geo-17", login: "owner@example.test", enterprise_name: "Geo Retail",
-      contact_name: "Lin", status: reviewed ? "active" : "merchant_pending", workspace_ids: [],
+      contact_name: "Lin", status: reviewed ? "rejected" : "merchant_pending", workspace_ids: [],
       created_at: "2026-10-01T08:00:00.000Z", updated_at: "2026-10-11T08:00:00.000Z", revision: reviewed ? 2 : 1,
     });
     page.on("pageerror", error => browserErrors.push(error.message));
@@ -114,18 +114,16 @@ describe("UsersPage platform registration application approval route journey", (
           return;
         }
         if (request.method() === "POST" && url.pathname === "/api/v1/ops/merchant-accounts/authorize") {
-          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: {
-            schema_version: "merchant-account-authorization.v1", login: "owner@example.test", identity_id: "identity-geo-17",
-            workspace_id: "workspace-geo-17", enterprise_name: "Geo Retail", sku_code: "sku-onboarding-once",
-            amount_fen: 500000, currency: "CNY", payment_status: "pending", payment_reference: null, paid_at: null,
-            entitlement_status: "pending_payment_verification", member_role: "merchant_admin", member_status: "active",
-            capabilities: [], effective_at: null, authorized_by: "fixture-operator", reason: "已核验营业资料，待收款核验",
+          await route.fulfill({ status: 410, contentType: "application/json", body: JSON.stringify({ error: {
+            code: "MERCHANT_LEGACY_AUTHORIZATION_DISABLED",
+            message: "旧账号授权接口已停止新建授权",
+            next_actions: ["ops.commercial.order.preview", "ops.commercial.order.create", "ops.commercial.receipt.record"],
           } }) });
           return;
         }
         if (request.method() === "POST" && url.pathname === "/api/v1/ops/merchant-registration-applications/review") {
           reviewed = true;
-          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { success: true, status: "active" } }) });
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { success: true, status: "rejected" } }) });
           return;
         }
         unexpectedRequests.push(`${request.method()} ${url.pathname}`);
@@ -146,25 +144,26 @@ describe("UsersPage platform registration application approval route journey", (
       const drawer = page.getByRole("dialog", { name: "审核入驻申请 · Geo Retail" });
       await drawer.waitFor({ state: "visible" });
       expect(restCalls.filter(call => call.method === "POST")).toEqual([]);
-      await drawer.getByPlaceholder("workspace_id（可填多个，以空格分隔）").fill("workspace-geo-17");
-      await drawer.getByPlaceholder("至少填写 4 个字符").fill("已核验营业资料，待收款核验");
+      await drawer.getByText("通过审批暂不可用", { exact: true }).waitFor();
+      await drawer.getByText(/旧授权接口返回 HTTP 410/u).waitFor();
+      const reasonInput = drawer.getByPlaceholder("至少填写 4 个字符");
+      await reasonInput.fill("资料仍需核验");
+      expect(await drawer.getByRole("button", { name: "提交审核", exact: true }).isDisabled()).toBe(true);
       expect(restCalls.filter(call => call.method === "POST")).toEqual([]);
+
+      await drawer.getByLabel("审核决定").click();
+      await page.getByRole("option", { name: "拒绝", exact: true }).click();
+      expect(await reasonInput.inputValue()).toBe("资料仍需核验");
       await drawer.getByRole("button", { name: "提交审核", exact: true }).click();
-      await page.waitForTimeout(750);
-      if (await drawer.isVisible()) throw new Error(`approval did not close: ${JSON.stringify({ restCalls, alerts: await drawer.getByRole("alert").allTextContents(), text: (await drawer.innerText()).slice(-900) })}`);
+      await drawer.waitFor({ state: "hidden" });
 
       const authorize = restCalls.filter(call => call.method === "POST" && call.path === "/api/v1/ops/merchant-accounts/authorize");
       const review = restCalls.filter(call => call.method === "POST" && call.path === "/api/v1/ops/merchant-registration-applications/review");
-      expect(authorize).toHaveLength(1);
-      expect(authorize[0].body).toMatchObject({
-        login: "owner@example.test", workspace_id: "workspace-geo-17", member_role: "merchant_admin",
-        sku_code: "sku-onboarding-once", amount_fen: 500000, payment_status: "pending",
-        reason: "已核验营业资料，待收款核验", idempotency_key: "registration-authorize-application-geo-17-workspace-geo-17",
-      });
+      expect(authorize).toHaveLength(0);
       expect(review).toHaveLength(1);
-      expect(review[0].body).toMatchObject({ login: "owner@example.test", decision: "approved", workspace_ids: ["workspace-geo-17"] });
+      expect(review[0].body).toMatchObject({ login: "owner@example.test", decision: "rejected", workspace_ids: [] });
       expect(restCalls.filter(call => call.method === "GET" && call.path.startsWith("/api/v1/ops/merchant-registration-applications"))).toHaveLength(2);
-      await page.getByRole("row").filter({ hasText: "owner@example.test" }).getByText("已通过", { exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("row").filter({ hasText: "owner@example.test" }).getByText("已拒绝", { exact: true }).waitFor({ state: "visible" });
       expect(rpcCalls.some(call => call.method === "ops.session")).toBe(true);
       expect(rpcCalls.every(call => call.method === "ops.session" || call.method === "ops.users.list")).toBe(true);
       expect(unexpectedRequests).toEqual([]);

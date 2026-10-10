@@ -44,7 +44,7 @@ const jdWorkspaceProducts = [product, ...['补充商品一', '补充商品二'].
   title,
 }))]
 
-async function openOverview(issue) {
+async function openOverview(issue, { failTaskDeepLink = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
@@ -66,6 +66,9 @@ async function openOverview(issue) {
       data = { items: [{ platform: 'jd', state: 'manually_registered', readEnabled: false, writeEnabled: false, dataMode: 'manual_upload', accountId: 'jd-store-42', storeName: '贵人鸟官方旗舰店' }] }
     } else if (pathname === '/v1/products') {
       data = { items: jdWorkspaceProducts, total: jdWorkspaceProducts.length, limit: 50, offset: 0 }
+    } else if (pathname === '/v1/tasks/task-risk-42' && failTaskDeepLink && apiCalls.filter((call) => call.pathname === pathname).length === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'TEMPORARY_UNAVAILABLE', message: '任务暂时无法读取' })) })
+      return
     } else if (pathname === '/v1/tasks/task-risk-42') {
       data = task
     } else if (pathname === '/v1/products/product-risk-42') {
@@ -166,6 +169,34 @@ test('overview task risk restores the linked task and product context', async ()
     await expect(page.getByTestId('task-conversation')).toBeVisible()
     await expect(page.getByTestId('task-conversation')).toContainText('测试商品-风险跳转')
     await expect(page.getByTestId('route-recovery-error')).toHaveCount(0)
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('failed task deep link keeps keyboard focus on the actionable route recovery alert', async () => {
+  const issue = { severity: 'high', type: 'CONTENT_BLOCKING', title: '测试任务风险', entityType: 'content_version', entityId: 'version-risk-42', evidence: { taskId: 'task-risk-42' }, nextAction: '查看任务审核' }
+  const { browser, context, page, apiCalls } = await openOverview(issue, { failTaskDeepLink: true })
+  try {
+    await page.getByRole('button', { name: /测试任务风险/ }).click()
+    const recovery = page.getByTestId('route-recovery-error')
+    const alert = recovery.getByRole('alert')
+    await expect(alert).toContainText('无法恢复当前链接')
+    await expect(recovery.getByRole('button', { name: '重新读取' })).toBeVisible()
+    await expect.poll(() => alert.evaluate((element) => document.activeElement === element)).toBe(true)
+    expect(apiCalls.filter((call) => call.pathname === '/v1/tasks/task-risk-42')).toHaveLength(1)
+
+    // The recovery action must resolve the same deep link when the read becomes
+    // available, rather than dropping the task context or leaving a stale alert.
+    await recovery.getByRole('button', { name: '重新读取' }).click()
+    await expect(page).toHaveURL(/\/merchant\/tasks\/task-risk-42$/u)
+    await expect(page.getByTestId('task-conversation')).toBeVisible()
+    await expect(page.getByTestId('task-conversation')).toContainText('测试商品-风险跳转')
+    await expect(page.getByTestId('route-recovery-error')).toHaveCount(0)
+    await expect.poll(() => page.locator('main').evaluate((main) => document.activeElement === main)).toBe(true)
+    expect(apiCalls.filter((call) => call.pathname === '/v1/tasks/task-risk-42')).toHaveLength(2)
+    expect(apiCalls.some((call) => call.pathname === '/v1/products/product-risk-42')).toBe(true)
   } finally {
     await context.close()
     await browser.close()

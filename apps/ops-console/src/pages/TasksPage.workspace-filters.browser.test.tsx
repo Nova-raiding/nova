@@ -240,6 +240,28 @@ describe("TasksPage workspace filters browser journey", () => {
     }
   }, 60_000);
 
+  it("keeps a platform-only deep link as a workspace queue filter", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?platform=jd`, { waitUntil: "domcontentloaded" });
+      await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
+      const observed = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.search).toBe("?platform=jd");
+      expect(observed.filters).toEqual({ platform: "jd" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "jd" },
+      }]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   it("clears URL-owned filters on Back to the base URL and preserves manual filters", async () => {
     const page = await browser!.newPage();
     page.setDefaultTimeout(15_000);
@@ -269,6 +291,31 @@ describe("TasksPage workspace filters browser journey", () => {
       expect(backToBase.search).toBe("");
       expect(backToBase.filters).toEqual({ productId: "product-2" });
       expect(backToBase.calls[2]).toEqual({ method: "ops.marketing.queue", params: { limit: "20", product_id: "product-2" } });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("applies a task filter with Enter and keeps keyboard focus on the filter", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      const taskId = page.getByRole("textbox", { name: "按营销队列任务 ID 筛选" });
+      await taskId.fill("task-failed");
+      await taskId.press("Enter");
+      await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
+      await page.getByText("任务队列（1）", { exact: true }).waitFor({ state: "visible" });
+      expect(await taskId.evaluate(element => element === document.activeElement)).toBe(true);
+      const observed = await page.evaluate(() => ({
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.filters).toEqual({ taskId: "task-failed" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", task_id: "task-failed" },
+      }]);
     } finally {
       await page.close();
     }

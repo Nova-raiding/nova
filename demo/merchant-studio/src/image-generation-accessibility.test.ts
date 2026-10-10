@@ -83,6 +83,10 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain("aria-invalid={imageGenerationErrorField === 'direction'}")
     expect(app).toContain("aria-invalid={imageGenerationErrorField === 'count'}")
     expect(app).toContain('跳转到需要修正的字段')
+    expect(app).toContain('onClick={() => focusImageGenerationField(`catalog-image-generation-${imageGenerationErrorField}`)}')
+    expect(app).toContain('onClick={() => focusImageGenerationField(`image-generation-${imageGenerationErrorField}`)}')
+    expect(app).not.toContain('<a href={`#catalog-image-generation-${imageGenerationErrorField}`}>')
+    expect(app).not.toContain('<a href={`#image-generation-${imageGenerationErrorField}`}>')
   })
 
   it('announces the six-candidate limit and blocked candidate recovery path', () => {

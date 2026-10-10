@@ -6,6 +6,16 @@ type JsonObject = Record<string, unknown>
 type ScopedContent = { version: ContentVersion; task: Task }
 type ApprovalRules = Parameters<MerchantService['approveContent']>[2]
 
+function optionalExpectedVersion(params: JsonObject, key: string): number | undefined {
+  const value = params[key]
+  if (value === undefined) return undefined
+  const parsed = typeof value === 'string' && /^\d+$/u.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${key} 必须是正安全整数`, 400)
+  }
+  return parsed
+}
+
 export interface McpContentVersionDependencies {
   service: MerchantService
   required: (params: JsonObject, name: string) => string
@@ -58,7 +68,8 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       const taskId = required(params, 'task_id')
       const task = scopeTask(req, taskId)
       await assertCanonicalTaskScopeForAction(task)
-      const approved = service.approveContent(taskId, required(params, 'content_version_id'), await rulesForTask(workspaceId, task), typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
+      const expectedVersion = optionalExpectedVersion(params, 'expected_version')
+      const approved = service.approveContent(taskId, required(params, 'content_version_id'), await rulesForTask(workspaceId, task), expectedVersion)
       await persistSnapshot(workspaceId, 'content_version', approved.version, approved.version as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', approved.task, approved.task as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, approved.version.id, 'content.approved', approved.version.revision, { task_id: approved.task.id, content_version_id: approved.version.id, version: approved.version.version })
@@ -82,7 +93,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       if (typeof params.locked_fields_json === 'string') {
         try { const parsed = JSON.parse(params.locked_fields_json); if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string')) throw new Error('locked_fields_json must be array'); lockedFields = parsed } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'locked_fields_json 必须是字符串数组', 400) }
       }
-      const expectedRevision = typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? Number(params.expected_revision) : undefined
+      const expectedRevision = optionalExpectedVersion(params, 'expected_revision')
       const modified = typeof params.module_key === 'string' && params.module_key.trim()
         ? service.regenerateContentModule({ workspaceId, sourceVersionId: scoped.version.id, moduleKey: params.module_key, ...(lockedFields ? { lockedFields } : {}), reason: required(params, 'reason'), ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
         : (() => {
@@ -103,14 +114,7 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
       const scoped = scopeContentVersion(req, required(params, 'content_version_id'))
       await assertCanonicalTaskScopeForAction(scoped.task)
       let expectedVersion: number | undefined
-      if (params.expected_version !== undefined) {
-        expectedVersion = typeof params.expected_version === 'number'
-          ? params.expected_version
-          : typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version)
-            ? Number(params.expected_version)
-            : Number.NaN
-        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是正安全整数', 400)
-      }
+      expectedVersion = optionalExpectedVersion(params, 'expected_version')
       const restored = service.restoreContentVersion(workspaceId, scoped.version.id, expectedVersion)
       await persistSnapshot(workspaceId, 'content_version', restored.version, restored.version as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', restored.task, restored.task as unknown as Record<string, unknown>)

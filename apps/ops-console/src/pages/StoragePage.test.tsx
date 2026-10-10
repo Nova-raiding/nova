@@ -32,6 +32,9 @@ describe("StoragePage platform reconciliation list", () => {
     expect(markup).toContain("当前会话没有平台存储对账读取权限");
     expect(markup).toContain("storage.reconciliation.read");
     expect(markup).toContain("不能解读为对账任务未运行");
+    expect(markup).toContain("当前会话无法读取平台对账列表");
+    expect(markup).not.toContain("暂无可验证的对象清单对账结果");
+    expect(markup).toContain("不能说明存储用量为零");
     expect(markup).toContain("刷新存储摘要");
     expect(markup).not.toContain("重试加载对账结果");
     expect(dataSetError).not.toHaveBeenCalled();

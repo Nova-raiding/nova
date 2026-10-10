@@ -144,6 +144,21 @@ test('recycle bin retries failed reads and restores the selected server asset in
     await expect(row).toContainText('2026/10/8 删除')
     expect(trashReads).toBe(3)
 
+    const previewTrigger = row.getByRole('button', { name: '放大待恢复春季主图.png' })
+    await previewTrigger.click()
+    const previewDialog = page.getByRole('dialog', { name: '素材预览：待恢复春季主图.png' })
+    await expect(previewDialog).toBeVisible()
+    const closePreview = previewDialog.getByRole('button', { name: '关闭素材预览' })
+    await expect(closePreview).toBeVisible()
+    await expect(previewDialog).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(closePreview).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(closePreview).toBeFocused()
+    await closePreview.click()
+    await expect(previewDialog).toHaveCount(0)
+    await expect(previewTrigger).toBeFocused()
+
     failTrashRefresh = true
     await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
     await expect(recycleBin.getByRole('alert')).toContainText('回收站刷新失败')

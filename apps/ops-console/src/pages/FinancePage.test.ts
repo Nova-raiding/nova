@@ -39,6 +39,13 @@ describe("finance workspace context", () => {
     expect(financeSource).toContain('aria-label="代购与收款目标企业主体"');
   });
 
+  it("keeps the platform commercial target distinct from the cross-workspace finance search filter", () => {
+    expect(financeSource).toContain('"当前商业目标" : "当前企业"');
+    expect(financeSource).toContain("代购、收款分配和商业操作目标：${workspaceDraft}");
+    expect(financeSource).toContain("跨企业主体财务检索由「Workspace ID」筛选单独控制。");
+    expect(financeSource).toContain("账务和商业操作范围：${workspaceDraft}");
+  });
+
   it("exposes recharge refunds in the platform workbench only with the server-projected refund capability", () => {
     expect(financeSource).toContain('{model.authorization.can("billing.refund.execute") ? <RefundSection model={model} /> : null}');
   });
