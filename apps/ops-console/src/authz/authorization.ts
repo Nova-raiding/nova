@@ -145,9 +145,24 @@ export function createAuthorizationProjection(
       : undefined;
   const workbenchScopeValid = scopeMatchesWorkbench(sessionScope, session?.workbench);
   for (const capability of [...projected.allow]) {
-    if (!workbenchScopeValid || !scopeMatchesWorkbench(projected.scopes.get(capability), session?.workbench)) {
+    const capabilityScope = projected.scopes.get(capability);
+    const activeWorkspaceIds = sessionScope?.kind === "workspace"
+      ? sessionScope.ids ?? (sessionScope.id ? [sessionScope.id] : undefined)
+      : undefined;
+    const capabilityWorkspaceIds = capabilityScope?.kind === "workspace"
+      ? capabilityScope.ids ?? (capabilityScope.id ? [capabilityScope.id] : undefined)
+      : undefined;
+    const workspaceScopeValid = !activeWorkspaceIds || !capabilityWorkspaceIds
+      || capabilityWorkspaceIds.includes("*")
+      || capabilityWorkspaceIds.some(id => activeWorkspaceIds.includes(id));
+    if (!workbenchScopeValid || !scopeMatchesWorkbench(capabilityScope, session?.workbench) || !workspaceScopeValid) {
       projected.allow.delete(capability);
       projected.scopes.delete(capability);
+    } else if (activeWorkspaceIds && capabilityScope?.kind === "workspace" && capabilityWorkspaceIds) {
+      const scopedWorkspaceIds = capabilityWorkspaceIds.includes("*")
+        ? activeWorkspaceIds
+        : activeWorkspaceIds.filter(id => capabilityWorkspaceIds.includes(id));
+      projected.scopes.set(capability, { ...capabilityScope, id: scopedWorkspaceIds[0], ids: scopedWorkspaceIds });
     }
   }
   // Credential transport (password cookie vs local Bearer) never changes authorization.

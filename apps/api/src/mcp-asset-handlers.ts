@@ -178,7 +178,16 @@ export async function handleMcpAssetMethod(method: string, params: Record<string
       const assetId = required(params, 'asset_id')
       await enforceAssetAccess(req, workspaceId, assetId, 'editor')
       await enforceMcpCommercialAccess(req, workspaceId, method)
-      const updated = service.updateAssetPreference({ workspaceId, assetId, verdict: verdict as 'excellent' | 'disliked' | 'unrated', ...(reasons ? { reasons } : {}), ...(typeof params.note === 'string' ? { note: params.note } : {}), actorId: requestActor(req), ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) })
+      let expectedRevision: number | undefined
+      if (params.expected_revision !== undefined) {
+        expectedRevision = typeof params.expected_revision === 'number'
+          ? params.expected_revision
+          : typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision)
+            ? Number(params.expected_revision)
+            : Number.NaN
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_revision 必须是正安全整数', 400)
+      }
+      const updated = service.updateAssetPreference({ workspaceId, assetId, verdict: verdict as 'excellent' | 'disliked' | 'unrated', ...(reasons ? { reasons } : {}), ...(typeof params.note === 'string' ? { note: params.note } : {}), actorId: requestActor(req), ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
       await persistSnapshot(workspaceId, 'asset', updated, updated as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, updated.id, 'asset.preference_updated', updated.revision, { asset_id: updated.id, verdict, reasons: updated.preference?.reasons ?? [], actor_id: updated.preference?.updatedBy ?? requestActor(req) })
       return (updated)

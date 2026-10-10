@@ -190,6 +190,22 @@ describe("authorization projection", () => {
     expect(platform.can("identity.read")).toBe(true);
   });
 
+  it("filters workspace capabilities whose server scope excludes the active tenant", () => {
+    const authorization = createAuthorizationProjection(session(["workspace_owner"], {
+      workbench: "workspace",
+      scope: { type: "workspace", ids: ["ws_1"] },
+      effective_permissions: [
+        { capability: "workspace.member.read", effect: "allow", scope: { type: "workspace", ids: ["ws_other"] } },
+        { capability: "marketing.queue.read", effect: "allow", scope: { type: "workspace", ids: ["ws_other", "ws_1"] } },
+      ],
+    }), true);
+
+    expect(authorization.can("workspace.member.read")).toBe(false);
+    expect(authorization.scopeFor("workspace.member.read")).toBeUndefined();
+    expect(authorization.can("marketing.queue.read")).toBe(true);
+    expect(authorization.scopeFor("marketing.queue.read")).toEqual({ kind: "workspace", id: "ws_1", ids: ["ws_1"] });
+  });
+
   it("denies the entire projection for a platform workbench with a workspace session scope", () => {
     const authorization = createAuthorizationProjection(session(["platform_ops"], {
       workbench: "platform",

@@ -2050,7 +2050,7 @@ function toolErrorPresentation(method, args, code, details) {
   }
   if (code === 'MCP_AUTH_REQUIRED' || code === 'UNAUTHENTICATED') {
     return {
-      text: '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。',
+      text: '当前插件没有可用的 Store Nova 工作区登录凭据，可能尚未登录或凭据已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。',
       recovery: {
         state: 'authentication_required',
         user_action_required: true,

@@ -1,4 +1,4 @@
-import { Typography } from "antd";
+import { Alert, Button, Typography } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { OpsDomain } from "../../../navigation/opsNavigation";
 import { dashboardMonthLabel, formatOverviewCurrency } from "./financeWindow.js";
@@ -12,6 +12,11 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const directoryReadFailed = Boolean(model.dataSetError("ops.workspaces.list"));
   const financeReadFailed = Boolean(model.dataSetError("ops.finance.search"));
   const usageReadFailed = Boolean(model.dataSetError("ops.model-usage.summary"));
+  const failedOverviewSources = [
+    directoryReadFailed ? "企业工作区" : undefined,
+    financeReadFailed ? "财务指标" : undefined,
+    usageReadFailed ? "模型成本" : undefined,
+  ].filter(Boolean);
   // The directory is requested with merchant_only=true, so this total means
   // workspaces linked to active merchant accounts, not every platform workspace.
   const linkedMerchantWorkspaceCount = directoryReadFailed ? undefined : model.workspaceDirectory.total;
@@ -70,6 +75,15 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
         </div>
         <div className="ops-dashboard-current-month">当前月份：<strong>{dashboardMonth}</strong></div>
       </section>
+      {failedOverviewSources.length ? <Alert
+        style={{ marginBottom: 16 }}
+        type="error"
+        showIcon
+        role="alert"
+        title="部分总览数据读取失败"
+        description={`${failedOverviewSources.join("、")}暂不可用；对应的“—”不代表零值。`}
+        action={<Button size="small" loading={model.loading} onClick={() => void model.load()}>重新读取总览数据</Button>}
+      /> : null}
       <section className="ops-dashboard-panel-grid">
         <article className="ops-dashboard-panel ops-dashboard-total"><header><div><h3>平台累计总览</h3></div><small>全部</small></header><div className="ops-dashboard-metric-list">{metric("已关联商家工作区", linkedMerchantWorkspaceCount, "个", "primary")}{metric("有活跃成员的工作区", activeMemberWorkspaceCount, "个", "primary")}{metric("赠送客户数", giftedMerchantCount, "家")}{metric("接入费总收入", finance?.onboardingOrderCny, "元", "revenue")}{metric("累计客户消耗创意点", undefined, "点")}{metric("累计平台消耗金额", platformProviderCost, "元", "revenue")}</div></article>
         <article className="ops-dashboard-panel"><header><div><h3>{dashboardMonth === "—" ? "本月" : dashboardMonth}经营数据</h3></div><small>本月</small></header><div className="ops-dashboard-monthly-groups">

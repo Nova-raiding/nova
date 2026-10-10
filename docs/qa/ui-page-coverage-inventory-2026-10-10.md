@@ -57,9 +57,9 @@
 - CodeGraph 已同步至当前工作树；`git diff --check HEAD` 通过。首轮全仓 `npm run typecheck` 被 SIGTERM 中断；其后检测到另一个全仓类型检查进程仍在执行，未收到可核验的最终退出结果，因此类型检查当前标记为未确认。
 - 本轮只使用本地浏览器 fixture 和测试数据；没有访问唯一 Demo、生产或部署服务。真实 tenant/RLS/权限/账务/中转模型、worker 和数据库行锁争用仍未获得 Demo 实机证据；`PERSISTENCE_RELEASE_DATABASE_URL` 未配置。
 
-## 第二轮代码图谱审查（验证待完成）
+## 第二轮代码图谱审查与 10 月 10 日验证更新
 
-下列改动来自页面所有者对 CodeGraph 调用链、当前实现和相邻测试的复核。共享 typecheck PID `39148` 尚未结束；本节列出的新增回归暂未获得通过收据，完成后需补录具体结果。
+下列改动来自页面所有者对 CodeGraph 调用链、当前实现和相邻测试的复核。共享 typecheck PID `39148` 是早期检查记录，已由本轮新的全仓 `npm run typecheck` 取代；当前运行结果见下方本轮收据。只把有日志或测试运行结果支持的项目标记为通过；仍未执行的浏览器场景保持待验。
 
 | 区域 | 已发现并修复/正在修复的问题 | 尚待验证 |
 |---|---|---|
@@ -70,10 +70,12 @@
 | Merchant 商品导入 | 批量导入使用幂等键，避免提交已落库但响应丢失后的重复创建。 | 模拟已提交/响应丢失/安全重放的页面旅程。 |
 | Merchant 素材库 | 初次素材列表失败增加就地重试。 | 加载失败及恢复的挂载/浏览器回归。 |
 | Merchant Finance | 账务状态、权益与存储读取失败增加独立状态及重试；避免把错误伪装成空结果。 | Finance 页面错误恢复回归。 |
-| MCP/模型中转 | video provider 终态错误明确提示只读重试同一 `provider_job_id`，避免重复提交。 | Bridge/API 契约测试；没有调用唯一 Demo 的真实模型中转。 |
+| MCP/模型中转 | video provider 终态错误明确提示只读重试同一 `provider_job_id`，避免重复提交；缺少 token 时的认证提示区分尚未登录与凭据失效。 | 本轮缺 token 与 HTTP 401 文案聚焦测试 **2/2**；源 bridge 与 Marketplace 镜像逐字节一致，`node --check` 通过。没有调用唯一 Demo 的真实模型中转。 |
 | Persistence | outbox 的 lease 状态更新先锁定物化行再校验/更新，防止与活动 claim 竞争。 | 单测与可选 release DB 并发测试；当前未配置 release DB URL。 |
 
 Ops shell/registry 审查未发现确定缺陷：13 个路由有注册，sidebar 按 capability 与平台 workbench 边界过滤。缺少逐一经真实 controller 挂载全部 13 个页面的测试。唯一 demo、真实租户权限和生产模型证据不在本地 fixture 的验收能力内。
+
+本轮新增验证收据：MCP `asset.preference.update` 无效 revision 回归 **2/2**；MCP 缺 token/401 提示回归 **2/2**；Ops authorization 与 navigation **95/95**；发布确认 Escape 取消浏览器场景 **1/1**；全仓 `npm run typecheck` **通过**。另修复 Merchant catalog filter 的方向键/Home/End/Enter 与 Escape 焦点返回，并新增 Customer Delivery controller 到页面的路由场景；两项浏览器测试尚未运行。Overview 错误恢复浏览器测试也待运行。所有证据均为本地测试，不是 ECS Demo 实机验收。
 
 ## PM/NN/g UX 摘要
 

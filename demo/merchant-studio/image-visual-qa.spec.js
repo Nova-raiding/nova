@@ -102,7 +102,7 @@ async function openVisualPage() {
   await page.getByRole('button', { name: /淘宝 1 家店铺/ }).click()
   await expect(page.getByText('视觉 QA 店', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '进入商品库' }).click()
-  await page.getByRole('button', { name: /选择视觉 QA 商品/ }).click()
+  await page.getByRole('button', { name: /打开视觉 QA 商品商品详情/ }).click()
   await expect(page.getByText('视觉 QA 商品', { exact: true })).toBeVisible()
   return { browser, context, page, generated }
 }

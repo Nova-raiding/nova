@@ -95,16 +95,25 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await expect(page.locator('.catalog-product-card').filter({ hasText: '便携咖啡秤' })).toHaveCount(1)
     await expect(page.locator('.catalog-product-card').filter({ hasText: '晴空保温杯' })).toHaveCount(0)
 
-    // The filter is a custom listbox. Keyboard users can open it with Enter,
-    // move through its native buttons with Tab, and dismiss it with Escape;
-    // dismissal should leave focus on the control that opened it.
+    // The custom listbox follows the standard keyboard path: Enter opens it,
+    // arrows move the active option, Enter applies it, and Escape returns focus.
     const dateFilter = page.getByRole('button', { name: '按添加时间筛选' })
     await dateFilter.focus()
     await page.keyboard.press('Enter')
-    const allDatesOption = page.getByRole('option', { name: '全部添加时间' })
-    await allDatesOption.focus()
+    const listbox = page.getByRole('listbox', { name: '按添加时间筛选' })
+    const lastWeekOption = page.getByRole('option', { name: '近 7 天添加' })
+    await expect(lastWeekOption).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    const lastMonthOption = page.getByRole('option', { name: '近 30 天添加' })
+    await expect(lastMonthOption).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(dateFilter).toContainText('近 30 天添加')
+    await expect(page.locator('.catalog-product-card')).toHaveCount(6)
+    await dateFilter.focus()
+    await page.keyboard.press('Enter')
+    await expect(listbox).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('listbox', { name: '按添加时间筛选' })).toHaveCount(0)
+    await expect(listbox).toHaveCount(0)
     await expect(dateFilter).toBeFocused()
 
     await page.getByRole('button', { name: '重置条件' }).click()

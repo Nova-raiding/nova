@@ -5387,9 +5387,18 @@ function CatalogFilterMenu({
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [activeOptionIndex, setActiveOptionIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
   const selected = options.find((option) => option.value === value) ?? options[0]
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === selected?.value))
+
+  useEffect(() => {
+    if (!open || !options.length) return
+    setActiveOptionIndex(selectedIndex)
+    window.requestAnimationFrame(() => optionRefs.current[selectedIndex]?.focus({ preventScroll: true }))
+  }, [open, options.length, selectedIndex])
 
   useEffect(() => {
     if (!open) return
@@ -5418,14 +5427,31 @@ function CatalogFilterMenu({
       </button>
       {open && (
         <div className="catalog-filter-menu" role="listbox" aria-label={label}>
-          {options.map((option) => (
+          {options.map((option, index) => (
             <button
+              ref={(element) => { optionRefs.current[index] = element }}
               type="button"
               role="option"
               aria-selected={option.value === value}
               className={option.value === value ? 'selected' : ''}
               key={option.value}
-              onClick={() => { onChange(option.value); setOpen(false) }}
+              onKeyDown={(event) => {
+                let nextIndex: number | null = null
+                if (event.key === 'ArrowDown') nextIndex = (activeOptionIndex + 1) % options.length
+                else if (event.key === 'ArrowUp') nextIndex = (activeOptionIndex - 1 + options.length) % options.length
+                else if (event.key === 'Home') nextIndex = 0
+                else if (event.key === 'End') nextIndex = options.length - 1
+                if (nextIndex !== null) {
+                  event.preventDefault()
+                  setActiveOptionIndex(nextIndex)
+                  optionRefs.current[nextIndex]?.focus({ preventScroll: true })
+                } else if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setOpen(false)
+                  triggerRef.current?.focus({ preventScroll: true })
+                }
+              }}
+              onClick={() => { onChange(option.value); setOpen(false); triggerRef.current?.focus({ preventScroll: true }) }}
             >
               <span>{option.label}</span>
               {option.value === value && <Check size={14} aria-hidden="true" />}

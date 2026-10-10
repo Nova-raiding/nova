@@ -4556,6 +4556,35 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('shows local login setup guidance when a remote workspace has no access token', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...TEST_PROCESS_ENV,
+        DEPLOY_ENV: 'local_desktop',
+        MERCHANT_MCP_BASE_URL: 'https://merchant.example.com',
+        MERCHANT_WORKSPACE_ID: 'ws_missing_token',
+        MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+        MERCHANT_MCP_TOKEN: '',
+        MERCHANT_STRICT_AUTH: 'true',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      const text = response.result.content?.[0]?.text ?? ''
+      expect(text).toContain('没有可用的 Store Nova 工作区登录凭据')
+      expect(text).toContain('可能尚未登录或凭据已失效')
+      expect(text).not.toContain('登录已失效')
+      expect(text).toContain('login.sh --workspace ws_...')
+    } finally {
+      child.kill()
+    }
+  })
+
   it('rotates a local desktop credential once on 401 and retries the original MCP request', async () => {
     const authorizations: string[] = []
     let refreshes = 0
@@ -4826,7 +4855,7 @@ describe('Codex stdio MCP bridge', () => {
   })
 
   it.each([
-    [401, 'MCP_AUTH_REQUIRED', '当前插件的 Store Nova 工作区登录已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'],
+    [401, 'MCP_AUTH_REQUIRED', '当前插件没有可用的 Store Nova 工作区登录凭据，可能尚未登录或凭据已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {

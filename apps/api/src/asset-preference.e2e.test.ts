@@ -37,6 +37,10 @@ describe('historical asset preference API', () => {
 
     const disliked = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'asset.preference.update', params: { asset_id: asset.id, verdict: 'disliked', reasons_json: '["背景干扰主体"]', expected_revision: String(saved.data?.revision) } }) }).then(response => response.json()) as { data: { result: { preference: { verdict: string; reasons: string[] } } } }
     expect(disliked.data.result.preference).toEqual(expect.objectContaining({ verdict: 'disliked', reasons: ['背景干扰主体'] }))
+    const revisionAfterDislike = service.assets.get(asset.id)?.revision
+    const malformedRevision = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.1, method: 'asset.preference.update', params: { asset_id: asset.id, verdict: 'excellent', reasons_json: '["旧客户端写入"]', expected_revision: 'not-a-revision' } }) }).then(response => response.json()) as { error?: { code: string } }
+    expect(malformedRevision.error?.code).toBe('INVALID_REQUEST')
+    expect(service.assets.get(asset.id)?.revision).toBe(revisionAfterDislike)
     const readBack = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'asset.list', params: {} }) }).then(response => response.json()) as { data: { result: { assets: Array<{ id: string; preference?: { verdict: string; reasons: string[]; updatedBy: string } }> } } }
     expect(readBack.data.result.assets.find(item => item.id === asset.id)?.preference).toEqual(expect.objectContaining({ verdict: 'disliked', reasons: ['背景干扰主体'], updatedBy: 'merchant-test' }))
 

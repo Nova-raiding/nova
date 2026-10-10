@@ -30,6 +30,7 @@ describe("Ops Overview page read-only journey", () => {
       import { OverviewPage } from '/src/pages/OverviewPage.tsx';
       window.__overviewCalls = { loads: 0, navigations: [] };
       const canReadModel = new URLSearchParams(location.search).get('modelRead') === 'true';
+      const financeReadFails = new URLSearchParams(location.search).get('financeFailure') === 'true';
       const model = {
         authorization: { can: capability => capability === 'model.status.read' && canReadModel },
         workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
@@ -41,7 +42,7 @@ describe("Ops Overview page read-only journey", () => {
         modelStatus: undefined,
         modelStatusLoading: false,
         dataSource: { fixtureDataPresent: false },
-        dataSetError: method => method === 'platform.model.status' ? '本地fixture：状态尚未读取' : undefined,
+        dataSetError: method => method === 'platform.model.status' ? '本地fixture：状态尚未读取' : method === 'ops.finance.search' && financeReadFails ? '本地fixture：财务读取失败' : undefined,
         load: async () => { window.__overviewCalls.loads += 1; },
       };
       function Root() {
@@ -117,6 +118,25 @@ describe("Ops Overview page read-only journey", () => {
       await expect.poll(() => page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
       expect(await page.evaluate(() => window.__overviewCalls.navigations)).toEqual([]);
       expect(await page.getByRole("button").count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("explains failed overview metrics and lets keyboard users retry the data read", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?modelRead=false&financeFailure=true`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      const failure = page.getByRole("alert").filter({ hasText: "部分总览数据读取失败" });
+      await failure.waitFor({ state: "visible" });
+      await page.getByText("财务指标暂不可用；对应的“—”不代表零值。", { exact: true }).waitFor();
+      await expectMetric(page, "接入费总收入", "—");
+
+      const retry = page.getByRole("button", { name: "重新读取总览数据" });
+      await retry.focus();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
+      expect(await retry.evaluate(element => document.activeElement === element)).toBe(true);
     } finally {
       await page.close();
     }
