@@ -50,7 +50,7 @@ describe('merchant marketing visual and video contract', () => {
     expect(skill).toContain('“设计/设计一下”本身不等于要求生成图片')
     expect(skill).toContain('补充商品事实、要求代查资料或泛泛说“继续”都不算方案确认')
     expect(skill).toContain('从零创作用 `mode=create`')
-    expect(skill).toContain('基于已上传素材优化用 `mode=optimize`')
+    expect(skill).toContain('调整、重绘或重新编排整张画布时用 `mode=optimize`')
     expect(skill).toContain('未绑定模式（不传 `product_id`）无论 `mode=create` 还是 `mode=optimize`，都必须传用户确认的 `title` 和 `asset.upload` 返回的真实 `asset_ids_json`')
     expect(skill).toContain('仅在服务端明确启用演示未扫描策略时，独立候选才可使用 `unscanned` 素材，并须明确标注为“演示环境候选、尚未扫描”')
     expect(videoSkill).toContain('仅当 merchant-marketing 主技能已将当前请求路由为可审阅脚本/分镜文本')

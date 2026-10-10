@@ -28,6 +28,7 @@ const databaseConnection = (
 
 const scopedReadTables = [
   { name: "workspaces", scopeColumn: "id", prefix: "rls_matrix_ws_" },
+  { name: "products", scopeColumn: "workspace_id", prefix: "rls_matrix_product_" },
   { name: "brands", scopeColumn: "workspace_id", prefix: "rls_matrix_brand_" },
   {
     name: "platform_accounts",
@@ -47,7 +48,7 @@ const scopedReadTables = [
 ] as const;
 
 describe("PostgreSQL RLS cross-scope attack matrix", () => {
-  it("keeps workspace, brand, account, canonical, and listing rows tenant isolated", async () => {
+  it("keeps legacy products, workspace, brand, account, canonical, and listing rows tenant isolated", async () => {
     const databaseName = `probe_rls_matrix_${randomUUID().replaceAll("-", "")}`;
     const admin = new Pool({ connectionString: base.toString() });
     let database: Pool | undefined;
@@ -63,12 +64,17 @@ describe("PostgreSQL RLS cross-scope attack matrix", () => {
       // The test grants only the table privileges needed to exercise RLS. It
       // does not change policies, migrations, or the role's bypass settings.
       await database.query(
-        `GRANT SELECT, INSERT, UPDATE, DELETE ON workspaces, brands, platform_accounts, brand_store_bindings, canonical_products, product_listings TO merchant_app`,
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON workspaces, products, brands, platform_accounts, brand_store_bindings, canonical_products, product_listings TO merchant_app`,
       );
 
       await database.query(`
         INSERT INTO workspaces (id, status) VALUES
           ('rls_matrix_ws_a', 'active'), ('rls_matrix_ws_b', 'active')
+      `);
+      await database.query(`
+        INSERT INTO products (id, workspace_id, platform, remote_product_id, title, source) VALUES
+          ('rls_matrix_product_a', 'rls_matrix_ws_a', 'jd', 'remote-product-a', 'Product A', 'fixture'),
+          ('rls_matrix_product_b', 'rls_matrix_ws_b', 'jd', 'remote-product-b', 'Product B', 'fixture')
       `);
       await database.query(`
         INSERT INTO platform_accounts (id, workspace_id, platform, remote_account_id, credential_ref, token_state) VALUES
@@ -219,6 +225,41 @@ describe("PostgreSQL RLS cross-scope attack matrix", () => {
         throw error;
       } finally {
         listingAttackClient.release();
+      }
+
+      // Legacy catalog products carry the same workspace RLS invariant as
+      // their canonical listings. Cover read, forged insert, update and delete
+      // through merchant_app so a missing/relaxed products policy is caught.
+      const productAttackClient = await app.connect();
+      try {
+        await productAttackClient.query("BEGIN");
+        await productAttackClient.query(
+          "SELECT set_config('app.workspace_id', 'rls_matrix_ws_a', true)",
+        );
+        const visibleProducts = await productAttackClient.query(
+          "SELECT id FROM products ORDER BY id",
+        );
+        expect(visibleProducts.rows).toEqual([{ id: "rls_matrix_product_a" }]);
+        await productAttackClient.query("SAVEPOINT rls_product_attack_probe");
+        await expect(productAttackClient.query(
+          `INSERT INTO products (id, workspace_id, platform, remote_product_id, title, source)
+           VALUES ('rls_matrix_product_forged', 'rls_matrix_ws_b', 'jd', 'remote-forged', 'forged', 'fixture')`,
+        )).rejects.toMatchObject({ code: "42501" });
+        await productAttackClient.query("ROLLBACK TO SAVEPOINT rls_product_attack_probe");
+        const crossTenantUpdate = await productAttackClient.query(
+          "UPDATE products SET title = 'tampered' WHERE id = 'rls_matrix_product_b' RETURNING id",
+        );
+        expect(crossTenantUpdate.rows, "workspace A updated workspace B product").toEqual([]);
+        const crossTenantDelete = await productAttackClient.query(
+          "DELETE FROM products WHERE id = 'rls_matrix_product_b' RETURNING id",
+        );
+        expect(crossTenantDelete.rows, "workspace A deleted workspace B product").toEqual([]);
+        await productAttackClient.query("COMMIT");
+      } catch (error) {
+        await productAttackClient.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        productAttackClient.release();
       }
 
       // UPDATE/DELETE silently filtering a foreign row is PostgreSQL's normal

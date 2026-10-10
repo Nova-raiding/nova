@@ -7,6 +7,8 @@ import { KnowledgeGovernanceSection, knowledgeLearningTabLabel, knowledgePending
 import { AssetRightsPanel } from "./knowledge/AssetRightsPanel";
 import { CompetitorReferencesPanel } from "./knowledge/CompetitorReferencesPanel";
 import { LearningSuggestionsPanel } from "./knowledge/LearningSuggestionsPanel";
+import { BrandPreferencePanel } from "./knowledge/BrandPreferencePanel";
+import { KnowledgeRulesPanel } from "./knowledge/KnowledgeRulesPanel";
 
 const KNOWLEDGE_ERROR =
   "部分数据集刷新失败（knowledge.rule.list、knowledge.asset.list、knowledge.learning.list、knowledge.competitor.list）。页面保留上次成功数据，这些值可能已过期：数据库连接失败";
@@ -58,6 +60,49 @@ function PanelTables({
       <CompetitorReferencesPanel model={{ competitors, competitorForm, canCompetitor: false } as unknown as OpsConsoleModel} />
     </>
   );
+}
+
+function ReadOnlyKnowledgePanels() {
+  const [knowledgeRuleForm] = Form.useForm();
+  const [knowledgeAssetForm] = Form.useForm();
+  const [competitorForm] = Form.useForm();
+  const model = {
+    canRules: false,
+    canKnowledge: false,
+    canCompetitor: false,
+    loading: false,
+    knowledgeRules: [{ id: "rule-1", name: "已存规则", version: "v1", scope: "brand", scopeValue: "brand-a", source: { reference: "ticket-1" }, status: "draft" }],
+    knowledgeAssets: [{ id: "asset-1", name: "品牌标识", kind: "brand", approvalStatus: "pending", rightsStatus: "pending", source: "ticket-2" }],
+    learningSuggestions: [{ id: "suggestion-1", summary: "建议复核", proposedRule: { scope: "brand", scopeValue: "brand-a" }, feedbackId: "feedback-1" }],
+    competitors: [{ id: "competitor-1", competitorName: "公开竞品", source: { url: "https://example.test/page", title: "公开页", accessedAt: "2026-10-10T00:00:00.000Z" }, summary: "摘要", structure: { sections: [] }, sellingPoints: [], expression: { tone: [], formats: [] } }],
+    knowledgeRuleForm,
+    knowledgeAssetForm,
+    competitorForm,
+    createKnowledgeRule: vi.fn(),
+    updateKnowledgeRule: vi.fn(),
+    createKnowledgeAsset: vi.fn(),
+    updateKnowledgeAsset: vi.fn(),
+    confirmLearning: vi.fn(),
+    dismissLearning: vi.fn(),
+    createCompetitor: vi.fn(),
+    dataSetError: () => undefined,
+    updateBrandPreference: vi.fn(),
+  } as unknown as OpsConsoleModel;
+  return <>
+    <KnowledgeRulesPanel model={model} />
+    <AssetRightsPanel model={model} />
+    <LearningSuggestionsPanel model={model} />
+    <CompetitorReferencesPanel model={model} />
+    <BrandPreferencePanel model={model} />
+  </>;
+}
+
+function expectDisabledButton(html: string, label: string) {
+  const button = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/gu)]
+    .map(([markup]) => markup)
+    .find((markup) => markup.replace(/<[^>]*>/gu, "").includes(label));
+  expect(button, `button “${label}” should render`).toBeDefined();
+  expect(button?.slice(0, button.indexOf(">") + 1)).toContain('disabled=""');
 }
 
 describe("KnowledgeGovernanceSection read state", () => {
@@ -181,5 +226,15 @@ describe("KnowledgeGovernanceSection read state", () => {
     expect(knowledgeLearningTabLabel([])).toBe("学习建议（0）");
     expect(knowledgePendingTagPresentation({}).color).toBe("default");
     expect(knowledgePendingTagPresentation({ error: KNOWLEDGE_ERROR }).color).toBe("red");
+  });
+
+  it("keeps every Knowledge write control disabled without its matching update capability", () => {
+    const html = renderToStaticMarkup(<ReadOnlyKnowledgePanels />);
+    for (const label of ["启用", "停用", "录入资产", "批准", "驳回", "确认权益", "确认证据", "驳回建议", "保存竞品参考", "保存品牌偏好"]) {
+      expectDisabledButton(html, label);
+    }
+    expect(html).toContain('aria-label="录入工作区规则"');
+    expect(html).toContain('aria-label="录入知识资产"');
+    expect(html).toContain('aria-label="录入竞品参考"');
   });
 });

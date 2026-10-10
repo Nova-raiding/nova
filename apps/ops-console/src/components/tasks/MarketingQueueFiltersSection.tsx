@@ -6,6 +6,7 @@ import { updatePlatformFilter } from "./platformFilter.js";
 
 interface MarketingQueueFiltersSectionProps {
   model: OpsConsoleModel;
+  onClear?: () => void;
 }
 
 export async function clearMarketingQueueFilters(
@@ -17,6 +18,7 @@ export async function clearMarketingQueueFilters(
 
 export function MarketingQueueFiltersSection({
   model,
+  onClear,
 }: MarketingQueueFiltersSectionProps) {
   const { load, queueFilters, setQueueFilters, storeDirectory } = model;
 
@@ -106,7 +108,10 @@ export function MarketingQueueFiltersSection({
           应用筛选
         </Button>
         <Button
-          onClick={() => void clearMarketingQueueFilters(model)}
+          onClick={() => {
+            if (onClear) onClear();
+            else void clearMarketingQueueFilters(model);
+          }}
         >
           清除筛选
         </Button>

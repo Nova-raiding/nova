@@ -7,6 +7,7 @@ import { platformLabels, platforms, type Platform, type Rule } from "../../types
 interface RuleCenterSectionProps {
   model: OpsConsoleModel;
   platformOnly?: boolean;
+  onDraftsChanged?: () => void;
 }
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
@@ -213,7 +214,7 @@ export async function readRuleMarkdownDocuments(file: Pick<File, "name" | "text"
   })));
 }
 
-export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSectionProps) {
+export function RuleCenterSection({ model, platformOnly = false, onDraftsChanged }: RuleCenterSectionProps) {
   const { canRules, ruleMutationKey, rules, updateRuleStatus, publishRuleDraft } =
     model;
   const markdownInputRef = useRef<HTMLInputElement>(null);
@@ -275,7 +276,9 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
       // Parse and validate the complete document before the first write. A
       // malformed later card must not leave an earlier card persisted.
       const drafts = documents.flatMap(document => parseMarkdownDraftInputs(document.text, document.name));
-      setMarkdownImportResult(await uploadMarkdownDrafts(drafts, publishRuleDraft));
+      const result = await uploadMarkdownDrafts(drafts, publishRuleDraft);
+      setMarkdownImportResult(result);
+      if (result.succeeded > 0) onDraftsChanged?.();
     } catch (error) {
       const reason = error instanceof Error ? error.message : "平台规则文件导入失败";
       setMarkdownImportResult({ succeeded: 0, failedCard: reason.match(/^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)/u)?.[1], reason });

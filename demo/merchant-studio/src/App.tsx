@@ -5534,6 +5534,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [imageGenerationCount, setImageGenerationCount] = useState('1')
   const [imageGenerationBusy, setImageGenerationBusy] = useState(false)
   const [imageGenerationError, setImageGenerationError] = useState('')
+  const [imageGenerationOutcomeUnknown, setImageGenerationOutcomeUnknown] = useState(false)
   const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
   const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
   const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
@@ -5796,9 +5797,18 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
         idempotency_key: `merchant-studio-image-${target.productId}-${target.platform}-${target.accountId}-${imageGenerationSize}-${count}-${direction}`,
       })
       setImageGenerationOpen(false)
+      setImageGenerationOutcomeUnknown(false)
       window.location.href = `${window.location.pathname.replace(/\/merchant\/products\/?$/u, '/merchant/tasks')}?image_job=${encodeURIComponent(result.job_id)}`
     } catch (cause) {
-      setImageGenerationError(describeApiError(cause))
+      const apiError = cause as { code?: unknown; details?: Record<string, unknown> }
+      const outcomeUnknown = apiError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+        || apiError?.code === 'IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN'
+        || apiError?.details?.reconciliation_required === true
+        || apiError?.details?.reconciliationRequired === true
+      setImageGenerationOutcomeUnknown(outcomeUnknown)
+      setImageGenerationError(outcomeUnknown
+        ? '图片请求结果尚未确认。请保持当前方向、尺寸和数量不变，点击“使用原请求恢复任务”以安全复用同一请求；不要修改参数后重新生成。'
+        : describeApiError(cause))
     } finally {
       setImageGenerationBusy(false)
     }
@@ -5909,6 +5919,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                   setImageGenerationSize('1024x1024')
                   setImageGenerationCount('1')
                   setImageGenerationError('')
+                  setImageGenerationOutcomeUnknown(false)
                   setImageGenerationErrorField(null)
                   setImageGenerationOpen(true)
                 }}
@@ -5924,9 +5935,9 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             testId="catalog-image-generation-dialog"
             kicker="图片生成"
             title={`为「${selectedProduct.title}」生成图片`}
-            onClose={() => { if (!imageGenerationBusy) setImageGenerationOpen(false) }}
+            onClose={() => { if (!imageGenerationBusy && !imageGenerationOutcomeUnknown) setImageGenerationOpen(false) }}
             busy={imageGenerationBusy}
-            actions={<><button className="secondary" type="button" onClick={() => setImageGenerationOpen(false)} disabled={imageGenerationBusy}>取消</button><button className="primary" type="button" onClick={() => void submitCatalogImageGeneration()} disabled={imageGenerationBusy || !imageModelReady}>{imageGenerationBusy ? '提交中…' : '确认生成'}</button></>}
+            actions={<><button className="secondary" type="button" onClick={() => setImageGenerationOpen(false)} disabled={imageGenerationBusy || imageGenerationOutcomeUnknown}>取消</button><button className="primary" type="button" onClick={() => void submitCatalogImageGeneration()} disabled={imageGenerationBusy || !imageModelReady}>{imageGenerationBusy ? '提交中…' : imageGenerationOutcomeUnknown ? '使用原请求恢复任务' : '确认生成'}</button></>}
           >
             <div className="dialog-form">
               {imageModelBlocker && (
@@ -5937,15 +5948,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 </div>
               )}
               <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
-              <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
-              <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
+              <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
+              <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} disabled={imageGenerationOutcomeUnknown} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
                 <option value="1024x1024">主图 / 方图 · 1024×1024</option>
                 <option value="1024x1536">竖版内容图 · 1024×1536</option>
                 <option value="1536x1024">Banner / 横幅 · 1536×1024</option>
                 <option value="1024x3072">详情长图 · 1024×3072</option>
                 <option value="1024x4096">完整详情长图 · 1024×4096</option>
               </select></label>
-              <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
+              <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
               {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#catalog-image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}</div>}
             </div>
           </DialogFrame>
@@ -14358,13 +14369,15 @@ export default function App() {
       setAuthState('signed_out')
       setUtilityPanel(null)
     } catch (cause) {
+      const message = `退出登录失败：${describeApiError(cause)}`
       clearMerchantWorkspaceScope()
       setActiveWorkspaceId(null)
       setAuthAccount(null)
       setAccountBilling(null)
+      setAuthError(message)
       setAuthState('signed_out')
       setUtilityPanel(null)
-      showToast(`退出登录失败：${describeApiError(cause)}`, 'error')
+      showToast(message, 'error')
     }
   }
   const switchMerchantWorkspace = (workspaceId: string) => {

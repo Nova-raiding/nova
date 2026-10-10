@@ -121,7 +121,25 @@ describe("FinancePage controller refund confirmation journey", () => {
       const confirmation = page.getByRole("dialog", { name: `确认对订单 ${orderId} 创建退款？`, exact: true });
       await confirmation.waitFor({ state: "visible" });
       expect(calls.filter(call => call.method === "billing.refund")).toHaveLength(0);
-      await page.getByRole("button", { name: "确认退款", exact: true }).click();
+      await page.waitForTimeout(100);
+      const initialFocus = await page.evaluate(() => ({ tag: document.activeElement?.tagName, text: document.activeElement?.textContent?.trim(), html: document.activeElement?.outerHTML }));
+      expect(initialFocus, `Refund confirmation initial focus: ${JSON.stringify(initialFocus)}`).toMatchObject({ text: expect.stringMatching(/^取\s*消$/u) });
+      await page.keyboard.press("Escape");
+      await confirmation.waitFor({ state: "hidden" });
+      await page.getByText("已取消退款，未产生任何账务流水", { exact: true }).waitFor({ state: "visible" });
+      expect(calls.filter(call => call.method === "billing.refund")).toHaveLength(0);
+      expect(await page.getByPlaceholder("例如 recharge_...").inputValue()).toBe(` ${orderId} `);
+      expect(await page.getByPlaceholder("填写工单号和退款依据").inputValue()).toBe(` ${reason} `);
+
+      // A keyboard user can deliberately reopen the confirmation and advance
+      // from the safe cancel focus to the explicit commit action with Tab/Enter.
+      await page.getByRole("button", { name: "创建退款", exact: true }).click();
+      const retryConfirmation = page.getByRole("dialog", { name: `确认对订单 ${orderId} 创建退款？`, exact: true });
+      await retryConfirmation.waitFor({ state: "visible" });
+      await page.waitForFunction(() => document.activeElement?.textContent?.replace(/\s+/gu, "") === "取消");
+      await page.keyboard.press("Tab");
+      await page.waitForFunction(() => document.activeElement?.textContent?.replace(/\s+/gu, "") === "确认退款");
+      await page.keyboard.press("Enter");
       await page.getByText("退款流水已创建", { exact: true }).waitFor({ state: "visible" });
       const refundCalls = calls.filter(call => call.method === "billing.refund");
       expect(refundCalls).toHaveLength(1);

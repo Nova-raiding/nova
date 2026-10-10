@@ -900,7 +900,15 @@ export function CustomerDeliverySection({
                     if (currentAccess.current.disabled || currentAccess.current.readOnly) return;
                     const request = detailsRequest.current;
                     const recordId = detailsRecord.id;
-                    await onArchive(detailsRecord);
+                    try {
+                      await onArchive(detailsRecord);
+                    } catch {
+                      // The page reports the actionable mutation error and
+                      // keeps this details drawer open for retry. Swallow the
+                      // rejection here so antd's confirmation action does not
+                      // leak it as an unhandled promise rejection.
+                      return;
+                    }
                     if (mounted.current && request === detailsRequest.current && detailsRecord.id === recordId && !currentAccess.current.disabled && !currentAccess.current.readOnly) {
                       setDetailsRecord(undefined);
                       message.success("记录已停用并从列表移除");

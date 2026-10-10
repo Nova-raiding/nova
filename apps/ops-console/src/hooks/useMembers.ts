@@ -155,6 +155,7 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
   const [loading, setLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  const [errorKind, setErrorKind] = useState<"read" | "mutation" | "refresh">();
   const gate = useRef(new MembersRequestGate());
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
@@ -164,16 +165,21 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
       gate.current.invalidate();
       setMembers([]);
       setError("请先选择工作区后再管理成员。");
+      setErrorKind("read");
       return;
     }
     const token = gate.current.begin(workspaceId);
     setLoading(true);
     setError("");
+    setErrorKind(undefined);
     try {
       const result = await client.list(workspaceId, { offset: (requestedPage - 1) * requestedLimit, limit: requestedLimit });
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) { setMembers(result.items); setPage(result); }
     } catch (cause) {
-      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setError(membersError(cause));
+      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+        setError(membersError(cause));
+        setErrorKind("read");
+      }
     } finally {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setLoading(false);
     }
@@ -191,20 +197,34 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     const token = gate.current.begin(workspaceId);
     setMutating(true);
     setError("");
+    setErrorKind(undefined);
     try {
       const member = await operation(workspaceId);
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
-        const refreshed = await client.list(workspaceId, { offset: page.offset, limit: page.limit });
-        // The tenant can change while the post-mutation refresh is in flight.
-        // Re-check after the await so an old workspace response cannot replace
-        // the newly selected workspace's member directory.
-        if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
-          setMembers(refreshed.items); setPage(refreshed);
+        try {
+          const refreshed = await client.list(workspaceId, { offset: page.offset, limit: page.limit });
+          // The tenant can change while the post-mutation refresh is in flight.
+          // Re-check after the await so an old workspace response cannot replace
+          // the newly selected workspace's member directory.
+          if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+            setMembers(refreshed.items); setPage(refreshed);
+          }
+        } catch (cause) {
+          // The write has already succeeded. Keep that result distinct from a
+          // failed mutation so the caller closes its confirmation and does not
+          // invite an operator to submit the same action again.
+          if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+            setError(membersError(cause));
+            setErrorKind("refresh");
+          }
         }
       }
       return member;
     } catch (cause) {
-      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setError(membersError(cause));
+      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+        setError(membersError(cause));
+        setErrorKind("mutation");
+      }
       throw cause;
     } finally {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setMutating(false);
@@ -217,11 +237,12 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     loading,
     mutating,
     error,
-    clearError: () => setError(""),
+    clearError: () => { setError(""); setErrorKind(undefined); },
+    errorKind,
     load,
     invite: (input: Parameters<MembersClient["invite"]>[1]) => mutate((id) => client.invite(id, input)),
     changeRole: (member: WorkspaceMember, role: MemberRole, reason: string) => mutate((id) => client.changeRole(id, member, role, reason)),
     deactivate: (member: WorkspaceMember, reason: string) => mutate((id) => client.deactivate(id, member, reason)),
     reactivate: (member: WorkspaceMember, reason: string) => mutate((id) => client.reactivate(id, member, reason)),
-  }), [client, error, load, loading, members, mutate, mutating, page]);
+  }), [client, error, errorKind, load, loading, members, mutate, mutating, page]);
 }

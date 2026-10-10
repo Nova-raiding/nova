@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import type { InputRef } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { platformLabels, platforms, type Platform, type StoreDirectory, type WorkspaceSummary } from "../../types/ops";
 import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
@@ -66,6 +67,8 @@ export function StoreDirectorySection({
   const [authorizationFilter, setAuthorizationFilter] = useState("");
   const [directoryPage, setDirectoryPage] = useState(1);
   const errorRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<InputRef>(null);
+  const hadDirectoryErrorRef = useRef(Boolean(error));
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
     if (!aliasTarget || alias.trim().length < 1) return;
@@ -135,7 +138,15 @@ export function StoreDirectorySection({
   };
 
   useEffect(() => {
-    if (error) errorRef.current?.focus({ preventScroll: true });
+    if (error) {
+      errorRef.current?.focus({ preventScroll: true });
+      hadDirectoryErrorRef.current = true;
+    } else if (hadDirectoryErrorRef.current) {
+      // The retry action disappears when the read recovers. Move focus to the
+      // directory controls instead of letting it fall back to <body>.
+      searchInputRef.current?.focus();
+      hadDirectoryErrorRef.current = false;
+    }
   }, [error]);
 
   useEffect(() => {
@@ -159,6 +170,7 @@ export function StoreDirectorySection({
     >
       <Space wrap style={{ marginBlock: 16 }} role="group" aria-label="店铺目录筛选">
         <Input
+          ref={searchInputRef}
           aria-label="搜索店铺"
           placeholder="搜索店铺名称、账号 ID 或平台"
           value={directorySearch}

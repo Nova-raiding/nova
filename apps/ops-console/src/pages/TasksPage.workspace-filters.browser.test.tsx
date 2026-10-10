@@ -273,6 +273,30 @@ describe("TasksPage workspace filters browser journey", () => {
       await page.close();
     }
   }, 60_000);
+
+  it("clears applied deep-link filters from the address bar and reads the unfiltered queue once", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?view=compact&platform=jd&accountId=acct-jd-1&product_id=product-1&task_id=task-failed&state=failed`, { waitUntil: "domcontentloaded" });
+      await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
+      await page.waitForFunction(() => (window as any).__tasksFixture.rpcCalls.length === 1);
+
+      await page.getByRole("button", { name: "清除筛选" }).click();
+      await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
+      const cleared = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(cleared.search).toBe("?view=compact");
+      expect(cleared.filters).toEqual({});
+      expect(cleared.calls).toHaveLength(2);
+      expect(cleared.calls[1]).toEqual({ method: "ops.marketing.queue", params: { limit: "20" } });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
 
 declare global {

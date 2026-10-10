@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
-import { nativeMcpTools as listNativeMcpTools } from './native-mcp-tools.js'
+import { NATIVE_MCP_INTERACTIVE_CONFIRMATION_REQUIRED_METHODS, nativeMcpTools as listNativeMcpTools } from './native-mcp-tools.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -24,6 +24,7 @@ export function isNativeMcpTransport(req: IncomingMessage, method: unknown, head
 
 export function nativeMcpErrorCode(error: unknown) {
   if (error instanceof DomainError) {
+    if (error.code === 'MCP_NATIVE_INTERACTIVE_CONFIRMATION_REQUIRED') return -32002
     if (error.code === 'MCP_NATIVE_INVALID_REQUEST') return -32600
     if (error.code === ERROR_CODES.MCP_METHOD_NOT_FOUND) return -32601
     if (error.code === ERROR_CODES.INVALID_JSON_BODY) return -32700
@@ -74,6 +75,14 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
   if (!params || typeof params !== 'object' || Array.isArray(params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call params 必须是 JSON 对象', 400)
   const name = (params as Record<string, unknown>).name
   if (typeof name !== 'string' || !name.trim()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call 必须提供工具名称', 400)
+  if (NATIVE_MCP_INTERACTIVE_CONFIRMATION_REQUIRED_METHODS.has(name)) {
+    throw new DomainError(
+      'MCP_NATIVE_INTERACTIVE_CONFIRMATION_REQUIRED',
+      '原生 MCP 无法验证当前 ChatGPT 会话的交互确认，因此不支持此生成请求。请通过本地 stdio Merchant Marketing 插件确认后调用。',
+      403,
+      { method: name, supported_surface: 'local_stdio' },
+    )
+  }
   if (!deps.isToolEnabled(name)) {
     throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, '原生 MCP 工具不存在或不属于 ChatGPT 商家插件', 404)
   }

@@ -110,6 +110,21 @@ function fakeCommands(path: string) {
 }
 
 describe('safe local plugin upgrade preflight', () => {
+  it.each([
+    { label: 'unknown options', args: ['--marketplce', 'merchant-local'] },
+    { label: 'duplicate options', args: ['--marketplace', 'merchant-local-other'] },
+  ])('rejects $label before reading or mutating the Codex registration', ({ args }) => {
+    const fixture = setup()
+    try {
+      const result = runUpgrade(fixture, fixture.marketplaceRoot, source, args)
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain(args[0] === '--marketplce' ? 'unknown argument: --marketplce' : 'argument may be specified only once: --marketplace')
+      expect(fakeCommands(fixture.callsPath)).toEqual([])
+      expect(readFileSync(fixture.env.FAKE_ACTIVE_MARKETPLACE!, 'utf8')).toBe(realpathSync(fixture.marketplaceRoot))
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  })
+
   it('checks the local marketplace and complete source mirror before installing', () => {
     const fixture = setup()
     try {

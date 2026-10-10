@@ -15,8 +15,22 @@ const NATIVE_MCP_METHODS_HIDDEN_FROM_MERCHANT = new Set([
   'billing.model-usage.resolve',
 ])
 
+// Native HTTP MCP has no trusted current-ChatGPT-session confirmation ticket.
+// These model actions rely on the installed stdio bridge's interactive gate;
+// keep them off this surface while retaining read-only task lookup.
+export const NATIVE_MCP_INTERACTIVE_CONFIRMATION_REQUIRED_METHODS = new Set([
+  'multimodal.generate',
+  'multimodal.video.request',
+  'multimodal.image.edit',
+  // Image generation is paid and writes a generated asset. Only the installed
+  // stdio bridge can enforce the interactive confirmation step for it.
+  'catalog.image.generate',
+])
+
 export function isNativeMcpToolEnabled(method: string, paymentReady: () => boolean) {
-  if (NATIVE_MCP_METHODS_WITHOUT_TRANSPORT.has(method) || NATIVE_MCP_METHODS_HIDDEN_FROM_MERCHANT.has(method)) return false
+  if (NATIVE_MCP_METHODS_WITHOUT_TRANSPORT.has(method)
+    || NATIVE_MCP_METHODS_HIDDEN_FROM_MERCHANT.has(method)
+    || NATIVE_MCP_INTERACTIVE_CONFIRMATION_REQUIRED_METHODS.has(method)) return false
   // Expose the recharge entry only after the production provider is configured.
   // Fixture and incomplete environments remain hidden from ChatGPT.
   if (method === 'billing.recharge.create' && process.env.PAYMENT_MODE === 'provider' && paymentReady()) return true

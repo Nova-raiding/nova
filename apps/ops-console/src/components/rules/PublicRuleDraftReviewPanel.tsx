@@ -107,7 +107,7 @@ const columns: ColumnsType<ReviewRule> = [
   { title: "提交时间", dataIndex: "created_at", render: (value: string) => new Date(value).toLocaleString() },
 ];
 
-export function PublicRuleDraftReviewPanel({ authorization }: { authorization: AuthorizationProjection }) {
+export function PublicRuleDraftReviewPanel({ authorization, refreshKey = 0 }: { authorization: AuthorizationProjection; refreshKey?: number }) {
   const visible = authorization.scope.kind === "platform" && authorization.can("rule.read");
   const canWrite = visible && authorization.can("rule.update");
   const canApprove = canWrite && authorization.can("rule.publish.approve");
@@ -165,7 +165,7 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
     setBatchApprovalOpen(false);
     setReason(""); setApprovalRef(""); setApprovedBy(""); setApprovedAt(""); setApprovalToken("");
     void load(undefined, 0);
-  }, [visible, platform]);
+  }, [visible, platform, refreshKey]);
 
   if (!visible) return null;
   const openDetail = async (item: ReviewRule) => {

@@ -98,6 +98,7 @@ const files = [
   "src/pages/SupportPage.platform-route.browser.test.tsx",
   "src/pages/SupportPage.controller-reply.browser.test.tsx",
   "src/pages/SupportPage.controller-reply-recovery.browser.test.tsx",
+  "src/pages/SupportPage.controller-pagination.browser.test.tsx",
   "src/pages/customer-delivery-session-loss.e2e.test.ts",
 ]
 const requestedFiles = process.argv.slice(2)

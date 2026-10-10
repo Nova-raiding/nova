@@ -1829,7 +1829,7 @@ describe('worker ready file heartbeat', () => {
     try {
       expect(await waitFor(async () => (await stat(readyFile)).mtimeMs > before.mtimeMs)).toBe(true)
     } finally {
-      heartbeat.stop()
+      await heartbeat.stop()
     }
     // Only the timestamp moves: the document is the last real poll evidence and
     // a timer must never be able to forge it.
@@ -1848,7 +1848,7 @@ describe('worker ready file heartbeat', () => {
       await new Promise(resolve => setTimeout(resolve, 60))
       await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
-      heartbeat.stop()
+      await heartbeat.stop()
     }
   })
 
@@ -1863,7 +1863,7 @@ describe('worker ready file heartbeat', () => {
     // The timer is scoped to the executing part of the cycle: once it is
     // stopped, nothing refreshes the marker, which is what lets a genuinely
     // wedged or dead loop fall outside the probe window.
-    heartbeat.stop()
+    await heartbeat.stop()
     const stopped = (await stat(readyFile)).mtimeMs
     await new Promise(resolve => setTimeout(resolve, 80))
     expect((await stat(readyFile)).mtimeMs).toBe(stopped)

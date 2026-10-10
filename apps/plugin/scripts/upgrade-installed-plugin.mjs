@@ -10,11 +10,15 @@ import { packageProfileManifest } from './local-plugin-package-profile.mjs'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const defaultSourceRoot = resolve(scriptDirectory, '..')
 const args = new Map()
+const allowedOptions = new Set(['source', 'marketplace', 'local-source', 'plugin', 'codex', 'codex-home', 'package-profile', 'installed'])
 for (let index = 2; index < process.argv.length; index += 2) {
   const name = process.argv[index]
   const value = process.argv[index + 1]
   if (!name?.startsWith('--') || !value) throw new Error(`invalid argument: ${name ?? ''}`)
-  args.set(name.slice(2), value)
+  const key = name.slice(2)
+  if (!allowedOptions.has(key)) throw new Error(`unknown argument: ${name}`)
+  if (args.has(key)) throw new Error(`argument may be specified only once: ${name}`)
+  args.set(key, value)
 }
 
 const sourceRoot = resolve(args.get('source') ?? defaultSourceRoot)

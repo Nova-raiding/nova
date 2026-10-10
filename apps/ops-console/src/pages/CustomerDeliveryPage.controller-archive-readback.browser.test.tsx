@@ -69,6 +69,7 @@ describe("CustomerDelivery controller archive readback journey", () => {
     const calls: RpcCall[] = [];
     const unexpectedRequests: string[] = [];
     let archived = false;
+    let archiveAttempts = 0;
     const workspaceId = "ws-delivery-archive-route";
     const record = {
       id: "delivery-archive-route", companyName: "归档回读客户", paymentStatus: "paid",
@@ -109,6 +110,11 @@ describe("CustomerDelivery controller archive readback journey", () => {
           const patch = JSON.parse(String(params.patch_json)) as { archivedAt?: string };
           expect(params).toMatchObject({ target_workspace_id: workspaceId, delivery_id: record.id, expected_revision: "6" });
           expect(typeof patch.archivedAt).toBe("string");
+          archiveAttempts++;
+          if (archiveAttempts === 1) {
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, error: { code: "TEMPORARY_FAILURE", message: "暂时无法保存，请重试" } }) });
+            return;
+          }
           archived = true;
           result = archivedRecord;
         } else if (method === "ops.stores.list") {
@@ -133,8 +139,17 @@ describe("CustomerDelivery controller archive readback journey", () => {
       await page.getByRole("button", { name: "查看详情", exact: true }).click();
       await page.getByRole("button", { name: "停用并删除记录", exact: true }).click();
       await page.getByRole("button", { name: "确认停用并删除", exact: true }).click();
+      // antd closes the confirmation when its async handler rejects; the
+      // details drawer remains open and carries the actionable error state.
+      await page.getByRole("button", { name: "确认停用并删除", exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("alert").filter({ hasText: "暂时无法保存，请重试" }).waitFor({ state: "visible" });
+      expect(archiveAttempts).toBe(1);
+      // Retry from the still-open details drawer. This must use the same
+      // record/revision and only archive once the second write succeeds.
+      await page.getByRole("button", { name: "停用并删除记录", exact: true }).click();
+      await page.getByRole("button", { name: "确认停用并删除", exact: true }).click();
       await customerRow.waitFor({ state: "detached" });
-      expect(calls.filter(call => call.method === "ops.customer-delivery.update")).toHaveLength(1);
+      expect(calls.filter(call => call.method === "ops.customer-delivery.update")).toHaveLength(2);
       expect(calls.filter(call => call.method === "ops.customer-delivery.list").at(-1)?.params).toMatchObject({ target_workspace_id: workspaceId, offset: "0", limit: "20" });
 
       await page.getByLabel("查看已归档记录").check();

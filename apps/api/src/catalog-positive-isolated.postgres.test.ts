@@ -7,6 +7,8 @@ const databaseUrl = process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const runId = process.env.MERCHANT_ISOLATED_POSTGRES_RUN_ID
 const workspaceId = runId && /^[a-f0-9-]{36}$/u.test(runId)
   ? `ws_catalog_fixture_${runId.replaceAll('-', '')}` : undefined
+const peerWorkspaceId = runId && /^[a-f0-9-]{36}$/u.test(runId)
+  ? `ws_catalog_peer_${runId.replaceAll('-', '')}` : undefined
 
 type Envelope = { data: { result: Record<string, any> } | null; error: { code: string; message: string } | null }
 
@@ -24,7 +26,7 @@ describe('isolated catalog API to PostgreSQL readback', () => {
     const repository = new PostgresBusinessRepository(pool, { normalizedProjection: true })
     setBusinessRepositoryForTests(repository)
     try {
-      await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active')", [workspaceId])
+      await pool.query("INSERT INTO workspaces (id,status) VALUES ($1,'active'),($2,'active')", [workspaceId, peerWorkspaceId])
       await grantCreativePointsForTests(workspaceId!)
       grantContinuousFeatureEntitlementForTests(workspaceId!)
       await new Promise<void>((resolve, reject) => {
@@ -35,10 +37,10 @@ describe('isolated catalog API to PostgreSQL readback', () => {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('isolated catalog API did not bind')
       const base = `http://127.0.0.1:${address.port}`
-      const call = async (method: string, params: Record<string, unknown>): Promise<Envelope> => fetch(`${base}/mcp`, {
+      const call = async (method: string, params: Record<string, unknown>, scopedWorkspaceId = workspaceId!): Promise<Envelope> => fetch(`${base}/mcp`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId!, 'x-test-commercial-fixture': 'server-e2e' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }),
+        headers: { 'content-type': 'application/json', 'x-workspace-id': scopedWorkspaceId, 'x-test-commercial-fixture': 'server-e2e' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: scopedWorkspaceId, ...params } }),
       }).then(response => response.json() as Promise<Envelope>)
 
       const imported = await call('catalog.import', {
@@ -50,6 +52,20 @@ describe('isolated catalog API to PostgreSQL readback', () => {
       const persistedImport = await repository.get(workspaceId!, 'product', productId)
       expect(persistedImport.payload).toMatchObject({ title: '隔离验收外套' })
       expect(imported.data!.result).toMatchObject({ draft_only: true, publishable: false })
+
+      // The current API/RLS acceptance only exercised one tenant. Verify both
+      // merchant surfaces against this durable row: workspace B must neither
+      // discover it through REST/MCP search nor mutate it through MCP update.
+      const peerHeaders = { 'content-type': 'application/json', 'x-workspace-id': peerWorkspaceId!, 'x-test-commercial-fixture': 'server-e2e' }
+      const restPeerSearch = await fetch(`${base}/v1/products?query=${encodeURIComponent('隔离验收外套')}`, { headers: peerHeaders }).then(response => response.json() as Promise<{ data: { items: Array<{ id: string }> }; error: { code: string } | null }>)
+      expect(restPeerSearch.error).toBeNull()
+      expect(restPeerSearch.data.items).toEqual([])
+      const mcpPeerSearch = await call('catalog.search', { scope: 'workspace', query: '隔离验收外套' }, peerWorkspaceId!)
+      expect(mcpPeerSearch.error).toBeNull()
+      expect(mcpPeerSearch.data!.result.products).toEqual([])
+      const peerMutation = await call('catalog.product.update', { product_id: productId, title: '跨租户篡改' }, peerWorkspaceId!)
+      expect(peerMutation.error?.code).toBe('PRODUCT_NOT_FOUND')
+      expect((await repository.get(workspaceId!, 'product', productId)).payload).toMatchObject({ title: '隔离验收外套' })
 
       const updated = await call('catalog.product.update', { product_id: productId, title: '隔离验收防晒外套', expected_version: String(imported.data!.result.version) })
       expect(updated.error).toBeNull()

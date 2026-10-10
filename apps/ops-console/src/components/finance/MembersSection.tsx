@@ -53,13 +53,14 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
   const [notice, setNotice] = useState("");
   const initialErrorRef = useRef<HTMLDivElement>(null);
   const generalCapabilities = memberCapabilities(model.authorization, actorId);
+  const canReadMembers = model.authorization.can("workspace.member.read");
   const workspaceUnavailable = !workspaceId;
-  const initialLoadFailed = Boolean(workspaceId && state.error && !state.loading && state.members.length === 0);
+  const memberDirectoryUnavailable = Boolean(workspaceId && state.error && state.errorKind !== "mutation" && !state.loading && state.members.length === 0);
   useEffect(() => {
-    if (!initialLoadFailed) return;
+    if (!memberDirectoryUnavailable) return;
     const focusTimer = window.requestAnimationFrame(() => initialErrorRef.current?.focus({ preventScroll: true }));
     return () => window.cancelAnimationFrame(focusTimer);
-  }, [initialLoadFailed]);
+  }, [memberDirectoryUnavailable]);
   const assignableRoles = (model.opsSession?.assignable_roles ?? [])
     .filter((role): role is MemberRole => role in roleLabels)
     .map((value) => ({ value, label: roleLabels[value] }));
@@ -93,6 +94,7 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
 
   const actionButtons = (member: WorkspaceMember) => {
     const capabilities = memberCapabilities(model.authorization, actorId, member);
+    if (!canReadMembers) return <Typography.Text type="secondary">需先取得成员查看权限</Typography.Text>;
     if (!capabilities.canChangeTarget) return <Typography.Text type="secondary">只读</Typography.Text>;
     return (
       <Space wrap size={8}>
@@ -116,15 +118,16 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
         {workspaceUnavailable && <Alert showIcon type="info" title="当前会话尚未绑定企业主体" description="成员列表和成员变更都需要明确的企业主体范围。请先选择企业主体并刷新会话。" />}
         {!generalCapabilities.canManage && <Alert showIcon type="info" title="当前角色只有成员查看权限" description="只有企业所有者、企业管理员或平台运营可以邀请成员和调整权限。" />}
         {assignmentPolicyUnavailable && <Alert role="alert" showIcon type="warning" title="成员角色策略尚未取得" description="服务端授权策略未返回前，邀请和角色调整入口保持关闭；请刷新会话后重试。" />}
-        {workspaceId && state.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}>
-          <Alert showIcon type="error" title={initialLoadFailed ? "成员列表加载失败" : "成员操作失败"} description={<Space orientation="vertical"><span>{state.error}</span><Button style={{ minHeight: 44 }} aria-label="刷新成员列表" onClick={() => void state.load()}>刷新成员</Button></Space>} />
+        {workspaceId && !canReadMembers && <Alert showIcon type="warning" title="缺少成员查看权限" description="当前会话不能读取成员目录。邀请前需要先核对重复成员；请联系管理员授予“查看成员”权限后再进行成员管理。" />}
+        {workspaceId && state.error && <div ref={initialErrorRef} tabIndex={memberDirectoryUnavailable ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={memberDirectoryUnavailable ? "成员列表加载错误摘要" : undefined}>
+          <Alert showIcon type="error" title={state.errorKind === "refresh" ? "成员已变更，但列表刷新失败" : state.errorKind === "read" ? "成员列表加载失败" : "成员操作失败"} description={<Space orientation="vertical">{state.errorKind === "refresh" ? <span>变更已提交成功，列表未能刷新；请刷新列表核对最新状态。</span> : null}<span>{state.error}</span><Button style={{ minHeight: 44 }} aria-label="刷新成员列表" onClick={() => void state.load()}>刷新成员</Button></Space>} />
         </div>}
         {notice && <Alert role="status" aria-live="polite" showIcon type="success" title={notice} closable onClose={() => setNotice("")} />}
 
         <Form
           form={inviteForm}
           layout={compact ? "vertical" : "inline"}
-          disabled={workspaceUnavailable || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0 || state.mutating}
+          disabled={workspaceUnavailable || !canReadMembers || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0 || state.mutating}
           aria-label="邀请工作区成员"
           onFinish={async (values: { externalSubject: string; displayName?: string; role: MemberRole; reason: string }) => {
             setNotice("");
@@ -150,7 +153,7 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
           <Form.Item name="reason" label="邀请原因" rules={[{ required: true, whitespace: true, min: 4, message: "请填写至少 4 个字符的邀请原因" }]}>
             <Input placeholder="用于权限审计" style={{ minHeight: 44 }} />
           </Form.Item>
-          <Form.Item><Button loading={state.mutating} disabled={workspaceUnavailable || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0} style={{ minHeight: 44 }} type="primary" htmlType="submit">邀请成员</Button></Form.Item>
+          <Form.Item><Button loading={state.mutating} disabled={workspaceUnavailable || !canReadMembers || !generalCapabilities.canManage || assignmentPolicyUnavailable || assignableRoles.length === 0} style={{ minHeight: 44 }} type="primary" htmlType="submit">邀请成员</Button></Form.Item>
         </Form>
 
         {compact ? (
@@ -173,8 +176,8 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
               </Space>
             </div>
           </Spin>
-        ) : initialLoadFailed ? (
-          <Typography.Text type="secondary" role="status">成员数据尚未取得，请选择企业主体后重试；当前状态不能解释为企业主体没有成员。</Typography.Text>
+        ) : memberDirectoryUnavailable ? (
+          <Typography.Text type="secondary" role="status">成员数据尚未取得，请刷新列表；当前状态不能解释为企业主体没有成员。</Typography.Text>
         ) : (
           <Table<WorkspaceMember>
             aria-label="成员列表"
@@ -184,7 +187,7 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
             pagination={{ current: Math.floor(state.page.offset / state.page.limit) + 1, pageSize: state.page.limit, total: state.page.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 位成员` }}
             onChange={(pagination) => void state.load(pagination.current ?? 1, state.page.limit)}
             dataSource={state.members}
-            locale={{ emptyText: workspaceUnavailable ? "请先选择企业主体后查看成员" : "当前企业主体还没有成员" }}
+            locale={{ emptyText: workspaceUnavailable ? "请先选择企业主体后查看成员" : memberDirectoryUnavailable ? "成员数据尚未取得；当前状态不能解释为企业主体没有成员" : "当前企业主体还没有成员" }}
             scroll={{ x: 960 }}
             columns={[
               { title: "身份标识", dataIndex: "externalSubject", width: 180, render: (value: string) => <span className="ops-token">{value}</span> },

@@ -48,11 +48,11 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'billing.model-usage.reconciliation.run')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'billing.model-usage.resolve')).toBe(false)
-    // Video request/get are registry-enabled on the production MCP surface.
-    // The API still applies workspace, rights, provider, and cost gates when
-    // a call is made; listing the tools is not evidence that rendering is
-    // available for every workspace.
-    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(true)
+    // Native HTTP MCP has no current-session confirmation ticket, so the
+    // bridge-confirmed image/video write tools are intentionally unavailable.
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.generate')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.image.edit')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.get')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
     expect(payload.result.tools.find(tool => tool.name === 'workspace.health')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
@@ -142,16 +142,15 @@ describe('native ChatGPT MCP HTTP transport', () => {
       expect(await disabledTransport.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32601 } })
     }
 
-    // Video tools are registered, so malformed calls reach contract
-    // validation and return JSON-RPC invalid-params instead of method-not-found.
-    for (const [id, name] of [['video-1', 'multimodal.video.request'], ['video-2', 'multimodal.video.get']] as const) {
+    // The read-only poller remains callable and validates its arguments.
+    for (const [id, name] of [['video-2', 'multimodal.video.get']] as const) {
       const invalidVideo = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } }) })
       expect(invalidVideo.status).toBe(200)
       expect(await invalidVideo.json()).toMatchObject({ jsonrpc: '2.0', id, error: { code: -32602 } })
     }
   })
 
-  it('keeps registry-enabled video tools visible in the loopback fixture', async () => {
+  it('keeps the read-only video poller visible while hiding visual writes in the loopback fixture', async () => {
     vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
     vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
@@ -160,9 +159,37 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }) })
     const payload = await listed.json() as { result: { tools: Array<{ name: string }> } }
-    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.generate')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.request')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'multimodal.image.edit')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'multimodal.video.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name.startsWith('upload.session.'))).toBe(false)
+  })
+
+  it('hides bridge-confirmed visual writes from native MCP and rejects direct calls', async () => {
+    const base = await start()
+    const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/list', params: {} }) })
+    const payload = await listed.json() as { result: { tools: Array<{ name: string }> } }
+    const names = payload.result.tools.map(tool => tool.name)
+    expect(names).not.toContain('multimodal.generate')
+    expect(names).not.toContain('multimodal.video.request')
+    expect(names).not.toContain('multimodal.image.edit')
+    expect(names).toContain('multimodal.video.get')
+    expect(names).not.toContain('catalog.image.generate')
+
+    for (const [index, name] of ['multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit', 'catalog.image.generate'].entries()) {
+      const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: `visual-write-${index}`, method: 'tools/call', params: { name, arguments: {} } }) })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        jsonrpc: '2.0',
+        id: `visual-write-${index}`,
+        error: {
+          code: -32002,
+          message: '原生 MCP 无法验证当前 ChatGPT 会话的交互确认，因此不支持此生成请求。请通过本地 stdio Merchant Marketing 插件确认后调用。',
+          data: { code: 'MCP_NATIVE_INTERACTIVE_CONFIRMATION_REQUIRED' },
+        },
+      })
+    }
   })
 
   it('returns JSON-RPC method-not-found for unknown native methods instead of legacy envelopes', async () => {

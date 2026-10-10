@@ -52,12 +52,22 @@ describe("MembersSection", () => {
     expect(html).toMatch(/<button type="submit"[^>]*disabled=""/u);
   });
 
+  it("does not offer member writes when management is granted without the required directory read", () => {
+    const model = { opsSession: { actor_id: "owner_1", workspace_id: "ws_a", roles: ["workspace_owner"], workspace_granted: true, assignable_roles: ["merchant_admin", "operator"] }, authorization: authorization(["workspace.member.manage"]) } as OpsConsoleModel;
+    const html = renderToStaticMarkup(createElement(MembersSection, { model, client }));
+
+    expect(html).toContain("缺少成员查看权限");
+    expect(html).toContain("邀请前需要先核对重复成员");
+    const submitButton = html.match(/<button type="submit"[^>]*>/u)?.[0];
+    expect(submitButton).toContain('disabled=""');
+  });
+
   it("provides focusable initial-load recovery and announces table loading", () => {
     const source = readFileSync(new URL("./MembersSection.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true"');
-    expect(source).toContain('tabIndex={initialLoadFailed ? -1 : undefined}');
-    expect(source).toContain('aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}');
+    expect(source).toContain('tabIndex={memberDirectoryUnavailable ? -1 : undefined}');
+    expect(source).toContain('aria-label={memberDirectoryUnavailable ? "成员列表加载错误摘要" : undefined}');
     expect(source).toContain('aria-label="刷新成员列表"');
     expect(source).toContain('role="status" aria-live="polite" aria-atomic="true"');
     expect(source).toContain('aria-busy={state.loading}');

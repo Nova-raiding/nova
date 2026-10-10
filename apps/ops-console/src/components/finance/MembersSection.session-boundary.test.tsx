@@ -38,19 +38,24 @@ describe("members session boundary", () => {
             import { App } from 'antd';
             import { MembersSection } from '/src/components/finance/MembersSection.tsx';
             let currentActor = 'actor-a';
+            let currentMemberStatus = 'active';
             const reads = [];
             const mutations = [];
+            const failInitialRead = new URLSearchParams(location.search).has('fail-initial-read');
+            const failPostMutationRefresh = new URLSearchParams(location.search).has('fail-post-mutation-refresh');
             const client = {
               async list(workspaceId) {
                 reads.push({ actor: currentActor, workspaceId });
                 document.documentElement.dataset.membersReads = JSON.stringify(reads);
+                if (failInitialRead && reads.length === 1) throw new Error('初始成员列表暂不可用');
+                if (failPostMutationRefresh && reads.length === 2) throw new Error('变更后的列表刷新超时');
                 const name = currentActor === 'actor-a' ? '成员甲' : '成员乙';
-                return { items: [{ id: name, externalSubject: name, displayName: name, role: 'merchant_admin', status: 'active', revision: 1, updatedAt: '2026-09-29T00:00:00.000Z', governance: { protectedTarget: false, canChangeTarget: true, canDeactivateTarget: true } }], total: 1, offset: 0, limit: 20, hasMore: false };
+                return { items: [{ id: name, externalSubject: name, displayName: name, role: 'merchant_admin', status: currentActor === 'actor-a' ? currentMemberStatus : 'active', revision: currentMemberStatus === 'suspended' ? 2 : 1, updatedAt: '2026-09-29T00:00:00.000Z', governance: { protectedTarget: false, canChangeTarget: true, canDeactivateTarget: true } }], total: 1, offset: 0, limit: 20, hasMore: false };
               },
-              async invite(...args) { mutations.push(['invite', ...args]); throw new Error('unexpected invite'); },
-              async changeRole(...args) { mutations.push(['changeRole', ...args]); throw new Error('unexpected role change'); },
-              async deactivate(...args) { mutations.push(['deactivate', ...args]); throw new Error('unexpected deactivation'); },
-              async reactivate(...args) { mutations.push(['reactivate', ...args]); throw new Error('unexpected reactivation'); },
+              async invite(...args) { mutations.push(['invite', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected invite'); },
+              async changeRole(...args) { mutations.push(['changeRole', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected role change'); },
+              async deactivate(workspaceId, member, reason) { mutations.push(['deactivate', workspaceId, member.externalSubject, reason]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); currentMemberStatus = 'suspended'; return { ...member, status: 'suspended', revision: member.revision + 1 }; },
+              async reactivate(...args) { mutations.push(['reactivate', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected reactivation'); },
             };
             const capabilities = new Set(['workspace.member.read', 'workspace.member.manage', 'workspace.status.update']);
             function makeModel(actor, sessionId, workspaceId) {
@@ -74,7 +79,7 @@ describe("members session boundary", () => {
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
-            if (req.url !== "/__members-boundary-test") return next();
+            if (req.url?.split("?")[0] !== "/__members-boundary-test") return next();
             const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
             void server.transformIndexHtml(req.url, html).then(output => {
               res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -99,12 +104,12 @@ describe("members session boundary", () => {
     }
   }, 60_000);
 
-  async function openPage() {
+  async function openPage(query = "") {
     if (!browser) throw new Error("Chromium did not start");
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(10_000);
-    await page.goto(`${baseUrl}/__members-boundary-test`, { waitUntil: "domcontentloaded" });
-    await page.getByText("成员甲", { exact: true }).first().waitFor();
+    await page.goto(`${baseUrl}/__members-boundary-test${query}`, { waitUntil: "domcontentloaded" });
+    if (!query.includes("fail-initial-read")) await page.getByText("成员甲", { exact: true }).first().waitFor();
     return page;
   }
 
@@ -134,6 +139,39 @@ describe("members session boundary", () => {
       await page.getByText("成员乙", { exact: true }).first().waitFor();
       expect(await page.getByText("成员甲", { exact: true }).count()).toBe(0);
       await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]").map((item: { workspaceId: string }) => item.workspaceId))).toEqual(["ws-a", "ws-b"]);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("gives an actionable retry for an initial read failure without asking the operator to reselect a bound workspace", async () => {
+    const page: Page = await openPage("?fail-initial-read");
+    try {
+      const error = page.getByRole("alert", { name: "成员列表加载错误摘要" });
+      await error.waitFor();
+      await page.getByText("成员数据尚未取得，请刷新列表", { exact: false }).waitFor();
+      expect(await page.getByText("请选择企业主体后重试", { exact: false }).count()).toBe(0);
+      await error.getByRole("button", { name: "刷新成员列表" }).click();
+      await page.getByText("成员甲", { exact: true }).first().waitFor();
+      expect(await page.getByRole("alert").filter({ hasText: "成员列表加载失败" }).count()).toBe(0);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("closes the confirmation after a successful member change even when the follow-up list read fails", async () => {
+    const page: Page = await openPage("?fail-post-mutation-refresh");
+    try {
+      await page.getByRole("button", { name: "停用 成员甲" }).click();
+      const dialog = page.getByRole("dialog", { name: "确认停用成员" });
+      await dialog.locator("textarea").fill("岗位调整后收回成员访问");
+      await dialog.getByRole("button", { name: "确认停用", exact: true }).click();
+
+      await page.getByRole("status").filter({ hasText: "已停用 成员甲" }).waitFor();
+      await page.getByRole("alert").filter({ hasText: "成员已变更，但列表刷新失败" }).first().waitFor();
+      await page.getByRole("dialog", { name: "确认停用成员" }).waitFor({ state: "hidden" });
+      await expect.poll(() => page.locator("html").getAttribute("data-members-mutations").then(value => JSON.parse(value ?? "[]"))).toHaveLength(1);
+
+      await page.getByRole("button", { name: "刷新成员列表" }).click();
+      await page.getByText("已停用", { exact: true }).waitFor();
+      expect(await page.getByRole("alert").filter({ hasText: "列表刷新失败" }).count()).toBe(0);
+      expect(JSON.parse(await page.locator("html").getAttribute("data-members-mutations") ?? "[]")).toHaveLength(1);
     } finally { await page.close(); }
   }, 45_000);
 });

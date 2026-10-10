@@ -89,6 +89,21 @@ export function TasksPage({ model }: TasksPageProps) {
       setLocationSearch(normalizedSearch);
     }
   }, [locationSearch, model.authorization.scope, model.loading, model.opsSession?.workspace_id, model.queueFilters, model.setQueueFilters, model.load, model.storeDirectory]);
+  const clearQueueFilters = () => {
+    const params = new URLSearchParams(window.location.search);
+    for (const key of ["platform", "accountId", "product_id", "productId", "task_id", "state"]) {
+      params.delete(key);
+    }
+    const query = params.toString();
+    const search = query ? `?${query}` : "";
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${search}${window.location.hash}`);
+    setLocationSearch(search);
+    const scope = model.authorization.scope;
+    appliedQueryKey.current = `${scope.kind}:${scope.id ?? ""}:${model.opsSession?.workspace_id ?? ""}|${search}`;
+    urlManagedFilters.current = {};
+    model.setQueueFilters({});
+    void model.load({ queueFilters: {} });
+  };
   const canReadPlatformTasks = model.authorization.can("workspace.directory.read");
   const canReadPlatformMarketing = model.authorization.can("marketing.summary.read");
   const canReadMarketingQueue = model.authorization.can("marketing.queue.read");
@@ -168,7 +183,7 @@ export function TasksPage({ model }: TasksPageProps) {
             <span className="ops-tasks-section-description">先筛选范围，再处理任务或告警</span>
           </div>
           <div className="ops-tasks-filter-grid">
-            {canReadMarketingQueue ? <MarketingQueueFiltersSection model={model} /> : null}
+            {canReadMarketingQueue ? <MarketingQueueFiltersSection model={model} onClear={clearQueueFilters} /> : null}
             {canReadPlatformMarketing ? <AlertFiltersSection model={model} /> : null}
           </div>
         </section>

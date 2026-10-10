@@ -439,10 +439,12 @@ export async function writeWorkerReadyMarker(readyFile: string, contents: string
  * the loop body's `finally`, which is also what makes a blocked event loop or a
  * dead process stop refreshing and be restarted by the probe.
  */
-export function createReadyFileHeartbeat(options: { readyFile: string; intervalMs?: number }): { start: () => void; stop: () => void; touch: () => Promise<boolean> } {
+export function createReadyFileHeartbeat(options: { readyFile: string; intervalMs?: number }): { start: () => void; stop: () => Promise<void>; touch: () => Promise<boolean> } {
   const intervalMs = options.intervalMs ?? READY_FILE_HEARTBEAT_MS
   if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) throw new RangeError('ready file heartbeat interval must be a positive integer')
   let timer: ReturnType<typeof setInterval> | undefined
+  let stopped = true
+  const pendingTouches = new Set<Promise<boolean>>()
   const touch = async (): Promise<boolean> => {
     const at = new Date()
     try {
@@ -457,15 +459,26 @@ export function createReadyFileHeartbeat(options: { readyFile: string; intervalM
     touch,
     start() {
       if (timer !== undefined) return
-      timer = setInterval(() => { void touch() }, intervalMs)
+      stopped = false
+      timer = setInterval(() => {
+        if (stopped) return
+        const pending = touch()
+        pendingTouches.add(pending)
+        void pending.finally(() => pendingTouches.delete(pending))
+      }, intervalMs)
       // A liveness hint must never be the reason a shutting-down process stays
       // alive (see the credential refresh lock, which had exactly that bug).
       timer.unref?.()
     },
-    stop() {
-      if (timer === undefined) return
-      clearInterval(timer)
-      timer = undefined
+    async stop() {
+      stopped = true
+      if (timer !== undefined) {
+        clearInterval(timer)
+        timer = undefined
+      }
+      // `utimes` is asynchronous. Drain a tick already in flight so callers
+      // can rely on the marker no longer changing when the cycle ends.
+      await Promise.all([...pendingTouches])
     },
   }
 }
@@ -3442,7 +3455,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
         // Scoped to the executing part of the cycle: the idle sleep below is
         // not progress, and the marker it would refresh has been removed by the
         // failure path above anyway.
-        readyFileHeartbeat.stop()
+        await readyFileHeartbeat.stop()
       }
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
@@ -3450,7 +3463,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     await stopRelayQuotaMonitor?.()
     await workerMetricsServer?.stop()
     await scannerHeartbeat?.stop()
-    readyFileHeartbeat.stop()
+    await readyFileHeartbeat.stop()
     await redisConnection?.close()
     // Without this the connector roles keep a referenced node-redis socket and
     // never exit on SIGTERM; the pod is SIGKILLed after the full grace period.

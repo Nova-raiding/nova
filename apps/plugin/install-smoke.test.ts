@@ -349,10 +349,10 @@ describe('Codex plugin installation package', () => {
     const commandLog = resolve(directory, 'commands.log')
     const activeMarketplace = resolve(directory, 'active-marketplace')
     const localSource = resolve(directory, 'local-source')
-    const qaSource = resolve(directory, 'qa-source')
+    const qaSource = resolve(localSource, 'plugins/merchant-marketing')
     const installed = resolve(directory, 'installed')
     mkdirSync(bin)
-    mkdirSync(localSource)
+    mkdirSync(resolve(localSource, 'plugins'), { recursive: true })
     cpSync(root, qaSource, { recursive: true })
     writeFileSync(resolve(qaSource, 'bundle-profile.json'), `${JSON.stringify({
       schema_version: '1', profile: 'qa-broker', qa_only: true, release_eligible: false,
@@ -362,7 +362,7 @@ describe('Codex plugin installation package', () => {
     cpSync(qaSource, installed, { recursive: true })
     writeFileSync(resolve(localSource, 'marketplace.json'), JSON.stringify({
       name: 'merchant-local-test',
-      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: qaSource } }],
+      plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: './plugins/merchant-marketing' } }],
     }))
     writeFileSync(fakeCodex, `#!/bin/sh
 printf '%s\\n' "$*" >> '${commandLog}'

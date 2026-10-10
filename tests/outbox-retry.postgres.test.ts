@@ -92,7 +92,9 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
 
   it('keeps terminal, unknown, unsafe error evidence, future retries and active leases out of claims', async () => {
     const scope = await workspace()
-    const now = Date.now() + 1_000
+    // Several writes happen before the claim. Keep the fixture clock safely
+    // ahead of the database clock even on a loaded runner.
+    const now = Date.now() + 60_000
     const due = new Date(now).toISOString()
     const delayed = new Date(now + 3_600_000).toISOString()
     const failure = { code: 'RATE_LIMITED', message: 'temporary failure', retryable: true, unknown: false }

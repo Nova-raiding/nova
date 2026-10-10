@@ -71,6 +71,7 @@ describe("FinancePage controller filtered export journey", () => {
     page.setDefaultNavigationTimeout(60_000);
     const calls: RpcCall[] = [];
     const unexpectedRequests: string[] = [];
+    let exportAttempts = 0;
     const snapshotAt = "2026-10-10T00:00:00.000Z";
     const row = {
       id: "invoice-84", kind: "recharge_order", enterpriseName: "Northwind", workspaceId: "ws-finance-84",
@@ -112,6 +113,11 @@ describe("FinancePage controller filtered export journey", () => {
             snapshotAt, scope: { role: "platform_ops", workspaceCount: filtered ? 1 : 0 },
           };
         } else if (method === "ops.finance.export") {
+          exportAttempts += 1;
+          if (exportAttempts === 1) {
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, error: { code: "FINANCE_EXPORT_UNAVAILABLE", message: "财务导出服务暂时不可用" } }) });
+            return;
+          }
           result = { exportId: "finance-export-fixture-84", fileName: "finance-filter-84.csv", contentType: "text/csv; charset=utf-8", csv: "type,id,workspace_id,status\n充值订单,invoice-84,ws-finance-84,paid\n", rowCount: 1, truncated: false, snapshotAt };
         } else {
           unexpectedRequests.push(`unexpected RPC ${method}`);
@@ -128,6 +134,10 @@ describe("FinancePage controller filtered export journey", () => {
       await page.getByText("invoice-84", { exact: true }).waitFor({ state: "visible" });
       const exportButton = page.locator("button").filter({ hasText: "导出当前筛选" });
       if (await exportButton.count() !== 1) throw new Error(`Export CTA missing; visible finance page:\n${await page.locator("body").innerText()}`);
+      await exportButton.click();
+      await page.getByRole("alert").filter({ hasText: "财务导出失败" }).getByText("财务导出服务暂时不可用", { exact: true }).waitFor({ state: "visible" });
+      expect(await exportButton.isDisabled()).toBe(false);
+      expect(await page.getByText("invoice-84", { exact: true }).count()).toBeGreaterThan(0);
       const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
       expect(download.suggestedFilename()).toBe("finance-filter-84.csv");
       const downloadedPath = join(cacheDirectory, "finance-filter-84.csv");
@@ -137,7 +147,8 @@ describe("FinancePage controller filtered export journey", () => {
       const filteredSearch = calls.find(call => call.method === "ops.finance.search" && call.params.workspace_ids_json !== undefined);
       expect(filteredSearch?.params).toMatchObject({ workspace_ids_json: JSON.stringify(["ws-finance-84"]), text: "order-84", limit: "20" });
       const exports = calls.filter(call => call.method === "ops.finance.export");
-      expect(exports).toHaveLength(1);
+      expect(exports).toHaveLength(2);
+      expect(exportAttempts).toBe(2);
       expect(exports[0]?.params).toEqual({ workspace_ids_json: JSON.stringify(["ws-finance-84"]), text: "order-84", snapshot_at: snapshotAt, limit: "20" });
       expect(calls.some(call => /(?:refund|payment|settle|reconcile|allocate|receipt|update|create|delete|approve|revoke)/iu.test(call.method))).toBe(false);
       expect(unexpectedRequests).toEqual([]);

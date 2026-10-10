@@ -150,6 +150,50 @@ describe("Ops stores route directory and registration journey", () => {
       expect(unexpected).toEqual([]);
     } finally { await page.close(); }
   }, 60_000);
+
+  it("retries an initial store-directory read failure through the controller and restores focus after recovery", async () => {
+    if (!browser) throw new Error("Chromium did not start");
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(20_000);
+    let storeReads = 0;
+    const unexpected: string[] = [];
+    try {
+      await page.route("**/*", async route => {
+        const url = new URL(route.request().url());
+        if (url.hostname === "127.0.0.1" && url.port === new URL(baseUrl).port) return route.fallback();
+        unexpected.push(url.origin); await route.abort();
+      });
+      await page.route(url => url.origin === new URL(baseUrl).origin && url.pathname.startsWith("/api/"), async route => {
+        const request = route.request(); const url = new URL(request.url());
+        if (url.pathname !== "/api/mcp" || request.method() !== "POST") { unexpected.push(`${request.method()} ${url.pathname}`); await route.fulfill({ status: 403, body: "fixture only" }); return; }
+        const rpc = request.postDataJSON() as { id?: string | number; method: string };
+        let result: unknown = null;
+        if (rpc.method === "ops.session") result = { actor_id: "retry-operator", workspace_id: "", roles: ["platform_ops"], workspace_granted: false, workbench: "platform", scope: { type: "platform" }, capabilities: ["platform.settings.read", "workspace.directory.read"] };
+        if (rpc.method === "ops.workspaces.list") result = { items: [], total: 0, offset: 0, limit: 20 };
+        if (rpc.method === "ops.stores.list") {
+          storeReads += 1;
+          if (storeReads === 1) {
+            await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, error: { code: "STORE_DIRECTORY_UNAVAILABLE", message: "店铺目录暂时不可用" } }) });
+            return;
+          }
+          result = { items: [{ platform: "taobao", accountId: "retry-store-1", label: "重试后读取的店铺", state: "connected", dataMode: "official_api", readable: true, writeEnabled: false, revision: 1 }] };
+        }
+        if (rpc.method === "ops.growth.funnel") result = { counts: {}, totalEvents: 0 };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
+      });
+
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      await page.getByText("店铺目录读取失败", { exact: true }).waitFor();
+      await page.getByText("尚未取得店铺目录；请先检查网络或工作区权限。", { exact: true }).waitFor();
+      const retry = page.getByRole("button", { name: "刷新店铺目录", exact: true });
+      await retry.focus();
+      await page.keyboard.press("Enter");
+      await page.getByText("重试后读取的店铺", { exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "搜索店铺");
+      expect(storeReads).toBe(2);
+      expect(unexpected).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
 });
 
 async function expectText(page: import("playwright").Page, text: string): Promise<void> {

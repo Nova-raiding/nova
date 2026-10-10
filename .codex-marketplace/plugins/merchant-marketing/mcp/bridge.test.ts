@@ -635,7 +635,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.facts.confirm', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.facts.confirm', arguments: { asset_id: 'asset_1', facts_json: '{}', reason: '确认已核对的商品事实' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.image.edit', arguments: { request_json: '{}' } } })}\n`)
@@ -725,7 +725,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       const writes = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
       for (const [index, name] of writes.entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: { campaign_id: 'campaign_1', expected_revision: '1', idempotency_key: `campaign:${name}:1`, reason: 'operator requested operation' } } })}\n`)
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expect.stringMatching(/^(?:INTERACTIVE_WRITE_DISABLED|COMMERCIAL_OPERATION_DISABLED)$/u) } })
       }
       expect(requests).toBe(0)
@@ -2866,6 +2866,8 @@ describe('Codex stdio MCP bridge', () => {
       ['multimodal.video.request', { prompt: '生成分镜', output: 'storyboard', context_json: '{}' }],
     ] as const
     try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       for (const [index, [name, args]] of calls.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
         const envelope = await nextLine(child.stdout)
@@ -4497,6 +4499,8 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { draft: 'true', draft_title: '待审核商品草稿', idempotency_key: 'cost-pending-1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_USAGE_COST_MISSING' } })

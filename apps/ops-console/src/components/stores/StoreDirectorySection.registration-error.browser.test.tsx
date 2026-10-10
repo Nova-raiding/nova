@@ -37,16 +37,24 @@ describe("manual store registration failure recovery", () => {
               if (window.__storeRegisterAttempts === 1) throw new Error('当前角色缺少店铺登记权限');
             };
             const workspaces = [{ workspaceId: 'ws_test', enterpriseName: '隔离测试企业', status: 'active' }];
-            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canManageStoreConnections: true, workspaces, onRegisterManualStore: register,
-              onSaveAlias: async () => false, onRevoke: async () => undefined,
-            })));
+            function DirectoryFixture() {
+              const [error, setError] = React.useState('');
+              const [loading, setLoading] = React.useState(false);
+              const retry = () => { setLoading(true); setTimeout(() => { setError(''); setLoading(false); }, 0); };
+              return React.createElement(React.Fragment, null,
+                React.createElement('button', { type: 'button', onClick: () => setError('目录读取失败') }, '模拟目录读取失败'),
+                React.createElement(StoreDirectorySection, {
+                  storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canManageStoreConnections: true, workspaces, onRegisterManualStore: register,
+                  error, loading, onRetry: retry, onSaveAlias: async () => false, onRevoke: async () => undefined,
+                }));
+            }
+            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(DirectoryFixture)));
           `;
         },
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
             if (req.url?.split("?")[0] !== "/__store-register-error") return next();
-            const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="${entryPath}"></script></body></html>`;
+            const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script>history.replaceState(null, '', '/ops/stores?workbench=platform')</script><script type="module" src="${entryPath}"></script></body></html>`;
             void server.transformIndexHtml(req.url, html).then(output => {
               res.setHeader("Content-Type", "text/html; charset=utf-8");
               res.end(output);
@@ -171,6 +179,22 @@ describe("manual store registration failure recovery", () => {
       await page.getByLabel("按授权状态筛选").click();
       await page.getByText("真实授权", { exact: true }).last().click();
       expect(await page.getByText("隔离店铺", { exact: true }).count()).toBe(1);
+    } finally { await page.close(); }
+  }, 45_000);
+
+  it("moves keyboard focus into the directory after a failed read recovers", async () => {
+    const page = await browser!.newPage();
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      await page.getByRole("button", { name: "模拟目录读取失败", exact: true }).click();
+      const retry = page.getByRole("button", { name: "刷新店铺目录", exact: true });
+      await retry.waitFor();
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-labelledby") === "store-directory-error-title");
+      await retry.focus();
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => !document.querySelector('[aria-labelledby="store-directory-error-title"]'));
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "搜索店铺");
+      expect(await page.getByRole("textbox", { name: "搜索店铺" }).count()).toBe(1);
     } finally { await page.close(); }
   }, 45_000);
 

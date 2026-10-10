@@ -6,6 +6,7 @@ import { WorkspaceRuleAuditPanel } from "../components/rules/WorkspaceRuleAuditP
 import { PublicRuleDraftReviewPanel } from "../components/rules/PublicRuleDraftReviewPanel";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button } from "antd";
+import { useState } from "react";
 
 interface RulesPageProps {
   model: OpsConsoleModel;
@@ -45,7 +46,7 @@ export function RulesPage({ model }: RulesPageProps) {
         canSync={model.canRules}
         onSyncNow={model.syncRulesNow}
       />
-      {platform ? <><RuleCenterSection model={model} platformOnly /><PublicRuleDraftReviewPanel authorization={model.authorization} /></> : <RuleCenterSection model={model} />}
+      {platform ? <PlatformRulesGovernance model={model} /> : <RuleCenterSection model={model} />}
       {!platform && <WorkspaceRuleAuditPanel
         rules={model.rules}
         canRead={model.authorization.scope.kind !== "platform" && model.authorization.can("rule.read")}
@@ -54,4 +55,12 @@ export function RulesPage({ model }: RulesPageProps) {
       </div>
     </OpsPage>
   );
+}
+
+function PlatformRulesGovernance({ model }: RulesPageProps) {
+  const [draftRefreshKey, setDraftRefreshKey] = useState(0);
+  return <>
+    <RuleCenterSection model={model} platformOnly onDraftsChanged={() => setDraftRefreshKey(value => value + 1)} />
+    <PublicRuleDraftReviewPanel authorization={model.authorization} refreshKey={draftRefreshKey} />
+  </>;
 }
