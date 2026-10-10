@@ -53,24 +53,25 @@ sh infra/scripts/build-ecs-release-images.sh
 
 ### Demo 商家 UI 混合组件身份适配
 
-`infra/scripts/prepare-ecs-demo-component-update.mjs` 的 `prepareDemoComponentUpdate(input)` 是纯配置适配器，没有宿主 CLI，也不读文件、调用 Docker/SSH、构建或切流。范围固定为 `merchant-demo-85575f9c` 的商家 UI 更新，不能用于正式生产或其他组件发布。原有单候选渲染器要求所有镜像同提交，保持该规则；不要用它伪造未更新组件的提交。
+`infra/scripts/prepare-ecs-demo-component-update.mjs` 的 `prepareDemoComponentUpdate(input)` 是唯一 Demo 的纯配置适配器，没有宿主 CLI，也不读文件、调用 Docker/SSH、构建或切流。它只支持 `merchant-demo-85575f9c`，组件集合限于 `merchant-api`、`merchant-ops-ui`、`merchant-ui`；本轮可选择其中任意非空子集，所有新镜像都必须绑定同一候选提交。`merchant-api` 与 `api`/`api-replica` 是不可拆分的更新单元。该适配器不能用于独立生产环境；原有完整候选渲染器仍要求所有镜像同提交，不要用它伪造未更新组件的提交。
 
 输入 `schema_version=demo-component-update-input/1` 包含：
 
 - `compose_project` 与 `candidate={release_id,git_sha,source_sha256}`，来自 owner 校验的冻结归档；此适配器不替代归档提交、摘要校验。
 - `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及完整 270 行 `{version,name,checksum}` 的 `migrations`。`target_migrations` 必须逐行一致。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
 - `baseline.runtime_services` 为当前实际 15 服务的安全投影。每项严格包含 `container_id,reference,image_id,git_sha,source_sha256,running,health,restarts,oom_killed,compose_service_sha256`；后者是 owner 已对照实际容器配置后封存的该 Compose service 的 canonical JSON SHA。Git/source 来自不可变镜像 OCI 标签，上游镜像无标签时为 `null`。不传完整 inspect、Env、Cmd 或密钥。
-- 本轮仅 `merchant-ui` 的 `component_images`，格式与组件构建器输出一致；`imported_ui` 包含宿主实际镜像 inspect 的 `reference,image_id,repo_digests,labels,os,architecture` 安全投影，必须绑定同一不可变引用、候选标签与 `linux/amd64`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
+- `component_images` 的精确组件键集合与 `imported_components` 的精确镜像 inspect 投影集合必须相同；每项投影包含 `reference,image_id,repo_digests,labels,os,architecture`，并绑定同一不可变引用、候选标签与 `linux/amd64`。只更新 `merchant-ui` 时也兼容旧输入字段 `imported_ui`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
+- 旧 Compose 的 API `DEMO_RUNTIME_MODE` 可缺省或为 `true`；显式设置成其他值会被拒绝。候选始终为 `api` 和 `api-replica` 设置 `DEMO_RUNTIME_MODE=true`，确保本轮更新后唯一 Demo 被健康接口识别为 Demo。原始基线 Compose 和回滚字节保持不变。
 
-输出包含新完整 15 服务 manifest、四个 API `RELEASE_*` 输入、新 Compose、原始回滚 Compose/manifest 字节及旧身份、准备审查摘要。manifest 的候选 SHA 表示本次发布包；`services.*.git_sha/source_sha256/reference/image_id` 表示各组件自己的真实镜像身份。只有 `ui` 更换镜像及其容器标签；旧 API 镜像与标签仍保留旧 SHA，API 双实例仅更新发布四字段。其他 12 服务配置、网络、挂载、healthcheck 与 migrate 声明完全保留。
+输出包含新完整 15 服务 manifest、四个 API `RELEASE_*` 输入、新 Compose、原始回滚 Compose/manifest 字节及旧身份、准备审查摘要。manifest 的候选 SHA 表示本次发布包；`services.*.git_sha/source_sha256/reference/image_id` 表示各组件自己的真实镜像身份。只有所选组件镜像与标签会更新；API 组件更新双副本镜像，Ops/UI 组件分别更新 `ops-ui`/`ui`；API 双实例同时更新发布四字段和 Demo 标记。未选服务的配置、镜像、网络、挂载、healthcheck 与 migrate 声明完全保留。
 
 现有宿主自有 `pilot-gateway` 可使用精确 Docker config ID 引用，但仅当 `reference === image_id` 且值为合法 `sha256:<64hex>`；其他自有服务仍必须使用 `repository@sha256`。旧 manifest 未记录 `source_sha256` 或记录 null 时，owner 仍须从当前容器所绑定的实际镜像 ID 的 `com.storenova.release.source_sha256` 标签采集该字段，同时从同一镜像采集 Git 标签；不得从候选源码、全局发布 SHA 或其他组件推断。pilot/payment 的实际镜像标签均存在合法 source SHA，应填入并输出真实 digest。所有自有镜像（含 pilot）缺少合法 Git/source 标签将被拒绝；旧 manifest 已记录非 null source 时还须逐项相等。上游 Postgres/Redis/ClamAV 无标签时仍允许显式 `null`，并绑定其原 config ID。
 
 迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，版本必须连续 1–270，checksum 必须完整 SHA256。当前 270 个真实 SQL 的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已部署链摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，仍需 owner 实读线上完整链逐行相等。
 
-API `/releasez` 读取启动环境，不读取 manifest 文件；因此这条路线必须将 `ui api api-replica` 列为明确更新/回滚服务，不能只重启 UI 或 `docker restart` API。只构建一个新 UI 镜像，同时重新创建两个沿用旧镜像的 API 容器。adapter 的输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
+API `/releasez` 读取启动环境，不读取 manifest 文件；因此无论组件选择如何，候选都必须将 `api api-replica` 纳入明确更新/回滚服务。仅 UI 更新时会重新创建沿用旧镜像的 API 容器；API 组件更新时则换成候选 API 镜像。选择全部三组件时服务列表为 `api api-replica ops-ui ui`。不能只重启 UI 或 `docker restart` API。适配器输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
 
-owner 将输入输出仅保存在宿主受保护目录，并使用原有部署锁、全新候选目录和不覆盖旧输入的写入策略。在锁内重新确认实际 CID/镜像、配置来源 SHA、挂载/网络、公网四元组、完整迁移链没有漂移，完成 Compose render/no-interpolate 和相同三服务回滚审查后，才进入既有发布步骤。更新后必须实测 15 服务 healthy、12 个保留 CID 不变、UI 镜像/字节和 API 双实例完整发布四元组准确；另验真实桌面导航及本地 stdio 读链路。配置摘要是 owner 采集证据的绑定，不替代这些实际检查。该模块没有自动收集、写入或执行这些步骤。
+owner 将输入输出仅保存在宿主受保护目录，并使用唯一 ECS Compose mutation lock、全新候选目录和不覆盖旧输入的写入策略。在锁内重新确认实际 CID/镜像、配置来源 SHA、挂载/网络、公网四元组、完整迁移链没有漂移，完成 Compose render/no-interpolate 和相同显式服务列表的回滚审查后，才进入 Demo 直接部署步骤。更新后必须实测 15 服务 healthy、未选服务的容器 ID 不变、所有更新镜像的 digest/字节与 API 双实例完整发布四元组准确；另验真实桌面导航及本地 stdio 读链路。配置摘要是 owner 采集证据的绑定，不替代这些实际检查。该模块没有自动收集、写入或执行这些步骤。
 
 构建成功的 digest 可以保留，不因之后的业务验收失败而无条件重建。再次构建只针对实际改动；不得把另一 SHA 的证据重贴到新候选上。构建缓存按现有预算维护，不删除数据库、业务卷或 Registry blob 来腾空间。
 
@@ -91,7 +92,7 @@ owner 将输入输出仅保存在宿主受保护目录，并使用原有部署�
 # 在 101 执行。NEW_COMPOSE/NEW_ENV 均是已审核的完整受保护配置。
 # ECS_DEPLOY_LOCK_PATH 使用现有受保护部署配置中的同一把锁。
 # 在同一 shell 内持有 FD9，直到健康验收或回滚全部结束。
-: "${ECS_DEPLOY_LOCK_PATH:?必须使用现有生产发布锁路径}"
+: "${ECS_DEPLOY_LOCK_PATH:?必须使用唯一 ECS Compose mutation lock 路径}"
 exec 9>>"$ECS_DEPLOY_LOCK_PATH"
 flock -n 9 || exit 1
 docker compose --project-name merchant-demo-85575f9c \

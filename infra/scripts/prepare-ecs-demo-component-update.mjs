@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto'
 
 const project = 'merchant-demo-85575f9c'
 export const runtimeServices = Object.freeze(['api', 'api-replica', 'clamav', 'ops-ui', 'payment-gateway', 'pilot-gateway', 'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'].sort())
-const recreated = ['api', 'api-replica', 'ui']
+const componentServices = Object.freeze({ 'merchant-api': ['api', 'api-replica'], 'merchant-ops-ui': ['ops-ui'], 'merchant-ui': ['ui'] })
+const identityServices = ['api', 'api-replica']
 const keys = ['RELEASE_ID', 'RELEASE_GIT_SHA', 'RELEASE_MANIFEST_SHA256', 'RELEASE_IMAGE_SET_DIGEST']
 const sha = value => createHash('sha256').update(value).digest('hex')
 const fail = message => { throw new Error(message) }
@@ -97,56 +98,81 @@ export function prepareDemoComponentUpdate(input) {
   for (const name of ['api', 'api-replica']) {
     const env = original.services[name].environment
     assert(env && keys.every(key => env[key] === priorIdentity[key]), `${name} baseline release environment differs`)
-    assert(env.MCP_INTEGRATION_MODE === 'local_stdio' && env.OPS_AUTH_MODE === 'password' && env.RUN_MIGRATIONS_ON_STARTUP === 'false', `${name} runtime security/no-DDL contract differs`)
+    assert(env.MCP_INTEGRATION_MODE === 'local_stdio' && env.OPS_AUTH_MODE === 'password' && env.RUN_MIGRATIONS_ON_STARTUP === 'false' && (env.DEMO_RUNTIME_MODE === undefined || env.DEMO_RUNTIME_MODE === 'true'), `${name} runtime security/demo/no-DDL contract differs`)
     assert(!['MCP_OAUTH_REQUIRED', 'MCP_OAUTH_CLIENTS', 'MCP_OAUTH_ISSUER', 'OIDC_PROXY_SIGNING_SECRET'].some(key => Object.hasOwn(env, key)), 'unapproved host OAuth configuration')
   }
-  const target = input.candidate, images = input.component_images, imported = input.imported_ui
+  const target = input.candidate, images = input.component_images
   assert(target && git(target.git_sha) && digest(target.source_sha256) && /^(?:release|ecs)-[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(target.release_id ?? ''), 'invalid candidate identity')
-  assert(target.release_id !== priorIdentity.RELEASE_ID && target.git_sha !== prior.services.ui.git_sha, 'candidate must identify a new UI release')
+  assert(target.release_id !== priorIdentity.RELEASE_ID && target.git_sha !== priorIdentity.RELEASE_GIT_SHA, 'candidate must identify a new Demo release')
   assert(images?.schema_version === 1 && images.build_scope === 'components' && images.release_id === target.release_id && images.release_git_sha === target.git_sha && images.source_sha256 === target.source_sha256, 'component build identity differs')
-  for (const key of ['image_references', 'image_digests', 'image_metadata']) exactNames(images[key], ['merchant-ui'], key)
-  const ref = images.image_references['merchant-ui'], metadata = images.image_metadata['merchant-ui']
-  assert(immutable(ref) && images.image_digests['merchant-ui'] === ref.split('@')[1] && metadata.reference === ref && metadata.digest === ref.split('@')[1], 'UI immutable digest binding differs')
+  const selected = Object.keys(images.image_references ?? {}).sort()
+  assert(selected.length > 0 && selected.every(name => Object.hasOwn(componentServices, name)), 'component build contains missing or unsupported components')
+  for (const key of ['image_references', 'image_digests', 'image_metadata']) exactNames(images[key], selected, key)
+  const importedImages = input.imported_components ?? (selected.length === 1 && selected[0] === 'merchant-ui' ? { 'merchant-ui': input.imported_ui } : null)
+  exactNames(importedImages, selected, 'imported component projections')
   const labels = { 'org.opencontainers.image.revision': target.git_sha, 'com.storenova.release.id': target.release_id, 'com.storenova.release.source_sha256': target.source_sha256 }
-  assert(metadata.labels && Object.entries(labels).every(([key, value]) => metadata.labels[key] === value), 'UI build OCI labels differ')
-  exactNames(imported, ['reference', 'image_id', 'repo_digests', 'labels', 'os', 'architecture'], 'imported UI projection')
-  assert(imported.reference === ref && digest(imported.image_id) && Array.isArray(imported.repo_digests) && imported.repo_digests.includes(ref) && imported.os === 'linux' && imported.architecture === 'amd64' && Object.entries(labels).every(([key, value]) => imported.labels?.[key] === value), 'imported UI inspect evidence differs')
-  assert(ref !== prior.services.ui.reference && imported.image_id !== prior.services.ui.image_id, 'UI image was not replaced')
+  const updates = {}
+  for (const component of selected) {
+    const ref = images.image_references[component], metadata = images.image_metadata[component], imported = importedImages[component]
+    assert(immutable(ref) && images.image_digests[component] === ref.split('@')[1] && metadata.reference === ref && metadata.digest === ref.split('@')[1], `${component} immutable digest binding differs`)
+    assert(metadata.labels && Object.entries(labels).every(([key, value]) => metadata.labels[key] === value), `${component} build OCI labels differ`)
+    exactNames(imported, ['reference', 'image_id', 'repo_digests', 'labels', 'os', 'architecture'], `imported ${component} projection`)
+    assert(imported.reference === ref && digest(imported.image_id) && Array.isArray(imported.repo_digests) && imported.repo_digests.includes(ref) && imported.os === 'linux' && imported.architecture === 'amd64' && Object.entries(labels).every(([key, value]) => imported.labels?.[key] === value), `imported ${component} inspect evidence differs`)
+    for (const serviceName of componentServices[component]) {
+      assert(ref !== prior.services[serviceName].reference && imported.image_id !== prior.services[serviceName].image_id, `${component} image for ${serviceName} was not replaced`)
+      updates[serviceName] = { component, reference: ref, image_id: imported.image_id }
+    }
+  }
+  const imageUpdatedServices = Object.keys(updates).sort()
+  const recreated = [...new Set([...identityServices, ...imageUpdatedServices])].sort()
 
   const candidate = structuredClone(original)
-  candidate.services.ui.image = ref
-  candidate.services.ui.labels = { ...candidate.services.ui.labels, ...labels }
+  for (const [serviceName, update] of Object.entries(updates)) {
+    candidate.services[serviceName].image = update.reference
+    candidate.services[serviceName].labels = { ...candidate.services[serviceName].labels, ...labels }
+  }
   const records = Object.fromEntries(runtimeServices.map(name => {
     const current = baseline.runtime_services[name]
-    return [name, { reference: name === 'ui' ? ref : current.reference, image_id: name === 'ui' ? imported.image_id : current.image_id, git_sha: name === 'ui' ? target.git_sha : current.git_sha, source_sha256: name === 'ui' ? target.source_sha256 : current.source_sha256, updated: recreated.includes(name), image_updated: name === 'ui' }]
+    const update = updates[name]
+    return [name, { reference: update?.reference ?? current.reference, image_id: update?.image_id ?? current.image_id, git_sha: update ? target.git_sha : current.git_sha, source_sha256: update ? target.source_sha256 : current.source_sha256, updated: recreated.includes(name), image_updated: Boolean(update) }]
   }))
   const setDigest = imageSetDigest(records)
   const manifest = {
     schema_version: 'demo-runtime-service-set/1', release_id: target.release_id,
     candidate_git_sha: target.git_sha, candidate_source_sha256: target.source_sha256,
-    compose_project: project, release_scope: 'demo-merchant-ui-mixed-components',
+    compose_project: project, release_scope: selected.length === 1 && selected[0] === 'merchant-ui' ? 'demo-merchant-ui-mixed-components' : 'demo-merchant-component-update',
     identity_semantics: 'candidate_git_sha identifies this publication bundle; services.*.git_sha identifies each immutable image',
     services: records, image_set_digest: setDigest,
     configuration_contract_sha256: sha(canonicalJson(stripIdentity(candidate))),
     migration_version: 270, migration_chain_sha256: prior.migration_chain_sha256,
-    updated_services: recreated, image_updated_services: ['ui'], metadata_recreated_services: ['api', 'api-replica'],
+    updated_services: recreated, image_updated_services: imageUpdatedServices, metadata_recreated_services: identityServices,
     preserved_services: runtimeServices.filter(name => !recreated.includes(name)),
     compatibility_only_declared_service: 'migrate (never started; explicit up --no-deps)',
-    rollback_policy: 'same-270 exact prior Compose/identity; same explicit three services; never restore or delete live data',
+    rollback_policy: `same-270 exact prior Compose/identity; same explicit services ${recreated.join(', ')}; never restore or delete live data`,
     prior_manifest_sha256: priorIdentity.RELEASE_MANIFEST_SHA256,
   }
   const manifestText = document(manifest)
   const nextIdentity = { RELEASE_ID: target.release_id, RELEASE_GIT_SHA: target.git_sha, RELEASE_MANIFEST_SHA256: sha(manifestText), RELEASE_IMAGE_SET_DIGEST: setDigest }
-  for (const name of ['api', 'api-replica']) Object.assign(candidate.services[name].environment, nextIdentity)
-  // Independent minimal-change assertion: do not relabel old API/worker images.
+  for (const name of ['api', 'api-replica']) {
+    Object.assign(candidate.services[name].environment, nextIdentity)
+    candidate.services[name].environment.DEMO_RUNTIME_MODE = 'true'
+  }
+  // Independent minimal-change assertion: only selected component services
+  // and API release metadata may change.
   const restored = structuredClone(candidate)
-  restored.services.ui.image = original.services.ui.image
-  if (original.services.ui.labels === undefined) delete restored.services.ui.labels
-  else restored.services.ui.labels = structuredClone(original.services.ui.labels)
-  for (const name of ['api', 'api-replica']) for (const key of keys) restored.services[name].environment[key] = original.services[name].environment[key]
+  for (const serviceName of imageUpdatedServices) {
+    restored.services[serviceName].image = original.services[serviceName].image
+    if (original.services[serviceName].labels === undefined) delete restored.services[serviceName].labels
+    else restored.services[serviceName].labels = structuredClone(original.services[serviceName].labels)
+  }
+  for (const name of ['api', 'api-replica']) {
+    for (const key of keys) restored.services[name].environment[key] = original.services[name].environment[key]
+    if (original.services[name].environment.DEMO_RUNTIME_MODE === undefined) delete restored.services[name].environment.DEMO_RUNTIME_MODE
+    else restored.services[name].environment.DEMO_RUNTIME_MODE = original.services[name].environment.DEMO_RUNTIME_MODE
+  }
   assert(same(restored, original), 'unapproved Compose mutation')
   const composeText = document(candidate)
-  const summary = { configuration_only: true, runtime_mutated: false, deploy_authorized: false, ...nextIdentity, updated_services: recreated, image_updated_services: ['ui'], preserved_services: manifest.preserved_services, baseline_container_ids: baselineIds, candidate_compose_sha256: sha(composeText), rollback_compose_sha256: sha(baseline.compose_text), rollback_manifest_sha256: sha(baseline.manifest_text), migration_version: 270, migration_chain_sha256: prior.migration_chain_sha256, required_next_checks: ['hold existing deployment lock', 'reinspect exact baseline CIDs, config, mounts, networks and public identity', 'verify source archive and real UI bytes/labels/digest', 'protected Compose render and no-interpolate review', 'same-three-service rollback review', 'explicit ui api api-replica update only', '15 healthy, 12 preserved CIDs, image IDs and full release tuple', 'desktop navigation and local stdio read verification'] }
+  const summary = { configuration_only: true, runtime_mutated: false, deploy_authorized: false, ...nextIdentity, updated_services: recreated, image_updated_services: imageUpdatedServices, preserved_services: manifest.preserved_services, baseline_container_ids: baselineIds, candidate_compose_sha256: sha(composeText), rollback_compose_sha256: sha(baseline.compose_text), rollback_manifest_sha256: sha(baseline.manifest_text), migration_version: 270, migration_chain_sha256: prior.migration_chain_sha256, required_next_checks: ['hold existing deployment lock', 'reinspect exact baseline CIDs, config, mounts, networks and public identity', 'verify each selected source archive, imported image labels and digest', 'protected Compose render and no-interpolate review', 'same-explicit-service rollback review', `explicit ${recreated.join(' ')} update only`, '15 healthy, preserved CIDs, image IDs and full release tuple', 'desktop navigation and local stdio read verification'] }
   return { candidate_compose_text: composeText, manifest_text: manifestText, identity: nextIdentity, rollback_compose_text: baseline.compose_text, rollback_manifest_text: baseline.manifest_text, rollback_identity: structuredClone(priorIdentity), review: summary }
 }
 
