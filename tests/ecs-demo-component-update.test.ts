@@ -274,11 +274,11 @@ describe('Demo UI mixed-component publication identity', () => {
     reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
     expect(() => prepare(input)).toThrow(/source digest differs/)
   })
-  it('preserves the archived 270-row baseline and rejects the current 272-row source chain', async () => {
+  it('preserves the archived 270-row baseline and rejects the current 273-row source chain', async () => {
     const sourceRows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
     const rows = sourceRows.slice(0, 270)
-    expect(sourceRows).toHaveLength(272)
-    expect(sourceRows.at(-1)).toMatchObject({ version: 272, name: 'publish_media_orphan_outbox' })
+    expect(sourceRows).toHaveLength(273)
+    expect(sourceRows.at(-1)).toMatchObject({ version: 273, name: 'publish_media_lifecycle_guard' })
     expect(rows).toHaveLength(270)
     expect(rows[99]?.name).toBe('operation_alert_notifications')
     const chain = hash(canonicalJson(rows))

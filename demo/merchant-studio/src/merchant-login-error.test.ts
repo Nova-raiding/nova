@@ -3,8 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { MerchantLoginPage } from './MerchantLoginPage'
 
-const render = (error?: string, onRetry?: () => void) => renderToStaticMarkup(createElement(MerchantLoginPage, {
+const render = (error?: string, onRetry?: () => void, loading = false) => renderToStaticMarkup(createElement(MerchantLoginPage, {
   apiBaseUrl: 'http://127.0.0.1:9',
+  loading,
   ...(error === undefined ? {} : { error }),
   onAuthenticated: () => undefined,
   ...(onRetry ? { onRetry } : {}),
@@ -32,6 +33,12 @@ describe('merchant login page shows why the session ended', () => {
     const html = render(undefined)
     expect(html).not.toContain('登录未完成')
     expect(html).toContain('登录商家工作台')
+  })
+
+  it('explains why the form is temporarily disabled during session checks', () => {
+    const html = render(undefined, undefined, true)
+    expect(html).toContain('role="status"')
+    expect(html).toContain('正在检查登录状态，完成后即可输入商家账号。')
   })
 
   it('explains the controlled registration and password recovery path', () => {

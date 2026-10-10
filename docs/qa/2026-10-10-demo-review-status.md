@@ -234,3 +234,13 @@ Demo 仍为 **NO-GO，未进行同步、构建、重启、迁移或部署**。�
 本轮全局 `npm run typecheck` 正在执行，但前序同名进程没有被 owner 收到 exit code；当前新进程也尚无收据。不要将其记为通过。工作树仍有约 284 条 dirty/untracked 路径，Merchant 深链测试依赖混合在 `App.tsx` 的大批未提交改动；本轮没有创建可部署候选或进行提交/部署。
 
 Demo 继续 **NO-GO**：没有新鲜、原始的全容器 owner 分类与 host/release 批准，没有共享锁证明，没有两 API 副本 `setup.mode=demo` 证据，也没有 Demo live 全迁移链。任何这些门禁都不能由本地 fixture、类型检查或插件打包测试替代。
+
+## Follow-up regression batch (2026-10-10, after `0b542a13`)
+
+- Global `npm run typecheck` completed with exit code 0 before the final browser-fixture-only assertion adjustments. `git diff --check` is clean.
+- Focused API, application, persistence, worker, plugin contract, migration metadata, candidate-gate and browser-entrypoint suite passed: 10 files / 185 tests. This includes 136 API customer-delivery validation cases, 54 demo candidate gate cases, connector receipt validation, and in-memory lifecycle concurrency.
+- Customer Delivery restore browser regression passed 1/1. Merchant product asset rights tests passed 11/11. Plugin source/marketplace smoke and release profile contract passed in an earlier focused run (63 tests total).
+- A broader Ops browser/component batch passed 4 files / 143 tests and failed 3 browser assertions: Finance advanced-filter submission did not observe the expected call, Support error dismissal was blocked by a visible modal overlay, and assisted-purchase modal was not found by its accessible-name selector. Fixture assertions were adjusted afterward, but reruns ended with exit code 130 before results; these three scenarios remain unverified. Do not count the assertion adjustments as passing coverage.
+- Isolated PostgreSQL fixture startup timed out before migration 273 SQL execution. The new forward migration has source-level/migration metadata coverage only; its database execution remains unverified.
+- Current source migration head is 273. Live Demo migration chain, owner inventory/classification, shared-lock ownership, and required `setup.mode=demo` remain unverified or blocked by previously recorded host evidence. No deployment or container mutation was performed; unique Demo remains **NO-GO**.
+- Browser coverage remains selective and does not establish that every route, component, or code file passed. The three failed/unverified Ops browser journeys and PostgreSQL startup limitation must be resolved before claiming full acceptance.

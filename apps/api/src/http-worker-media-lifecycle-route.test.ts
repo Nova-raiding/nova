@@ -19,7 +19,7 @@ function fixture(options: { role?:string; body?:Record<string,unknown>; workspac
 }
 const req={method:'POST',headers:{}} as any
 const res={} as any
-const body={event_id:'event_a',media_idempotency_key:'job_a:media:visual_a',platform:'taobao',account_id:'acct_a',visual_ref:'visual_a',role:'main',sha256:'a'.repeat(64),state:'uploaded',receipt:{platform:'taobao',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),mediaId:'remote_media_a'}}
+const body={event_id:'event_a',media_idempotency_key:'job_a:media:visual_a',platform:'taobao',account_id:'acct_a',visual_ref:'visual_a',role:'main',sha256:'a'.repeat(64),state:'uploaded',receipt:{platform:'taobao',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),mediaId:'remote_media_a',simulated:false}}
 
 describe('worker publish media lifecycle callback',()=>{
   it('accepts only the signed publish role and persists a job-bound upload receipt',async()=>{
@@ -44,6 +44,14 @@ describe('worker publish media lifecycle callback',()=>{
     const f=fixture({body:invalidBody})
     await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_RECEIPT_INVALID',status:400})
     expect(await f.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toBeUndefined()
+  })
+  it('rejects simulated upload receipts in production',async()=>{
+    vi.stubEnv('NODE_ENV','production')
+    try {
+      const f=fixture({body:{...body,receipt:{...body.receipt,simulated:true}}})
+      await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_RECEIPT_INVALID',status:400})
+      expect(await f.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toBeUndefined()
+    } finally { vi.unstubAllEnvs() }
   })
   it('rejects deletion without an existing receipt and exact confirmed adapter evidence',async()=>{
     const noReceipt=fixture({body:{...body,state:'deleted',receipt:undefined,reason:'discard_adapter_confirmed_delete'}})

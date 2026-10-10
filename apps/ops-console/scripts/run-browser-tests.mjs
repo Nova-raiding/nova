@@ -22,6 +22,7 @@ const files = [
   "src/hooks/alertPollingBoundary.test.tsx",
   "src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx",
   "src/pages/CustomerDeliveryPage.test.tsx",
+  "src/pages/CustomerDeliveryPage.restore.browser.regression.test.tsx",
   "src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts",
   "src/pages/customer-delivery-workspace-race.test.tsx",
 ];

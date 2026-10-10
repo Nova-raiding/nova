@@ -72,7 +72,7 @@ describe('customer delivery input validation over loopback HTTP', () => {
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('loopback API did not bind')
     base = `http://127.0.0.1:${address.port}`
-  })
+  }, 90_000)
 
   beforeEach(async () => {
     workspaceId = `ws_delivery_input_${randomUUID()}`

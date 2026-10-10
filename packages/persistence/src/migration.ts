@@ -776,6 +776,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const catalogBatchImportIdempotency = await readFile(new URL('./migrations/270_catalog_batch_import_idempotency.sql', import.meta.url), 'utf8')
   const cashReturnReceiptScope = await readFile(new URL('./migrations/271_cash_return_receipt_scope.sql', import.meta.url), 'utf8')
   const publishMediaOrphanOutbox = await readFile(new URL('./migrations/272_publish_media_orphan_outbox.sql', import.meta.url), 'utf8')
+  const publishMediaLifecycleGuard = await readFile(new URL('./migrations/273_publish_media_lifecycle_guard.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1049,6 +1050,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 270, name: 'catalog_batch_import_idempotency', sql: catalogBatchImportIdempotency },
     { version: 271, name: 'cash_return_receipt_scope', sql: cashReturnReceiptScope },
     { version: 272, name: 'publish_media_orphan_outbox', sql: publishMediaOrphanOutbox },
+    { version: 273, name: 'publish_media_lifecycle_guard', sql: publishMediaLifecycleGuard },
   ]
 }
 

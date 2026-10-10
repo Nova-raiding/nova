@@ -67,7 +67,7 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
           <br />
           <Input
             aria-label="Token 计费倍率变更原因"
-            disabled={!canModelMarkup}
+            disabled={!canModelMarkupUpdate || !modelMarkup || modelMarkupLoading}
             value={modelMarkupReason}
             onChange={(event) => setModelMarkupReason(event.target.value)}
             placeholder="必填，写入审计"

@@ -127,6 +127,7 @@ test('merchant can recover from login and first-workspace errors without losing 
     const password = page.locator('#merchant-login-password')
     await expect(loginForm).toBeVisible()
     await expect(loginName).toBeDisabled()
+    await expect(page.getByRole('status')).toContainText('正在检查登录状态，完成后即可输入商家账号。')
     releaseInitialSession()
     await expect(loginName).toBeEnabled()
     await loginName.fill('merchant@example.invalid')

@@ -5,10 +5,10 @@
 > its volumes. The project now authorizes work only against the existing
 > `merchant-demo-85575f9c` Demo; creating another environment or retaining new
 > environment data is outside the current deployment scope. Its migration
-> examples (254–256) are stale and do not describe the current 270→272 source
+> examples (254–256) are stale and do not describe the current 270→273 source
 > candidate; the Demo live chain remains unverified.
 > Use `ecs-demo-direct-deploy.md` and `ecs-fast-update.md` for the current
-> gates; the current source candidate ends at migration 272, while the live
+> gates; the current source candidate ends at migration 273, while the live
 > Demo migration chain remains unverified. Those runbooks stop deployment until
 > current inventory, candidate, migration and approval evidence is complete. This archive is retained only
 > to explain old review records and must not be used to bypass those gates.

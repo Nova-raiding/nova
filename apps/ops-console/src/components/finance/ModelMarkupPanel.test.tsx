@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("antd", () => {
   const passthrough = ({ children }: any) => createElement("div", null, children);
-  const Input = ({ placeholder }: any) => createElement("input", { placeholder });
+  const Input = ({ placeholder, disabled, "aria-label": ariaLabel }: any) => createElement("input", { placeholder, disabled, "aria-label": ariaLabel });
   const Typography = {
     Text: ({ children }: any) => createElement("span", null, children),
     Paragraph: ({ children }: any) => createElement("p", null, children),
@@ -62,5 +62,12 @@ describe("ModelMarkupPanel", () => {
     expect(html).toContain("当前账号只有读取权限");
     expect(html).toContain("修改倍率需要 `commercial.update`");
     expect(html).toContain("保存并生效");
+    expect(html).toMatch(/<input[^>]*disabled=""[^>]*aria-label="Token 计费倍率变更原因"/u);
+  });
+
+  it("enables the change reason only when a loaded policy can be updated", () => {
+    const html = renderToStaticMarkup(<ModelMarkupPanel model={model({ modelMarkup: { multiplier: 2.5, revision: 4 }, canModelMarkup: true, canModelMarkupUpdate: true })} />);
+    expect(html).toMatch(/aria-label="Token 计费倍率变更原因"/u);
+    expect(html).not.toMatch(/aria-label="Token 计费倍率变更原因" disabled=""/u);
   });
 });

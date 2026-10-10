@@ -823,7 +823,10 @@ export interface AssetMetadata {
   sizeBytes: number
   rightsStatus: 'approved' | 'rejected' | 'pending' | string
   rightsScope?: string
+  usageScopes?: string[]
   applicablePlatforms?: PlatformId[]
+  validFrom?: string
+  validTo?: string
   aiModificationAllowed?: boolean
   scanStatus: 'quarantined' | 'clean' | 'rejected' | string
   parseStatus: 'pending' | 'processing' | 'succeeded' | 'failed' | string

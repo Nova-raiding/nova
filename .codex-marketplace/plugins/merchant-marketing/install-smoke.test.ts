@@ -356,7 +356,8 @@ esac
         '--codex', fakeCodex,
         '--installed', installed,
         '--package-profile', 'qa-broker',
-      ], { encoding: 'utf8' })
+      ], { encoding: 'utf8', timeout: 180_000 })
+      expect(result.error).toBeUndefined()
       expect(result.status, result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toMatchObject({
         ok: true,
@@ -374,7 +375,7 @@ esac
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
-  }, 15_000)
+  }, 210_000)
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))

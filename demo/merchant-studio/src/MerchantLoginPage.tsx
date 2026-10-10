@@ -62,6 +62,11 @@ export function MerchantLoginPage({
               description={visibleError}
             />
           ) : null}
+          {loading ? (
+            <Typography.Text role="status" aria-live="polite" className="merchant-login-status">
+              正在检查登录状态，完成后即可输入商家账号。
+            </Typography.Text>
+          ) : null}
           <Form
             className="merchant-login-form"
             layout="vertical"

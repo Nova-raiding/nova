@@ -35,9 +35,11 @@ describe("support ticket detail status controls", () => {
             function Harness() {
               const [status,setStatus] = useState('open');
               const [ticketId,setTicketId] = useState('ticket-1');
+              const [error,setError] = useState('');
               window.__setSupportStatus = setStatus;
               window.__setSupportTicket = (id, nextStatus) => { setTicketId(id); setStatus(nextStatus); };
-              const model = { workspaceId:'ws-1', tickets:[], selected:{ticket:{...baseTicket,id:ticketId,status},events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, error:'', hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{}, transition:async()=>{}, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
+              window.__setSupportError = setError;
+              const model = { workspaceId:'ws-1', tickets:[], selected:{ticket:{...baseTicket,id:ticketId,status},events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, error, hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{}, transition:async()=>{}, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
               return React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate:true}));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Harness));
@@ -119,6 +121,18 @@ describe("support ticket detail status controls", () => {
       const nextTicketDefault = await page.locator(".ant-select-item-option-selected .ant-select-item-option-content").textContent();
       expect(nextTicketDefault?.trim()).toBe(labelsByStatus.in_progress);
       expect(await dialog.locator("textarea").inputValue()).toBe("");
+      await page.locator(".ant-modal-footer button").first().click();
+      await dialog.waitFor({ state: "hidden" });
+
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      await page.evaluate(() => window.__setSupportError("权限已失效，请刷新权限后重试。"));
+      const operationError = page.locator('[aria-labelledby="support-detail-error-title"]');
+      await operationError.waitFor();
+      await operationError.getByRole("button", { name: "关闭提示" }).click();
+      await operationError.waitFor({ state: "detached" });
+      await page.evaluate(() => window.__setSupportError("工单状态已更新，请刷新后重试。"));
+      await page.getByRole("alert").filter({ hasText: "工单状态已更新" }).waitFor();
     } finally { await page.close(); }
   }, 60_000);
 });
@@ -127,5 +141,6 @@ declare global {
   interface Window {
     __setSupportStatus: (status: string) => void;
     __setSupportTicket: (id: string, status: string) => void;
+    __setSupportError: (error: string) => void;
   }
 }

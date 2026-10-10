@@ -4,6 +4,16 @@ import { MemoryPublishMediaOrphanRepository } from './publish-media-orphan-repos
 const binding={workspaceId:'ws_a',publishJobId:'job_a',eventId:'event_a',mediaIdempotencyKey:'job_a:media:visual_a',platform:'taobao',accountId:'account_a',visualRef:'visual_a',role:'main' as const,sha256:'a'.repeat(64)}
 
 describe('publish media recovery ledger',()=>{
+  it('allows only one worker to claim a media upload intent',async()=>{
+    const repo=new MemoryPublishMediaOrphanRepository()
+    const results=await Promise.allSettled([
+      repo.transition({...binding,state:'intent'}),
+      repo.transition({...binding,state:'intent'}),
+    ])
+    expect(results.filter(result=>result.status==='fulfilled')).toHaveLength(1)
+    expect(results.filter(result=>result.status==='rejected')).toHaveLength(1)
+  })
+
   it('replays the same upload receipt idempotently and records safe orphan state',async()=>{
     const repo=new MemoryPublishMediaOrphanRepository()
     const intent=await repo.transition({...binding,state:'intent'})
@@ -32,5 +42,6 @@ describe('publish media recovery ledger',()=>{
     await expect(repo.transition({...binding,state:'deleted',receipt,reason:'worker_claimed_deleted'})).rejects.toThrow('PUBLISH_MEDIA_LIFECYCLE_CONFLICT')
     const deleted=await repo.transition({...binding,state:'deleted',receipt,reason:'discard_adapter_confirmed_delete'})
     expect(deleted).toMatchObject({state:'deleted',receipt,reason:'discard_adapter_confirmed_delete'})
+    await expect(repo.transition({...binding,state:'deleted',receipt,reason:'discard_adapter_confirmed_delete'})).resolves.toMatchObject({state:'deleted',receipt,reason:'discard_adapter_confirmed_delete'})
   })
 })

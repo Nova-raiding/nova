@@ -7,7 +7,7 @@ import { chromium, type Browser } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 
 declare global {
-  interface Window { __financeFilterCalls?: Array<{ kinds?: string[]; statuses?: string[] }> }
+  interface Window { __financeFilterCalls?: Array<{ text?: string; workspaceIds?: string[]; kinds?: string[]; statuses?: string[] }> }
 }
 
 describe("Finance advanced filters", () => {
@@ -38,7 +38,7 @@ describe("Finance advanced filters", () => {
             import { useFinanceSearch } from '/src/hooks/useFinanceSearch.ts';
             window.__financeFilterCalls = [];
             const client = {
-              search: async query => { window.__financeFilterCalls.push({ kinds: query.kinds, statuses: query.statuses }); return { records: [], summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 0, customerChargeCny: 0, byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: '2026-10-10T00:00:00.000Z', scope: { role: 'platform_ops', workspaceCount: 0 } }; },
+              search: async query => { window.__financeFilterCalls.push({ text: query.text, workspaceIds: query.workspaceIds, kinds: query.kinds, statuses: query.statuses }); return { records: [], summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 0, customerChargeCny: 0, byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: '2026-10-10T00:00:00.000Z', scope: { role: 'platform_ops', workspaceCount: 0 } }; },
               detail: async () => ({}), exportCsv: async () => ({ csv: '', contentType: 'text/csv', fileName: 'finance.csv' }),
             };
             function Harness() {
@@ -89,6 +89,36 @@ describe("Finance advanced filters", () => {
       const advanced = page.locator("#finance-advanced-filters");
       await advanced.waitFor({ state: "visible" });
       expect(await advanced.locator(".ant-select").count()).toBe(2);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("submits normalized workspace, record type, status, and keyword filters together", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(10_000);
+    try {
+      await page.goto(`${baseUrl}/__finance-advanced-filter`, { waitUntil: "commit", timeout: 60_000 });
+      await page.getByRole("button", { name: "高级筛选", exact: true }).click();
+      await page.getByLabel("关键词").fill("  recharge_42  ");
+      await page.getByLabel("Workspace ID").fill(" ws-a, ws-b  ");
+
+      const kindSelect = page.locator("#finance-advanced-filters .ant-select").nth(0);
+      await kindSelect.click();
+      await page.getByText("充值订单", { exact: true }).last().click();
+      const statusSelect = page.locator("#finance-advanced-filters .ant-select").nth(1);
+      await statusSelect.locator("input").fill("paid");
+      await statusSelect.locator("input").press("Enter");
+      const submit = page.locator('form[aria-label="财务检索筛选"] button[type="submit"]');
+      await submit.waitFor({ state: "visible" });
+      expect(await submit.innerText()).toContain("检索");
+      await submit.click();
+
+      await page.waitForFunction(() => (window.__financeFilterCalls?.length ?? 0) > 0);
+      expect(await page.evaluate(() => window.__financeFilterCalls?.at(-1))).toEqual({
+        text: "recharge_42",
+        workspaceIds: ["ws-a", "ws-b"],
+        kinds: ["recharge_order"],
+        statuses: ["paid"],
+      });
     } finally { await page.close(); }
   }, 60_000);
 });

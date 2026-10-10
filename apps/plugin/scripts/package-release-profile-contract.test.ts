@@ -64,4 +64,10 @@ describe('local plugin package release profile contract', () => {
         .toEqual({ release_status: 'qa_only', ready_to_install: false })
     }
   })
+
+  it('keeps default artifact paths distinct for each package profile', () => {
+    const packaging = source('package-local-plugin.mjs')
+    expect(packaging).toContain('${manifest.id}-${version}-${packageProfile}-${process.platform}-${process.arch}')
+    expect(packaging).toBe(mirror('package-local-plugin.mjs'))
+  })
 })

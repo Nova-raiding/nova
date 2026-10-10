@@ -24,7 +24,7 @@ const report = index => ({
   evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-29T09:00:00.000Z',
 })
 
-async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = false, focusJobId = '', delayJobs = 0, dynamicService = false } = {}) {
+async function openMock({ empty = false, failFirst = false, failOnAttempt = 0, failFocusedRefresh = false, shrinkOnRefresh = false, focusJobId = '', delayJobs = 0, dynamicService = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const page = await context.newPage()
@@ -44,6 +44,10 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
     else if (/^\/v1\/publish-jobs\/[^/]+$/u.test(pathname)) {
       const id = decodeURIComponent(pathname.slice('/v1/publish-jobs/'.length))
       observations.focusedJobIds.push(id)
+      if (id === 'pub-42' && failFocusedRefresh && observations.focusedJobIds.length === 2) {
+        if (delayJobs > 0) await new Promise(resolve => setTimeout(resolve, delayJobs))
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
+      }
       if (id === 'pub-42') data = job(42)
       else return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_JOB_NOT_FOUND', message: '发布任务不存在' })) })
     } else if (pathname === '/v1/publish-jobs') {
@@ -51,7 +55,7 @@ async function openMock({ empty = false, failFirst = false, shrinkOnRefresh = fa
       observations.jobOffsets.push(offset)
       observations.jobAttempts++
       if (delayJobs > 0) await new Promise(resolve => setTimeout(resolve, delayJobs))
-      if (failFirst && observations.jobAttempts === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
+      if ((failFirst && observations.jobAttempts === 1) || (failOnAttempt > 0 && observations.jobAttempts === failOnAttempt)) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
       data = empty ? { items: [], total: 0, limit: 20, offset } : {
         items: offset === 0
           ? Array.from({ length: 20 }, (_, i) => job(i + 1, i === 0 ? { state: 'rejected', remoteState: 'rejected', rejection: { rawCode: 'PLATFORM_422', message: '标题不合规', fields: [{ path: 'title', rawCode: 'TITLE_42', message: '含违禁词' }] } } : {}))
@@ -164,14 +168,20 @@ test('发布记录类型标签支持左右方向键切换并将焦点移到当�
 })
 
 test('发布记录读取错误显示原始错误并可重试恢复', async () => {
-  const { browser, context, page, observations, pageErrors } = await openMock({ failFirst: true })
+  const { browser, context, page, observations, pageErrors } = await openMock({ failOnAttempt: 2, delayJobs: 350 })
   try {
     const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
+    await panel.getByRole('button', { name: '刷新记录' }).click()
+    await expect(panel.getByText('正在刷新；当前保留上次成功读取的发布记录。')).toBeVisible()
+    await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     await expect(panel.getByRole('alert')).toContainText('读取发布记录失败：服务暂不可用')
+    await expect(panel.getByText('显示上次成功读取的发布记录；刷新失败，当前状态可能已变化。')).toBeVisible()
+    await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     await screenshot(page, '05-读取错误.png')
     await panel.getByRole('button', { name: '重试' }).click()
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
-    expect(observations.jobAttempts).toBe(2)
+    expect(observations.jobAttempts).toBe(3)
     expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })
@@ -215,6 +225,24 @@ test('发布任务深链按 ID 读取，不受最近 20 条分页限制', async 
     expect(observations.focusedJobIds).toEqual(['pub-42'])
     expect(observations.jobOffsets).toEqual([])
     expect(observations.unexpectedWrites).toEqual([])
+    expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('发布任务深链刷新失败时保留当前任务快照并可重试', async () => {
+  const { browser, context, page, observations, pageErrors } = await openMock({ focusJobId: 'pub-42', failFocusedRefresh: true, delayJobs: 250 })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel).toContainText('刚创建的发布任务：pub-42')
+    await panel.getByRole('button', { name: '刷新记录' }).click()
+    await expect(panel.getByText('正在刷新；当前保留上次成功读取的发布记录。')).toBeVisible()
+    await expect(panel).toContainText('刚创建的发布任务：pub-42')
+    await expect(panel.getByRole('alert')).toContainText('无法读取指定发布任务 pub-42')
+    await expect(panel.getByText('显示上次成功读取的发布记录；刷新失败，当前状态可能已变化。')).toBeVisible()
+    await expect(panel).toContainText('刚创建的发布任务：pub-42')
+    await panel.getByRole('button', { name: '重试' }).click()
+    await expect(panel).toContainText('刚创建的发布任务：pub-42')
+    expect(observations.focusedJobIds).toEqual(['pub-42', 'pub-42', 'pub-42'])
     expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })

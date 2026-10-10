@@ -169,6 +169,18 @@ describe('ConnectorRuntime', () => {
     expect(transition).toHaveBeenCalledWith({ media, state: 'intent' })
   })
 
+  it('fails closed when an upload adapter returns a receipt for different media', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_wrong_receipt', role: 'main' as const, mimeType: 'image/png', sha256: 'e'.repeat(64), bytes: new Uint8Array([5]), idempotencyKey: 'job_wrong_receipt:media:visual_wrong_receipt' }
+    connector.uploadMedia = vi.fn(async () => ({ platform: 'taobao', visualRef: 'other_visual', role: 'secondary', mediaId: 'remote_wrong', sha256: 'f'.repeat(64), simulated: false }))
+    const transition = vi.fn(async () => undefined)
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: {}, idempotencyKey: 'publish_wrong_receipt', media: [media], mediaLifecycle: { transition } })).rejects.toThrow('outside the selected media scope')
+    expect(transition).toHaveBeenCalledWith({ media, state: 'intent' })
+    expect(transition).toHaveBeenCalledWith({ media, state: 'unknown', reason: 'upload_result_unknown' })
+    expect(transition).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'uploaded' }))
+  })
+
   it('reuses the persisted media receipt on retry without uploading again', async () => {
     const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
     const connector = runtime.connector('jd') as any

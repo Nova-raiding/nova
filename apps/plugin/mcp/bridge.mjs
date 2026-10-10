@@ -3268,6 +3268,7 @@ function prepareToolArguments(method, params) {
   if (info.isSymbolicLink() || !info.isFile()) throw new Error('asset.upload file_path 必须指向普通文件，不能是目录或符号链接')
   if (info.size > MAX_LOCAL_UPLOAD_BYTES) throw new Error('asset.upload 单文件不能超过 50MB')
   const bytes = readFileSync(filePath)
+  if (bytes.byteLength === 0) throw new Error('asset.upload 文件不能为空')
   const digest = createHash('sha256').update(bytes).digest('hex')
   if (typeof params.sha256 === 'string' && params.sha256.trim() && params.sha256.trim().toLowerCase() !== digest) {
     throw new Error('asset.upload 文件 SHA-256 与提供值不一致')
@@ -4171,7 +4172,15 @@ async function handle(request) {
     const argumentError = validateToolArguments(name, args)
     if (argumentError) return toolArgumentError(id, argumentError.message)
     try {
-      const remoteResult = await callRemote(name, prepareToolArguments(name, args))
+      let preparedArguments
+      try {
+        preparedArguments = prepareToolArguments(name, args)
+      } catch (error) {
+        if (name !== 'asset.upload') throw error
+        const reason = error instanceof Error ? error.message : '本地文件无法读取'
+        return toolArgumentError(id, `工具 asset.upload 参数无效：${reason}`, `上传文件无效：${reason}。请确认文件存在、非空且不超过 50MB 后重试。`)
+      }
+      const remoteResult = await callRemote(name, preparedArguments)
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })
       const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
       const rawResult = await resolveGeneratedImagePreview(name, scannedResult)

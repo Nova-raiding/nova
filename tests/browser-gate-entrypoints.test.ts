@@ -219,6 +219,7 @@ describe('browser gate entrypoints', () => {
     ['Ops alert polling boundary', 'src/hooks/alertPollingBoundary.test.tsx'],
     ['Ops workspace directory model', 'src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx'],
     ['Ops customer delivery page', 'src/pages/CustomerDeliveryPage.test.tsx'],
+    ['Ops customer delivery archive restore', 'src/pages/CustomerDeliveryPage.restore.browser.regression.test.tsx'],
     ['Ops customer delivery authorization workspace', 'src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts'],
     ['Ops customer delivery workspace race', 'src/pages/customer-delivery-workspace-race.test.tsx'],
   ])('keeps %s coverage out of the unit pass and in the dedicated Ops runner', (_label, file) => {

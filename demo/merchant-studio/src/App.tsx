@@ -325,7 +325,7 @@ import { resolveDataConsistency } from './data-consistency.js'
 import { canApproveReviewedContent, contentApprovalBlockerMessage } from './content-approval-readiness.js'
 import { imageJobForRoute, isImageJobRequestCurrent, updateVisualRefsForRoute, visualRefsForRoute } from './image-generation-job-route-state.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
-import { productAssetGenerationBlockers, resolveProductAssetRelation } from './product-assets.js'
+import { productAssetGenerationBlockers, resolveProductAssetRelation, type ProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
@@ -5057,9 +5057,9 @@ function ProductAssetRelationDialog({
     }
   }, [baseUrl, productId])
 
-  const relation = product
+  const relation: ProductAssetRelation = product
     ? resolveProductAssetRelation(product, assets)
-    : { boundIds: [], matchedAssets: [], missingAssetIds: [] }
+    : { platform: 'taobao', boundIds: [], matchedAssets: [], missingAssetIds: [] }
   const generationBlockers = productAssetGenerationBlockers(relation)
   const selectableAssets = assets.filter(
     (asset) =>
@@ -10456,7 +10456,6 @@ function TaskWorkspace({
     }
     setTaskListLoading(true)
     setTaskListError('')
-    setTaskList(null)
     fetchTaskPage(baseUrl, {
       limit: MERCHANT_TASK_PAGE_SIZE,
       offset: taskPage * MERCHANT_TASK_PAGE_SIZE,
@@ -11212,8 +11211,18 @@ function TaskWorkspace({
         <CampaignLifecyclePanel baseUrl={baseUrl} />
         <PublishHistoryPanel baseUrl={baseUrl} />
         {taskListLoading && <LoadingState label="正在读取营销任务…" />}
+        {taskListLoading && Boolean(taskList?.length) && (
+          <div className="info-notice" role="status">
+            正在读取新结果；当前列表为上次成功读取的任务。
+          </div>
+        )}
         {taskListError && !taskListLoading && (
           <ErrorNotice message={taskListError} onRetry={loadTaskList} />
+        )}
+        {taskListError && !taskListLoading && Boolean(taskList?.length) && (
+          <div className="info-notice" role="status">
+            显示上次成功读取的任务；刷新失败，不会把旧结果当作最新状态。
+          </div>
         )}
         {taskList !== null && taskProductsLoading && (
           <div className="info-notice" role="status">
@@ -11233,7 +11242,7 @@ function TaskWorkspace({
             配置 API 后可读取真实任务列表。
           </div>
         )}
-        {!taskListLoading && !taskListError && Boolean(taskList?.length) && (
+        (!taskListError || Boolean(taskList?.length)) && Boolean(taskList?.length) && (
           <section className="panel task-list-panel">
             {visibleTasks.map(({ task: item, groupLabel, actionLabel }) => {
               const itemProduct = taskProducts.find(

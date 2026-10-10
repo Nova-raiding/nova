@@ -29,7 +29,7 @@ const packageProfile = readPackageProfile(cliArguments)
 const profileManifest = packageProfileManifest(packageProfile)
 const profileSourceFiles = profileSourceEntries(packageProfile, relativePath => existsSync(resolve(pluginRoot, relativePath)))
 
-const output = resolve(packageCli.output ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`))
+const output = resolve(packageCli.output ?? resolve(repositoryRoot, 'artifacts', 'local-plugin', `${manifest.id}-${version}-${packageProfile}-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`))
 const windowsHelperDir = packageCli.windowsHelperDirectory === undefined ? null : resolve(packageCli.windowsHelperDirectory)
 const platform = process.platform
 if (!['darwin', 'win32'].includes(platform)) throw new Error('desktop packages require macOS or Windows')

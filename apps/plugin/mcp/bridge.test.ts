@@ -3237,8 +3237,16 @@ describe('Codex stdio MCP bridge', () => {
           expect(tool.inputSchema.properties).not.toHaveProperty(forbidden)
         }
       }
+      const emptyFilePath = join(directory, 'empty.png')
+      await writeFile(emptyFilePath, Buffer.alloc(0))
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'empty.png', mime_type: 'image/png', file_path: emptyFilePath } } })}\n`)
+      const emptyUpload = await nextLine(child.stdout)
+      expect(emptyUpload.result.isError).toBe(true)
+      expect(emptyUpload.result.content[0].text).toContain('文件不能为空')
+      expect(requests).toHaveLength(0)
+
       const continuation = { continuation_kind: 'image_generation', continuation_product_id: 'prod_1', continuation_task_id: 'task_1', continuation_content_version_id: 'cv_1', continuation_sku_ids_json: '["sku_1"]', continuation_direction: '京东白底主图', continuation_count: '1', continuation_idempotency_key: 'upload-generation-1' }
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', file_path: filePath, ...continuation } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'product.png', mime_type: 'image/png', file_path: filePath, ...continuation } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result.isError).toBe(false)
       expect(response.result._meta).toBeUndefined()

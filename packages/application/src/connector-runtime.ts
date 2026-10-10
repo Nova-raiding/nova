@@ -244,6 +244,12 @@ export class ConnectorRuntime {
         // intent must not turn untouched media into an unknown upload.
         uploadStarted.add(media.idempotencyKey)
         const receipt = await connector.uploadMedia(input.context, media)
+        if (receipt.platform !== input.platform || receipt.visualRef !== media.visualRef || receipt.role !== media.role ||
+            receipt.sha256 !== media.sha256 || typeof receipt.mediaId !== 'string' || !receipt.mediaId.trim() ||
+            (receipt.url !== undefined && (typeof receipt.url !== 'string' || !receipt.url.trim())) ||
+            typeof receipt.simulated !== 'boolean' || (receipt.simulated && !this.fixtureMode)) {
+          throw new Error('platform media upload returned a receipt outside the selected media scope')
+        }
         uploaded.push(receipt)
         await input.mediaLifecycle.transition({ media, state: 'uploaded', receipt })
       }
