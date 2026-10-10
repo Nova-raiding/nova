@@ -117,7 +117,8 @@ describe("ModelsPage overview navigation", () => {
       await page.getByRole("alert").filter({ hasText: "倍率服务暂时不可用" }).waitFor();
       await expect.poll(() => page.getByRole("button", { name: "保存并生效" }).isDisabled()).toBe(true);
 
-      await page.getByRole("button", { name: "重试" }).click();
+      const billingError = page.getByRole("alert").filter({ hasText: "倍率服务暂时不可用" });
+      await billingError.getByRole("button", { name: /重\s*试/ }).click();
       await page.getByText("Revision 7").waitFor();
       const multiplier = page.getByRole("spinbutton", { name: "Token 计费倍率" });
       await multiplier.fill("3.5");

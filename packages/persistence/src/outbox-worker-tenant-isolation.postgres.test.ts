@@ -43,6 +43,22 @@ describe('worker outbox claim tenant boundary (isolated PostgreSQL)', () => {
       expect(bState[0]).toMatchObject({ id: eventB.id, workspaceId: workspaceB })
       const bRow = await database.query('SELECT lease_token, published_at FROM outbox_events WHERE workspace_id=$1 AND id=$2', [workspaceB, eventB.id])
       expect(bRow.rows).toEqual([{ lease_token: null, published_at: null }])
+
+      // Exact event lookup must bypass the default page limit while retaining
+      // the caller's workspace scope. Keep this in the owned isolated DB so
+      // the test never touches the demo database or shared business data.
+      const oldEventId = `old-event-${randomUUID()}`
+      await database.query(
+        `INSERT INTO outbox_events (id, workspace_id, aggregate_id, event_type, sequence, payload)
+         SELECT CASE WHEN sequence = 1 THEN $1 ELSE $2 || sequence::text END,
+                $3, 'large-aggregate', 'task.snapshot', sequence, '{}'::jsonb
+           FROM generate_series(1, 1_005) AS sequence`,
+        [oldEventId, `later-event-${randomUUID()}-`, workspaceA],
+      )
+      expect(await outbox.listAggregateEvents(workspaceA, 'large-aggregate', 1, oldEventId)).toMatchObject([
+        { id: oldEventId, workspaceId: workspaceA, aggregateId: 'large-aggregate' },
+      ])
+      expect(await outbox.listAggregateEvents(workspaceB, 'large-aggregate', 1, oldEventId)).toEqual([])
     } catch (error) {
       primaryFailure = error
       throw error
