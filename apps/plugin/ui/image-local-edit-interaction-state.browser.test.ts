@@ -54,7 +54,7 @@ describe('图片局部编辑提交与错误交互状态', () => {
       expect(await page.locator('#submit').isDisabled()).toBe(true);
       expect(await page.locator('#submit').innerText()).toBe('正在创建候选…');
 
-      await expect(page.locator('#stage')).toHaveAttribute('aria-disabled', 'true');
+      expect(await page.locator('#stage').getAttribute('aria-disabled')).toBe('true');
       expect(await page.locator('#stage').evaluate((stage) => (stage as HTMLElement).inert)).toBe(true);
       await page.locator('#selection').dispatchEvent('keydown', { key: 'ArrowRight' });
 
