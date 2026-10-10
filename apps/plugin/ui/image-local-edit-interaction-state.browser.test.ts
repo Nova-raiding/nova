@@ -51,17 +51,18 @@ describe('图片局部编辑提交与错误交互状态', () => {
     try {
       await page.locator('#submit').click();
       await page.waitForFunction(() => window.__toolCalls === 1);
-      await expect(page.locator('#submit')).toBeDisabled();
-      await expect(page.locator('#submit')).toHaveText('正在创建候选…');
+      expect(await page.locator('#submit').isDisabled()).toBe(true);
+      expect(await page.locator('#submit').innerText()).toBe('正在创建候选…');
 
-      await page.locator('#selection').focus();
-      await page.keyboard.press('ArrowRight');
+      await expect(page.locator('#stage')).toHaveAttribute('aria-disabled', 'true');
+      expect(await page.locator('#stage').evaluate((stage) => (stage as HTMLElement).inert)).toBe(true);
+      await page.locator('#selection').dispatchEvent('keydown', { key: 'ArrowRight' });
 
-      await expect(page.locator('#rectX')).toHaveValue('0.350');
-      await expect(page.locator('#submit')).toBeDisabled();
+      expect(await page.locator('#rectX').inputValue()).toBe('0.350');
+      expect(await page.locator('#submit').isDisabled()).toBe(true);
       expect(await page.evaluate(() => window.__toolCalls)).toBe(1);
       await page.evaluate(() => window.__resolveTool?.({ structuredContent: { id: 'candidate-interaction-1' } }));
-      await expect(page.locator('#candidate')).toHaveClass(/show/u);
+      expect((await page.locator('#candidate').getAttribute('class')) ?? '').toMatch(/show/u);
     } finally {
       await page.close();
     }
@@ -71,13 +72,13 @@ describe('图片局部编辑提交与错误交互状态', () => {
     const page = await openEditor({ sourceId: '' });
     try {
       await page.locator('#submit').click();
-      await expect(page.locator('#formError')).toBeVisible();
-      await expect(page.locator('#sourceId')).toHaveAttribute('aria-invalid', 'true');
+      expect(await page.locator('#formError').isVisible()).toBe(true);
+      expect(await page.locator('#sourceId').getAttribute('aria-invalid')).toBe('true');
 
       await page.locator('#sourceId').fill('asset-local-1');
 
-      await expect(page.locator('#sourceId')).not.toHaveAttribute('aria-invalid', 'true');
-      await expect(page.locator('#formError')).toBeHidden();
+      expect(await page.locator('#sourceId').getAttribute('aria-invalid')).not.toBe('true');
+      expect(await page.locator('#formError').isVisible()).toBe(false);
       expect(await page.evaluate(() => window.__toolCalls)).toBe(0);
     } finally {
       await page.close();

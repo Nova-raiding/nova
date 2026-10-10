@@ -48,7 +48,17 @@ async function openOverview(issue, { failTaskDeepLink = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
+  page.setDefaultTimeout(8_000)
+  page.setDefaultNavigationTimeout(12_000)
   const apiCalls = []
+  const pageErrors = []
+  const consoleErrors = []
+  const failedRequests = []
+  const browserRequests = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+  page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
+  page.on('request', (request) => browserRequests.push({ method: request.method(), url: request.url() }))
 
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname.replace(/^\/api/u, '')
@@ -86,10 +96,18 @@ async function openOverview(issue, { failTaskDeepLink = false } = {}) {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
   })
 
-  await page.goto(new URL('/merchant/overview', studioUrl).href, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '事务看板' })).toBeVisible()
-  await expect(page.getByRole('button', { name: issue.type === 'AUTH_RECONNECT' ? /店铺接入方式待核实/u : issue.title })).toBeVisible()
-  return { browser, context, page, apiCalls }
+  try {
+    await page.goto(new URL('/merchant/overview', studioUrl).href, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '事务看板' })).toBeVisible()
+    await expect(page.getByRole('button', { name: issue.type === 'AUTH_RECONNECT' ? /店铺接入方式待核实/u : issue.title })).toBeVisible()
+    return { browser, context, page, apiCalls }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    const bodyText = (await page.locator('body').innerText().catch(() => '')).slice(0, 1_000)
+    await context.close()
+    await browser.close()
+    throw new Error(`${message}\nRisk overview fixture checkpoint: ${JSON.stringify({ issue, url: page.url(), title: await page.title().catch(() => ''), bodyText, browserRequests: browserRequests.slice(-30), apiCalls, pageErrors, consoleErrors, failedRequests })}`, { cause })
+  }
 }
 
 test('overview product risk restores its platform, store, product, and search context', async () => {

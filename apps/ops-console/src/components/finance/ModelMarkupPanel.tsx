@@ -5,6 +5,13 @@ interface ModelMarkupPanelProps {
   model: OpsConsoleModel;
 }
 
+function getMultiplierValidationError(multiplier: number | undefined) {
+  if (multiplier === undefined) return "";
+  if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) return "计费倍率必须在 1–10 之间";
+  if (Number(multiplier.toFixed(3)) !== multiplier) return "计费倍率最多保留 3 位小数";
+  return "";
+}
+
 export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
   const {
     modelMarkup,
@@ -18,13 +25,7 @@ export function ModelMarkupPanel({ model }: ModelMarkupPanelProps) {
     saveModelMarkup,
   } = model;
   const multiplier = modelMarkup?.multiplier;
-  const multiplierError = multiplier === undefined
-    ? ""
-    : !Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10
-      ? "计费倍率必须在 1–10 之间"
-      : Number(multiplier.toFixed(3)) !== multiplier
-        ? "计费倍率最多保留 3 位小数"
-        : "";
+  const multiplierError = getMultiplierValidationError(multiplier);
 
   return (
     <Card
