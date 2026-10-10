@@ -1340,9 +1340,8 @@ export function useOpsConsoleModel() {
       setRuleSyncLoading(false);
     }
   };
-  const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
-    recordOpsBootstrapTrace("load_effect", { managed: managedOpsSession, roleKey: Boolean(opsRoleKey) });
+    recordOpsBootstrapTrace("load_effect", { managed: managedOpsSession });
     // The password session is the production connection boundary; it does
     // not require a bearer token. Local bearer mode keeps the explicit guard.
     if (!hasOpsConnection()) {
@@ -1352,12 +1351,12 @@ export function useOpsConsoleModel() {
       return;
     }
     recordOpsBootstrapTrace("load_started", { managed: managedOpsSession });
-    // This effect re-fires when the roles of the session land while the first
-    // load is still fanning out. That load already hydrates with the new
-    // authorization, so an idle check is enough here; queueing a follow-up
-    // would double every bootstrap fan-out (and re-flash the loading state).
+    // performLoad resolves the server session before deriving authorization
+    // and the hydration matrix. Re-running this effect when that session lands
+    // can issue a second session request when the first fan-out completed
+    // quickly, so only a managed-session boundary change starts a new load.
     void loadIfIdle();
-  }, [managedOpsSession, opsRoleKey]);
+  }, [managedOpsSession]);
   useEffect(() => () => cancelUserRequests(), []);
   const enabledCount = useMemo(
     () => platformRows.filter((row) => row.enabled).length,

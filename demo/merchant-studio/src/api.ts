@@ -1199,7 +1199,7 @@ export function isNotConfigured(error: unknown) {
   return (error as ApiError | undefined)?.code === 'NOT_CONFIGURED'
 }
 
-export function describeApiError(error: unknown) {
+export function describeApiError(error: unknown, options: { operation?: 'read' | 'write' } = {}) {
   const apiError = error as ApiError | undefined
   const code = apiError?.code?.trim().toUpperCase() ?? ''
   const message = error instanceof Error ? error.message : ''
@@ -1230,7 +1230,9 @@ export function describeApiError(error: unknown) {
   ].includes(code)) return '模型服务尚未就绪。当前操作未确认完成，系统不会生成、扣费或发布；请先恢复中转模型配置。'
   if (code === 'IMAGE_GENERATION_READ_UNAVAILABLE' && message) return message
   if (isNotConfigured(error)) return '该平台尚未配置官方 API 或授权，当前不会执行任何外部写入。'
-  if (apiError?.status === 503) return '服务暂不可用。当前操作未确认完成；请先检查 API、模型中转和插件连接状态。'
+  if (apiError?.status === 503) return options.operation === 'read'
+    ? '读取暂不可用，请稍后重试。'
+    : '服务暂不可用。当前操作未确认完成；请先检查 API、模型中转和插件连接状态。'
   if (message) return message
   return '请求失败，请稍后重试。'
 }

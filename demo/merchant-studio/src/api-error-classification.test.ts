@@ -20,6 +20,8 @@ describe('merchant API error classification', () => {
   })
 
   it('keeps the task-list read recovery message when a task endpoint returns 503', () => {
+    expect(describeApiError(apiError('内部错误', 'INTERNAL_ERROR', 503), { operation: 'read' })).toBe('读取暂不可用，请稍后重试。')
+    expect(describeApiError(apiError('服务不可用', 'INTERNAL_ERROR', 503))).toContain('当前操作未确认完成')
     expect(describeApiError(apiError('标准商品事实不可用，已阻断任务读取', 'CANONICAL_TASK_READ_UNAVAILABLE', 503))).toBe('标准商品事实不可用，已阻断任务读取')
   })
 

@@ -10503,12 +10503,7 @@ function TaskWorkspace({
         if (requestId === taskListRequestId.current) {
           // This is a read failure: the last successful list remains usable,
           // so do not show the uncertain-outcome wording reserved for writes.
-          const readError = cause as { code?: string; message?: string } | null
-          setTaskListError(
-            readError?.code === 'CANONICAL_TASK_READ_UNAVAILABLE'
-              ? readError.message || '任务暂时无法读取'
-              : describeApiError(cause),
-          )
+          setTaskListError(describeApiError(cause, { operation: 'read' }))
         }
       })
       .finally(() => {
