@@ -49,7 +49,7 @@ export function memberActions(session: MemberSession, member: Member) {
 }
 
 export function preferredInviteRole(session: MemberSession, current?: MemberRole): MemberRole | null {
-  const roles = (session.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && role in roleLabels)
+  const roles = (session.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && Object.hasOwn(roleLabels, role))
   return current && roles.includes(current) ? current : roles[0] ?? null
 }
 
@@ -66,6 +66,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   const [page, setPage] = useState<MemberPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [errorWorkspaceId, setErrorWorkspaceId] = useState(selectedWorkspaceId)
   const [action, setAction] = useState<Action>(null)
   const [reason, setReason] = useState('')
   const [nextRole, setNextRole] = useState<MemberRole>('operator')
@@ -75,11 +76,13 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
   const [inviteReason, setInviteReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [noticeWorkspaceId, setNoticeWorkspaceId] = useState(selectedWorkspaceId)
 
   const load = useCallback(async (offset = 0) => {
     const token = requestGate.current.begin(selectedWorkspaceId)
     setLoading(true)
     setError('')
+    setErrorWorkspaceId(selectedWorkspaceId)
     try {
       if (!selectedWorkspaceId || !account.workspaceIds.includes(selectedWorkspaceId)) throw new Error('请选择当前账号已绑定的工作区。')
       const currentSession = await requestMcp<MemberSession>(baseUrl, 'ops.session', {}, selectedWorkspaceId)
@@ -89,11 +92,13 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
       if (!memberSessionScope(currentSession, account, selectedWorkspaceId)) {
         setPage(null)
         setError('当前登录会话没有可验证的商家工作区范围，请重新登录后重试。')
+        setErrorWorkspaceId(selectedWorkspaceId)
         return
       }
       if (!currentSession.capabilities.includes('workspace.member.read')) {
         setPage(null)
         setError('当前账号没有查看工作区成员的权限。')
+        setErrorWorkspaceId(selectedWorkspaceId)
         return
       }
       const result = await requestMcp<MemberPage>(baseUrl, 'ops.members.list', { limit: String(pageSize), offset: String(offset) }, selectedWorkspaceId)
@@ -104,6 +109,7 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
       if (!requestGate.current.isCurrent(token)) return
       setPage(null)
       setError(`成员列表读取失败：${describeApiError(cause)}`)
+      setErrorWorkspaceId(selectedWorkspaceId)
     } finally {
       if (requestGate.current.isCurrent(token)) setLoading(false)
     }
@@ -116,8 +122,11 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
     requestGate.current.invalidate(selectedWorkspaceId)
     setSession(null)
     setPage(null)
+    setError('')
+    setErrorWorkspaceId(selectedWorkspaceId)
     setAction(null)
     setNotice('')
+    setNoticeWorkspaceId(selectedWorkspaceId)
     setSubject('')
     setDisplayName('')
     setInviteReason('')
@@ -126,15 +135,24 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
     return () => requestGate.current.invalidate()
   }, [load, selectedWorkspaceId])
   const workspaceId = session ? memberSessionScope(session, account, selectedWorkspaceId) : null
-  const assignableRoles = (session?.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && role in roleLabels)
-  const canManage = Boolean(workspaceId && page && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage') && assignableRoles.length)
+  // During the render immediately following a parent workspace switch, the
+  // reset effect has not run yet. Never show the previous workspace's rows or
+  // actions while the old session no longer matches the selected workspace.
+  const visiblePage = workspaceId ? page : null
+  const visibleAction = workspaceId ? action : null
+  const visibleError = errorWorkspaceId === selectedWorkspaceId ? error : ''
+  const visibleNotice = noticeWorkspaceId === selectedWorkspaceId ? notice : ''
+  const assignableRoles = (session?.assignable_roles ?? []).filter((role) => role !== 'platform_ops' && Object.hasOwn(roleLabels, role))
+  const canManage = Boolean(workspaceId && visiblePage && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage') && assignableRoles.length)
 
   const runMutation = async (method: string, params: Record<string, unknown>, success: string) => {
     const targetWorkspaceId = selectedWorkspaceRef.current
     if (!targetWorkspaceId || !account.workspaceIds.includes(targetWorkspaceId)) return
     setSaving(true)
     setError('')
+    setErrorWorkspaceId(targetWorkspaceId)
     setNotice('')
+    setNoticeWorkspaceId(targetWorkspaceId)
     try {
       // The backend resolves the target workspace from the authenticated bearer.
       // No browser-supplied workspace ID is accepted for a member mutation.
@@ -146,9 +164,13 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
       setSubject('')
       setDisplayName('')
       setNotice(success)
+      setNoticeWorkspaceId(targetWorkspaceId)
       await load(page?.offset ?? 0)
     } catch (cause) {
-      if (selectedWorkspaceRef.current === targetWorkspaceId) setError(`成员操作失败：${describeApiError(cause)}。已保留输入，请刷新成员列表后重试。`)
+      if (selectedWorkspaceRef.current === targetWorkspaceId) {
+        setError(`成员操作失败：${describeApiError(cause)}。已保留输入，请刷新成员列表后重试。`)
+        setErrorWorkspaceId(targetWorkspaceId)
+      }
     } finally {
       setSaving(false)
     }
@@ -176,17 +198,19 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
 
   return <section className="page-stack merchant-members" aria-label="工作区成员管理">
     <header><span className="section-kicker">工作区成员</span><h1>成员与权限</h1><p>查看当前商家工作区成员；邀请与变更由服务端权限和成员治理规则决定，并记录操作原因。</p></header>
-    {account.workspaceIds.length > 1 && !onWorkspaceChange && <label>商家工作区 ID <select aria-label="选择商家工作区 ID" value={selectedWorkspaceId} disabled={saving} onChange={(event) => { const next = event.target.value; requestGate.current.invalidate(next); selectedWorkspaceRef.current = next; setSession(null); setPage(null); setAction(null); setError(''); setNotice(''); setLoading(true); setLocalWorkspaceId(next) }}>{account.workspaceIds.map((id) => <option key={id} value={id}>工作区 ID · {id}</option>)}</select></label>}
+    {account.workspaceIds.length > 1 && !onWorkspaceChange && <label>商家工作区 ID <select aria-label="选择商家工作区 ID" value={selectedWorkspaceId} disabled={saving} onChange={(event) => { const next = event.target.value; requestGate.current.invalidate(next); selectedWorkspaceRef.current = next; setSession(null); setPage(null); setAction(null); setError(''); setErrorWorkspaceId(next); setNotice(''); setNoticeWorkspaceId(next); setLoading(true); setLocalWorkspaceId(next) }}>{account.workspaceIds.map((id) => <option key={id} value={id}>工作区 ID · {id}</option>)}</select></label>}
     {workspaceId && <p>当前工作区：<code>{workspaceId}</code></p>}
-    {notice && <div role="status" className="success-notice">{notice}</div>}
-    {error && <div role="alert" className="error-notice">{error}</div>}
-    <button type="button" onClick={() => void load(page?.offset ?? 0)} disabled={loading || saving}>刷新成员列表</button>
-    {loading ? <p role="status">正在读取成员列表…</p> : page && <>
-      <div role="status">共 {page.total} 位成员</div>
-      {page.items.length === 0 ? <p>当前工作区还没有成员。</p> : <table aria-label="工作区成员列表"><thead><tr><th>成员</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>
-        {page.items.map((member) => {
+    {visibleNotice && <div role="status" className="success-notice">{visibleNotice}</div>}
+    {visibleError && <div role="alert" className="error-notice">{visibleError}</div>}
+    <button type="button" onClick={() => void load(visiblePage?.offset ?? 0)} disabled={loading || saving || !workspaceId}>刷新成员列表</button>
+    {loading || !workspaceId ? <p role="status">{workspaceId ? '正在读取成员列表…' : '正在切换工作区…'}</p> : visiblePage && <>
+      <div role="status">共 {visiblePage.total} 位成员</div>
+      {visiblePage.items.length === 0 ? <p>当前工作区还没有成员。</p> : <table aria-label="工作区成员列表"><thead><tr><th>成员</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>
+        {visiblePage.items.map((member) => {
           const allowed = session ? memberActions(session, member) : { changeRole: false, suspend: false, reactivate: false }
-          return <tr key={member.id}><td>{member.displayName || member.externalSubject}<small className="muted">{member.displayName ? ` · ${member.externalSubject}` : ''}</small></td><td>{roleLabels[member.role] ?? member.role}</td><td>{statusLabels[member.status] ?? member.status}</td><td>
+          const roleLabel = Object.hasOwn(roleLabels, member.role) ? roleLabels[member.role] : member.role
+          const statusLabel = Object.hasOwn(statusLabels, member.status) ? statusLabels[member.status] : member.status
+          return <tr key={member.id}><td>{member.displayName || member.externalSubject}<small className="muted">{member.displayName ? ` · ${member.externalSubject}` : ''}</small></td><td>{roleLabel}</td><td>{statusLabel}</td><td>
             {allowed.changeRole && <button type="button" aria-label={`调整 ${member.displayName || member.externalSubject} 的角色`} onClick={() => { setAction({ kind: 'role', member }); setNextRole(member.role); setReason('') }}>改角色</button>}
             {allowed.suspend && <button type="button" aria-label={`停用 ${member.displayName || member.externalSubject}`} onClick={() => { setAction({ kind: 'suspend', member }); setReason('') }}>停用</button>}
             {allowed.reactivate && <button type="button" aria-label={`恢复 ${member.displayName || member.externalSubject}`} onClick={() => { setAction({ kind: 'reactivate', member }); setReason('') }}>恢复</button>}
@@ -194,9 +218,9 @@ export function MerchantMembersPage({ baseUrl, account, activeWorkspaceId, onWor
           </td></tr>
         })}
       </tbody></table>}
-      <div><button type="button" onClick={() => void load(Math.max(0, page.offset - pageSize))} disabled={page.offset === 0 || saving}>上一页</button> <button type="button" onClick={() => void load(page.offset + pageSize)} disabled={!page.hasMore || saving}>下一页</button></div>
+      <div><button type="button" onClick={() => void load(Math.max(0, visiblePage.offset - pageSize))} disabled={visiblePage.offset === 0 || saving}>上一页</button> <button type="button" onClick={() => void load(visiblePage.offset + pageSize)} disabled={!visiblePage.hasMore || saving}>下一页</button></div>
     </>}
     {canManage && <form onSubmit={invite} aria-label="邀请工作区成员"><h2>邀请成员</h2><label>成员登录账号<input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="例如：member@example.com 或平台账号" aria-describedby="merchant-member-invite-account-help" autoComplete="off" required /></label><small id="merchant-member-invite-account-help" className="muted">填写对方登录商家工作台使用的账号；系统会按此账号关联成员记录。</small><label>显示名<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>角色<select value={inviteRole ?? ''} onChange={(event) => setInviteRole(event.target.value as MemberRole)} required><option value="" disabled>请选择角色</option>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label><label>邀请原因<input value={inviteReason} onChange={(event) => setInviteReason(event.target.value)} minLength={4} required /></label><button type="submit" disabled={saving || loading || !subject.trim() || !inviteRole || inviteReason.trim().length < 4}>邀请成员</button></form>}
-    {action && <form onSubmit={submitAction} aria-label="成员变更"><h2>{action.kind === 'role' ? '调整角色' : action.kind === 'suspend' ? '停用成员' : '恢复成员'} · {action.member.displayName || action.member.externalSubject}</h2>{action.kind === 'role' && <label>新角色<select value={nextRole} onChange={(event) => setNextRole(event.target.value as MemberRole)}>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>}<label>操作原因<input value={reason} onChange={(event) => setReason(event.target.value)} minLength={4} required /></label><button type="button" onClick={() => setAction(null)}>取消</button><button type="submit" disabled={saving || reason.trim().length < 4}>确认{action.kind === 'role' ? '改角色' : action.kind === 'suspend' ? '停用' : '恢复'}</button></form>}
+    {visibleAction && <form onSubmit={submitAction} aria-label="成员变更"><h2>{visibleAction.kind === 'role' ? '调整角色' : visibleAction.kind === 'suspend' ? '停用成员' : '恢复成员'} · {visibleAction.member.displayName || visibleAction.member.externalSubject}</h2>{visibleAction.kind === 'role' && <label>新角色<select value={nextRole} onChange={(event) => setNextRole(event.target.value as MemberRole)}>{assignableRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>}<label>操作原因<input value={reason} onChange={(event) => setReason(event.target.value)} minLength={4} required /></label><button type="button" onClick={() => setAction(null)}>取消</button><button type="submit" disabled={saving || reason.trim().length < 4}>确认{visibleAction.kind === 'role' ? '改角色' : visibleAction.kind === 'suspend' ? '停用' : '恢复'}</button></form>}
   </section>
 }

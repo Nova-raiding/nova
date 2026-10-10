@@ -29,7 +29,7 @@ describe('Postgres publish media recovery isolation', () => {
       database = new Pool({ connectionString: isolated.toString(), max: 4 })
       const scratch = database
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)).toMatchObject({ version: 275, name: 'publish_media_orphan_event_guard' })
+      expect(migrations.find(migration => migration.version === 275)).toMatchObject({ name: 'publish_media_orphan_event_guard' })
       const roleBootstrap = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await scratch.query(roleBootstrap)
       await new MigrationRunner(scratch, migrations).run()

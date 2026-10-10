@@ -36,6 +36,7 @@ function createFingerprint(values: CreateForm) {
 export function SupportQueueSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [createOutcomeUnknown, setCreateOutcomeUnknown] = useState(false);
   const [form] = Form.useForm<CreateForm>();
   const createIdempotencyKeyRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
@@ -55,8 +56,15 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
       intent = { fingerprint, idempotencyKey: crypto.randomUUID() };
       createIdempotencyKeyRef.current = intent;
     }
-    await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: intent.idempotencyKey });
+    try {
+      await model.create({ ...values, tags: values.tags ?? [], idempotencyKey: intent.idempotencyKey });
+    } catch (cause) {
+      const status = (cause as { httpStatus?: unknown } | null)?.httpStatus;
+      setCreateOutcomeUnknown(typeof status !== "number" || status >= 500);
+      throw cause;
+    }
     createIdempotencyKeyRef.current = null;
+    setCreateOutcomeUnknown(false);
     form.resetFields();
     setCreateOpen(false);
   };
@@ -74,7 +82,7 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
       aria-busy={model.loading}
         extra={<Space wrap>
         <Button icon={<ReloadOutlined aria-hidden="true" />} loading={model.loading} onClick={() => void model.reload()}>刷新</Button>
-        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={!canMutate || initialLoadFailed} title={!canMutate ? "当前会话没有工单变更权限" : initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => { createIdempotencyKeyRef.current = null; setCreateOpen(true); }}>新建工单</Button>
+        <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={!canMutate || initialLoadFailed} title={!canMutate ? "当前会话没有工单变更权限" : initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => { createIdempotencyKeyRef.current = null; setCreateOutcomeUnknown(false); setCreateOpen(true); }}>新建工单</Button>
       </Space>}
     >
       <Space wrap aria-label="工单筛选" style={{ marginBottom: 16 }}>
@@ -131,7 +139,7 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
         />
       </Space>
       {model.error ? (
-        <div ref={errorRef} tabIndex={-1} role="alert" aria-labelledby="support-queue-error-title" style={{ marginBottom: 16 }}>
+        <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby="support-queue-error-title" style={{ marginBottom: 16 }}>
           <Alert
             type="error"
             showIcon
@@ -187,18 +195,18 @@ export function SupportQueueSection({ model, canMutate = false }: { model: Suppo
         title="新建客服工单"
         open={createOpen}
         confirmLoading={model.mutating}
-        cancelButtonProps={{ disabled: model.mutating }}
-        closable={!model.mutating}
-        maskClosable={!model.mutating}
-        keyboard={!model.mutating}
+        cancelButtonProps={{ disabled: model.mutating || createOutcomeUnknown }}
+        closable={!model.mutating && !createOutcomeUnknown}
+        maskClosable={!model.mutating && !createOutcomeUnknown}
+        keyboard={!model.mutating && !createOutcomeUnknown}
         okText="创建工单"
         cancelText="取消"
         onOk={submitWithFeedback}
-        onCancel={() => { if (model.mutating) return; createIdempotencyKeyRef.current = null; setCreateOpen(false); setCreateError(""); }}
+        onCancel={() => { if (model.mutating || createOutcomeUnknown) return; createIdempotencyKeyRef.current = null; setCreateOpen(false); setCreateError(""); }}
         destroyOnHidden
       >
-        {createError ? <Alert role="alert" showIcon type="error" title="创建工单失败" description={createError} style={{ marginBottom: 16 }} /> : null}
-        <Form form={form} layout="vertical" initialValues={{ priority: "normal", tags: [] }} requiredMark="optional">
+        {createError ? <Alert role="alert" showIcon type={createOutcomeUnknown ? "warning" : "error"} title={createOutcomeUnknown ? "工单创建结果待确认" : "创建工单失败"} description={createOutcomeUnknown ? `${createError}；已锁定原始内容和请求标识。请按原键重试确认结果。` : createError} style={{ marginBottom: 16 }} /> : null}
+        <Form form={form} disabled={createOutcomeUnknown} layout="vertical" initialValues={{ priority: "normal", tags: [] }} requiredMark="optional">
           <Form.Item name="subject" label="主题" normalize={(value: string) => value.trim()} rules={[{ required: true, min: 3, max: 200, whitespace: true }]}><Input autoFocus maxLength={200} /></Form.Item>
           <Form.Item name="description" label="问题描述" normalize={(value: string) => value.trim()} rules={[{ required: true, max: 10000, whitespace: true }]}><Input.TextArea rows={4} maxLength={10000} showCount /></Form.Item>
           <Form.Item name="priority" label="优先级" rules={[{ required: true }]}><Select options={Object.entries(priorityLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>

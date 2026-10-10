@@ -1,8 +1,11 @@
 import { expect, test, chromium } from '@playwright/test'
+import react from '@vitejs/plugin-react'
+import { createServer } from 'vite'
+import { fileURLToPath } from 'node:url'
 
-test.setTimeout(30_000)
+test.setTimeout(90_000)
 
-const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
+const studioRoot = fileURLToPath(new URL('.', import.meta.url))
 
 const envelope = (data, error = null) => ({
   request_id: 'visual-qa-request',
@@ -39,7 +42,22 @@ const product = {
   },
 }
 
-async function openVisualPage() {
+async function openVisualPage({ imageModelStatus = { state: 'ready', capabilities: { image_generation: true, image_editing: true }, next_actions: [] } } = {}) {
+  const vite = await createServer({
+    configFile: false,
+    envDir: false,
+    root: studioRoot,
+    plugins: [react()],
+    define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api'), 'import.meta.env.MODE': JSON.stringify('test') },
+    server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false },
+  })
+  await vite.listen()
+  const address = vite.httpServer?.address()
+  if (!address || typeof address === 'string') {
+    await vite.close()
+    throw new Error('Image visual fixture did not bind an ephemeral port')
+  }
+  const studioUrl = `http://127.0.0.1:${address.port}`
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(5_000)
@@ -55,7 +73,7 @@ async function openVisualPage() {
   await page.route('**/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}
     const result = body.method === 'platform.model.status'
-      ? { state: 'ready', capabilities: { image_generation: true, image_editing: true }, next_actions: [] }
+      ? imageModelStatus
       : body.method === 'workspace.metrics'
         ? { riskItems: [], productSummary: { total: 1, lowStock: 0, missingImages: 0 } }
         : body.method === 'catalog.image.generate'
@@ -84,7 +102,7 @@ async function openVisualPage() {
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
     // This spec intercepts image generation and does not prove relay, cost, persistence, or worker behavior.
-    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, persistence: { mode: 'fixture', ready: true }, setup: { ai: { costGate: 'ready' }, modelReadiness: { image: { ready: true }, image_edit: { ready: true }, ocr: { ready: true }, video: { ready: true } } } })),
+    body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, persistence: { mode: 'fixture', ready: true }, setup: { ai: { costGate: 'ready' }, ...(imageModelStatus.capabilities?.image_generation === false ? {} : { modelReadiness: { image: { ready: true }, image_edit: { ready: true }, ocr: { ready: true }, video: { ready: true } } }) } })),
   }))
   await page.route('**/v1/platform-accounts', route => route.fulfill({
     contentType: 'application/json',
@@ -104,11 +122,11 @@ async function openVisualPage() {
   await page.getByRole('button', { name: '进入商品库' }).click()
   await page.getByRole('button', { name: /打开视觉 QA 商品商品详情/ }).click()
   await expect(page.getByText('视觉 QA 商品', { exact: true })).toBeVisible()
-  return { browser, context, page, generated }
+  return { browser, context, page, generated, vite }
 }
 
 test('audits image purpose/size choices, validation error focus, and the generation payload', async () => {
-  const { browser, context, page, generated } = await openVisualPage()
+  const { browser, context, page, generated, vite } = await openVisualPage()
   try {
     await page.getByRole('button', { name: /生成图片/ }).click({ timeout: 5000 })
     const dialog = page.getByRole('dialog', { name: /为「视觉 QA 商品」生成图片/ })
@@ -144,12 +162,13 @@ test('audits image purpose/size choices, validation error focus, and the generat
   } finally {
     await context.close()
     await browser.close()
+    await vite.close()
   }
 })
 
 test('canceling the image generation confirmation closes it without creating a task', async () => {
   test.setTimeout(120_000)
-  const { browser, context, page, generated } = await openVisualPage()
+  const { browser, context, page, generated, vite } = await openVisualPage()
   try {
     await page.getByRole('button', { name: /生成图片/ }).click({ timeout: 5000 })
     const dialog = page.getByRole('dialog', { name: /为「视觉 QA 商品」生成图片/ })
@@ -160,5 +179,23 @@ test('canceling the image generation confirmation closes it without creating a t
   } finally {
     await context.close()
     await browser.close()
+    await vite.close()
+  }
+})
+
+test('blocks the product image entry when the server reports image generation unavailable', async () => {
+  const { browser, context, page, generated, vite } = await openVisualPage({
+    imageModelStatus: { state: 'ready', capabilities: { image_generation: false, image_editing: true }, next_actions: [] },
+  })
+  try {
+    const generate = page.getByTestId('catalog-generate-image')
+    await expect(generate).toBeDisabled()
+    await expect(page.getByText('当前模型中转未开放图片生成能力，系统不会生成或扣费。')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: /生成图片/u })).toHaveCount(0)
+    expect(generated).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+    await vite.close()
   }
 })

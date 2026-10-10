@@ -26,6 +26,7 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
   let allowRetry = false
   let allowPageTwoRetry = false
   let taskReads = 0
+  const observedQueries = []
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
 
@@ -41,6 +42,7 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
       taskReads++
       const query = url.searchParams.get('query') ?? ''
       const offset = Number(url.searchParams.get('offset') ?? 0)
+      observedQueries.push(query)
       if (failSearch && query === 'missing' && !allowRetry) {
         await new Promise(resolve => setTimeout(resolve, 300))
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'INTERNAL_ERROR', message: '内部错误' })) })
@@ -49,10 +51,12 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
         await new Promise(resolve => setTimeout(resolve, 300))
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'INTERNAL_ERROR', message: '内部错误' })) })
       }
-      const rows = offset === 50
+      const rows = query === 'no-match'
+        ? []
+        : offset === 50
         ? [task('task-page-two', 'product-page-two')]
         : query === 'missing' ? [task('task-after-retry', 'product-after-retry')] : [task('task-last-good', 'product-last-good')]
-      data = { items: rows, total: 51, limit: 50, offset }
+      data = { items: rows, total: query === 'no-match' ? 0 : 51, limit: 50, offset }
     } else if (/^\/v1\/products\/product-(last-good|after-retry|page-two)$/u.test(path)) {
       const id = path.slice('/v1/products/'.length)
       data = product(id, id === 'product-after-retry' ? '重试后任务商品' : id === 'product-page-two' ? '第二页任务商品' : '上次成功任务商品')
@@ -96,6 +100,15 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
     await page.getByRole('button', { name: '重试' }).click()
     await expect(page.getByText('第二页任务商品')).toBeVisible()
     await expect(page.getByText('重试后任务商品')).toHaveCount(0)
+    await search.fill('no-match')
+    await page.getByRole('search', { name: '搜索任务队列' }).getByRole('button', { name: '搜索', exact: true }).click()
+    await expect(page.getByText('没有匹配的营销任务')).toBeVisible()
+    const clearSearchButton = page.getByRole('search', { name: '搜索任务队列' }).getByRole('button', { name: '清除搜索' })
+    await expect(clearSearchButton).toBeVisible()
+    await clearSearchButton.click()
+    await expect(page.getByRole('searchbox', { name: '搜索任务 ID、商品名称或店铺名称' })).toHaveValue('')
+    await expect(page.getByText('上次成功任务商品')).toBeVisible()
+    expect(observedQueries.at(-1)).toBe('')
     expect(taskReads).toBeGreaterThanOrEqual(3)
     expect(pageErrors).toEqual([])
   } finally {

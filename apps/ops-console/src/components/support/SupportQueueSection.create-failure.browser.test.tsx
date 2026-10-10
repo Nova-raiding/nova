@@ -38,8 +38,8 @@ describe("support ticket create failure feedback", () => {
             function Harness() {
               const [attempts, setAttempts] = useState(0);
               const [mutating, setMutating] = useState(false);
-              const failNext = useRef(false);
-              window.__failNextSupportCreate = () => { failNext.current = true; };
+              const failNext = useRef(undefined);
+              window.__failNextSupportCreate = status => { failNext.current = status ?? 0; };
               const model = {
                 workspaceId: 'ws_test', tickets: [], filters: { query: '' }, loading: false, loadingMore: false,
                 detailLoading: false, mutating, error: '', hasMore: false, setFilters: () => {}, reload: async () => {},
@@ -51,7 +51,11 @@ describe("support ticket create failure feedback", () => {
                   await new Promise(resolve => setTimeout(resolve, 300));
                   setMutating(false);
                   setAttempts(current => current + 1);
-                  if (attempts === 0 || failNext.current) { failNext.current = false; throw new Error('服务端拒绝创建工单'); }
+                  if (attempts === 0 || failNext.current !== undefined) {
+                    const status = attempts === 0 ? 409 : failNext.current;
+                    failNext.current = undefined;
+                    throw Object.assign(new Error('服务端拒绝创建工单'), status ? { httpStatus: status } : {});
+                  }
                 }, assign: async () => {}, transition: async () => {}, comment: async () => {},
                 reportLoading: false, loadReport: async () => {},
               };
@@ -135,7 +139,7 @@ describe("support ticket create failure feedback", () => {
       expect(await page.getByText("工单队列读取失败").count()).toBe(0);
       expect(await dialog.getByLabel("主题").inputValue()).toBe("支付未到账");
 
-      await page.evaluate(() => window.__failNextSupportCreate?.());
+      await page.evaluate(() => window.__failNextSupportCreate?.(409));
       await dialog.getByRole("button", { name: "创建工单" }).click();
       await expect.poll(() => alert.innerText()).toContain("服务端拒绝创建工单");
       expect(await dialog.getByLabel("主题").inputValue()).toBe("支付未到账");
@@ -153,6 +157,29 @@ describe("support ticket create failure feedback", () => {
       expect(payloads?.[2]?.idempotencyKey).not.toBe(payloads?.[1]?.idempotencyKey);
       expect(fixtureModuleResponses).toHaveLength(1);
       expect(fixtureModuleResponses[0]?.status).toBe(200);
+
+      await createButton.click();
+      const recoveryDialog = page.locator(".ant-modal").last();
+      await recoveryDialog.getByLabel("主题").fill("未知结果工单");
+      await recoveryDialog.getByLabel("问题描述").fill("服务端可能已经接收这条工单，需要按原请求键确认结果。");
+      await recoveryDialog.getByLabel("客户 ID").fill("customer-2");
+      await recoveryDialog.getByLabel("客户名称").fill("待确认客户");
+      await page.evaluate(() => window.__failNextSupportCreate?.());
+      await recoveryDialog.getByRole("button", { name: "创建工单" }).click();
+      const unknownAlert = recoveryDialog.getByRole("alert");
+      await unknownAlert.getByText("工单创建结果待确认").waitFor();
+      expect(await recoveryDialog.getByLabel("主题").isDisabled()).toBe(true);
+      const footerButtons = recoveryDialog.locator(".ant-modal-footer button");
+      expect(await footerButtons.count()).toBe(2);
+      expect(await footerButtons.nth(0).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      await recoveryDialog.waitFor({ state: "visible" });
+      await recoveryDialog.getByRole("button", { name: "创建工单" }).click();
+      await recoveryDialog.waitFor({ state: "detached" });
+      const recoveredPayloads = await page.evaluate(() => window.__supportCreatePayloads?.slice(-2));
+      expect(recoveredPayloads).toHaveLength(2);
+      expect(recoveredPayloads?.[1]).toMatchObject({ subject: "未知结果工单", customerId: "customer-2", customerName: "待确认客户" });
+      expect(recoveredPayloads?.[1]?.idempotencyKey).toBe(recoveredPayloads?.[0]?.idempotencyKey);
     } finally { await page.close(); }
   }, 120_000);
 });
@@ -160,7 +187,7 @@ describe("support ticket create failure feedback", () => {
 declare global {
   interface Window {
     __supportCreatePayloads?: Array<{ subject: string; description: string; customerId?: string; customerName?: string; idempotencyKey: string }>;
-    __failNextSupportCreate?: () => void;
+    __failNextSupportCreate?: (status?: number) => void;
     __supportCreateWindowErrors?: string[];
   }
 }

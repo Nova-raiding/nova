@@ -57,7 +57,7 @@ describe('merchant marketing visual and video contract', () => {
     expect(storyboardSkill).toContain('For Store Nova merchant-product workflows, use this skill only after `merchant-marketing` has routed the request to script/storyboard text')
   })
 
-  it('chooses create versus optimize from the requested edit, not from the mere presence of an upload', async () => {
+  it('distinguishes whole-image optimization, region edits, and creation', async () => {
     const [skill, mirrorSkill] = await Promise.all([
       readFile(skillPath, 'utf8'),
       readFile(mirrorSkillPath, 'utf8'),
@@ -68,8 +68,9 @@ describe('merchant marketing visual and video contract', () => {
 
     expect(mirrorSkill).toBe(skill)
     expect(route).toContain('附件存在本身不决定生成模式')
-    expect(route).toContain('保留或编辑上传图中的现有画面时用 `mode=optimize`')
-    expect(route).toContain('以上传图作为商品参考并重新设计构图时用 `mode=create`')
+    expect(route).toContain('调整、重绘或重新编排整张画布时用 `mode=optimize`')
+    expect(route).toContain('以上传图作为商品参考并从零重新设计构图时用 `mode=create`')
+    expect(route).toContain('仅修改指定区域且保持其余画面不变时，走下方 `multimodal.image.edit` 局部编辑路由')
     expect(route).toContain('两种模式都必须传用户确认的商品 `title` 和真实 `asset_ids_json`')
   })
 

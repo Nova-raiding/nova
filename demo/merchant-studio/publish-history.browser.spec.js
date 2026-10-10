@@ -187,8 +187,8 @@ test('发布记录读取错误显示原始错误并可重试恢复', async () =>
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     await screenshot(page, '05-读取错误.png')
     await panel.getByRole('button', { name: '重试' }).click()
+    await expect.poll(() => observations.jobAttempts).toBe(3)
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
-    expect(observations.jobAttempts).toBe(3)
     expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })

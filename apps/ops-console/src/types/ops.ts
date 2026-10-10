@@ -960,10 +960,10 @@ export type OpsSession = {
     id?: string;
     effect: "allow" | "deny";
     reason_code?: string;
-    scope?: { type: "platform" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
+    scope?: { type: "platform" | "account" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
     obligations?: string[];
   }>;
-  scope?: { type: "platform" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
+  scope?: { type: "platform" | "account" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
   scopes?: Array<{ type: "self" | "workspace" | "platform"; ids: string[] }>;
   temporary_grants?: Array<{
     id: string;

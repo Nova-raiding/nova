@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 const studioRoot = fileURLToPath(new URL('.', import.meta.url))
 const workspaceId = 'ws_material_preview_forbidden_fixture'
 const assetId = 'asset-preview-forbidden-fixture'
+const videoAssetId = 'asset-video-preview-forbidden-fixture'
 test.setTimeout(90_000)
 
 const envelope = (data) => ({
@@ -103,16 +104,29 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
           source: 'merchant_upload',
           createdAt: '2026-10-08T00:00:00.000Z',
           updatedAt: '2026-10-08T00:00:00.000Z',
+        }, {
+          id: videoAssetId,
+          workspaceId,
+          name: '当前无法播放.mp4',
+          mimeType: 'video/mp4',
+          sizeBytes: 2048,
+          sha256: 'd'.repeat(64),
+          scanStatus: 'clean',
+          rightsStatus: 'approved',
+          source: 'merchant_upload',
+          createdAt: '2026-10-08T00:00:00.000Z',
+          updatedAt: '2026-10-08T00:00:00.000Z',
         }],
         total: 1,
         limit: 50,
         offset: 0,
       })) })
     }
-    const download = new RegExp(`^/api/v1/assets/${assetId}/download$`, 'u').test(path)
+    const download = new RegExp(`^/api/v1/assets/(?:${assetId}|${videoAssetId})/download$`, 'u').test(path)
     if (download) {
       previewRequests.push({
         cookie: request.headers().cookie ?? '',
+        workspaceId: request.headers()['x-workspace-id'] ?? '',
         accept: request.headers().accept,
       })
       return route.fulfill({ status: 403, contentType: 'text/plain', body: 'forbidden' })
@@ -143,6 +157,7 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
     await expect.poll(() => previewRequests.length).toBe(1)
     expect(previewRequests[0]).toEqual({
       cookie: 'preview-auth-fixture=same-origin-session',
+      workspaceId,
       accept: 'application/octet-stream',
     })
     expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
@@ -152,6 +167,18 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
     await expect(detailPreview).toBeVisible()
     await expect(detailPreview.locator('img')).toHaveCount(0)
     await expect(detailPreview.locator('svg')).toBeVisible()
+    expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
+    await page.getByRole('button', { name: '返回素材库' }).click()
+
+    const videoCard = workspace.locator('article').filter({ hasText: '当前无法播放.mp4' })
+    await videoCard.getByRole('button', { name: '查看当前无法播放.mp4详情' }).click()
+    const videoPreview = page.locator('.material-detail-preview')
+    await expect(videoPreview).toBeDisabled()
+    await expect(videoPreview).toContainText('视频暂不支持预览')
+    await expect(page.getByText('当前页面暂不支持播放视频，可下载查看。')).toBeVisible()
+    await page.getByRole('link', { name: '下载素材' }).click()
+    await expect(page.getByRole('alert')).toContainText('素材下载失败')
+    expect(previewRequests.at(-1)?.cookie).toBe('preview-auth-fixture=same-origin-session')
     expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
     expect(pageErrors).toEqual([])
   } finally {

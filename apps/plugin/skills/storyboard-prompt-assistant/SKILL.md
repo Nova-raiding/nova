@@ -49,6 +49,18 @@ If the user did not specify a mode:
 6. Do not add platform-specific parameters, seeds, model IDs, or unsupported flags unless requested.
 7. For reference images, describe how each reference should be used: character identity, product look, location, style, motion, or first/last frame.
 
+## Store Nova 商品分镜约束
+
+仅在 `merchant-marketing` 已将请求路由为商品脚本/分镜文本后应用本节。先写一份跨镜头固定的商品/SKU 身份锚点：已确认的外形、颜色、包装/标签、Logo、结构、配件和不能改变的细节；按 SKU 分开，不以参考图或生成画面补足未知事实。
+
+给每个商品相关参考素材标明角色和来源，例如当前 SKU 的商品实物依据、授权品牌素材、仅供抽象构图参考的风格素材，或商家确认可用的场景/动作参考。商品实物依据只支持可见外观；风格素材只提炼光线、构图、色彩或节奏，不移用其商品身份、品牌标识、文字、价格、效果或场景事实。没有当前会话或 MCP 中真实可用的素材引用时，只写文字描述，不编造素材 ID、路径或 reference pack。
+
+逐镜按用户指定总时长分配连续、不重叠、无空档的时间码，末镜结束时间必须等于总时长。每镜聚焦一个主要视觉节拍或动作；写明前镜结束状态与后镜开场状态如何衔接，并指出共用的商品/SKU 身份锚点、动作、道具、机位或声音锚点以及转场原因。不能为了统一默认镜长而改变用户指定的总时长或节奏。
+
+商品视频方案必须明确选择“画面内人物说话、画外配音或无人声”。台词、旁白、字幕和音效不得引入未确认的商品声明；检查说话内容在所分配镜长内可自然读完。无人声时不得补入人声，仅可规划用户确认或授权范围允许的环境声、音效或无歌词音乐；跨镜交代声音延续、切断或变化的意图。此音频计划只是文本建议，不证明素材已获授权、声音已制作或最终成片支持对应时长、口型或音轨。
+
+本节只产出可审阅文本，不生成参考图、视频或媒体文件；不选择或调用模型、provider、API、CLI、MCP 之外的本地媒体脚本。Store Nova 的实际媒体操作仍只通过 Merchant Marketing MCP，并服从当前会话 `tools/list`、用户确认及服务端素材、权限、权益、费用、审计、归档和扫描门禁。
+
 ## Workflow
 
 1. Extract project type, audience, duration, format, style, key scenes, characters, product/brand facts, and target platform if any.

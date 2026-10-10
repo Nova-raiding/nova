@@ -234,7 +234,10 @@ export function PublicRuleDraftReviewPanel({ authorization }: { authorization: A
       type="error"
       showIcon
       title="公共规则审核操作失败"
-      description={error}
+      description={<>
+        {items.length > 0 && <Typography.Text>列表保留最近一次成功读取的数据，可能已过期；请刷新并重新核对后再操作。 </Typography.Text>}
+        {error}
+      </>}
       action={<Button htmlType="button" disabled={loading || busy} loading={loading} onClick={() => void load(pageCursors[pageIndex], pageIndex)}>刷新审核数据</Button>}
       style={{ marginBottom: 12 }}
     />}

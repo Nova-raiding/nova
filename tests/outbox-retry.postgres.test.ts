@@ -191,6 +191,59 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     await expect(repository.claimPending('')).rejects.toThrow('workspace scope is required')
   })
 
+  it('permits only one cross-process handler invocation for a duplicated live lease envelope', async () => {
+    const scope = await workspace()
+    const event = await append(scope, 'same_lease_duplicate', 'audit.retry.same-lease-duplicate')
+    const [claim] = await repository.claimPending(scope, { leaseMs: 60_000, eventTypes: ['audit.retry.same-lease-duplicate'] })
+    expect(claim?.leaseToken).toBeTruthy()
+    const leftQueue = new InMemoryQueue<DurableOutboxEvent>()
+    const rightQueue = new InMemoryQueue<DurableOutboxEvent>()
+    await leftQueue.enqueue({ id: event.id, value: claim! })
+    await rightQueue.enqueue({ id: event.id, value: claim! })
+
+    let calls = 0
+    let signalEntered!: () => void
+    const entered = new Promise<void>(resolve => { signalEntered = resolve })
+    let finishHandler!: () => void
+    const blocked = new Promise<void>(resolve => { finishHandler = resolve })
+    const handler = async () => {
+      calls += 1
+      if (calls === 1) signalEntered()
+      await blocked
+      return { value: 'completed' }
+    }
+    const options = { leaseMs: 60_000 }
+    const left = new DurableOutboxDispatcher(repository, leftQueue, handler, options).dispatchOnce()
+    const right = new DurableOutboxDispatcher(new PostgresOutboxRepository(database!), rightQueue, handler, options).dispatchOnce()
+    const firstCompleted = await Promise.race([
+      left.then(result => ({ side: 'left', result })),
+      right.then(result => ({ side: 'right', result })),
+    ])
+    expect(firstCompleted.result.state).toBe('queued')
+    await entered
+    expect(calls).toBe(1)
+    finishHandler()
+    const results = await Promise.all([left, right])
+    expect(results.map(result => result.state).sort()).toEqual(['queued', 'succeeded'])
+    expect(calls).toBe(1)
+  })
+
+  it('clears the execution reservation only after a new lease is reclaimed', async () => {
+    const scope = await workspace()
+    const event = await append(scope, 'execution_reclaim', 'audit.retry.execution-reclaim')
+    const firstNow = new Date(Date.now() + 1_000).toISOString()
+    const [first] = await repository.claimPending(scope, { now: firstNow, leaseMs: 100, eventTypes: ['audit.retry.execution-reclaim'] })
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'invocation_before_expiry', firstNow)).toBe(true)
+    await expect(repository.releaseClaim(scope, event.id, first!.leaseToken!)).rejects.toMatchObject({ code: 'OUTBOX_EVENT_NOT_FOUND' })
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'duplicate_before_expiry', firstNow)).toBe(false)
+
+    const reclaimedAt = new Date(Date.parse(firstNow) + 1_000).toISOString()
+    const [reclaimed] = await repository.claimPending(scope, { now: reclaimedAt, leaseMs: 60_000, eventTypes: ['audit.retry.execution-reclaim'] })
+    expect(reclaimed?.leaseToken).not.toBe(first?.leaseToken)
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'stale_invocation', reclaimedAt)).toBe(false)
+    expect(await repository.acquireExecution(scope, event.id, reclaimed!.leaseToken!, 'invocation_after_reclaim', reclaimedAt)).toBe(true)
+  })
+
   it('does not let legacy markPublished clear an active durable lease', async () => {
     const scope = await workspace()
     const event = await append(scope, 'mark_published_active', 'audit.retry.mark-published-active')

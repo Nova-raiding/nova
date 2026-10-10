@@ -8,12 +8,16 @@ export function mergeNotificationPage(currentBase: string | undefined, requestBa
   return [...(current ?? []), ...next.filter(item => !current?.some(existing => existing.id === item.id))]
 }
 
-export function notificationReadIntentScope(baseUrl: string, notificationId: string): string {
-  return JSON.stringify([baseUrl, notificationId])
+export function notificationPanelScope(baseUrl: string | undefined, workspaceId: string | null | undefined): string {
+  return JSON.stringify([baseUrl ?? '', workspaceId ?? 'unselected'])
+}
+
+export function notificationReadIntentScope(baseUrl: string, notificationId: string, workspaceId?: string | null): string {
+  return JSON.stringify([notificationPanelScope(baseUrl, workspaceId), notificationId])
 }
 
 /** Commercial announcements retain publication history; the purchase page rereads current sales. */
-export function CommercialNotificationPanel({ baseUrl, onOpenCatalog }: { baseUrl?: string; onOpenCatalog: (item: CommercialNotification) => void }) {
+export function CommercialNotificationPanel({ baseUrl, workspaceId, onOpenCatalog }: { baseUrl?: string; workspaceId?: string | null; onOpenCatalog: (item: CommercialNotification) => void }) {
   const [items, setItems] = useState<CommercialNotification[] | null>(null)
   const [error, setError] = useState('')
   const [cursor, setCursor] = useState<string | null>(null)
@@ -22,36 +26,39 @@ export function CommercialNotificationPanel({ baseUrl, onOpenCatalog }: { baseUr
   const [reading, setReading] = useState<string | null>(null)
   const [readErrors, setReadErrors] = useState<Record<string, string>>({})
   const intents = useRef(new Map<string, string>())
-  const scope = useRef(baseUrl)
-  scope.current = baseUrl
+  const activeScope = notificationPanelScope(baseUrl, workspaceId)
+  const scope = useRef(activeScope)
+  scope.current = activeScope
   useEffect(() => {
     let active = true
-    setItems(null); setError(''); setCursor(null); setReadErrors({})
+    setItems(null); setError(''); setCursor(null); setReadErrors({}); setReading(null); setLoading(false)
     if (!baseUrl) { setError('未配置 API，商业通知尚未读取。'); return }
     setLoading(true)
     fetchCommercialNotifications(baseUrl).then(result => { if (active) { setItems(result.items); setCursor(result.next_cursor) } }).catch(cause => { if (active) setError(describeApiError(cause)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [baseUrl, reload])
+  }, [activeScope, baseUrl, reload])
   const loadMore = async () => {
     if (!baseUrl || !cursor || loading) return
     const requestedBase = baseUrl
+    const requestedScope = notificationPanelScope(baseUrl, workspaceId)
     setLoading(true); setError('')
     try {
       const next = await fetchCommercialNotifications(requestedBase, cursor)
-      if (scope.current !== requestedBase) return
-      setItems(previous => mergeNotificationPage(scope.current, requestedBase, previous, next.items))
+      if (scope.current !== requestedScope) return
+      setItems(previous => mergeNotificationPage(scope.current, requestedScope, previous, next.items))
       setCursor(next.next_cursor)
     }
-    catch (cause) { if (scope.current === requestedBase) setError(describeApiError(cause)) }
-    finally { if (scope.current === requestedBase) setLoading(false) }
+    catch (cause) { if (scope.current === requestedScope) setError(describeApiError(cause)) }
+    finally { if (scope.current === requestedScope) setLoading(false) }
   }
   const markRead = async (item: CommercialNotification) => {
     if (!baseUrl || reading || item.read_at) return
     const activeBase = baseUrl
-    const intentScope = notificationReadIntentScope(activeBase, item.id)
+    const activeScope = notificationPanelScope(activeBase, workspaceId)
+    const intentScope = notificationReadIntentScope(activeBase, item.id, workspaceId)
     let key = intents.current.get(intentScope)
     if (!key) {
-      const storageKey = `store-nova-notification-read:${baseUrl}:${item.id}`
+      const storageKey = `store-nova-notification-read:${activeScope}:${item.id}`
       try { key = sessionStorage.getItem(storageKey) ?? undefined } catch { /* memory retains the intent */ }
       key ??= `notification-read:${crypto.randomUUID()}`
       intents.current.set(intentScope, key)
@@ -60,9 +67,9 @@ export function CommercialNotificationPanel({ baseUrl, onOpenCatalog }: { baseUr
     setReading(item.id); setReadErrors(previous => ({ ...previous, [item.id]: '' }))
     try {
       const result = await markCommercialNotificationRead(baseUrl, item.id, key)
-      if (scope.current !== activeBase) return
+      if (scope.current !== activeScope) return
       setItems(previous => previous?.map(row => row.id === result.notification_id ? { ...row, read_at: result.read_at } : row) ?? null)
-    } catch (cause) { if (scope.current === activeBase) setReadErrors(previous => ({ ...previous, [item.id]: `已读结果待确认：${describeApiError(cause)}。可用原标识重试，当前保留服务端已读取的状态。` })) } finally { if (scope.current === activeBase) setReading(null) }
+    } catch (cause) { if (scope.current === activeScope) setReadErrors(previous => ({ ...previous, [item.id]: `已读结果待确认：${describeApiError(cause)}。可用原标识重试，当前保留服务端已读取的状态。` })) } finally { if (scope.current === activeScope) setReading(null) }
   }
   const unread = items?.filter(item => item.read_at === null).length
   return <section className="merchant-commercial-notifications" aria-label="套餐与权益包通知">

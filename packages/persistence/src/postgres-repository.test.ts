@@ -157,6 +157,18 @@ describe('PostgresOutboxRepository', () => {
     expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_1'])
   })
 
+  it('reserves a current lease for only one handler invocation', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(row()); client.enqueue({ id: 'evt_1' }); client.enqueue()
+    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    await expect(repository.acquireExecution('ws_1', 'evt_1', 'lease_1', 'invoke_1', '2026-08-29T00:00:00.000Z')).resolves.toBe(true)
+    const update = client.calls.find(call => call.text.includes('SET execution_owner'))
+    expect(update?.values).toEqual(['ws_1', 'evt_1', 'lease_1', 'invoke_1', '2026-08-29T00:00:00.000Z'])
+    expect(update?.text).toContain('execution_owner IS NULL')
+    expect(update?.text).toContain('lease_until > GREATEST($5::timestamptz, clock_timestamp())')
+    expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_1'])
+  })
+
   it('counts a claim as an attempt so a crashed worker still spends its retry budget', async () => {
     const client = new RecordingClient()
     // RETURNING projects the post-increment value, which is what makes a
@@ -228,6 +240,7 @@ describe('PostgresOutboxRepository', () => {
     expect(update?.text).toContain('GREATEST(attempts - 1, 0)')
     expect(update?.text).toContain('lease_token = $3')
     expect(update?.text).toContain('attempts > 0')
+    expect(update?.text).toContain('execution_owner IS NULL')
     expect(update?.text).toContain('published_at IS NULL')
     expect(update?.text).toContain('unknown_at IS NULL')
     // No `next_attempt_at`/`last_error`/`unknown_at` write: the delivery never

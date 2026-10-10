@@ -9,6 +9,7 @@ import {
   createIssueReadSession,
   resolveIssueReadState,
   resolveIssueReadStateFromOutcome,
+  workspaceIssueReadScope,
   type IssueReadOutcome,
 } from './issue-read-state'
 // Captured live (2026-09-20) from the local demo API on 127.0.0.1:8787, verbatim:
@@ -151,6 +152,16 @@ describe('the bell never reports a count it did not read', () => {
   })
 })
 
+describe('workspace issue reads follow the active merchant scope', () => {
+  it('changes the read ownership key when the workspace changes on the same API', () => {
+    const scopeA = workspaceIssueReadScope('/api', 'ws_alpha')
+    const scopeB = workspaceIssueReadScope('/api', 'ws_beta')
+
+    expect(scopeA).not.toBe(scopeB)
+    expect(workspaceIssueReadScope('/api', 'ws_alpha')).toBe(scopeA)
+  })
+})
+
 /**
  * The read chain, driven — not read.
  *
@@ -230,7 +241,7 @@ describe('the bell read chain', () => {
     const outcome = await session().read('/api', (next) => published.push(next))
     expect(published).toHaveLength(2)
     // The bell never shows a count while the read is in the air...
-    expect(published[0]).toEqual({ items: null, error: '', loading: true })
+    expect(published[0]).toEqual({ items: null, error: '', loading: true, truncated: false })
     expect(bellOf('/api', published[0]!)).toContain('工作区待处理问题，正在读取')
     // ... and the answer is the captured one, not an empty list.
     expect(outcome).toMatchObject({ error: '', loading: false })
@@ -285,7 +296,7 @@ describe('the bell read chain', () => {
     expect(second!.items).toEqual([])
     releaseSlow(json(answer(capturedMetrics), 200))
     expect(await first).toBeNull()
-    expect(published.at(-1)).toEqual({ items: [], error: '', loading: false })
+    expect(published.at(-1)).toEqual({ items: [], error: '', loading: false, truncated: false })
     expect(bellOf('/api', published.at(-1)!)).toContain('工作区待处理问题，暂无')
   })
 
@@ -294,7 +305,7 @@ describe('the bell read chain', () => {
     const published: IssueReadOutcome[] = []
     const outcome = await session().read(undefined, (next) => published.push(next))
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(outcome).toEqual({ items: null, error: '', loading: false })
+    expect(outcome).toEqual({ items: null, error: '', loading: false, truncated: false })
     expect(bellOf(undefined, outcome!)).toContain('工作区待处理问题，未读取')
   })
 
@@ -320,6 +331,8 @@ describe('the bell read chain', () => {
     // that connect `Topbar` to the chain above are pinned by text. Everything
     // they connect is covered by the tests above; if those go, this is worthless.
     expect(topbarSource).toContain('issueReadSession.read(apiBaseUrl')
+    expect(topbarSource).toContain('const issueScopeCurrent = issueItemsScope === issueReadScope')
+    expect(topbarSource).toContain('loading: !issueScopeCurrent || issueReadPending')
     expect(topbarSource).toContain('resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl')
     expect(topbarSource).toContain('setIssueReload((value) => value + 1)')
   })

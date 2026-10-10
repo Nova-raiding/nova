@@ -63,6 +63,11 @@ export const IDLE_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loadi
 /** A read is in flight; its result is not in yet, so there is no count. */
 export const PENDING_ISSUE_READ: IssueReadOutcome = { items: null, error: '', loading: true, truncated: false }
 
+/** The workspace is part of a risk read's ownership even when API origin is shared. */
+export function workspaceIssueReadScope(baseUrl: string | undefined, workspaceId: string | null | undefined): string {
+  return JSON.stringify([baseUrl ?? '', workspaceId ?? 'unselected'])
+}
+
 /** The two things a read needs from outside, so a test can drive it with a real response shape. */
 export type IssueReadDeps = {
   /** `fetchWorkspaceMetrics` in the app. */

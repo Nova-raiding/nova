@@ -16,7 +16,7 @@ const store = {
 const render = (overrides: Partial<React.ComponentProps<typeof StoreDirectorySection>> = {}) => renderToStaticMarkup(
   <StoreDirectorySection
     storeDirectory={[store]}
-    canPlatformOps
+    canManageStoreConnections
     onRetry={vi.fn()}
     onSaveAlias={vi.fn(async () => true)}
     onRevoke={vi.fn(async () => undefined)}
@@ -76,6 +76,8 @@ describe("StoreDirectorySection", () => {
 
     expect(markup).toContain("淘宝演示店铺");
     expect(markup).toContain('role="alert"');
+    expect(markup.match(/role="alert"/gu)).toHaveLength(1);
+    expect(markup).toContain('role="group"');
     expect(markup).toContain('aria-labelledby="store-directory-error-title"');
     expect(markup).toContain("已保留上一次成功读取的店铺目录");
     expect(markup).toContain("刷新店铺目录");

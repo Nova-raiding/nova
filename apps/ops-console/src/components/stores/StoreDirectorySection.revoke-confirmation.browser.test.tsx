@@ -33,7 +33,7 @@ describe("store authorization revoke confirmation", () => {
             import { StoreDirectorySection } from '/src/components/stores/StoreDirectorySection.tsx';
             const store = { platform: 'taobao', accountId: 'store-1', label: '撤销回归店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1 };
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [store], canPlatformOps: true,
+              storeDirectory: [store], canManageStoreConnections: true,
               onSaveAlias: async () => true,
               onRevoke: async () => { const response = await fetch('/__store-revoke', { method: 'POST' }); if (!response.ok) throw new Error('revoke failed'); },
             })));

@@ -4,13 +4,20 @@ import { fileURLToPath } from "node:url";
 const vitest = fileURLToPath(new URL("../../../node_modules/vitest/vitest.mjs", import.meta.url));
 const files = [
   "src/pages/OverviewPage.browser.test.tsx",
+  "src/pages/OverviewPage.controller-route.browser.test.tsx",
   "src/navigation/OpsNavigation.browser.test.tsx",
   "src/components/OpsPageError.browser.test.tsx",
   "src/components/support/SupportQueueSection.row-interaction.browser.test.tsx",
   "src/components/commercial/CommercialRefundOperationsPanel.browser.test.tsx",
   "src/components/commercial/PointAdjustmentPanel.browser.test.tsx",
   "src/pages/OpsConsoleController.identity-route.browser.test.tsx",
+  "src/pages/OpsConsoleController.blocked-history.browser.test.tsx",
   "src/pages/UsersPage.identity-governance.browser.test.tsx",
+  "src/pages/UsersPage.registration-approval.browser.test.tsx",
+  "src/pages/UsersPage.controller-risk-transition.browser.test.tsx",
+  "src/pages/UsersPage.controller-global-identity-access.browser.test.tsx",
+  "src/pages/UsersPage.controller-session-revoke.browser.test.tsx",
+  "src/pages/UsersPage.controller-workspace-deactivation.browser.test.tsx",
   "src/components/finance/RefundSection.validation.browser.test.tsx",
   "src/components/OpsHeader.test.tsx",
   "src/components/delivery/CustomerDeliveryTrainingToggle.test.tsx",
@@ -24,6 +31,9 @@ const files = [
   "src/hooks/useOpsConsoleModel.workspaceDirectory.test.tsx",
   "src/pages/CustomerDeliveryPage.test.tsx",
   "src/pages/CustomerDeliveryPage.route.browser.test.tsx",
+  "src/pages/CustomerDeliveryPage.controller-archive-readback.browser.test.tsx",
+  "src/pages/CustomerDeliveryPage.controller-account-binding-readback.browser.test.tsx",
+  "src/pages/CustomerDeliveryPage.controller-training-completion-readback.browser.test.tsx",
   "src/pages/CustomerDeliveryPage.restore.browser.regression.test.tsx",
   "src/pages/CustomerDeliveryPage.archive-conflict.browser.test.tsx",
   "src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts",
@@ -36,8 +46,14 @@ const files = [
   "src/components/delivery/CustomerDeliverySection.pagination.browser.test.tsx",
   "src/components/finance/FinanceSearchSection.advanced-filter.browser.test.tsx",
   "src/pages/FinancePage.error-recovery.browser.test.tsx",
+  "src/pages/FinancePage.controller-route.browser.test.tsx",
+  "src/pages/FinancePage.controller-refund-confirmation.browser.test.tsx",
+  "src/pages/FinancePage.controller-export.browser.test.tsx",
   "src/components/rules/RuleSyncStatusSection.retry.browser.test.tsx",
   "src/components/rules/PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx",
+  "src/pages/RulesPage.controller-batch-cancel.browser.test.tsx",
+  "src/pages/RulesPage.controller-approval-readback.browser.test.tsx",
+  "src/pages/RulesPage.controller-rejection-readback.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.boundary-result.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.registration-error.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.revoke-confirmation.browser.test.tsx",
@@ -63,17 +79,25 @@ const files = [
   "src/navigation/useOpsNavigation.unsaved.browser.test.tsx",
   "src/pages/BrandStoreTasksDeepLink.browser.test.tsx",
   "src/pages/TasksPage.workspace-filters.browser.test.tsx",
+  "src/pages/TasksPage.controller-workbench-boundary.browser.test.tsx",
   "src/pages/CustomerDeliveryCreateFlow.e2e.test.ts",
   "src/pages/AuditPage.browser.journey.test.tsx",
+  "src/pages/AuditPage.controller-scope-switch.browser.test.tsx",
   "src/pages/IncidentsPage.error.browser.test.tsx",
   "src/pages/ModelsPage.overview-navigation.browser.test.tsx",
+  "src/pages/ModelsPage.controller-route.browser.test.tsx",
   "src/pages/OpsConsoleController.access-denied-recovery.e2e.test.ts",
   "src/pages/StoragePage.error.browser.test.tsx",
+  "src/pages/StoragePage.controller-route.browser.test.tsx",
   "src/components/storage/StorageReconciliationSection.paging.browser.test.tsx",
   "src/pages/StoresPage.brand-binding.browser.test.tsx",
   "src/pages/StoresPage.route.browser.test.tsx",
+  "src/pages/StoresPage.controller-alias-readback.browser.test.tsx",
+  "src/pages/StoresPage.controller-revoke-readback.browser.test.tsx",
   "src/pages/SupportPage.error.browser.test.tsx",
   "src/pages/SupportPage.platform-route.browser.test.tsx",
+  "src/pages/SupportPage.controller-reply.browser.test.tsx",
+  "src/pages/SupportPage.controller-reply-recovery.browser.test.tsx",
   "src/pages/customer-delivery-session-loss.e2e.test.ts",
 ]
 const requestedFiles = process.argv.slice(2)
@@ -89,7 +113,10 @@ for (const file of filesToRun) {
   // navigation a bounded browser budget instead of the five-second unit limit.
   const browserBudget = file === "src/pages/CustomerDeliveryAuthorizationWorkspace.e2e.test.ts"
     ? ["--testTimeout=30000"] : [];
-  const result = spawnSync(process.execPath, [vitest, "run", "--pool=threads", "--no-file-parallelism", ...browserBudget, file], {
+  const dedicatedConfig = file === "src/components/rules/PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx"
+    ? ["--config", fileURLToPath(new URL("../../../vitest.ops-rule-detail-browser.config.ts", import.meta.url))]
+    : [];
+  const result = spawnSync(process.execPath, [vitest, "run", ...dedicatedConfig, "--pool=threads", "--no-file-parallelism", ...browserBudget, file], {
     stdio: "inherit",
     env: process.env,
   });

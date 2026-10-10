@@ -3,7 +3,7 @@ import type { OpsSession } from "../types/ops.js";
 
 export type OpsCapability = string;
 export type OpsScope = {
-  kind: "platform" | "workspace" | "brand" | "store" | "controlled_support";
+  kind: "platform" | "account" | "workspace" | "brand" | "store" | "controlled_support";
   id?: string;
   ids?: readonly string[];
 };
@@ -96,7 +96,11 @@ function serverPermissions(session: OpsSession) {
 
 function scopeMatchesWorkbench(scope: OpsScope | undefined, workbench: OpsSession["workbench"]): boolean {
   if (!workbench || !scope) return true;
-  return workbench === "platform" ? scope.kind === "platform" : scope.kind !== "platform";
+  // Platform operators can hold narrowly scoped account grants for store
+  // connection actions. Those grants stay account-bound at the row level.
+  return workbench === "platform"
+    ? scope.kind === "platform" || scope.kind === "account"
+    : scope.kind !== "platform" && scope.kind !== "account";
 }
 
 function inferScope(session: OpsSession | undefined): OpsScope {

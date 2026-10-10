@@ -649,7 +649,7 @@ describe('worker production entry', () => {
     await queue.enqueue({ id: event.id, value: event })
     const deadLetter = vi.fn(async (_workspaceId: string, _id: string, failure: { code: string }) => ({ ...event, lastError: failure }))
     const store = {
-      claimPending: async () => [], validateLease: async () => event, renewLease: async () => event,
+      claimPending: async () => [], validateLease: async () => event, acquireExecution: async () => true, renewLease: async () => event,
       ack: async () => event, recordFailure: async () => event, markUnknown: async () => event, deadLetter,
     }
     const dispatcher = new DurableOutboxDispatcher(store, queue, createOutboxHandler({ publishRequested: connector }))
@@ -1159,6 +1159,7 @@ describe('worker production entry', () => {
         if (!event) throw Object.assign(new Error('outbox event not found'), { code: 'OUTBOX_EVENT_NOT_FOUND' })
         return event
       },
+      acquireExecution: async () => true,
       renewLease: async (workspaceId: string, id: string, leaseToken: string, leaseMs: number, now: string) => {
         const event = pending.get(workspaceId)?.find(candidate => candidate.id === id && candidate.leaseToken === leaseToken)
         if (!event) throw Object.assign(new Error('outbox event not found'), { code: 'OUTBOX_EVENT_NOT_FOUND' })

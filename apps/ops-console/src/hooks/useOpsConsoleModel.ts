@@ -3109,8 +3109,8 @@ export function useOpsConsoleModel() {
   const authorizeMerchantAccount = async (
     input: MerchantAccountAuthorizationInput,
   ): Promise<MerchantAccountAuthorizationResult | null> => {
-    if (!canPlatformOps) {
-      message.error("当前账号缺少平台运营权限，不能授权商家权限");
+    if (!authorization.can("identity.update")) {
+      message.error("当前账号缺少身份更新权限，不能授权商家权限");
       return null;
     }
     try {

@@ -1,4 +1,5 @@
 import type { HandlerResult, WorkerError } from './types.js'
+import { randomUUID } from 'node:crypto'
 import type { OutboxClaimOptions } from '../../persistence/src/repository.js'
 
 class WorkerTimeoutError extends Error {
@@ -28,6 +29,7 @@ export interface DurableOutboxEvent {
 export interface DurableOutboxStore<E extends DurableOutboxEvent = DurableOutboxEvent> {
   claimPending(workspaceId: string, options?: OutboxClaimOptions): Promise<E[]>
   validateLease(workspaceId: string, id: string, leaseToken: string, now?: string): Promise<E>
+  acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now?: string): Promise<boolean>
   renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string): Promise<E>
   ack(workspaceId: string, id: string, leaseToken?: string): Promise<E>
   recordFailure(workspaceId: string, id: string, failure: WorkerError, nextAttemptAt: string, leaseToken?: string): Promise<E>
@@ -662,6 +664,23 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       // budget the event is terminal instead of being reclaimed forever.
       if ((leasedEvent.attempts ?? 0) > this.maxAttempts) {
         return await this.exhaustClaimBudget(leasedEvent, message)
+      }
+      // Lease validation proves a claim is current, but duplicated queue
+      // envelopes can share that same token across processes. The durable
+      // reservation is the cross-process right to execute its side effect.
+      const reserved = await this.store.acquireExecution(
+        event.workspaceId,
+        event.id,
+        leaseToken,
+        randomUUID(),
+        new Date(this.now()).toISOString(),
+      )
+      if (!reserved) {
+        // Do not ack: Redis represents identical envelopes by the same raw
+        // processing member, so acking a losing duplicate could remove the
+        // winning invocation's liveness hint. Its winner will ack it, or lease
+        // expiry will let restore() discard it safely.
+        return { state: 'queued', event }
       }
     } catch (leaseError) {
       return this.handleLeaseError(event, message, leaseError, false)

@@ -221,7 +221,7 @@ export const DEFAULT_SUITE_PENDING_ALLOWANCES: readonly DefaultSuitePendingAllow
   { file: 'packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/commercial-zero-side-effect-release.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'tests/outbox-lease-takeover.postgres.test.ts', pending: 1, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
-  { file: 'tests/outbox-retry.postgres.test.ts', pending: 5, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
+  { file: 'tests/outbox-retry.postgres.test.ts', pending: 7, binding: 'PERSISTENCE_RELEASE_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   // PLATFORM_MEDIA_SPEC_DATABASE_URL
   { file: 'packages/persistence/src/campaign-lifecycle.postgres.test.ts', pending: 1, binding: 'PLATFORM_MEDIA_SPEC_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },
   { file: 'packages/persistence/src/mapping-preflight-approval-repository.test.ts', pending: 1, binding: 'PLATFORM_MEDIA_SPEC_DATABASE_URL', executedBy: CI_POSTGRES_ACCEPTANCE_STEP },

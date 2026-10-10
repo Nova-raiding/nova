@@ -60,6 +60,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   const purgeRequests = []
   const cancelPurgeRequests = []
   let assetListReadCount = 0
+  let allowAssetListRecovery = false
   const trashRecord = (id, name, state = {}) => ({
     asset: { id, workspaceId, name, mimeType: 'image/png', sizeBytes: validPng.byteLength,
       sha256: 'c'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
@@ -97,9 +98,22 @@ test('downloads, decodes, and renders server-backed material previews in the rea
         status: 'active', roles: ['merchant_owner'], workspaceIds: [workspaceId],
       } })) })
     }
+    if (path === '/api/v1/platform-accounts') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [
+        { platform: 'taobao', accountId: 'material-preview-store', label: '素材测试店', storeName: '素材测试店', state: 'connected', dataMode: 'fixture', readEnabled: true, readable: true, writeEnabled: false },
+      ] })) })
+    }
+    if (path === '/api/v1/brand-scopes') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
+        settings: {}, revision: 0, series: [], assignments: [
+          { assetId: validAssetId, accountId: 'material-preview-store', seriesId: null, revision: 1 },
+          { assetId: invalidAssetId, accountId: 'material-preview-store', seriesId: null, revision: 1 },
+        ],
+      })) })
+    }
     if (path === '/api/v1/assets' || path === '/api/v1/assets/') {
       assetListReadCount += 1
-      if (assetListReadCount === 1) {
+      if (!allowAssetListRecovery) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
           request_id: 'material-preview-list-unavailable',
           error: { code: 'TEMPORARY_UNAVAILABLE', message: '素材列表暂时不可用' },
@@ -157,7 +171,12 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     const download = /^\/api\/v1\/assets\/([^/]+)\/download$/u.exec(path)
     if (download) {
       const assetId = decodeURIComponent(download[1])
-      downloads.push({ assetId, cookie: request.headers().cookie ?? '', accept: request.headers().accept })
+      downloads.push({
+        assetId,
+        cookie: request.headers().cookie ?? '',
+        workspaceId: request.headers()['x-workspace-id'] ?? '',
+        accept: request.headers().accept,
+      })
       if (assetId === validAssetId) {
         return route.fulfill({ status: 200, contentType: 'image/png', body: validPng })
       }
@@ -190,9 +209,11 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     await expect(workspace).toBeVisible()
     await expect(workspace.locator('.material-empty[role="alert"]')).toContainText('素材读取失败')
     const retryAssetRead = workspace.getByRole('button', { name: '重新读取素材' })
+    const initialAssetListReads = assetListReadCount
+    allowAssetListRecovery = true
     await retryAssetRead.click()
     await expect(workspace.locator('.material-empty[role="alert"]')).toHaveCount(0)
-    await expect.poll(() => assetListReadCount).toBe(2)
+    await expect.poll(() => assetListReadCount).toBe(initialAssetListReads + 1)
 
     const validCard = workspace.locator('article').filter({ hasText: '真实解码样图.png' })
     const renderedThumbnail = validCard.locator('.material-card-open img')
@@ -310,6 +331,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     expect(downloads.map(({ assetId }) => assetId).sort()).toEqual([invalidAssetId, validAssetId].sort())
     expect(downloads.every(({ accept }) => accept === 'application/octet-stream')).toBe(true)
     expect(downloads.every(({ cookie }) => cookie.includes('preview-auth-fixture=same-origin-session'))).toBe(true)
+    expect(downloads.every(({ workspaceId: requestWorkspaceId }) => requestWorkspaceId === workspaceId)).toBe(true)
   } finally {
     await context.close()
     await browser.close()

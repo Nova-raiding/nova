@@ -918,6 +918,112 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('requires current-session confirmation to disable a product despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { disabled: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.product.disable', arguments: { product_id: 'product_1', reason: '商家确认下架旧商品' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.product.disable', arguments: { product_id: 'product_1', reason: '商家确认下架旧商品' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { disabled: true } })
+      expect(forwarded).toEqual(['catalog.product.disable'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects a caller-supplied workspace on commercial notification read-state writes', async () => {
+    let forwarded = 0
+    const server = createServer(async (_req, res) => {
+      forwarded += 1
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { updated: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_bound', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'commercial.notifications.mark-read', arguments: { notification_id: 'notification_1', idempotency_key: 'read-state-key-1', workspace_id: 'ws_other' } } })}\n`)
+      const rejected = await nextLine(child.stdout)
+      expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(String(rejected.result.structuredContent.message)).toContain('通知读状态不接受调用方工作区')
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects catalog batch imports that mix its two declared input modes', async () => {
+    let forwarded = 0
+    const server = createServer(async (_req, res) => {
+      forwarded += 1
+      res.writeHead(400, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'LOCAL_SHOULD_NOT_FORWARD', message: 'test sentinel' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.import.batch', arguments: { products_json: '[{}]', source_asset_id: 'asset_table_1' } } })}\n`)
+      const rejected = await nextLine(child.stdout)
+      expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(String(rejected.result.structuredContent.message)).toContain('必须且只能选择一个输入模式')
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects image generation arguments that mix product-bound and unbound modes', async () => {
+    let forwarded = 0
+    const server = createServer(async (_req, res) => {
+      forwarded += 1
+      res.writeHead(400, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'LOCAL_SHOULD_NOT_FORWARD', message: 'test sentinel' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_bound', title: 'unbound product', asset_ids_json: '[\"asset_local\"]' } } })}\n`)
+      const rejected = await nextLine(child.stdout)
+      expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(String(rejected.result.structuredContent.message)).toContain('不能同时提供 product_id 与 title/asset_ids_json')
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('requires exactly one image-job lookup key before forwarding', async () => {
     let forwarded = 0
     const server = createServer((_req, res) => { forwarded += 1; res.writeHead(200).end('{}') })
@@ -2327,6 +2433,194 @@ describe('Codex stdio MCP bridge', () => {
   // a job id that is not bound to a rendering owned by the calling workspace).
   // The poller stays exactly as reachable as its producer. Both are listed
   // when the shared registry enables video; the API enforces all gates.
+  it('does not forward a video render request before current-session confirmation', async () => {
+    let forwarded = 0
+    const server = createServer(async (req, res) => {
+      forwarded += 1
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {} }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not forward a video storyboard request before current-session confirmation', async () => {
+    let forwarded = 0
+    const server = createServer(async (_req, res) => {
+      forwarded += 1
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { status: 'candidate' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '为已确认商品制作分镜', output: 'storyboard', context_json: '{}' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not forward an image edit request through the legacy write override without current-session confirmation', async () => {
+    let forwarded = 0
+    const server = createServer(async (req, res) => {
+      forwarded += 1
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { status: 'candidate' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.image.edit', arguments: { request_json: '{}' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('forwards an image edit exactly once only after explicit current-session confirmation', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      const result = requests.at(-1).method === 'workspace.interactive.confirm'
+        ? { enabled: true }
+        : { status: 'candidate', original_preserved: true }
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_image_confirm', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const editRequest = {
+      kind: 'image_local_edit', id: 'image-confirm-regression',
+      sourceImage: { id: 'asset-1', uri: 'asset://image-1', width: 1200, height: 1200 },
+      prompt: '只优化背景并保留商品本体',
+      region: { id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } },
+      constraints: { editableRegions: [{ id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } }], nonModifiableRegions: [] },
+      context: { brand: { id: 'brand-1', version: '1' }, product: { id: 'product-1', version: '1' }, rules: [{ id: 'rule-1', version: '1' }] },
+    }
+    const call = async (id: number, name: string, args: Record<string, unknown>) => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      return nextLine(child.stdout)
+    }
+    try {
+      const blocked = await call(1, 'multimodal.image.edit', { request_json: JSON.stringify(editRequest) })
+      expect(blocked.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(requests).toHaveLength(0)
+
+      const confirmed = await call(2, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
+      expect(confirmed.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      expect(requests.map(request => request.method)).toEqual(['workspace.interactive.confirm'])
+
+      const edited = await call(3, 'multimodal.image.edit', { request_json: JSON.stringify(editRequest) })
+      expect(edited.result).toMatchObject({ isError: false, structuredContent: { status: 'candidate', original_preserved: true } })
+      expect(requests.map(request => request.method)).toEqual(['workspace.interactive.confirm', 'multimodal.image.edit'])
+      expect(requests[1].params).toMatchObject({ workspace_id: 'ws_image_confirm', request_json: JSON.stringify(editRequest) })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not carry an image-edit confirmation from workspace A into workspace B', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      const result = requests.at(-1).method === 'workspace.interactive.confirm'
+        ? { enabled: true }
+        : { status: 'candidate', original_preserved: true }
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const startBridge = (workspace: string) => spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: workspace, MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const call = async (child: ReturnType<typeof spawn>, id: number, name: string, args: Record<string, unknown>) => {
+      const stdin = child.stdin
+      const stdout = child.stdout
+      if (!stdin || !stdout) throw new Error('Bridge child stdio is unavailable')
+      stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })}\n`)
+      return nextLine(stdout)
+    }
+    const editRequest = {
+      kind: 'image_local_edit', id: 'image-workspace-isolation',
+      sourceImage: { id: 'asset-1', uri: 'asset://image-1', width: 1200, height: 1200 },
+      prompt: '只优化背景并保留商品本体',
+      region: { id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } },
+      constraints: { editableRegions: [{ id: 'background', rect: { x: 0, y: 0, width: 1, height: 1 } }], nonModifiableRegions: [] },
+      context: { brand: { id: 'brand-1', version: '1' }, product: { id: 'product-1', version: '1' }, rules: [{ id: 'rule-1', version: '1' }] },
+    }
+    let bridgeA: ReturnType<typeof spawn> | undefined
+    let bridgeB: ReturnType<typeof spawn> | undefined
+    try {
+      bridgeA = startBridge('ws_confirm_a')
+      const confirmationA = await call(bridgeA, 1, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
+      expect(confirmationA.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      expect(requests).toHaveLength(1)
+      expect(requests[0]).toMatchObject({ method: 'workspace.interactive.confirm', params: { workspace_id: 'ws_confirm_a' } })
+      bridgeA.kill()
+      bridgeA = undefined
+
+      bridgeB = startBridge('ws_confirm_b')
+      const blocked = await call(bridgeB, 2, 'multimodal.image.edit', { request_json: JSON.stringify(editRequest) })
+      expect(blocked.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(requests).toHaveLength(1)
+
+      const confirmationB = await call(bridgeB, 3, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
+      expect(confirmationB.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      expect(requests.map(request => [request.method, request.params.workspace_id])).toEqual([
+        ['workspace.interactive.confirm', 'ws_confirm_a'],
+        ['workspace.interactive.confirm', 'ws_confirm_b'],
+      ])
+
+      const edited = await call(bridgeB, 4, 'multimodal.image.edit', { request_json: JSON.stringify(editRequest) })
+      expect(edited.result).toMatchObject({ isError: false, structuredContent: { status: 'candidate', original_preserved: true } })
+      expect(requests.map(request => [request.method, request.params.workspace_id])).toEqual([
+        ['workspace.interactive.confirm', 'ws_confirm_a'],
+        ['workspace.interactive.confirm', 'ws_confirm_b'],
+        ['multimodal.image.edit', 'ws_confirm_b'],
+      ])
+    } finally {
+      bridgeA?.kill()
+      bridgeB?.kill()
+      await close(server)
+    }
+  })
+
   it('lists the queued-video poller with its producer', async () => {
     const { tools, child } = await listBridgeTools({})
     try {
@@ -3056,6 +3350,109 @@ describe('Codex stdio MCP bridge', () => {
         { name: 'catalog.image.get', args: { job_id: 'job_fixture' } },
       ])
       await page.close()
+    } finally {
+      child.kill()
+      await browser.close()
+    }
+  }, 45_000)
+
+  it('refreshes an image candidate with an expired selection ticket without saving it', async () => {
+    const { child } = await listBridgeTools({})
+    if (!child.stdin || !child.stdout) throw new Error('bridge stdio unavailable')
+    const browser = await chromium.launch({ headless: true })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 42, method: 'resources/read', params: { uri: 'ui://merchant-marketing/image-candidate-choice-v15.html' } })}\n`)
+      const read = await nextLine(child.stdout)
+      const html = read.result.contents[0].text as string
+      const payload = {
+        candidate_state: { state: 'ready' },
+        selection_request: { job_id: 'job_expired_ticket', expected_revision: '7', candidates: [{ ordinal: 1, visual_ref: 'visual_expired', selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
+        image_urls: [],
+      }
+      const ticket = { visual_ref: 'visual_expired', nonce_hash: 'a'.repeat(64), intent_hash: 'b'.repeat(64), expires_at: '2000-01-01T00:00:00.000Z' }
+      const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pXcAAAAASUVORK5CYII='
+      const page = await browser.newPage()
+      await page.addInitScript(({ payload, ticket, image }) => {
+        ;(window as any).__calls = []
+        ;(window as any).openai = {
+          toolOutput: payload,
+          toolResponseMetadata: { mcp_tool_result: { _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content: [{ type: 'image', mimeType: 'image/png', data: image }] } },
+          callTool: async (name: string, args: Record<string, unknown>) => {
+            ;(window as any).__calls.push({ name, args })
+            return { isError: true, structuredContent: { code: 'LOCAL_REFRESH_FIXTURE' } }
+          },
+        }
+      }, { payload, ticket, image })
+      await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+      await page.locator('input[type="radio"]').waitFor({ state: 'visible' })
+      await page.locator('input[type="radio"]').check()
+      const refresh = page.getByRole('button', { name: '刷新候选' })
+      await refresh.waitFor({ state: 'visible' })
+      expect(await refresh.isEnabled()).toBe(true)
+      await refresh.click()
+      await page.waitForFunction(() => (window as any).__calls.length === 1)
+      expect(await page.evaluate(() => (window as any).__calls)).toEqual([
+        { name: 'catalog.image.get', args: { job_id: 'job_expired_ticket' } },
+      ])
+      expect(await page.locator('#status').textContent()).toContain('刷新失败')
+    } finally {
+      child.kill()
+      await browser.close()
+    }
+  }, 45_000)
+
+  it('ignores a stale image refresh after the host replaces the candidate source', async () => {
+    const { child } = await listBridgeTools({})
+    if (!child.stdin || !child.stdout) throw new Error('bridge stdio unavailable')
+    const browser = await chromium.launch({ headless: true })
+    let finishRefresh: ((result: unknown) => void) | undefined
+    let resolveRefreshStarted: (() => void) | undefined
+    const refreshStarted = new Promise<void>(resolve => { resolveRefreshStarted = resolve })
+    const refreshCalls: Array<{ name: string; args: Record<string, unknown> }> = []
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 43, method: 'resources/read', params: { uri: 'ui://merchant-marketing/image-candidate-choice-v15.html' } })}\n`)
+      const read = await nextLine(child.stdout)
+      const html = read.result.contents[0].text as string
+      const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pXcAAAAASUVORK5CYII='
+      const makePayload = (jobId: string, visualRef: string, subject: string) => ({
+        candidate_state: { state: 'ready' },
+        selection_request: { job_id: jobId, expected_revision: '1', candidates: [{ ordinal: 1, visual_ref: visualRef, selectable: true, subject_label: subject, availability_label: '可用' }] },
+        image_urls: [],
+      })
+      const oldPayload = makePayload('job_old', 'visual_old', '旧商品')
+      const newPayload = makePayload('job_current', 'visual_current', '当前商品')
+      const oldTicket = { visual_ref: 'visual_old', nonce_hash: 'a'.repeat(64), intent_hash: 'b'.repeat(64), expires_at: '2000-01-01T00:00:00.000Z' }
+      const refreshedOldTicket = { ...oldTicket, expires_at: '2099-01-01T00:00:00.000Z' }
+      const currentTicket = { visual_ref: 'visual_current', nonce_hash: 'c'.repeat(64), intent_hash: 'd'.repeat(64), expires_at: '2099-01-01T00:00:00.000Z' }
+      const content = [{ type: 'image', mimeType: 'image/png', data: image }]
+      const page = await browser.newPage()
+      await page.exposeFunction('mockImageHostCall', (name: string, args: Record<string, unknown>) => {
+        refreshCalls.push({ name, args })
+        resolveRefreshStarted?.()
+        return new Promise(resolve => { finishRefresh = resolve })
+      })
+      await page.addInitScript(({ payload, ticket, content }) => {
+        ;(window as any).openai = {
+          toolOutput: payload,
+          toolResponseMetadata: { mcp_tool_result: { _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content } },
+          callTool: (name: string, args: Record<string, unknown>) => (window as any).mockImageHostCall(name, args),
+        }
+      }, { payload: oldPayload, ticket: oldTicket, content })
+      await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+      await page.locator('input[type="radio"]').waitFor({ state: 'visible' })
+      await page.getByRole('button', { name: '刷新候选' }).click()
+      await refreshStarted
+      expect(refreshCalls).toEqual([{ name: 'catalog.image.get', args: { job_id: 'job_old' } }])
+
+      await page.evaluate(({ payload, ticket, content }) => {
+        window.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: payload, _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content } }, '*')
+      }, { payload: newPayload, ticket: currentTicket, content })
+      expect(await page.locator('input[type="radio"]').getAttribute('aria-label')).toContain('当前商品')
+
+      finishRefresh?.({ structuredContent: oldPayload, _meta: { 'merchant/candidateSelectionTickets': [refreshedOldTicket] }, content })
+      await page.waitForFunction(() => document.querySelector('#candidate-root')?.getAttribute('aria-busy') === 'false')
+      expect(await page.locator('input[type="radio"]').getAttribute('aria-label')).toContain('当前商品')
+      expect(refreshCalls).toHaveLength(1)
     } finally {
       child.kill()
       await browser.close()
@@ -4983,6 +5380,360 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'API_UNAVAILABLE' } })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before granting brand-unit access despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { granted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const grant = { brand_id: 'brand_1', external_subject: 'member_2', role: 'admin', reason: '授予工作区管理员权限' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'brand-unit.access.grant', arguments: grant } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'brand-unit.access.grant', arguments: grant } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { granted: true } })
+      // Local confirmation is stored in this stdio session and is not sent to the API.
+      expect(forwarded).toEqual(['brand-unit.access.grant'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before binding a store to a brand unit despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { brand_id: 'brand_1', account_id: 'store_1' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const binding = { brand_id: 'brand_1', platform: 'taobao', account_id: 'store_1', expected_revision: '3', reason: '将授权店铺绑定到指定品' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'brand-unit.bind-store', arguments: binding } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'brand-unit.bind-store', arguments: binding } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { brand_id: 'brand_1', account_id: 'store_1' } })
+      expect(forwarded).toEqual(['brand-unit.bind-store'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before accepting a workspace invitation despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true, workspace_id: 'ws_invited' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const acceptance = { expected_revision: '2' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.invitation.accept', arguments: acceptance } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.invitation.accept', arguments: acceptance } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true, workspace_id: 'ws_invited' } })
+      expect(forwarded).toEqual(['workspace.invitation.accept'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before reactivating a workspace despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { status: 'active' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const activation = { reason: '管理员确认后恢复商家工作区' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.activate', arguments: activation } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.activate', arguments: activation } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { status: 'active' } })
+      expect(forwarded).toEqual(['workspace.activate'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before requesting a full workspace data export despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { request_id: 'export_1', status: 'pending' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const exportRequest = { reason: '管理员请求导出工作区全部自有数据', idempotency_key: 'export-request-1' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.data.export.request', arguments: exportRequest } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.data.export.request', arguments: exportRequest } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { request_id: 'export_1', status: 'pending' } })
+      expect(forwarded).toEqual(['workspace.data.export.request'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation for billable merchant.first_value drafts but keeps static examples available', async () => {
+    const forwarded: Array<{ method: string; params: Record<string, unknown> }> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { execution: { modelCalled: false, providerExecuted: false }, preview: '安全预览' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const draft = { draft: 'true', draft_title: '本地演示商品', draft_prompt: '生成一句安全的商品介绍', idempotency_key: 'first-value-draft-1' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { example: 'true' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { execution: { modelCalled: false, providerExecuted: false } } })
+      expect(forwarded).toHaveLength(1)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merchant.first_value', arguments: draft } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toHaveLength(1)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merchant.first_value', arguments: draft } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { execution: { modelCalled: false, providerExecuted: false } } })
+      expect(forwarded.map(request => request.params)).toEqual([{ example: 'true', workspace_id: 'ws_test' }, { ...draft, workspace_id: 'ws_test' }])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before approving asset rights despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { id: 'asset_1', rightsStatus: 'approved', aiModificationAllowed: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const rights = { asset_id: 'asset_1', rights_status: 'approved', rights_scope: 'commercial_authorized', ai_modification_allowed: 'true' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.rights.update', arguments: rights } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'asset.rights.update', arguments: rights } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { id: 'asset_1', rightsStatus: 'approved', aiModificationAllowed: true } })
+      expect(forwarded).toEqual(['asset.rights.update'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('requires current-session confirmation before authorizing image generation from an asset despite the legacy write override', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true, job_id: 'image_job_1' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const confirmation = { job_id: 'image_job_1' }
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.generation.confirm', arguments: confirmation } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(forwarded).toEqual([])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'asset.generation.confirm', arguments: confirmation } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true, job_id: 'image_job_1' } })
+      expect(forwarded).toEqual(['asset.generation.confirm'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps the retired subscription.change contract out of merchant discovery and rejects stale calls locally', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {} }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = await nextLine(child.stdout)
+      const names = listed.result.tools.map((tool: { name: string }) => tool.name)
+      expect(names).not.toContain('subscription.change')
+      expect(names).toEqual(expect.arrayContaining([
+        'commercial.upgrade.quote.create',
+        'commercial.checkout.create',
+        'commercial.order.create',
+        'commercial.order.payment.create',
+      ]))
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'subscription.change', arguments: { to_plan_code: 'pro', billing_cycle: 'monthly', channel: 'alipay', reason: '迁移旧套餐变更请求', idempotency_key: 'retired-subscription-change-1' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
+      expect(forwarded).toEqual([])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps a completed video unavailable when the archived asset scan is blocked', async () => {
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      requests.push(JSON.parse(body))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        provider_job_id: 'video-job-blocked',
+        status: 'completed',
+        archive_state: 'archived',
+        scan_status: 'blocked',
+        asset_id: 'asset-video-blocked',
+        availability_warning: '视频扫描尚未确认通过，暂不能作为正式交付。',
+        rendering: { status: 'completed', archiveState: 'archived', providerJobId: 'video-job-blocked' },
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-blocked' } } })}\n`)
+      const response = (await nextLine(child.stdout)).result
+      expect(response).toMatchObject({ isError: false, structuredContent: {
+        provider_job_id: 'video-job-blocked', status: 'completed', archive_state: 'archived', scan_status: 'blocked',
+      } })
+      expect(response.structuredContent).not.toHaveProperty('download_path')
+      expect(response.content[0].text).toBe('视频已生成，文件或安全检查尚未全部确认。')
+      expect(response.content[0].text).not.toContain('归档并通过自动安全检查')
+      expect(requests).toHaveLength(1)
+      expect(requests[0]).toMatchObject({ method: 'multimodal.video.get', params: { provider_job_id: 'video-job-blocked', workspace_id: 'ws_test' } })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('rejects an unsupported video output mode before forwarding the request', async () => {
+    const forwarded: Array<{ method: string; params: Record<string, unknown> }> = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品视频', output: 'mp4', context_json: '{}' } } })}\n`)
+      const response = (await nextLine(child.stdout)).result
+      expect(response).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(forwarded).toEqual([])
     } finally {
       child.kill()
       await close(server)

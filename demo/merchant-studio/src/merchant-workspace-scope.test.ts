@@ -4,6 +4,8 @@ import {
   clearMerchantWorkspaceScope,
   configureMerchantWorkspaceScope,
   getMerchantWorkspaceScope,
+  fetchProductPage,
+  fetchTaskPage,
   requestApi,
   requestMcp,
 } from './api.js'
@@ -71,5 +73,46 @@ describe('merchant active workspace request boundary', () => {
     resolveResponse(envelope('ws_alpha', { items: [] }))
     await expect(pending).rejects.toMatchObject({ code: 'API_WORKSPACE_CONTEXT_CHANGED' })
     expect(getMerchantWorkspaceScope().activeWorkspaceId).toBe('ws_beta')
+  })
+
+  it('rejects a late product-directory page after switching workspaces', async () => {
+    configureMerchantWorkspaceScope(['ws_alpha', 'ws_beta'], 'ws_alpha')
+    let resolveResponse!: (response: Response) => void
+    const fetch = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(resolve => { resolveResponse = resolve }))
+    vi.stubGlobal('fetch', fetch)
+    const pendingPage = fetchProductPage('/api', { query: 'coat', limit: 20, offset: 0 })
+
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('x-workspace-id')).toBe('ws_alpha')
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/v1/products?limit=20&offset=0&query=coat')
+    activateMerchantWorkspace('ws_beta')
+    resolveResponse(envelope('ws_alpha', { items: [{ id: 'alpha-private-product' }], total: 1, limit: 20, offset: 0 }))
+
+    await expect(pendingPage).rejects.toMatchObject({ code: 'API_WORKSPACE_CONTEXT_CHANGED' })
+    expect(getMerchantWorkspaceScope().activeWorkspaceId).toBe('ws_beta')
+  })
+
+  it('keeps the B task page when the A task-list response arrives late', async () => {
+    configureMerchantWorkspaceScope(['ws_alpha', 'ws_beta'], 'ws_alpha')
+    let resolveAlpha!: (response: Response) => void
+    const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const workspace = new Headers(init?.headers).get('x-workspace-id')
+      if (workspace === 'ws_alpha') return new Promise<Response>(resolve => { resolveAlpha = resolve })
+      return Promise.resolve(envelope('ws_beta', { items: [{ id: 'task-beta-only', workspaceId: 'ws_beta' }], total: 1, limit: 50, offset: 0 }))
+    })
+    vi.stubGlobal('fetch', fetch)
+    let visibleTasks: Array<{ id: string; workspaceId: string }> = []
+    const lateAlpha = fetchTaskPage('/api', { query: 'alpha' })
+      .then(page => { visibleTasks = page.items })
+      .catch(() => undefined)
+
+    activateMerchantWorkspace('ws_beta')
+    const betaPage = await fetchTaskPage('/api', { query: 'beta' })
+    visibleTasks = betaPage.items
+    expect(visibleTasks.map(task => task.id)).toEqual(['task-beta-only'])
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('x-workspace-id')).toBe('ws_beta')
+
+    resolveAlpha(envelope('ws_alpha', { items: [{ id: 'task-alpha-private', workspaceId: 'ws_alpha' }], total: 1, limit: 50, offset: 0 }))
+    await lateAlpha
+    expect(visibleTasks).toEqual([{ id: 'task-beta-only', workspaceId: 'ws_beta' }])
   })
 })

@@ -6,24 +6,39 @@ import { MarketingQueueFiltersSection } from "../components/tasks/MarketingQueue
 import { OperationalGovernanceSection } from "../components/tasks/OperationalGovernanceSection";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button, Card, Col, Row, Statistic } from "antd";
-import { useEffect, useRef } from "react";
-import { platforms, type Platform, type StoreDirectory } from "../types/ops.js";
+import { useEffect, useRef, useState } from "react";
+import { platforms, type Platform, type QueueFilters, type StoreDirectory } from "../types/ops.js";
 interface TasksPageProps {
   model: OpsConsoleModel;
 }
 
 export function TasksPage({ model }: TasksPageProps) {
   const appliedQueryKey = useRef("");
+  const urlManagedFilters = useRef<QueueFilters>({});
+  const [locationSearch, setLocationSearch] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.search,
+  );
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const updateSearch = () => setLocationSearch(window.location.search);
+    window.addEventListener("popstate", updateSearch);
+    window.addEventListener("hashchange", updateSearch);
+    return () => {
+      window.removeEventListener("popstate", updateSearch);
+      window.removeEventListener("hashchange", updateSearch);
+    };
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(locationSearch);
     const taskId = params.get("task_id")?.trim();
+    const productId = (params.get("product_id") ?? params.get("productId"))?.trim();
+    const state = params.get("state")?.trim();
     const requestedPlatform = params.get("platform")?.trim();
     const requestedAccountId = params.get("accountId")?.trim();
     const hasStoreQuery = params.has("platform") || params.has("accountId");
     const scope = model.authorization.scope;
     const scopeKey = `${scope.kind}:${scope.id ?? ""}:${model.opsSession?.workspace_id ?? ""}`;
-    const queryKey = `${scopeKey}|${window.location.search}`;
-    if (!taskId && !hasStoreQuery) return;
+    const queryKey = `${scopeKey}|${locationSearch}`;
+    if (!taskId && !productId && !state && !hasStoreQuery && Object.keys(urlManagedFilters.current).length === 0) return;
     if (appliedQueryKey.current === queryKey) return;
     // The initial bootstrap load also hydrates the authorized store directory.
     // Wait for it before resolving an account deep link so an arbitrary query
@@ -40,14 +55,22 @@ export function TasksPage({ model }: TasksPageProps) {
       );
       if (authorizedStore) storeFilters = { platform: requestedPlatform as Platform, accountId: requestedAccountId };
     }
-    const baseFilters = hasStoreQuery
-      ? { ...model.queueFilters, platform: undefined, accountId: undefined }
-      : model.queueFilters;
-    const queueFilters = {
-      ...baseFilters,
+    const nextUrlFilters: QueueFilters = {
       ...storeFilters,
       ...(taskId ? { taskId } : {}),
+      ...(productId ? { productId } : {}),
+      ...(state ? { state } : {}),
     };
+    const queueFilters: QueueFilters = { ...model.queueFilters };
+    // Remove a value only when it is still the value previously injected by
+    // the URL. A user's later manual edit remains theirs when navigating back.
+    for (const key of Object.keys(urlManagedFilters.current) as Array<keyof QueueFilters>) {
+      if (!(key in nextUrlFilters) && queueFilters[key] === urlManagedFilters.current[key]) {
+        delete queueFilters[key];
+      }
+    }
+    Object.assign(queueFilters, nextUrlFilters);
+    urlManagedFilters.current = nextUrlFilters;
     appliedQueryKey.current = queryKey;
     model.setQueueFilters(queueFilters);
     void model.load({ queueFilters });
@@ -61,9 +84,11 @@ export function TasksPage({ model }: TasksPageProps) {
       const query = params.toString();
       const normalizedUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
       window.history.replaceState(window.history.state, "", normalizedUrl);
-      appliedQueryKey.current = `${scopeKey}|${query ? `?${query}` : ""}`;
+      const normalizedSearch = query ? `?${query}` : "";
+      appliedQueryKey.current = `${scopeKey}|${normalizedSearch}`;
+      setLocationSearch(normalizedSearch);
     }
-  }, [model.authorization.scope, model.loading, model.opsSession?.workspace_id, model.queueFilters, model.setQueueFilters, model.load, model.storeDirectory]);
+  }, [locationSearch, model.authorization.scope, model.loading, model.opsSession?.workspace_id, model.queueFilters, model.setQueueFilters, model.load, model.storeDirectory]);
   const canReadPlatformTasks = model.authorization.can("workspace.directory.read");
   const canReadPlatformMarketing = model.authorization.can("marketing.summary.read");
   const canReadMarketingQueue = model.authorization.can("marketing.queue.read");

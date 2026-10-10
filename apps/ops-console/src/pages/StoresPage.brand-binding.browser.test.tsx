@@ -45,15 +45,17 @@ describe("StoresPage brand-store binding browser flow", () => {
             const initialBrand = { id: 'brand-scope-1', title: '隔离品牌', revision: 7, platforms: [] };
             const boundBrand = { ...initialBrand, platforms: [{ id: 'brand-scope-1:jd', platform: 'jd', title: '京东', stores: [{ id: 'bound-jd-store', accountId: store.accountId }] }] };
             window.__brandBindingState = { calls: [], loads: 0 };
+            const testWorkbench = new URLSearchParams(location.search).get('workbench') === 'platform' ? 'platform' : 'workspace';
+            const testScope = { kind: testWorkbench, id: testWorkbench === 'platform' ? 'platform' : 'ws-brand-scope' };
 
             function Harness() {
               const [brands, setBrands] = useState([initialBrand]);
               const model = {
                 authorization: {
-                  scope: { kind: 'workspace', id: 'ws-brand-scope' },
-                  roles: ['workspace_owner'],
-                  can: capability => ['customer.content.read', 'customer.content.update'].includes(capability),
-                  scopeFor: () => ({ kind: 'workspace', id: 'ws-brand-scope' }),
+                  scope: testScope,
+                  roles: [testWorkbench === 'platform' ? 'platform_ops' : 'workspace_owner'],
+                  can: capability => ['customer.content.read', 'customer.content.update', 'workspace.directory.read', 'store.connection.update'].includes(capability),
+                  scopeFor: () => testScope,
                 },
                 dataSetError: () => undefined,
                 loading: false,
@@ -76,7 +78,7 @@ describe("StoresPage brand-store binding browser flow", () => {
               return React.createElement(App, null, React.createElement(StoresPage, { model, onNavigate: () => {} }));
             }
 
-            localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws-brand-scope', actorId: 'owner-fixture', token: 'fixture-token', workbench: 'workspace' }));
+            localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws-brand-scope', actorId: 'owner-fixture', token: 'fixture-token', workbench: testWorkbench }));
             createRoot(document.getElementById('root')).render(React.createElement(Harness));
           `;
         },
@@ -139,8 +141,8 @@ describe("StoresPage brand-store binding browser flow", () => {
     } finally { await page.close(); }
   }, 45_000);
 
-  it("registers a credential-free store through the page RPC with the chosen workspace scope", async () => {
-    const page = await openPage();
+  it("registers a credential-free store through the platform-workbench page RPC", async () => {
+    const page = await openPlatformPage();
     const requests: BindRequest[] = [];
     await page.route(`${baseUrl}/api/mcp`, async route => {
       const request = route.request();
@@ -179,8 +181,8 @@ describe("StoresPage brand-store binding browser flow", () => {
       expect(requests).toEqual([{
         method: "ops.platform.store.record.create",
         params: { workspace_id: "ws-brand-scope", platform: "taobao", account_id: "manual-store-route", reason: "验证运营台实际登记路由" },
-        workspaceHeader: "ws-brand-scope",
-        workbenchHeader: "workspace",
+        workspaceHeader: undefined,
+        workbenchHeader: "platform",
       }]);
     } finally { await page.close(); }
   }, 45_000);
@@ -220,14 +222,23 @@ describe("StoresPage brand-store binding browser flow", () => {
     await page.getByText("隔离品牌", { exact: true }).waitFor();
     return page;
   }
+
+  async function openPlatformPage(): Promise<Page> {
+    if (!browser) throw new Error("Chromium did not start");
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(15_000);
+    await page.goto(`${baseUrl}/__brand-store-binding?workbench=platform`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.getByRole("button", { name: "登记人工店铺", exact: true }).waitFor();
+    return page;
+  }
 });
 
 async function chooseUnboundStore(page: Page) {
   const select = page.getByLabel("隔离品牌待绑定店铺");
   await select.click();
-      await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).waitFor();
+  await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).waitFor();
   expect(await page.getByText("已撤销店铺（tmall-revoked）", { exact: true }).count()).toBe(0);
-      await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).click();
+  await page.getByText("待读授权店铺（jd:store-unbound）", { exact: true }).click();
 }
 
 declare global {

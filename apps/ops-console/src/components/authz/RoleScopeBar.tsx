@@ -19,7 +19,7 @@ const scopeLabel = (authorization: AuthorizationProjection) => {
   const { scope } = authorization;
   if (scope.kind === "platform") return "平台全局";
   if (scope.kind === "controlled_support") return `受控支持 · ${scope.id ?? "未识别企业主体"}`;
-  const prefix = { workspace: "企业主体", brand: "品牌", store: "店铺" }[scope.kind];
+  const prefix = { account: "店铺账号", workspace: "企业主体", brand: "品牌", store: "店铺" }[scope.kind];
   return `${prefix} · ${scope.id ?? "未识别"}`;
 };
 

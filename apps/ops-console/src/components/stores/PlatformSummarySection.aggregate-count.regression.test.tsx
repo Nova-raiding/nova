@@ -24,7 +24,7 @@ describe('platform summary aggregate counts', () => {
     expect(markup).toContain('>5<');
     expect(markup).not.toContain('platform-aggregate:');
 
-    const directoryMarkup = renderToStaticMarkup(<StoreDirectorySection storeDirectory={stores} canPlatformOps onSaveAlias={async () => true} onRevoke={async () => undefined} />);
+    const directoryMarkup = renderToStaticMarkup(<StoreDirectorySection storeDirectory={stores} canManageStoreConnections onSaveAlias={async () => true} onRevoke={async () => undefined} />);
     expect(directoryMarkup).toContain('5 个已登记店铺');
     expect(directoryMarkup).toContain('共 1 个平台汇总组');
     expect(directoryMarkup).toContain('5 个淘宝店铺');

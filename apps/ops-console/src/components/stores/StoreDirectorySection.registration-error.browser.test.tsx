@@ -38,7 +38,7 @@ describe("manual store registration failure recovery", () => {
             };
             const workspaces = [{ workspaceId: 'ws_test', enterpriseName: '隔离测试企业', status: 'active' }];
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canPlatformOps: true, workspaces, onRegisterManualStore: register,
+              storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canManageStoreConnections: true, workspaces, onRegisterManualStore: register,
               onSaveAlias: async () => false, onRevoke: async () => undefined,
             })));
           `;

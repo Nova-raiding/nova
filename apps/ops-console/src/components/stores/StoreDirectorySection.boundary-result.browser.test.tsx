@@ -39,7 +39,7 @@ describe("manual store registration boundary result", () => {
             };
             const workspaces = [{ workspaceId: 'ws_test', enterpriseName: '隔离测试企业', status: 'active' }];
             createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoreDirectorySection, {
-              storeDirectory: [], canPlatformOps: true, workspaces, onRegisterManualStore: register,
+              storeDirectory: [], canManageStoreConnections: true, workspaces, onRegisterManualStore: register,
               onSaveAlias: async () => false, onRevoke: async () => undefined,
             })));
           `;

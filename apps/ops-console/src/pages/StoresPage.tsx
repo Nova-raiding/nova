@@ -36,6 +36,19 @@ export function canScanCanonicalBackfill(platformScope: boolean, canUpdate: bool
   return platformScope && canUpdate && updateScope === "platform";
 }
 
+/** Store connection grants are account-scoped. Keep row actions hidden from
+ * accounts outside the server-projected grant, even when the capability itself
+ * is present for another account in the directory. */
+export function canManageStoreAccount(accountId: string, scope?: { kind: string; id?: string; ids?: readonly string[] }) {
+  if (scope?.kind !== "account") return false;
+  const allowedIds = scope.ids ?? (scope.id ? [scope.id] : []);
+  return allowedIds.includes(accountId);
+}
+
+export function canRegisterManualStore(platformScope: boolean, canUpdate: boolean, updateScope?: { kind: string }) {
+  return platformScope && canUpdate && updateScope?.kind === "platform";
+}
+
 export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPageProps & { onNavigate: (domain: OpsDomain) => void; onNavigateWithQuery?: (domain: OpsDomain, query: Record<string, string | undefined>) => void }) {
   const [conflictWorkspaceId, setConflictWorkspaceId] = useState("");
   const storeLoadError = model.dataSetError("workspace.health", "ops.stores.list");
@@ -84,14 +97,15 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
       } : undefined} />
       {canReadPlatformStoreDirectory ? <StoreDirectorySection
         storeDirectory={model.storeDirectory}
-        canPlatformOps={model.canPlatformOps}
+        canManageStoreConnections={model.authorization.can("store.connection.update")}
+        canManageStoreConnection={(store) => canManageStoreAccount(store.accountId, model.authorization.scopeFor("store.connection.update") as { kind: string; id?: string; ids?: readonly string[] } | undefined)}
         loading={model.loading}
         error={storeDetailError}
         onRetry={() => void model.load()}
         onSaveAlias={model.saveStoreAlias}
         onRevoke={model.revokeStore}
         workspaces={model.workspaceDirectory?.items ?? []}
-        onRegisterManualStore={async ({ workspaceId, platform, accountId, storeAlias, reason }) => {
+        onRegisterManualStore={canRegisterManualStore(platformScope, model.authorization.can("store.connection.update"), model.authorization.scopeFor("store.connection.update")) ? async ({ workspaceId, platform, accountId, storeAlias, reason }) => {
           const response = await rpcForWorkspace<{ connection?: { mode?: string; token_state?: string; credential_free?: boolean; authorization_receipt?: unknown }; applies_to_store_boundary?: boolean }>(workspaceId, "ops.platform.store.record.create", {
             workspace_id: workspaceId, platform, account_id: accountId, ...(storeAlias ? { store_alias: storeAlias } : {}), reason,
           });
@@ -100,7 +114,7 @@ export function StoresPage({ model, onNavigate, onNavigateWithQuery }: StoresPag
           }
           await model.load();
           return response.applies_to_store_boundary;
-        }}
+        } : undefined}
       /> : null}
       {platformScope && model.authorization.can("customer.manual_import") && <PlatformManualProductImport workspaces={model.workspaceDirectory?.items ?? []} />}
       <AutomationScopeSection

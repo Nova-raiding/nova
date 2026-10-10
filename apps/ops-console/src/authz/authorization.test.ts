@@ -38,6 +38,24 @@ describe("authorization projection", () => {
     expect(authorization.can("marketing.queue.update")).toBe(false);
   });
 
+  it("preserves account-scoped platform store grants without widening them", () => {
+    const authorization = createAuthorizationProjection(session(["platform_ops"], {
+      workbench: "platform",
+      effective_permissions: [
+        { capability: "store.connection.update", effect: "allow", scope: { type: "account", ids: ["acct_1"] } },
+      ],
+    }), true);
+    expect(authorization.can("store.connection.update")).toBe(true);
+    expect(authorization.scopeFor("store.connection.update")).toEqual({ kind: "account", id: "acct_1", ids: ["acct_1"] });
+    const workspaceSession = createAuthorizationProjection(session(["workspace_owner"], {
+      workbench: "workspace",
+      effective_permissions: [
+        { capability: "store.connection.update", effect: "allow", scope: { type: "account", ids: ["acct_1"] } },
+      ],
+    }), true);
+    expect(workspaceSession.can("store.connection.update")).toBe(false);
+  });
+
   it("fails closed for an effective permission with an unknown effect", () => {
     const authorization = createAuthorizationProjection(session(["workspace_owner"], {
       effective_permissions: [

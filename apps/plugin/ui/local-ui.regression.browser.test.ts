@@ -70,6 +70,56 @@ describe('packaged MCP App UI regressions', () => {
       await page.close()
     }
   }, 15000)
+
+  it('does not expose a merchant portal action unless a catalog item is approved, executable, and public', async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+    const page = await pageWithHost(rechargeHtml, async (name, args) => {
+      calls.push({ name, args })
+      if (name === 'billing.status') return { structuredContent: { allowed: false, availability: 'unavailable', access_revision: 'rev-1', viewer: { available_scopes: ['mine'] }, next_actions: [] } }
+      if (name === 'commercial.catalog.get') return { structuredContent: { items: [
+        { code: 'draft-offer', lifecycle: 'draft', executable: true, visibility: 'public', priceFen: 100, currency: 'CNY' },
+        { code: 'not-executable', lifecycle: 'approved', executable: false, visibility: 'public', priceFen: 200, currency: 'CNY' },
+        { code: 'private-offer', lifecycle: 'approved', executable: true, visibility: 'private', priceFen: 300, currency: 'CNY' },
+      ] } }
+      throw new Error(`Unexpected tool: ${name}`)
+    })
+    try {
+      await page.locator('#tab-catalog').click()
+      await page.waitForFunction(() => document.getElementById('catalogList')?.textContent?.includes('当前没有可执行的公开套餐。'))
+      expect(await page.locator('#catalogList [data-open-merchant-portal]').count()).toBe(0)
+      expect(await page.locator('#catalogList').textContent()).not.toContain('draft-offer')
+      expect(calls.map(call => call.name)).toEqual(['billing.status', 'commercial.catalog.get'])
+      expect(calls.some(call => call.name === 'billing.recharge.create' || call.name === 'commercial.checkout.create')).toBe(false)
+    } finally {
+      await page.close()
+    }
+  }, 15000)
+
+  it('keeps an unknown creative-point balance pending and exposes no recovery action', async () => {
+    const calls: string[] = []
+    const page = await pageWithHost(rechargeHtml, async (name) => {
+      calls.push(name)
+      if (name === 'billing.status') return { structuredContent: {
+        allowed: false,
+        balance_state: 'unknown',
+        availability: 'unknown',
+        point_reservation_status: 'unknown',
+        next_actions: [],
+      } }
+      throw new Error(`Unexpected tool: ${name}`)
+    })
+    try {
+      await page.waitForFunction(() => document.getElementById('recoveryState')?.textContent?.includes('没有可执行的恢复入口'))
+      expect(await page.locator('#balance').textContent()).toBe('待确认')
+      expect(await page.locator('#reservedPoints').textContent()).toBe('待确认')
+      expect(await page.locator('#accessState').textContent()).toBe('阻断')
+      expect(await page.locator('#overviewText').textContent()).toContain('所有商家业务已安全阻断')
+      expect(await page.locator('#recoveryActions button').count()).toBe(0)
+      expect(calls).toEqual(['billing.status'])
+    } finally {
+      await page.close()
+    }
+  }, 15000)
 })
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

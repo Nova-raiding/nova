@@ -19,6 +19,7 @@ const authorizedEvent = (overrides: Partial<DurableOutboxEvent> = {}): DurableOu
 
 class Store implements DurableOutboxStore {
   readonly events = new Map<string, DurableOutboxEvent>()
+  readonly executionOwners = new Set<string>()
   claimCount = 0
   renewCount = 0
   constructor(initial: DurableOutboxEvent) { this.events.set(initial.id, initial) }
@@ -35,6 +36,7 @@ class Store implements DurableOutboxStore {
         leaseToken: `lease_${this.claimCount}`,
         leaseUntil: new Date(now + (options.leaseMs ?? 30_000)).toISOString(),
       }
+      this.executionOwners.delete(candidate.id)
       this.events.set(candidate.id, claimed)
       return { ...claimed }
     })
@@ -44,6 +46,12 @@ class Store implements DurableOutboxStore {
     if (!current || current.leaseToken !== leaseToken || !current.leaseUntil || Date.parse(current.leaseUntil) <= Date.parse(now)) throw staleLeaseError()
     return { ...current }
   }
+  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<boolean> {
+    const current = this.events.get(id)
+    if (!current || current.leaseToken !== leaseToken || this.executionOwners.has(id)) return false
+    this.executionOwners.add(id)
+    return true
+  }
   async renewLease(_workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<DurableOutboxEvent> {
     const current = await this.validateLease(_workspaceId, id, leaseToken, now)
     this.renewCount += 1
@@ -52,10 +60,12 @@ class Store implements DurableOutboxStore {
     return { ...renewed }
   }
   async ack(_workspaceId: string, id: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const updated = { ...this.events.get(id)!, publishedAt: new Date().toISOString() }
     this.events.set(id, updated); return updated
   }
   async releaseClaim(_workspaceId: string, id: string, leaseToken?: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const current = this.events.get(id)
     if (!current || (leaseToken !== undefined && current.leaseToken !== leaseToken)) throw staleLeaseError()
     // Mirrors the durable repository: the claim never delivered any work, so
@@ -64,11 +74,13 @@ class Store implements DurableOutboxStore {
     this.events.set(id, released); return { ...released }
   }
   async recordFailure(_workspaceId: string, id: string, failure: { code: string; message: string }, nextAttemptAt: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     // The attempt was already counted when the event was claimed.
     const updated = { ...this.events.get(id)!, nextAttemptAt, lastError: failure }
     this.events.set(id, updated); return updated
   }
   async markUnknown(_workspaceId: string, id: string, failure: { code: string; message: string }): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const updated = { ...this.events.get(id)!, unknownAt: new Date().toISOString(), lastError: failure }
     this.events.set(id, updated); return updated
   }
@@ -308,12 +320,46 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('runs only one handler when two dispatchers receive the same live lease token', async () => {
+    const store = new Store(event())
+    const claimed = (await store.claimPending('ws_1'))[0]!
+    const queueA = new InMemoryQueue<DurableOutboxEvent>()
+    const queueB = new InMemoryQueue<DurableOutboxEvent>()
+    await queueA.enqueue({ id: claimed.id, value: claimed })
+    await queueB.enqueue({ id: claimed.id, value: claimed })
+    let calls = 0
+    let release!: () => void
+    let suppressed!: () => void
+    const entered = new Promise<void>(resolve => { release = resolve })
+    const duplicateSuppressed = new Promise<void>(resolve => { suppressed = resolve })
+    const handler = async () => {
+      calls += 1
+      await entered
+      return { value: 'done' }
+    }
+    const dispatcherA = new DurableOutboxDispatcher(store, queueA, handler)
+    const dispatcherB = new DurableOutboxDispatcher(store, queueB, handler)
+    const observeSuppression = (result: Awaited<ReturnType<typeof dispatcherA.dispatchOnce>>) => {
+      if (result.state === 'queued') suppressed()
+      return result
+    }
+    const first = dispatcherA.dispatchOnce().then(observeSuppression)
+    const second = dispatcherB.dispatchOnce().then(observeSuppression)
+    await duplicateSuppressed
+    expect(calls).toBe(1)
+    release()
+    const outcomes = await Promise.all([first, second])
+    expect(outcomes.map(result => result.state).sort()).toEqual(['queued', 'succeeded'])
+    expect(calls).toBe(1)
+  })
+
   it('releases valid tenant claims when a claimed batch contains a foreign workspace row', async () => {
     const validA = event({ id: 'evt_valid_a', workspaceId: 'ws_1', attempts: 1, leaseToken: 'lease_a' })
     const foreign = event({ id: 'evt_foreign', workspaceId: 'ws_other', attempts: 1, leaseToken: 'lease_foreign' })
     const validB = event({ id: 'evt_valid_b', workspaceId: 'ws_1', attempts: 1, leaseToken: 'lease_b' })
     const store: DurableOutboxStore = {
       claimPending: async () => [validA, foreign, validB],
+      acquireExecution: async () => true,
       validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
       recordFailure: async () => event(), markUnknown: async () => event(),
       releaseClaim: vi.fn(async (_workspaceId: string, id: string, _leaseToken: string) => event({ id })),
@@ -339,6 +385,7 @@ describe('durable outbox dispatcher', () => {
     const claims: Array<{ eventTypes?: readonly string[] }> = []
     const store: DurableOutboxStore = {
       claimPending: async (_workspaceId, options = {}) => { claims.push(options); return [] },
+      acquireExecution: async () => true,
       validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
       recordFailure: async () => event(), markUnknown: async () => event(),
     }
@@ -446,6 +493,7 @@ describe('durable outbox dispatcher', () => {
     await queue.enqueue({ id: queued.id, value: queued })
     const store: DurableOutboxStore = {
       claimPending: async () => [],
+      acquireExecution: async () => true,
       validateLease: async () => authoritative,
       renewLease: async () => authoritative,
       ack: async () => authoritative,

@@ -16,9 +16,12 @@ type MerchantInvitationView = {
 };
 type MerchantInvitationForm = { login: string; enterpriseName: string; contactName: string; workspaceId?: string; workspaceMode: "new" | "existing"; reason: string };
 type UserFilters = { query?: string; status?: string; workspaceId?: string; accountType?: "all" | "merchant" | "platform" };
+type IdentitySession = NonNullable<OpsConsoleModel["userDetail"]>["sessions"][number];
 const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
+const identityRiskLevelLabels: Record<string, string> = { low: "低", medium: "中", high: "高", critical: "严重" };
+const identityRiskDecisionLabels: Record<string, string> = { allow: "允许", step_up: "要求 MFA", block: "阻断并撤销会话" };
 const lifecycleEventLabels: Record<string, string> = {
   "identity.observed": "身份首次识别",
   "identity.suspended": "全局停用身份",
@@ -99,10 +102,14 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   const [suspendReason, setSuspendReason] = useState("");
   const [suspending, setSuspending] = useState(false);
   const [detailSubject, setDetailSubject] = useState<string>();
+  const [detailIdentityId, setDetailIdentityId] = useState<string>();
   const [identityAction, setIdentityAction] = useState<"active" | "suspended">();
   const [identityReason, setIdentityReason] = useState("");
   const [riskDecision, setRiskDecision] = useState<"allow" | "step_up" | "block">();
   const [riskLevel, setRiskLevel] = useState<"low" | "medium" | "high" | "critical">("low");
+  const [sessionTarget, setSessionTarget] = useState<IdentitySession>();
+  const [sessionReason, setSessionReason] = useState("");
+  const [sessionRevoking, setSessionRevoking] = useState(false);
   const [selectedUserKeys, setSelectedUserKeys] = useState<string[]>([]);
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState("");
@@ -158,6 +165,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   };
   const closeUserDetail = () => {
     setDetailSubject(undefined);
+    setDetailIdentityId(undefined);
     setDetailAccountType("merchant");
     model.setUserDetail(undefined);
   };
@@ -263,7 +271,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       <div aria-live="polite" className="ops-visually-hidden">
         {model.userExporting ? "正在生成用户目录导出文件，请稍候" : model.userDirectoryLoading ? "正在加载用户目录，已有结果会保留" : ""}
       </div>
-      {model.userDirectoryError && <div ref={directoryErrorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="用户目录错误摘要" aria-describedby="user-directory-error-description">
+      {model.userDirectoryError && <div ref={directoryErrorRef} tabIndex={-1} role="group" aria-label="用户目录错误摘要" aria-describedby="user-directory-error-description">
         <Alert
           className="ops-inline-alert"
           showIcon
@@ -296,7 +304,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
           { title: "店铺名", dataIndex: "displayName", width: 213, render: (value: string, row: PlatformUser) => value || row.externalSubject },
           { title: "激活状态", dataIndex: "status", width: 130, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
           { title: "用户属性", dataIndex: "accountType", width: 177, render: (value: PlatformUser["accountType"]) => value === "platform" ? "运营平台账号" : "商家账号" },
-          { title: "操作", key: "actions", width: 179, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { const key = userDirectoryRowKey(row); if (node) detailButtonRefs.current.set(key, node); else detailButtonRefs.current.delete(key); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerRowKeyRef.current = userDirectoryRowKey(row); setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "启用" : "停用"}</Button>}</Space> },
+          { title: "操作", key: "actions", width: 179, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { const key = userDirectoryRowKey(row); if (node) detailButtonRefs.current.set(key, node); else detailButtonRefs.current.delete(key); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerRowKeyRef.current = userDirectoryRowKey(row); setDetailAccountType(row.accountType ?? "merchant"); setDetailSubject(row.externalSubject); setDetailIdentityId(row.identityId); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Button size="small" disabled title="平台账号不能停用">停用</Button> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "启用" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "启用" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
@@ -382,14 +390,45 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         <Button danger={actionContext?.action === "停用"} disabled={!model.canUserGovernance || !firstMembership} aria-label={actionContext?.buttonLabel ?? "没有可操作的工作区成员关系"} onClick={() => { if (firstMembership) { setActionError(""); setAccessTarget(firstMembership); } }}>{actionContext ? `${actionContext.action}成员访问` : "无可操作成员"}</Button>
       </div>;
     })()}>
-      <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
-        {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
+      <Spin spinning={model.userDetailLoading} description="正在加载用户详情…" aria-label="正在加载用户详情">
+        {!model.userDetailLoading && !model.userDetail ? <Empty description={<Space orientation="vertical" align="center">
+          <span>用户详情尚未取得，可以重试读取或关闭抽屉</span>
+          <Button type="primary" disabled={!canReadUserDirectory || !detailSubject} onClick={() => { if (detailSubject) void model.loadUserDetail(detailSubject, detailIdentityId); }}>重试读取用户详情</Button>
+        </Space>} /> : null}
         {model.userDetail && <Space orientation="vertical" size="middle" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
             { key: "name", label: "用户名", children: model.userDetail.identity.displayName || model.userDetail.identity.externalSubject },
             { key: "identity", label: "持久身份 ID", children: model.userDetail.identity.id ? <Typography.Text copyable>{model.userDetail.identity.id}</Typography.Text> : "未提供" },
             { key: "first", label: model.userDetail.identity.id ? "身份首次识别时间" : "成员首次记录时间", children: formatKnownDateTime(model.userDetail.identity.firstSeenAt) },
           ]} />
+          {model.userDetail.identity.id && <Space className="ops-user-detail-section" aria-label="身份风险策略">
+            <Typography.Text role="status">{identityRiskLevelLabels[model.userDetail.identity.riskLevel ?? ""] ?? "未设置"} · {identityRiskDecisionLabels[model.userDetail.identity.riskDecision ?? ""] ?? "未设置"}</Typography.Text>
+            <Button disabled={identityWritesDisabled} onClick={() => {
+              setRiskLevel(model.userDetail?.identity.riskLevel ?? "low");
+              setRiskDecision(model.userDetail?.identity.riskDecision ?? "allow");
+              setIdentityReason("");
+            }}>调整身份风险策略</Button>
+          </Space>}
+          {model.userDetail.identity.id && (model.userDetail.identity.accessStatus === "active" || model.userDetail.identity.accessStatus === "suspended") && <Space className="ops-user-detail-section" aria-label="身份全局访问控制">
+            <Typography.Text role="status">身份全局访问：{model.userDetail.identity.accessStatus === "suspended" ? "已停用" : "已启用"}</Typography.Text>
+            <Button danger={model.userDetail.identity.accessStatus !== "suspended"} disabled={identityWritesDisabled} onClick={() => {
+              setIdentityReason("");
+              setIdentityAction(model.userDetail?.identity.accessStatus === "suspended" ? "active" : "suspended");
+            }}>{model.userDetail.identity.accessStatus === "suspended" ? "恢复平台身份" : "全局停用身份"}</Button>
+          </Space>}
+          {model.userDetail.sessions.length > 0 && <section className="ops-user-detail-section" aria-label="身份认证会话">
+            <Typography.Title level={5}>认证会话</Typography.Title>
+            <Table<IdentitySession> size="small" rowKey="id" pagination={false} dataSource={model.userDetail.sessions} columns={[
+              { title: "会话 ID", dataIndex: "id", render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
+              { title: "类型", dataIndex: "sessionKind", render: (value: IdentitySession["sessionKind"]) => value === "oidc" ? "OIDC 登录" : "API 令牌" },
+              { title: "状态", dataIndex: "status", render: (value: IdentitySession["status"]) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{value === "active" ? "活动" : value === "revoked" ? "已撤销" : "已过期"}</Tag> },
+              { title: "MFA", dataIndex: "mfaVerified", render: (value: boolean) => value ? "已验证" : "未验证" },
+              { title: "最近活动", dataIndex: "lastSeenAt", render: (value: string) => formatKnownDateTime(value) },
+              { title: "操作", render: (_: unknown, row: IdentitySession) => row.status === "active"
+                ? <Button danger size="small" disabled={identityWritesDisabled} aria-label={`撤销会话 ${row.id}`} onClick={() => { setSessionTarget(row); setSessionReason(""); }}>撤销会话</Button>
+                : <Typography.Text type="secondary">无可用操作</Typography.Text> },
+            ]} />
+          </section>}
           {detailAccountType === "platform" && <Alert type="info" showIcon title="运营平台账号" description="此账号属于运营平台，不计入商家工作区成员、套餐或商品数据。" />}
           {detailAccountType === "merchant" && <>
           <section className="ops-user-detail-section"><Typography.Title level={5}>成员与工作区</Typography.Title><Table size="small" tableLayout="fixed" scroll={{ x: 760 }} rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} dataSource={model.userDetail.memberships} columns={[
@@ -427,6 +466,18 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
           <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={2} maxLength={500} value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
         </div>
       </div>
+    </Modal>
+    <Modal title="撤销认证会话" open={Boolean(sessionTarget)} okText="确认撤销会话" cancelText="取消" confirmLoading={sessionRevoking} okButtonProps={{ danger: true, disabled: identityWritesDisabled || sessionReason.trim().length < 4 }} onCancel={() => { if (!sessionRevoking) { setSessionTarget(undefined); setSessionReason(""); } }} onOk={async () => {
+      if (!sessionTarget || sessionReason.trim().length < 4) return;
+      setSessionRevoking(true);
+      const revoked = await model.revokeIdentitySession(sessionTarget.id, sessionTarget.revision, sessionReason.trim());
+      setSessionRevoking(false);
+      if (revoked) { setSessionTarget(undefined); setSessionReason(""); }
+    }}>
+      <Alert showIcon type="warning" title="撤销后该认证会话将立即失效；用户的其他会话不受影响。" />
+      <Typography.Paragraph>目标会话：<Typography.Text code>{sessionTarget?.id}</Typography.Text></Typography.Paragraph>
+      <label htmlFor="identity-session-revoke-reason">撤销原因</label>
+      <Input.TextArea id="identity-session-revoke-reason" aria-label="撤销原因" rows={3} value={sessionReason} onChange={event => setSessionReason(event.target.value)} placeholder="填写工单号或撤销原因" />
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />

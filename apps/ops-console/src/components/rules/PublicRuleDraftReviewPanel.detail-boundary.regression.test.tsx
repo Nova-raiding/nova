@@ -201,6 +201,35 @@ describe("public rule draft detail UI boundary", () => {
     }
   }, 30_000);
 
+  it("labels retained drafts as potentially stale when refresh fails and recovers on retry", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.addInitScript(ruleValue => {
+      localStorage.setItem("ops_connection_config_v1", JSON.stringify({ apiBase: "/api", workspaceId: "ui-boundary-workspace", workbench: "platform" }));
+      window.__publicRuleListCalls = 0;
+      window.__publicRuleRpcMock = async method => {
+        if (method !== "ops.rules.public.drafts.list") throw new Error(`Unexpected RPC method: ${method}`);
+        window.__publicRuleListCalls = (window.__publicRuleListCalls ?? 0) + 1;
+        if (window.__publicRuleListCalls === 2) throw new Error("模拟的刷新失败");
+        return { items: [ruleValue] };
+      };
+    }, rule);
+    try {
+      await page.goto(`${baseUrl}/__public-rule-detail-test`);
+      await page.getByText(rule.name, { exact: true }).waitFor();
+      await page.getByRole("button", { name: "刷新草稿" }).click();
+      const failure = page.getByRole("alert").filter({ hasText: "公共规则审核操作失败" });
+      await expectText(page, "模拟的刷新失败");
+      await expectText(page, "列表保留最近一次成功读取的数据，可能已过期");
+      await expectText(page, rule.name);
+      await failure.getByRole("button", { name: "刷新审核数据" }).click();
+      await page.waitForFunction(() => window.__publicRuleListCalls === 3);
+      await page.getByRole("button", { name: "刷新草稿" }).waitFor();
+      expect(await page.getByRole("alert").filter({ hasText: "公共规则审核操作失败" }).count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   it("keeps checksum-invalid drafts visible for review but out of batch approval", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.addInitScript(ruleValue => {

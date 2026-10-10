@@ -197,6 +197,82 @@ describe("TasksPage workspace filters browser journey", () => {
       await page.close();
     }
   }, 60_000);
+
+  it("restores all queue deep-link filters and follows browser history changes", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    const browserErrors: string[] = [];
+    page.on("pageerror", error => browserErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") browserErrors.push(message.text()); });
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?platform=jd&accountId=acct-jd-1&product_id=product-1&task_id=task-failed&state=failed`, { waitUntil: "domcontentloaded" });
+      await page.getByText("task-failed", { exact: true }).waitFor({ state: "visible" });
+      const observed = await page.evaluate(() => ({
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(observed.filters).toEqual({ platform: "jd", accountId: "acct-jd-1", productId: "product-1", taskId: "task-failed", state: "failed" });
+      expect(observed.calls).toEqual([{
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "jd", account_id: "acct-jd-1", product_id: "product-1", task_id: "task-failed", state: "failed" },
+      }]);
+      expect(await page.getByRole("textbox", { name: "按营销队列商品 ID 筛选" }).inputValue()).toBe("product-1");
+      expect(await page.getByRole("textbox", { name: "按营销队列任务 ID 筛选" }).inputValue()).toBe("task-failed");
+
+      await page.evaluate(() => {
+        window.history.pushState({}, "", "?platform=jd&accountId=acct-jd-1&product_id=product-2&task_id=task-queued&state=queued");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
+      const historyNavigation = await page.evaluate(() => ({
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(historyNavigation.filters).toEqual({ platform: "jd", accountId: "acct-jd-1", productId: "product-2", taskId: "task-queued", state: "queued" });
+      expect(historyNavigation.calls).toHaveLength(2);
+      expect(historyNavigation.calls[1]).toEqual({
+        method: "ops.marketing.queue",
+        params: { limit: "20", platform: "jd", account_id: "acct-jd-1", product_id: "product-2", task_id: "task-queued", state: "queued" },
+      });
+      expect(browserErrors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("clears URL-owned filters on Back to the base URL and preserves manual filters", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(15_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: "待处理队列" }).waitFor({ state: "visible" });
+
+      await page.getByRole("textbox", { name: "按营销队列商品 ID 筛选" }).fill("product-2");
+      await page.getByRole("button", { name: "应用筛选" }).click();
+      await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
+
+      await page.evaluate(() => {
+        window.history.pushState({}, "", "?task_id=task-queued&state=queued");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+      await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
+      await page.waitForFunction(() => (window as any).__tasksFixture.rpcCalls.length === 2);
+
+      await page.goBack();
+      await page.waitForFunction(() => (window as any).__tasksFixture.rpcCalls.length === 3);
+      await page.getByText("task-queued", { exact: true }).waitFor({ state: "visible" });
+      const backToBase = await page.evaluate(() => ({
+        search: window.location.search,
+        filters: (window as any).__tasksFixture.queueFilters,
+        calls: (window as any).__tasksFixture.rpcCalls,
+      }));
+      expect(backToBase.search).toBe("");
+      expect(backToBase.filters).toEqual({ productId: "product-2" });
+      expect(backToBase.calls[2]).toEqual({ method: "ops.marketing.queue", params: { limit: "20", product_id: "product-2" } });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
 
 declare global {

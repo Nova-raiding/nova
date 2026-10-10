@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { canCreateBrandUnit, canScanCanonicalBackfill, StoresPage } from "./StoresPage.js";
+import { canCreateBrandUnit, canManageStoreAccount, canRegisterManualStore, canScanCanonicalBackfill, StoresPage } from "./StoresPage.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const workspaceAuthorization = createAuthorizationProjection({ actor_id: "owner", workspace_id: "ws_a", roles: [], workspace_granted: true, capabilities: ["store.connection.read", "store.connection.update", "automation.read", "automation.update", "customer.content.read"] }, true);
@@ -34,6 +34,29 @@ const model = (overrides: Partial<OpsConsoleModel> = {}) => ({
 }) as unknown as OpsConsoleModel;
 
 describe("StoresPage", () => {
+  it("limits store connection actions to account ids in the projected grant", () => {
+    const scope = { kind: "account", ids: ["jd:allowed"] };
+    expect(canManageStoreAccount("jd:allowed", scope)).toBe(true);
+    expect(canManageStoreAccount("jd:other", scope)).toBe(false);
+    expect(canManageStoreAccount("jd:allowed", { kind: "workspace", ids: ["ws-a"] })).toBe(false);
+    expect(canManageStoreAccount("jd:allowed", undefined)).toBe(false);
+  });
+  it("limits manual platform store registration to platform-scoped grants", () => {
+    expect(canRegisterManualStore(true, true, { kind: "platform" })).toBe(true);
+    expect(canRegisterManualStore(true, true, { kind: "account" })).toBe(false);
+    expect(canRegisterManualStore(true, false, { kind: "platform" })).toBe(false);
+    expect(canRegisterManualStore(false, true, { kind: "platform" })).toBe(false);
+
+    const accountScoped = createAuthorizationProjection({
+      workspace_id: "ops", roles: ["platform_ops"], workbench: "platform", actor_id: "operator", workspace_granted: true,
+      capabilities: ["store.connection.update"], scope: { type: "account", ids: ["jd:allowed"] },
+    }, true);
+    const markup = renderToStaticMarkup(<StoresPage model={model({
+      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true, workbench: "platform", scope: { type: "account", ids: ["jd:allowed"] } },
+      authorization: accountScoped,
+    })} onNavigate={vi.fn()} />);
+    expect(markup).not.toContain("登记人工店铺");
+  });
   it("requires the platform update capability before exposing the canonical scan action", () => {
     expect(canScanCanonicalBackfill(true, false, "platform")).toBe(false);
     expect(canScanCanonicalBackfill(true, true, "platform")).toBe(true);
@@ -188,17 +211,33 @@ describe("StoresPage", () => {
       brandNavigation: [{ id: "brand-1", title: "山野品牌", platforms: [] }],
     })} onNavigate={vi.fn()} />);
     const platformMarkup = renderToStaticMarkup(<StoresPage model={model({
-      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true },
-      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, capabilities: ["platform.settings.read", "workspace.directory.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read"] }, true),
+      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true, workbench: "platform" },
+      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, workbench: "platform", capabilities: ["platform.settings.read", "workspace.directory.read", "canonical.backfill.read", "canonical.backfill.update", "customer.content.read", "store.connection.update"] }, true),
     })} onNavigate={vi.fn()} />);
 
     expect(workspaceMarkup).toContain("规范商品一致性");
     expect(workspaceMarkup).not.toContain("Canonical 回填人工冲突队列");
     expect(platformMarkup).toContain("规范商品一致性");
     expect(platformMarkup).toContain("Canonical 回填人工冲突队列");
-    for (const markup of [workspaceMarkup, platformMarkup]) {
-      expect(markup).toContain("平台连接与授权健康");
-      expect(markup).toContain("登记人工店铺");
+    expect(workspaceMarkup).toContain("平台连接与授权健康");
+    expect(workspaceMarkup).not.toContain("登记人工店铺");
+    expect(platformMarkup).toContain("平台连接与授权健康");
+    expect(platformMarkup).toContain("登记人工店铺");
+  });
+
+  it("does not show store mutations to platform settings admins without store connection permission", () => {
+    const markup = renderToStaticMarkup(<StoresPage model={model({
+      opsSession: { workspace_id: "ops", roles: ["platform_ops"], actor_id: "operator", workspace_granted: true, workbench: "platform" },
+      authorization: createAuthorizationProjection({ workspace_id: "ops", roles: ["platform_ops"], canonical_roles: ["ops_admin"], actor_id: "operator", workspace_granted: true, workbench: "platform", capabilities: ["platform.settings.read", "platform.settings.update", "workspace.directory.read", "store.connection.read"] }, true),
+      storeDirectory: [{ platform: "jd", accountId: "store-1", label: "只读店铺", state: "connected", dataMode: "official_api", readable: true, writeEnabled: false, revision: 1 }],
+    })} onNavigate={vi.fn()} />);
+
+    expect(markup).not.toContain("登记人工店铺");
+    for (const label of ["改别名", "撤销"]) {
+      const labelIndex = markup.indexOf(label);
+      const buttonStart = markup.lastIndexOf("<button", labelIndex);
+      const buttonEnd = markup.indexOf("</button>", labelIndex);
+      expect(markup.slice(buttonStart, buttonEnd)).toContain("disabled");
     }
   });
 

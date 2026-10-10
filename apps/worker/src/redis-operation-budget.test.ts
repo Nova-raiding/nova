@@ -121,6 +121,7 @@ describe('queue transport operation budget', () => {
       const repository = {
         claimPending: async () => [event],
         validateLease: async () => event,
+        acquireExecution: async () => true,
       } as unknown as PostgresOutboxRepository
       const outcome = await Promise.race([
         pollOnce(repository, new Map(), { workspaces: ['ws_a'], batchSize: 1, leaseMs: 30_000, role: 'publish' }, () => new RedisQueueAdapter<DurableOutboxEvent>(transport, 'queue:stalled'))

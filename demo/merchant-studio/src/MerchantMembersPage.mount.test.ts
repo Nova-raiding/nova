@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer as createNetServer } from 'node:net'
 import { chromium, type Browser } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -15,6 +16,16 @@ describe('MerchantMembersPage workspace loading', () => {
 
   beforeAll(async () => {
     cacheDirectory = await mkdtemp(join(tmpdir(), 'merchant-members-mount-'))
+    const port = await new Promise<number>((resolvePort, reject) => {
+      const probe = createNetServer()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address()
+        if (!address || typeof address === 'string') return reject(new Error('Could not reserve a browser test port'))
+        const selectedPort = address.port
+        probe.close((error) => error ? reject(error) : resolvePort(selectedPort))
+      })
+    })
     const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
     const entryPath = '/__merchant-members-test-entry.tsx'
     vite = await createServer({
@@ -23,7 +34,7 @@ describe('MerchantMembersPage workspace loading', () => {
       root,
       cacheDir: cacheDirectory,
       logLevel: 'error',
-      server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false },
+      server: { host: '127.0.0.1', port, strictPort: true, hmr: false },
       plugins: [react(), {
         name: 'merchant-members-test-entry',
         resolveId(id: string) {
@@ -41,6 +52,7 @@ describe('MerchantMembersPage workspace loading', () => {
               const account = { accountType: 'merchant', workspaceIds: ['ws_a', 'ws_b'] };
               return React.createElement(React.Fragment, null,
                 React.createElement('button', { onClick: () => { activateMerchantWorkspace('ws_b'); setWorkspace('ws_b'); } }, '切换到 ws_b'),
+                React.createElement('button', { onClick: () => { activateMerchantWorkspace('ws_a'); setWorkspace('ws_a'); } }, '切换到 ws_a'),
                 React.createElement(MerchantMembersPage, { baseUrl: '/api', account, activeWorkspaceId: workspace })
               );
             }
@@ -79,6 +91,7 @@ describe('MerchantMembersPage workspace loading', () => {
     page.setDefaultTimeout(10_000)
     const runtimeErrors: string[] = []
     const calls: Array<{ method: string; workspaceId: string | undefined }> = []
+    let failNextMemberWrite = false
     page.on('pageerror', error => runtimeErrors.push(error.message))
     page.on('console', message => { if (message.type() === 'error') runtimeErrors.push(message.text()) })
     try {
@@ -86,11 +99,12 @@ describe('MerchantMembersPage workspace loading', () => {
         const url = new URL(route.request().url())
         let data: unknown
         let workspaceId: string | undefined
+        let method = ''
         if (url.pathname.endsWith('/v1/auth/mcp-token')) {
           data = { access_token: 'fixture-access', refresh_token: 'fixture-refresh', expires_in: 300 }
         } else if (url.pathname.endsWith('/mcp')) {
           const request = route.request().postDataJSON() as { method?: string; params?: Record<string, unknown> }
-          const method = request.method ?? ''
+          method = request.method ?? ''
           workspaceId = route.request().headers()['x-workspace-id']
           calls.push({ method, workspaceId })
           if (method === 'ops.session') data = {
@@ -102,10 +116,18 @@ describe('MerchantMembersPage workspace loading', () => {
             items: [{ id: workspaceId, externalSubject: `${workspaceId}@example.com`, displayName: `成员 ${workspaceId}`, role: 'operator', status: 'active', revision: 1, governance: { canChangeTarget: false, canDeactivateTarget: false } }],
             total: 1, offset: Number(request.params?.offset ?? 0), limit: Number(request.params?.limit ?? 20), hasMore: false,
           }
+          else if (method === 'ops.member.upsert') {
+            if (failNextMemberWrite) {
+              failNextMemberWrite = false
+              await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ request_id: 'fixture-request', trace_id: 'fixture-trace', workspace_id: workspaceId ?? '', data: null, warnings: [], next_actions: [], error: { code: 'TEMPORARY_UNAVAILABLE', message: '邀请暂时不可用' } }) })
+              return
+            }
+            data = { id: 'invited-member' }
+          }
           else throw new Error(`Unexpected MCP method: ${method}`)
           data = { result: data }
         } else return route.continue()
-        await new Promise(resolve => setTimeout(resolve, 5))
+        await new Promise(resolve => setTimeout(resolve, workspaceId === 'ws_b' && method === 'ops.session' ? 150 : 5))
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ request_id: 'fixture-request', trace_id: 'fixture-trace', workspace_id: workspaceId ?? '', data, warnings: [], next_actions: [], error: null }) })
       })
       await page.goto(`${baseUrl}/__merchant-members-test`, { waitUntil: 'commit' })
@@ -114,18 +136,41 @@ describe('MerchantMembersPage workspace loading', () => {
       expect(await page.locator('body').innerText()).toContain('共 1 位成员')
       await page.getByLabel('成员登录账号').fill('draft@example.com')
       await page.getByLabel('邀请原因').fill('当前工作区邀请')
+      await page.getByRole('button', { name: '邀请成员' }).click()
+      expect(await page.locator('.success-notice').innerText()).toContain('已邀请 draft@example.com')
       await page.getByRole('button', { name: '切换到 ws_b' }).click()
+      expect(await page.getByText('成员 ws_a').count()).toBe(0)
+      expect(await page.locator('.success-notice').count()).toBe(0)
+      await page.getByRole('status').filter({ hasText: '正在切换工作区' }).waitFor({ state: 'visible' })
       await page.getByText('成员 ws_b').waitFor()
       expect(await page.getByLabel('成员登录账号').inputValue()).toBe('')
       expect(await page.getByLabel('邀请原因').inputValue()).toBe('')
+      failNextMemberWrite = true
+      await page.getByLabel('成员登录账号').fill('retry@example.com')
+      await page.getByLabel('邀请原因').fill('当前工作区再次邀请')
+      await page.getByRole('button', { name: '邀请成员' }).click()
+      expect(await page.getByRole('alert').innerText()).toContain('成员操作失败')
+      expect(await page.getByLabel('成员登录账号').inputValue()).toBe('retry@example.com')
+      await page.getByRole('button', { name: '切换到 ws_a' }).click()
+      expect(await page.getByRole('alert').count()).toBe(0)
+      expect(await page.locator('.success-notice').count()).toBe(0)
+      await page.getByRole('status').filter({ hasText: '正在切换工作区' }).waitFor({ state: 'visible' })
+      await page.getByText('成员 ws_a').waitFor()
 
       expect(calls).toEqual([
         { method: 'ops.session', workspaceId: 'ws_a' },
         { method: 'ops.members.list', workspaceId: 'ws_a' },
+        { method: 'ops.member.upsert', workspaceId: 'ws_a' },
+        { method: 'ops.session', workspaceId: 'ws_a' },
+        { method: 'ops.members.list', workspaceId: 'ws_a' },
         { method: 'ops.session', workspaceId: 'ws_b' },
         { method: 'ops.members.list', workspaceId: 'ws_b' },
+        { method: 'ops.member.upsert', workspaceId: 'ws_b' },
+        { method: 'ops.session', workspaceId: 'ws_a' },
+        { method: 'ops.members.list', workspaceId: 'ws_a' },
       ])
-      expect(runtimeErrors).toEqual([])
+      expect(runtimeErrors.filter(error => !error.includes('503 (Service Unavailable)'))).toEqual([])
+      expect(runtimeErrors.filter(error => error.includes('503 (Service Unavailable)'))).toHaveLength(1)
     } finally { await page.close() }
   }, 30_000)
 })

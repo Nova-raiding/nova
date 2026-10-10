@@ -308,6 +308,47 @@ describe('product image review API', () => {
     expect([...service.publishJobs.values()].filter(job => job.workspaceId === workspaceId)).toHaveLength(0)
   })
 
+  it('rejects a source asset owned by another workspace before creating an image job', async () => {
+    const previousProfile = process.env.DEPLOYMENT_PROFILE
+    const previousLocalCompose = process.env.LOCAL_COMPOSE
+    const previousScanFixture = process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE
+    process.env.DEPLOYMENT_PROFILE = 'local_acceptance'
+    process.env.LOCAL_COMPOSE = 'true'
+    process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = 'true'
+    const workspaceA = `ws_image_source_a_${Date.now()}`
+    const workspaceB = `ws_image_source_b_${Date.now()}`
+    try {
+      const base = await start()
+      await grantCreativePointsForTests(workspaceA)
+      grantContinuousFeatureEntitlementForTests(workspaceA)
+      const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
+      const uploaded = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceA },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'asset.upload', params: { name: 'workspace-a-source.png', mime_type: 'image/png', content_base64: pngSignature.toString('base64') } }),
+      }).then(response => response.json()) as { data?: { result: { id: string } }; error?: { code: string } }
+      expect(uploaded.error).toBeNull()
+      expect(uploaded.data?.result.id).toEqual(expect.any(String))
+
+      const beforeJobs = service.listImageGenerationJobs(workspaceB).length
+      const attempted = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceB },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'catalog.image.generate', params: { title: '不可跨 workspace 使用的素材', asset_ids_json: JSON.stringify([uploaded.data!.result.id]), count: '1' } }),
+      }).then(response => response.json()) as { error?: { code: string; message: string }; data?: unknown }
+      expect(attempted.error).toMatchObject({ code: 'ASSET_NOT_FOUND', message: '素材不存在或不属于当前工作区' })
+      expect(attempted.data).toBeNull()
+      expect(service.listImageGenerationJobs(workspaceB)).toHaveLength(beforeJobs)
+    } finally {
+      if (previousProfile === undefined) delete process.env.DEPLOYMENT_PROFILE
+      else process.env.DEPLOYMENT_PROFILE = previousProfile
+      if (previousLocalCompose === undefined) delete process.env.LOCAL_COMPOSE
+      else process.env.LOCAL_COMPOSE = previousLocalCompose
+      if (previousScanFixture === undefined) delete process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE
+      else process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = previousScanFixture
+    }
+  })
+
   it('blocks formal image generation until an approved AI-editable asset matches the product platform', async () => {
     const previous = process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION
     const previousProfile = process.env.DEPLOYMENT_PROFILE

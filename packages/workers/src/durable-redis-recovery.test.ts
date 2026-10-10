@@ -18,6 +18,7 @@ const processGone = () => Object.assign(new Error('worker process is gone'), { c
 
 class LeaseStore implements DurableOutboxStore {
   readonly rows = new Map<string, DurableOutboxEvent>()
+  readonly executionOwners = new Set<string>()
   renewals = 0
   #claims = 0
   constructor(id: string) {
@@ -38,6 +39,7 @@ class LeaseStore implements DurableOutboxStore {
       if (row.publishedAt || row.unknownAt || (row.leaseUntil && Date.parse(row.leaseUntil) > now)) continue
       this.#claims += 1
       const next = { ...row, attempts: (row.attempts ?? 0) + 1, leaseToken: `lease_${this.#claims}`, leaseUntil: new Date(now + (options.leaseMs ?? 30_000)).toISOString() }
+      this.executionOwners.delete(row.id)
       this.rows.set(row.id, next)
       claimed.push({ ...next })
     }
@@ -48,6 +50,12 @@ class LeaseStore implements DurableOutboxStore {
     if (row.publishedAt || row.unknownAt || row.leaseToken !== leaseToken || !row.leaseUntil || Date.parse(row.leaseUntil) <= Date.parse(now)) throw staleLeaseError()
     return { ...row }
   }
+  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<boolean> {
+    const row = this.rows.get(id)
+    if (!row || row.leaseToken !== leaseToken || this.executionOwners.has(id)) return false
+    this.executionOwners.add(id)
+    return true
+  }
   async renewLease(_workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<DurableOutboxEvent> {
     const row = await this.validateLease(_workspaceId, id, leaseToken, now)
     this.renewals += 1
@@ -56,6 +64,7 @@ class LeaseStore implements DurableOutboxStore {
     return { ...renewed }
   }
   async ack(_workspaceId: string, id: string, leaseToken?: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const row = this.row(id)
     if (leaseToken !== undefined && row.leaseToken !== leaseToken) throw staleLeaseError()
     const published = { ...row, publishedAt: new Date().toISOString(), leaseToken: undefined, leaseUntil: undefined }
@@ -63,21 +72,25 @@ class LeaseStore implements DurableOutboxStore {
     return { ...published }
   }
   async recordFailure(_workspaceId: string, id: string, failure: { code: string; message: string }, nextAttemptAt: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const updated = { ...this.row(id), nextAttemptAt, lastError: failure, leaseToken: undefined, leaseUntil: undefined }
     this.rows.set(id, updated)
     return updated
   }
   async markUnknown(_workspaceId: string, id: string, failure: { code: string; message: string }): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const updated = { ...this.row(id), unknownAt: new Date().toISOString(), lastError: failure }
     this.rows.set(id, updated)
     return updated
   }
   async deadLetter(_workspaceId: string, id: string, failure: { code: string; message: string }): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const updated = { ...this.row(id), lastError: { ...failure, terminal: true }, leaseToken: undefined, leaseUntil: undefined }
     this.rows.set(id, updated)
     return updated
   }
   async releaseClaim(_workspaceId: string, id: string, leaseToken: string): Promise<DurableOutboxEvent> {
+    this.executionOwners.delete(id)
     const row = this.row(id)
     if (row.leaseToken !== leaseToken) throw staleLeaseError()
     const released = { ...row, attempts: Math.max((row.attempts ?? 1) - 1, 0), leaseToken: undefined, leaseUntil: undefined }
@@ -96,6 +109,7 @@ class CrashedStore implements DurableOutboxStore {
   }
   claimPending(workspaceId: string, options?: { leaseMs?: number; now?: string }) { return this.inner.claimPending(workspaceId, options) }
   validateLease(workspaceId: string, id: string, leaseToken: string, now?: string) { return this.inner.validateLease(workspaceId, id, leaseToken, now) }
+  acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now?: string) { return this.#guard(() => this.inner.acquireExecution(workspaceId, id, leaseToken)) }
   renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string) { return this.#guard(() => this.inner.renewLease(workspaceId, id, leaseToken, leaseMs, now)) }
   ack(workspaceId: string, id: string, leaseToken?: string) { return this.#guard(() => this.inner.ack(workspaceId, id, leaseToken)) }
   recordFailure(workspaceId: string, id: string, failure: { code: string; message: string }, nextAttemptAt: string) { return this.#guard(() => this.inner.recordFailure(workspaceId, id, failure, nextAttemptAt)) }
@@ -220,6 +234,7 @@ describe.skipIf(!redisUrl)('durable queue recovery against the durable lease (re
     const lostStore: DurableOutboxStore = {
       claimPending: (workspaceId, options) => store.claimPending(workspaceId, options),
       validateLease: (workspaceId, id, leaseToken, now) => store.validateLease(workspaceId, id, leaseToken, now),
+      acquireExecution: (workspaceId, id, leaseToken) => store.acquireExecution(workspaceId, id, leaseToken),
       renewLease: async (workspaceId, id, leaseToken, leaseMsOption, now) => {
         renewals += 1
         if (renewals === 1) throw processGone()

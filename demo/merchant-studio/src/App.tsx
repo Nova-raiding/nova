@@ -6,7 +6,7 @@ import 'dayjs/locale/zh-cn'
 import './capability.css'
 import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'
 import { MaterialRightsControl } from './MaterialRightsControl'
-import { CommercialNotificationPanel } from './CommercialNotificationPanel'
+import { CommercialNotificationPanel, notificationPanelScope } from './CommercialNotificationPanel'
 import { CommercialPointLedger } from './CommercialGiftDetails'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
@@ -329,7 +329,7 @@ import { productAssetGenerationBlockers, productAssetGenerationBlockersForAsset,
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
-import { actionableIssueItems, createIssueReadSession, resolveIssueReadState, resolveIssueReadStateFromOutcome, type IssueReadOutcome, type IssueReadState } from './issue-read-state.js'
+import { actionableIssueItems, createIssueReadSession, resolveIssueReadState, resolveIssueReadStateFromOutcome, workspaceIssueReadScope, type IssueReadOutcome, type IssueReadState } from './issue-read-state.js'
 import { BRAND_UNCONFIGURED, BRAND_DOCUMENT_NONE, resolveBrandColorFacts, resolveBrandDocumentFacts, resolveBrandLogoFacts } from './material-brand-facts.js'
 import { countKnowledgeAssets, KnowledgeBindingStatus, resolveKnowledgeBindingStatus } from './knowledge-binding-status.js'
 
@@ -959,11 +959,10 @@ export function IssueNotificationBell({ state, ...rest }: { state: IssueReadStat
  */
 const issueReadSession = createIssueReadSession({ load: fetchWorkspaceMetrics, describeError: describeApiError })
 
-export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onRetry, apiMode }: {
+export function IssueNotificationPanel({ state, items, onOpenIssue, onRetry, apiMode }: {
   state: IssueReadState
   items: WorkspaceMetrics['riskItems']
   onOpenIssue: (item: WorkspaceMetrics['riskItems'][number]) => void
-  onClose: () => void
   onRetry: () => void
   apiMode?: string | null
 }) {
@@ -985,7 +984,6 @@ export function IssueNotificationPanel({ state, items, onOpenIssue, onClose, onR
             type="button"
             className="merchant-notification-item-button"
             aria-label={`查看问题：${copy.title}`}
-            onMouseDown={onClose}
             onClick={() => { onOpenIssue(item) }}
           >
             <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
@@ -1062,11 +1060,13 @@ function Topbar({
   // panel rendered as 「暂无需要处理的问题」. 未配置 / 正在读取 / 读取失败 are three
   // different facts and `resolveIssueReadState` renders each of them as itself.
   const [issueItems, setIssueItems] = useState<IssueReadOutcome['items']>(null)
+  const [issueItemsScope, setIssueItemsScope] = useState('')
   const [issueReadError, setIssueReadError] = useState('')
   const [issueReadPending, setIssueReadPending] = useState(Boolean(apiBaseUrl))
   const [issueReadTruncated, setIssueReadTruncated] = useState(false)
   const [issueReload, setIssueReload] = useState(0)
   const [issueDetail, setIssueDetail] = useState<WorkspaceMetrics['riskItems'][number] | null>(null)
+  const issueReadScope = workspaceIssueReadScope(apiBaseUrl, activeWorkspaceId)
   const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
   const accountMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -1097,12 +1097,13 @@ function Topbar({
     // the effect is one call to the session, and `issueReload` — bumped by the
     // panel's 重新读取 button — is what makes the effect run again.
     void issueReadSession.read(apiBaseUrl, (outcome) => {
+      setIssueItemsScope(issueReadScope)
       setIssueItems(outcome.items)
       setIssueReadError(outcome.error)
       setIssueReadPending(outcome.loading)
       setIssueReadTruncated(outcome.truncated ?? false)
     })
-  }, [apiBaseUrl, issueReload])
+  }, [apiBaseUrl, issueReadScope, issueReload])
   const titles: Record<Page, string> = {
     overview: '运营概览',
     products: activeEntry === 'products' ? '平台&店铺&商品' : activeEntry === 'assets' ? '品牌资产' : activeEntry === 'trash' ? '回收站' : activeEntry === 'images' ? '知识库' : '素材库',
@@ -1127,10 +1128,11 @@ function Topbar({
   // returns unbound and fixture records for reconciliation, but those are not
   // notifications for the currently signed-in merchant.
   // `null` — not `[]` — until the read answers. `[]` is a real answer.
-  const actionableIssues = actionableIssueItems(issueItems)
+  const issueScopeCurrent = issueItemsScope === issueReadScope
+  const actionableIssues = actionableIssueItems(issueScopeCurrent ? issueItems : null)
   // From the settled outcome to the words: one call, so the chain under the bell
   // is the chain `issue-read-state.test.ts` drives through a real response.
-  const issueRead = resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl, outcome: { items: issueItems, error: issueReadError, loading: issueReadPending, truncated: issueReadTruncated } })
+  const issueRead = resolveIssueReadStateFromOutcome({ baseUrl: apiBaseUrl, outcome: { items: issueScopeCurrent ? issueItems : null, error: issueScopeCurrent ? issueReadError : '', loading: !issueScopeCurrent || issueReadPending, truncated: issueScopeCurrent && issueReadTruncated } })
   const openIssueDetail = (item: WorkspaceMetrics['riskItems'][number]) => {
     setNotificationOpen(false)
     setIssueDetail(item)
@@ -1139,10 +1141,9 @@ function Topbar({
     state={issueRead}
     items={actionableIssues ?? []}
     onOpenIssue={openIssueDetail}
-    onClose={() => setNotificationOpen(false)}
     onRetry={() => setIssueReload((value) => value + 1)}
     apiMode={apiMode}
-  /><CommercialNotificationPanel key={`${account?.id ?? 'unbound'}:${account?.workspaceIds.join(',') ?? ''}`} baseUrl={apiBaseUrl} onOpenCatalog={(item) => { setNotificationOpen(false); onOpenCommercialCatalog(item) }} /></div>
+          /><CommercialNotificationPanel key={`${account?.id ?? 'unbound'}:${notificationPanelScope(apiBaseUrl, activeWorkspaceId)}`} baseUrl={apiBaseUrl} workspaceId={activeWorkspaceId} onOpenCatalog={(item) => { setNotificationOpen(false); onOpenCommercialCatalog(item) }} /></div>
   return (
     <header className="topbar">
       <button
@@ -1682,7 +1683,7 @@ function UtilityPanel({
   )
 }
 
-function CustomerSupportPanel({
+export function CustomerSupportPanel({
   apiBaseUrl,
   relatedTaskId,
   relatedOrderId,
@@ -1731,10 +1732,12 @@ function CustomerSupportPanel({
         setReplies([])
       }
     } catch (cause) {
-      setTicket(null)
-      setReplies([])
-      setAssociatedTickets([])
-      setNextCursor(null)
+      if (!cursor) {
+        setTicket(null)
+        setReplies([])
+        setAssociatedTickets([])
+        setNextCursor(null)
+      }
       setError(`支持消息读取失败：${describeApiError(cause)}`)
     } finally {
       setLoading(false)
@@ -7655,20 +7658,22 @@ export function MaterialLibraryWorkspace({
 
   if (detailMaterial) {
     const detailIsImage = isImageMaterial(detailMaterial)
+    const detailIsVideo = detailMaterial.mimeType?.trim().toLowerCase().startsWith('video/') === true
     const detailAssignedToStore = detailMaterial.assetId
       ? assignmentByAsset.get(detailMaterial.id)?.accountId === activeStore.id
       : true
     return <div className="material-detail-page" data-testid="material-detail-page">
       <button type="button" className="material-detail-back" onClick={() => { setDetailMaterialId(null); setDetailPreviewOpen(false) }}><ArrowLeft size={16} />返回素材库</button>
       <section className="material-detail-hero">
-        <button ref={detailPreviewTriggerRef} type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={`放大${detailMaterial.name}`} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>点击放大预览</span></button>
+          <button ref={detailPreviewTriggerRef} type="button" className={`material-detail-preview ${detailMaterial.previewUrl ? 'has-image' : ''}`} aria-label={detailIsVideo ? `视频暂不支持预览：${detailMaterial.name}` : `放大${detailMaterial.name}`} disabled={detailIsVideo} onClick={() => setDetailPreviewOpen(true)}>{detailMaterial.previewUrl && detailMaterial.format !== 'MP4' ? <img src={detailMaterial.previewUrl} alt={detailMaterial.name} /> : detailIsVideo ? <Play size={64} fill="currentColor" /> : detailMaterial.category === '商品视频' ? <Play size={64} fill="currentColor" /> : <ImageIcon size={64} />}<span>{detailIsVideo ? '视频暂不支持预览' : '点击放大预览'}</span></button>
+          {detailIsVideo && <p className="material-detail-preview-note">当前页面暂不支持播放视频，可下载查看。</p>}
         <div className="material-detail-info"><span className="section-kicker">素材详情</span><h1>{detailMaterial.name}</h1><p>查看素材文件、归属店铺与管理信息。</p><dl><div><dt>素材分类</dt><dd>{detailMaterial.category}</dd></div><div><dt>所属系列</dt><dd>{detailMaterial.series}</dd></div><div><dt>所属店铺</dt><dd>{detailAssignedToStore ? activeStore.name : '未归属'}</dd></div><div><dt>平台</dt><dd>{detailAssignedToStore ? activeStore.platform : '未归属'}</dd></div><div><dt>文件格式</dt><dd>{detailMaterial.format}</dd></div>{detailIsImage && <div><dt>图片尺寸</dt><dd>{detailMaterial.sizeLabel}</dd></div>}<div><dt>文件大小</dt><dd>{detailMaterial.fileSizeLabel}</dd></div><div><dt>上传时间</dt><dd>{detailMaterial.addedAt}</dd></div></dl>
           {detailMaterial.assetId ? <div className="material-detail-metadata-editors" aria-label="编辑素材分类和系列">
             <label><span>修改素材分类</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的素材分类`} value={detailMaterial.category} options={materialStoreCategories.filter((value): value is StoreMaterialCategory => value !== '全部').map((value) => ({ value, label: value }))} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { category: value as StoreMaterialCategory }) }} /></label>
             <label><span>修改所属系列</span><MaterialCategoryDropdown ariaLabel={`修改${detailMaterial.name}的所属系列`} value={detailMaterial.series} options={availableSeries.map((value) => ({ value, label: value }))} disabled={!detailMaterial.assetId || !scopedBrandRead || activeStoreId === 'unclassified'} onChange={(value) => { setMaterialStorageError(''); void updateMaterialMetadata(detailMaterial.id, { series: value }) }} /></label>
           </div> : <p className="material-detail-metadata-readonly">素材还没有服务端记录，分类与系列只能在成功上传后修改。</p>}
           {materialStorageError && <p className="material-detail-metadata-error" role="alert">{materialStorageError}</p>}
-          <a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a></div>
+          <a href={materialDownloadHref(detailMaterial, baseUrl)} download={detailMaterial.name} onClick={(event) => { if (!detailMaterial.assetId) return; event.preventDefault(); void downloadMaterial(detailMaterial) }}><Download size={15} />下载素材</a>{materialDownloadError && <p className="material-download-error" role="alert">{materialDownloadError}</p>}</div>
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
@@ -13091,6 +13096,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
   )
   const [selectedCategory, setSelectedCategory] =
     useState<CatalogCategory | null>(null)
+  const selectedCategoryTriggerRef = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
     setPlatform(rulesPlatform ?? ruleContext.platform)
   }, [ruleContext.platform, rulesPlatform])
@@ -13339,7 +13345,10 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             <span>最近更新：{category.updatedAt}</span>
             <button
               className="text-button"
-              onClick={() => setSelectedCategory(category)}
+              onClick={(event) => {
+                selectedCategoryTriggerRef.current = event.currentTarget
+                setSelectedCategory(category)
+              }}
             >
               查看类目字段模板 <ArrowRight size={14} />
             </button>
@@ -13560,7 +13569,12 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             </div>
             <button
               className="text-button"
-              onClick={() => setSelectedCategory(null)}
+              onClick={() => {
+                setSelectedCategory(null)
+                window.requestAnimationFrame(() =>
+                  selectedCategoryTriggerRef.current?.focus({ preventScroll: true }),
+                )
+              }}
             >
               关闭
             </button>
@@ -13593,6 +13607,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
 
 function PublishModal({
   close,
+  onReviewHistory,
   onComplete,
   onSubmit,
   returnFocus,
@@ -13600,6 +13615,7 @@ function PublishModal({
   preview,
 }: {
   close: () => void
+  onReviewHistory: () => void
   onComplete: (jobId: string) => void
   onSubmit: () => Promise<string>
   returnFocus: HTMLElement | null
@@ -13614,6 +13630,13 @@ function PublishModal({
   const errorRef = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
   const submitLockRef = useRef(false)
+  const closeRef = useRef(close)
+  const restoreFocusOnCloseRef = useRef(false)
+  closeRef.current = close
+  const closeModal = () => {
+    restoreFocusOnCloseRef.current = true
+    closeRef.current()
+  }
   useEffect(() => {
     loadingRef.current = loading
   }, [loading])
@@ -13628,7 +13651,10 @@ function PublishModal({
   useEffect(() => {
     cancelRef.current?.focus()
     const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !loadingRef.current) close()
+      if (event.key === 'Escape' && !loadingRef.current) {
+        restoreFocusOnCloseRef.current = true
+        closeRef.current()
+      }
       if (event.key === 'Tab') {
         const focusable = Array.from(
           modalRef.current?.querySelectorAll<HTMLElement>(
@@ -13651,9 +13677,10 @@ function PublishModal({
     window.addEventListener('keydown', handler)
     return () => {
       window.removeEventListener('keydown', handler)
-      window.requestAnimationFrame(() => returnFocus?.focus())
+      if (restoreFocusOnCloseRef.current)
+        window.requestAnimationFrame(() => returnFocus?.focus({ preventScroll: true }))
     }
-  }, [close, returnFocus])
+  }, [returnFocus])
   const submit = async () => {
     if (submitLockRef.current) return
     submitLockRef.current = true
@@ -13710,7 +13737,7 @@ function PublishModal({
           </div>
           <button
             className="icon-button"
-            onClick={close}
+            onClick={closeModal}
             disabled={loading}
             aria-label="关闭发布确认"
           >
@@ -13791,6 +13818,11 @@ function PublishModal({
               <span>{submitError}</span>
             </div>
           )}
+          {submitError && (
+            <button type="button" className="text-button" onClick={onReviewHistory}>
+              去发布记录核对
+            </button>
+          )}
           <label className="confirm-check">
             <input
               type="checkbox"
@@ -13807,7 +13839,7 @@ function PublishModal({
         <div className="modal-actions">
           <button
             className="secondary"
-            onClick={close}
+            onClick={closeModal}
             ref={cancelRef}
             disabled={loading}
           >
@@ -14652,6 +14684,7 @@ export default function App() {
       {publishModal && target && (
         <PublishModal
           close={() => setPublishModal(false)}
+          onReviewHistory={() => navigateTo('task', { clearContext: true })}
           preview={publishPreview}
           target={target}
           onSubmit={submitPublish}

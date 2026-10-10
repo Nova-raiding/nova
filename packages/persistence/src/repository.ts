@@ -92,6 +92,8 @@ export interface OutboxFailure {
 export interface DurableOutboxRepository extends OutboxRepository {
   claimPending(workspaceId: string, options?: OutboxClaimOptions): Promise<OutboxEvent[]>
   validateLease(workspaceId: string, id: string, leaseToken: string, now?: string): Promise<OutboxEvent>
+  /** Atomically reserves the current claim for exactly one handler invocation. */
+  acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now?: string): Promise<boolean>
   renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string): Promise<OutboxEvent>
   recordFailure(workspaceId: string, id: string, failure: OutboxFailure, nextAttemptAt: string, leaseToken?: string): Promise<OutboxEvent>
   deadLetter(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent>
@@ -343,7 +345,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
       await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET published_at = COALESCE(published_at, $3::timestamptz), lease_token = NULL, lease_until = NULL
+            SET published_at = COALESCE(published_at, $3::timestamptz), lease_token = NULL, lease_until = NULL, execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2
             AND (published_at IS NOT NULL OR (unknown_at IS NULL AND lease_token IS NULL AND lease_until IS NULL))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at`,
@@ -471,6 +473,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
          )
          UPDATE outbox_events AS event
             SET lease_token = $${leaseTokenIndex},
+                execution_owner = NULL,
                 lease_until = COALESCE($2::timestamptz, now()) + ($${leaseMsIndex} * interval '1 millisecond'),
                 -- The claim counter is the only durable evidence of an attempt
                 -- that ends without an outcome (crash, OOM kill, hard restart).
@@ -508,6 +511,26 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     })
   }
 
+  async acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now = new Date().toISOString()): Promise<boolean> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!id || !leaseToken || !invocationId) return false
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      // Lock first so lease validity is evaluated after any tuple-lock wait.
+      await lockOutboxRow(client, scope, id)
+      const result = await client.query<{ id: string }>(
+        `UPDATE outbox_events
+            SET execution_owner = $4
+          WHERE workspace_id = $1 AND id = $2
+            AND published_at IS NULL AND unknown_at IS NULL
+            AND lease_token = $3 AND lease_until > GREATEST($5::timestamptz, clock_timestamp())
+            AND execution_owner IS NULL
+          RETURNING id`,
+        [scope, id, leaseToken, invocationId, now],
+      )
+      return result.rows.length === 1
+    })
+  }
+
   async renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     if (!id) throw new Error('outbox event id is required')
@@ -541,7 +564,8 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
             SET next_attempt_at = $4::timestamptz,
                 last_error = $5::jsonb,
                 lease_token = NULL,
-                lease_until = NULL
+                lease_until = NULL,
+                execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL
             AND ${outboxOutcomeLeasePredicate}
@@ -562,7 +586,8 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         `UPDATE outbox_events
             SET last_error = COALESCE($4::jsonb, '{}'::jsonb) || '{"terminal":true}'::jsonb,
                 lease_token = NULL,
-                lease_until = NULL
+                lease_until = NULL,
+                execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL
             AND ${outboxOutcomeLeasePredicate}
@@ -584,7 +609,8 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
             SET unknown_at = COALESCE(unknown_at, clock_timestamp()),
                 last_error = $4::jsonb,
                 lease_token = NULL,
-                lease_until = NULL
+                lease_until = NULL,
+                execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL
             AND ${outboxOutcomeLeasePredicate}
@@ -609,9 +635,11 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         `UPDATE outbox_events
             SET attempts = GREATEST(attempts - 1, 0),
                 lease_token = NULL,
-                lease_until = NULL
+                lease_until = NULL,
+                execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
             AND unknown_at IS NULL AND lease_token = $3 AND attempts > 0
+            AND execution_owner IS NULL
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken],
@@ -627,7 +655,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
       await lockOutboxRow(client, scope, id)
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
-            SET published_at = COALESCE(published_at, $4::timestamptz), lease_token = NULL, lease_until = NULL
+            SET published_at = COALESCE(published_at, $4::timestamptz), lease_token = NULL, lease_until = NULL, execution_owner = NULL
           WHERE workspace_id = $1 AND id = $2
             AND (published_at IS NOT NULL OR (unknown_at IS NULL AND ${outboxOutcomeLeasePredicate}))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,

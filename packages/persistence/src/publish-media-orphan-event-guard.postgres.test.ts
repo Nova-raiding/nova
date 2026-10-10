@@ -28,7 +28,7 @@ describe('publish media orphan event insert guard', () => {
       isolated.pathname = `/${databaseName}`
       database = new Pool({ connectionString: isolated.toString(), max: 2 })
       const migrations = await loadMigrations()
-      expect(migrations.at(-1)).toMatchObject({ version: 275, name: 'publish_media_orphan_event_guard' })
+      expect(migrations.find(migration => migration.version === 275)).toMatchObject({ name: 'publish_media_orphan_event_guard' })
       const roleBootstrap = await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
       await database.query(roleBootstrap)
       await new MigrationRunner(database, migrations).run()

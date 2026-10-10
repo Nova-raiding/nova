@@ -30,6 +30,8 @@ describe('merchant members scope and governance', () => {
     expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'platform_ops'] }, 'operator')).toBe('finance')
     expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'operator'] }, 'operator')).toBe('operator')
     expect(preferredInviteRole({ ...session, assignable_roles: [] }, 'operator')).toBeNull()
+    expect(preferredInviteRole({ ...session, assignable_roles: ['toString', 'finance'] as never[] })).toBe('finance')
+    expect(preferredInviteRole({ ...session, assignable_roles: ['constructor'] as never[] })).toBeNull()
   })
 
   it('keeps the rendered member list behind server read capability and workspace scope', () => {
@@ -39,7 +41,7 @@ describe('merchant members scope and governance', () => {
     expect(scopeCheck).toBeGreaterThan(-1)
     expect(readCapabilityCheck).toBeGreaterThan(scopeCheck)
     expect(listRequest).toBeGreaterThan(readCapabilityCheck)
-    expect(membersPageSource).toContain("const canManage = Boolean(workspaceId && page && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage')")
+    expect(membersPageSource).toContain("const canManage = Boolean(workspaceId && visiblePage && session?.capabilities.includes('workspace.member.read') && session?.capabilities.includes('workspace.member.manage')")
   })
 
   it('keeps the member destination stable across direct links and in-app navigation', () => {

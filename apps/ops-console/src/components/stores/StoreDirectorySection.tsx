@@ -5,7 +5,8 @@ import { confirmPolicyPropsFor } from "../../utils/destructiveConfirm.js";
 
 interface StoreDirectorySectionProps {
   storeDirectory: StoreDirectory[];
-  canPlatformOps: boolean;
+  canManageStoreConnections: boolean;
+  canManageStoreConnection?: (store: StoreDirectory) => boolean;
   loading?: boolean;
   error?: string;
   onRetry?: () => void;
@@ -34,7 +35,8 @@ export function storeAuthorizationStateLabel(state: string): string {
 
 export function StoreDirectorySection({
   storeDirectory,
-  canPlatformOps,
+  canManageStoreConnections,
+  canManageStoreConnection,
   loading = false,
   error,
   onRetry,
@@ -147,7 +149,7 @@ export function StoreDirectorySection({
       title="平台连接与授权健康"
       extra={
         <Space>
-          {canPlatformOps && onRegisterManualStore ? <>
+          {canManageStoreConnections && onRegisterManualStore ? <>
             <Button type="primary" disabled={activeWorkspaces.length === 0} onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button>
             {activeWorkspaces.length === 0 ? <Typography.Text type="secondary">没有可选的已启用商家工作区；请检查工作区目录权限或刷新后重试。</Typography.Text> : null}
           </> : null}
@@ -277,32 +279,34 @@ export function StoreDirectorySection({
           {
             title: "操作",
             render: (_: unknown, row: StoreDirectory) => (
-              <Space>
-                <Button
-                  type="link"
-                  style={{ minHeight: 44 }}
-                  disabled={!canPlatformOps || row.aggregate === true || row.state === "revoked"}
-                  onClick={() => { setAliasTarget(row); setAlias(row.alias ?? row.label); setAliasError(""); }}
-                >
-                  改别名
-                </Button>
-                <Button
-                  type="link"
-                  danger
-                  style={{ minHeight: 44 }}
-                  loading={revokingKey === `${row.platform}:${row.accountId}`}
-                  disabled={!canPlatformOps || row.aggregate === true || row.state === "revoked" || Boolean(revokingKey)}
-                  onClick={() => { setRevokeError(""); setRevokeTarget(row); }}
-                >
-                  撤销
-                </Button>
-              </Space>
+              row.state === "revoked" ? null : (
+                <Space>
+                  <Button
+                    type="link"
+                    style={{ minHeight: 44 }}
+                    disabled={!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true}
+                    onClick={() => { setAliasTarget(row); setAlias(row.alias ?? row.label); setAliasError(""); }}
+                  >
+                    改别名
+                  </Button>
+                  <Button
+                    type="link"
+                    danger
+                    style={{ minHeight: 44 }}
+                    loading={revokingKey === `${row.platform}:${row.accountId}`}
+                    disabled={!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true || Boolean(revokingKey)}
+                    onClick={() => { setRevokeError(""); setRevokeTarget(row); }}
+                  >
+                    撤销
+                  </Button>
+                </Space>
+              )
             ),
           },
         ]}
       />
       {error ? (
-        <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="store-directory-error-title" style={{ marginTop: 16 }}>
+        <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby="store-directory-error-title" style={{ marginTop: 16 }}>
           <Alert
             type="error"
             showIcon
