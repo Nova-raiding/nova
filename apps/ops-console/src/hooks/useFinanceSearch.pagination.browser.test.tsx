@@ -86,25 +86,49 @@ describe("finance load-more pagination", () => {
 
   it("advances with the same snapshot, deduplicates a repeated row, and retries a failed cursor", async () => {
     const page = await browser!.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
     page.setDefaultTimeout(10_000);
     try {
       await page.goto(`${baseUrl}/__finance-pagination`, { waitUntil: "commit", timeout: 60_000 });
-      await page.getByText("page-1", { exact: true }).waitFor();
-      const rows = page.locator("tbody tr");
-      expect(await rows.count()).toBe(1);
+      try { await page.getByText("page-1", { exact: true }).waitFor(); }
+      catch (cause) {
+        const state = await page.evaluate(() => ({
+          calls: window.__financePageCalls ?? null,
+          body: document.body.innerText.slice(0, 2_000),
+          html: (document.querySelector("#root")?.innerHTML ?? "").slice(0, 2_000),
+        }));
+        throw new Error(`Finance pagination first page did not render. pageErrors=${JSON.stringify(pageErrors)} state=${JSON.stringify(state).slice(0, 6000)}`, { cause });
+      }
+      const visibleRecordKeys = () => page.locator("tbody tr[data-row-key]").evaluateAll(rows =>
+        [...new Set(rows.map(row => row.getAttribute("data-row-key")))].filter((key): key is string => Boolean(key)).sort(),
+      );
+      await page.getByText(/已展示 1 条，共 3 条匹配记录/).waitFor();
+      expect(await visibleRecordKeys()).toEqual(["wallet_transaction:ws-page:page-1"]);
 
       const loadMore = page.getByRole("button", { name: "加载更多财务记录", exact: true });
       await loadMore.click();
       await page.getByText("page-2", { exact: true }).waitFor();
-      expect(await rows.count()).toBe(2);
-      expect(await page.getByText("page-1", { exact: true }).count()).toBe(1);
+      await page.getByText(/已展示 2 条，共 3 条匹配记录/).waitFor();
+      expect(await visibleRecordKeys()).toEqual([
+        "wallet_transaction:ws-page:page-1",
+        "wallet_transaction:ws-page:page-2",
+      ]);
 
       await loadMore.click();
       await page.getByRole("alert").getByText("page temporarily unavailable", { exact: true }).waitFor();
-      expect(await rows.count()).toBe(2);
+      expect(await visibleRecordKeys()).toEqual([
+        "wallet_transaction:ws-page:page-1",
+        "wallet_transaction:ws-page:page-2",
+      ]);
       await loadMore.click();
       await page.getByText("page-3", { exact: true }).waitFor();
-      expect(await rows.count()).toBe(3);
+      await page.getByText(/已展示 3 条，共 3 条匹配记录/).waitFor();
+      expect(await visibleRecordKeys()).toEqual([
+        "wallet_transaction:ws-page:page-1",
+        "wallet_transaction:ws-page:page-2",
+        "wallet_transaction:ws-page:page-3",
+      ]);
       expect(await loadMore.count()).toBe(0);
       expect(await page.evaluate(() => window.__financePageCalls)).toEqual([
         { cursor: null, snapshotAt: null },

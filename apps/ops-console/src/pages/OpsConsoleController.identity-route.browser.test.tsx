@@ -124,8 +124,7 @@ describe("Ops controller identity route authorization", () => {
       await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
       try { await page.getByRole("heading", { name: "无权访问“用户中心”" }).waitFor({ state: "visible", timeout: 8_000 }); }
       catch { await page.waitForTimeout(100); throw new Error(`Controller did not reach denied route. URL=${page.url()} module=${JSON.stringify(moduleResponses)} json=${JSON.stringify(jsonModuleResponses)} RPC=${JSON.stringify(rpcMethods)} errors=${JSON.stringify(browserErrors)} html=${(await page.locator("body").innerHTML()).slice(0, 1200)}`); }
-      expect(rpcMethods).toContain("ops.session");
-      expect(rpcMethods).not.toContain("ops.users.list");
+      expect(rpcMethods).toEqual(["ops.session"]);
       expect(restReads).toEqual([]);
       expect(await page.getByRole("heading", { name: "用户目录" }).count()).toBe(0);
 
@@ -133,7 +132,7 @@ describe("Ops controller identity route authorization", () => {
       await page.getByRole("button", { name: "刷新权限" }).click();
       await page.getByRole("heading", { name: "已接入用户" }).waitFor({ state: "visible" });
       await expectEventually(() => rpcMethods.filter(method => method === "ops.users.list").length === 1);
-      expect(rpcMethods.filter(method => method === "ops.users.list")).toHaveLength(1);
+      expect(rpcMethods).toEqual(["ops.session", "ops.session", "ops.users.list"]);
       expect(writeAttempts).toEqual([]);
       expect(unexpectedRequests).toEqual([]);
     } finally { await page.close(); }
@@ -180,11 +179,11 @@ describe("Ops controller identity route authorization", () => {
       for (const label of ["成员管理", "任务中心", "知识治理"]) {
         expect(await page.getByRole("button", { name: label, exact: true }).count()).toBe(0);
       }
-      expect(rpcMethods).toContain("ops.session");
-      expect(rpcMethods).not.toContain("ops.members.list");
+      expect(rpcMethods).toEqual(["ops.session"]);
       await blocked.getByRole("button", { name: "返回总览" }).click();
       await page.getByText("当前账号没有模型状态读取权限").waitFor();
       await expectEventually(() => page.url().includes("/ops/overview?workbench=platform"));
+      expect(rpcMethods).toEqual(["ops.session"]);
       expect(unexpectedRequests).toEqual([]);
     } finally {
       await page.close();

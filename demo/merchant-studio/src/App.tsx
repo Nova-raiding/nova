@@ -10500,8 +10500,16 @@ function TaskWorkspace({
         }
       })
       .catch((cause) => {
-        if (requestId === taskListRequestId.current)
-          setTaskListError(describeApiError(cause))
+        if (requestId === taskListRequestId.current) {
+          // This is a read failure: the last successful list remains usable,
+          // so do not show the uncertain-outcome wording reserved for writes.
+          const readError = cause as { code?: string; message?: string } | null
+          setTaskListError(
+            readError?.code === 'TASK_READ_UNAVAILABLE'
+              ? readError.message || '任务暂时无法读取'
+              : describeApiError(cause),
+          )
+        }
       })
       .finally(() => {
         if (requestId === taskListRequestId.current) setTaskListLoading(false)
@@ -11253,7 +11261,7 @@ function TaskWorkspace({
           </div>
         )}
         {taskListError && !taskListLoading && (
-          <ErrorNotice message={taskListError} onRetry={loadTaskList} />
+          <ErrorNotice message={taskListError} onRetry={loadTaskList} retryLabel="重试" />
         )}
         {taskListError && !taskListLoading && Boolean(taskList?.length) && (
           <div className="info-notice" role="status">

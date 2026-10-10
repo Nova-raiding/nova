@@ -120,6 +120,8 @@ describe('quality entrypoint coverage', () => {
     expect(check).toContain('npm run test:ecs-staging-toolchain')
     expect(script('test:ecs-staging-toolchain')).toBe('node --test tests/ecs-staging-toolchain-installer.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product.test.mjs')
+    expect(script('test:plugin-import-contract')).toContain('apps/plugin/amazon-product-photography-skill-contract.test.mjs')
+    expect(script('test:plugin-import-contract')).toContain('apps/plugin/ecommerce-video-skill-safety-contract.test.ts')
     expect(script('test:plugin-import-contract')).toContain('.codex-marketplace/plugins/merchant-marketing/skills/six-platform-public-import/scripts/extract-product.test.mjs')
     expect(script('test:plugin-import-contract')).toContain('apps/plugin/skills/six-platform-public-import/scripts/extract-product-meta-order.test.mjs')
     // `invariants:verify` was the only mechanism in this repository that proves

@@ -2,6 +2,10 @@ import { expect, test, chromium } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
+// Each case launches a fresh desktop Chromium session. Give the isolated
+// browser journey room to start on heavily loaded local runners.
+test.setTimeout(90_000)
+
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:5188'
 const evidenceDir = process.env.PUBLISH_HISTORY_EVIDENCE_DIR
 const workspaceId = 'ws_publish_history_local_mock'

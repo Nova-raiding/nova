@@ -284,6 +284,7 @@ jobs:
           packages/persistence/src/local-212-collision-bridge.postgres.test.ts
           packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
           packages/persistence/src/commercial-contract-tenant-rls.regression.postgres.test.ts
+          packages/persistence/src/customer-delivery-tenant-rls.postgres.test.ts
           packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts
           packages/persistence/src/commercial-notification-repository.release.postgres.test.ts
           packages/persistence/src/commercial-notification-read-rls.postgres.test.ts

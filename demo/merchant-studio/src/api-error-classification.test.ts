@@ -19,6 +19,10 @@ describe('merchant API error classification', () => {
     expect(describeApiError(apiError('jd OAuth missing', 'NOT_CONFIGURED', 503))).toContain('该平台尚未配置')
   })
 
+  it('keeps the task-list read recovery message when a task endpoint returns 503', () => {
+    expect(describeApiError(apiError('任务暂时无法读取', 'TASK_READ_UNAVAILABLE', 503))).toBe('任务暂时无法读取')
+  })
+
   it('surfaces commercial entitlement gates instead of mislabeling them as outages', () => {
     const error = Object.assign(apiError('commercial access required', 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE', 503), {
       details: { classification: 'POINT_REQUIRED_NO_CHARGE' },

@@ -30,11 +30,12 @@ describe("support action dialog feedback", () => {
           return `
             import React from 'react';
             import { createRoot } from 'react-dom/client';
-            import { App } from 'antd';
+            import { App, ConfigProvider } from 'antd';
+            import zhCN from 'antd/locale/zh_CN';
             import { SupportTicketDetailSection } from '/src/components/support/SupportTicketDetailSection.tsx';
             const ticket = { id:'ticket-1', workspaceId:'ws-1', ticketNumber:'SUP-101', subject:'订单状态异常', description:'工单测试描述', priority:'normal', customerId:'customer-1', customerName:'测试商家', tags:[], revision:1, createdBy:'operator-1', createdAt:'2026-10-01T00:00:00.000Z', updatedAt:'2026-10-01T00:00:00.000Z', status:'open', sla:{policy:{version:1,calendar:'business_weekday_utc',firstResponseMinutes:120,resolutionMinutes:480},firstResponseDueAt:'2026-10-01T02:00:00.000Z',resolutionDueAt:'2026-10-01T08:00:00.000Z',pausedMinutes:0,state:'on_track'} };
             const model = { workspaceId:'ws-1', tickets:[], selected:{ticket,events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{ throw new Error('上次分配负责人失败'); }, transition:async()=>{}, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
-            createRoot(document.getElementById('root')).render(React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate:true})));
+            createRoot(document.getElementById('root')).render(React.createElement(ConfigProvider,{locale:zhCN},React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate:true}))));
           `;
         },
         configureServer(server) {
@@ -63,21 +64,42 @@ describe("support action dialog feedback", () => {
 
   it("clears a failed assignment message when another action dialog opens", async () => {
     const page = await browser!.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
     page.setDefaultTimeout(10_000);
     try {
-      await page.goto(`${baseUrl}/__support-action-feedback`, { waitUntil: "commit", timeout: 60_000 });
-      await page.getByRole("button", { name: "分配负责人", exact: true }).click();
+      await page.goto(`${baseUrl}/__support-action-feedback`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      try {
+        await page.locator("#root > *").waitFor({ state: "attached", timeout: 20_000 });
+      } catch (cause) {
+        const rootSnapshot = (await page.locator("#root").innerHTML().catch(() => "<root unavailable>")).slice(0, 4_000);
+        throw new Error(`Support action detail did not mount. pageErrors=${JSON.stringify(pageErrors)} root=${rootSnapshot}`, { cause });
+      }
+      const assignButton = page.getByRole("button", { name: "分配负责人", exact: true });
+      try {
+        await assignButton.waitFor({ state: "visible", timeout: 20_000 });
+      } catch (cause) {
+        const rootSnapshot = (await page.locator("#root").innerHTML().catch(() => "<root unavailable>")).slice(0, 4_000);
+        throw new Error(`Support action detail did not render the assignment action. pageErrors=${JSON.stringify(pageErrors)} root=${rootSnapshot}`, { cause });
+      }
+      await assignButton.click();
       const assignDialog = page.getByRole("dialog", { name: "分配工单" });
       await assignDialog.waitFor();
       await assignDialog.getByLabel("负责人 ID", { exact: true }).fill("operator-2");
       await assignDialog.getByRole("button", { name: "确认分配", exact: true }).click();
       await assignDialog.getByRole("alert").getByText("上次分配负责人失败", { exact: true }).waitFor();
-      await assignDialog.getByRole("button", { name: "取消", exact: true }).click();
+      await page.keyboard.press("Escape");
       await assignDialog.waitFor({ state: "hidden" });
 
       await page.getByRole("button", { name: "添加备注", exact: true }).click();
-      const commentDialog = page.getByRole("dialog", { name: "添加工单备注" });
-      await commentDialog.waitFor();
+      const commentDialog = page.getByRole("dialog").filter({ hasText: "添加工单备注" });
+      try {
+        await commentDialog.waitFor({ timeout: 20_000 });
+      } catch (cause) {
+        const dialogs = await page.getByRole("dialog").allTextContents().catch(() => []);
+        const buttons = await page.getByRole("button").allTextContents().catch(() => []);
+        throw new Error(`Support comment dialog did not open. pageErrors=${JSON.stringify(pageErrors)} dialogs=${JSON.stringify(dialogs)} buttons=${JSON.stringify(buttons)}`, { cause });
+      }
       expect(await commentDialog.getByRole("alert").count()).toBe(0);
       expect(await commentDialog.getByText("上次分配负责人失败", { exact: true }).count()).toBe(0);
     } finally { await page.close(); }

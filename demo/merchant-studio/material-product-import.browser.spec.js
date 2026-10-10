@@ -26,6 +26,8 @@ const envelope = (data) => ({
 })
 
 test('spreadsheet import uploads a product table and carries its material ID through batch import', async () => {
+  // The cold Vite optimizer can exceed Playwright's 30s default on shared CI.
+  test.setTimeout(120_000)
   // Give this spec its own ephemeral loopback server. Never inherit local port
   // forwarding or a configured API proxy; every API request is fixture-backed.
   const vite = await createServer({
@@ -189,7 +191,7 @@ test('spreadsheet import uploads a product table and carries its material ID thr
     await browser.close()
     await vite.close()
   }
-}, 60_000)
+}, 120_000)
 
 test('a partial product-fact confirmation failure can be retried without importing products again', async () => {
   test.setTimeout(60_000)

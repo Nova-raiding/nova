@@ -1,6 +1,6 @@
 ---
 name: amazon-product-photography
-description: 为 Store Nova Amazon 商品规划主图与副图的拍摄/制作 brief、图片组架构、预算输入和验收清单。仅在 merchant-marketing 已核实工作区并将用户明确路由到图片策划后使用；本技能只输出文本，不生成、编辑或上传图片。
+description: 为 Store Nova Amazon 商品规划主图与副图的拍摄/制作 brief、图片组架构、预算约束和验收清单。仅在 merchant-marketing 已核实工作区并将用户明确路由到图片策划后使用；本技能只输出文本，不生成、编辑或上传图片。
 ---
 
 # Amazon 商品摄影规划
@@ -57,6 +57,7 @@ description: 为 Store Nova Amazon 商品规划主图与副图的拍摄/制作 b
 ## 范围与证据
 - Marketplace / 类目 / 页面位置：
 - 已检查的 Merchant MCP 结果与商家素材：
+- 商家提供的预算或费用上限（可选；仅作为规划约束，不会在此发起消费）：
 - 已确认商品事实：
 - 创意建议（待确认）：
 - 未知 / 待核对：

@@ -45,14 +45,14 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
         await new Promise(resolve => setTimeout(resolve, 300))
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'TASK_READ_UNAVAILABLE', message: '任务暂时无法读取' })) })
       }
-      if (offset === 12 && !allowPageTwoRetry) {
+      if (offset === 50 && !allowPageTwoRetry) {
         await new Promise(resolve => setTimeout(resolve, 300))
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'TASK_READ_UNAVAILABLE', message: '任务暂时无法读取' })) })
       }
-      const rows = offset === 12
+      const rows = offset === 50
         ? [task('task-page-two', 'product-page-two')]
         : query === 'missing' ? [task('task-after-retry', 'product-after-retry')] : [task('task-last-good', 'product-last-good')]
-      data = { items: rows, total: 13, limit: 12, offset }
+      data = { items: rows, total: 51, limit: 50, offset }
     } else if (/^\/v1\/products\/product-(last-good|after-retry|page-two)$/u.test(path)) {
       const id = path.slice('/v1/products/'.length)
       data = product(id, id === 'product-after-retry' ? '重试后任务商品' : id === 'product-page-two' ? '第二页任务商品' : '上次成功任务商品')
@@ -78,8 +78,12 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
     await expect(page.getByText('没有匹配的营销任务')).toHaveCount(0)
 
     allowRetry = true
-    await page.getByRole('button', { name: '重试' }).click()
-    await expect(page.getByText('重试后任务商品')).toBeVisible()
+    const retryButton = page.getByRole('button', { name: '重试' })
+    const readsBeforeRetry = taskReads
+    await expect(retryButton).toBeEnabled()
+    await retryButton.click({ timeout: 10_000 })
+    await expect.poll(() => taskReads, { timeout: 10_000, message: 'task list retry did not issue a new read' }).toBe(readsBeforeRetry + 1)
+    await expect(page.getByText('重试后任务商品')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('上次成功任务商品')).toHaveCount(0)
     await page.getByRole('button', { name: '下一页' }).click()
     await expect(page.getByText('正在读取新结果；当前列表保留的是第 1 页、搜索“missing”的上次成功结果。')).toBeVisible()

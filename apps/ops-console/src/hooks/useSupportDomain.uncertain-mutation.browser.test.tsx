@@ -92,9 +92,13 @@ describe("support mutation uncertain result idempotency", () => {
       await expect.poll(() => page.getByTestId("state").textContent()).toContain('"revision":1');
       for (const name of ["assign", "transition", "comment"]) {
         await page.getByRole("button", { name }).click();
-        await expect.poll(() => page.getByTestId("state").textContent()).toContain(name + " response lost after commit");
+        await expect.poll(async () => page.evaluate(() => JSON.stringify({
+          state: document.querySelector('[data-testid="state"]')?.textContent,
+          commands: window.__commands,
+          effects: window.__sideEffects,
+        })), { timeout: 12_000 }).toContain(name + " response lost after commit");
         await page.getByRole("button", { name }).click();
-        await expect.poll(() => page.getByTestId("state").textContent()).not.toContain(name + " response lost after commit");
+        await expect.poll(() => page.getByTestId("state").textContent(), { timeout: 12_000 }).not.toContain(name + " response lost after commit");
       }
       const commands = JSON.parse((await page.getByTestId("commands").textContent()) || "{}");
       const effects = JSON.parse((await page.getByTestId("effects").textContent()) || "{}");

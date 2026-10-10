@@ -363,7 +363,7 @@ test('a selected creative direction must be confirmed before content generation,
 })
 
 test('an uncertain manual-publish response keeps the outcome honest, retries the same intent, and deep-links its history', async () => {
-  const { browser, context, page, approvalRequests, publishPreviewRequests, publishConfirmRequests, publishJob, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
+  const { browser, context, page, apiCalls, approvalRequests, publishPreviewRequests, publishConfirmRequests, publishJob, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
   try {
     await page.getByRole('button', { name: /突出核心功能/u }).click()
     await page.getByRole('button', { name: '确认制作方案并生成' }).click()
@@ -371,7 +371,9 @@ test('an uncertain manual-publish response keeps the outcome honest, retries the
 
     const approvalCheckbox = page.getByRole('checkbox', { name: /我已核对事实、规则和最终内容/u })
     await expect(approvalCheckbox).toBeEnabled()
-    await approvalCheckbox.check()
+    await approvalCheckbox.click()
+    await expect.poll(() => approvalRequests.length, { message: `approval fixture was not reached; API calls: ${JSON.stringify(apiCalls)}; unmocked: ${JSON.stringify(unmockedApiCalls)}` }).toBe(1)
+    await expect(approvalCheckbox).toBeChecked()
     await expect(page.getByRole('button', { name: '继续确认发布' })).toBeEnabled()
     await page.getByRole('button', { name: '继续确认发布' }).click()
     const dialog = page.getByRole('dialog', { name: '提交人工发布任务' })
