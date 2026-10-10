@@ -62,7 +62,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
       if (deps.workerRole(req) !== 'scan') throw new DomainError(ERROR_CODES.FORBIDDEN, '交付扫描只允许已验证签名的 scan worker', 403)
       if (!aggregateId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'aggregate_id 无效', 400)
       if (!persistence.outbox || !persistence.business || !persistence.customerDeliveries) throw new DomainError('CUSTOMER_DELIVERY_SCAN_REPOSITORY_UNAVAILABLE', '交付扫描持久仓储不可用', 503)
-      const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1000)).find(candidate => candidate.id === workerExecutionCheckMatch[1])
+      const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1, workerExecutionCheckMatch[1])).find(candidate => candidate.id === workerExecutionCheckMatch[1])
       if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '交付扫描事件不存在或不属于当前工作区', 404)
       const admission = await recheckCustomerDeliveryScan(event, false)
       return send(res, 200, workspaceId, { delivery_scan_recheck: { ...admission, recheck_id: `delivery_recheck_${randomUUID()}`, event_id: event.id, allowed: true, ready: true, checked_at: new Date().toISOString() } }, null, req)
@@ -71,7 +71,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     if (!aggregateId || !Object.values(workerEventOperations).includes(requestedOperation)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'aggregate_id 或 operation 无效', 400)
     if (requestedOperation === 'generation.execute' && requiresStrictAuth() && deps.workerRole(req) !== 'generation') throw new DomainError(ERROR_CODES.FORBIDDEN, '知识生成执行复核只允许已验证签名的 generation worker', 403)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝执行', 503)
-    const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1000)).find(candidate => candidate.id === workerExecutionCheckMatch[1])
+    const event = (await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1, workerExecutionCheckMatch[1])).find(candidate => candidate.id === workerExecutionCheckMatch[1])
     if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '执行授权事件不存在或不属于当前工作区', 404)
     const expectedOperation = workerEventOperations[event.eventType]
     if (!expectedOperation || expectedOperation !== requestedOperation) throw new DomainError('AUTHZ_EXECUTION_OPERATION_MISMATCH', '事件类型与执行操作不匹配', 403)
@@ -122,7 +122,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     const eventId = url.searchParams.get('event_id')?.trim() ?? ''
     if (!eventId) throw new DomainError('AUTHZ_EXECUTION_EVENT_REQUIRED', '发布执行缺少持久事件标识，已拒绝释放凭据', 400)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝发布执行', 503)
-    const publishEvent = (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(candidate => candidate.id === eventId)
+    const publishEvent = (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, eventId)).find(candidate => candidate.id === eventId)
     const expectedEventType = reconcile ? 'publish.reconcile_requested' : 'publish.requested'
     if (!publishEvent || publishEvent.eventType !== expectedEventType || publishEvent.aggregateId !== job.id || publishEvent.workspaceId !== workspaceId) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '发布执行事件不存在或不属于当前发布任务', 404)
     if (!isPlainPayload(publishEvent.payload)) throw new DomainError('AUTHORIZATION_EVENT_SCOPE_INVALID', '持久发布事件快照格式无效', 403)
@@ -167,7 +167,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
       const key = url.searchParams.get('media_idempotency_key') ?? ''
       const eventId = url.searchParams.get('event_id') ?? ''
       if (!persistence.publishMediaOrphans || !key || !eventId) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_UNAVAILABLE', '媒体恢复记录或绑定参数不可用', 503)
-      const event = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === eventId)
+      const event = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, eventId)).find(item => item.id === eventId)
       if (!event || event.eventType !== (reconcile ? 'publish.reconcile_requested' : 'publish.requested') || event.aggregateId !== job.id) throw new DomainError('PUBLISH_MEDIA_EVENT_INVALID', '媒体回执未绑定当前发布或对账事件', 403)
       if (!isPlainPayload(event.payload)) throw new DomainError('PUBLISH_MEDIA_EVENT_SCOPE_INVALID', '媒体回执事件快照格式无效', 403)
       if (event.workspaceId !== workspaceId || event.payload.payload_hash !== job.payloadHash || event.payload.platform !== job.platform || event.payload.account_id !== job.accountId) throw new DomainError('PUBLISH_MEDIA_EVENT_SCOPE_INVALID', '媒体回执事件与当前工作区或冻结发布任务快照不匹配', 403)
@@ -176,7 +176,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
       const record = await persistence.publishMediaOrphans.getByKey(workspaceId, job.id, key)
       if (record && (record.sha256 !== selected.sha256 || record.role !== selected.role || record.visualRef !== selected.visualRef)) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '保存的媒体回执与当前视觉快照不匹配', 409)
       if (reconcile && record) {
-        const originalEvent = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === record.eventId)
+        const originalEvent = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, record.eventId)).find(item => item.id === record.eventId)
         if (!originalEvent || !isPlainPayload(originalEvent.payload) || originalEvent.eventType !== 'publish.requested' || originalEvent.aggregateId !== job.id || originalEvent.workspaceId !== workspaceId || originalEvent.payload.payload_hash !== job.payloadHash || originalEvent.payload.platform !== job.platform || originalEvent.payload.account_id !== job.accountId) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '媒体回执缺少与当前任务匹配的原始发布事件绑定', 409)
       } else if (!reconcile && record && record.eventId !== eventId) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '保存的媒体回执与当前发布事件不匹配', 409)
       return send(res, 200, workspaceId, { media_lifecycle: record ?? null }, null, req)
@@ -189,7 +189,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     const eventId = url.searchParams.get('event_id')?.trim() ?? ''
     if (!eventId) throw new DomainError('PUBLISH_MEDIA_EVENT_REQUIRED', '发布媒体读取缺少持久事件标识', 400)
     if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝读取发布媒体', 503)
-    const publishEvent = (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(candidate => candidate.id === eventId)
+    const publishEvent = (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, eventId)).find(candidate => candidate.id === eventId)
     const expectedEventType = reconcile ? 'publish.reconcile_requested' : 'publish.requested'
     if (!publishEvent || publishEvent.eventType !== expectedEventType || publishEvent.aggregateId !== job.id || publishEvent.workspaceId !== workspaceId) throw new DomainError('PUBLISH_MEDIA_EVENT_INVALID', '媒体读取事件未绑定当前发布任务', 403)
     if (!isPlainPayload(publishEvent.payload)) throw new DomainError('PUBLISH_MEDIA_EVENT_SCOPE_INVALID', '媒体读取事件快照格式无效', 403)
@@ -222,7 +222,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
     const body = await readBody()
     const eventId = typeof body.event_id === 'string' ? body.event_id : ''
     const key = typeof body.media_idempotency_key === 'string' ? body.media_idempotency_key : ''
-    const event = persistence.outbox && eventId ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === eventId) : undefined
+    const event = persistence.outbox && eventId ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, eventId)).find(item => item.id === eventId) : undefined
     if (!event || event.eventType !== (reconcile ? 'publish.reconcile_requested' : 'publish.requested') || event.aggregateId !== job.id) throw new DomainError('PUBLISH_MEDIA_EVENT_INVALID', '媒体回执未绑定当前发布或对账事件', 403)
     if (event.workspaceId !== workspaceId || event.payload.payload_hash !== job.payloadHash || event.payload.platform !== job.platform || event.payload.account_id !== job.accountId) throw new DomainError('PUBLISH_MEDIA_EVENT_SCOPE_INVALID', '媒体回执事件与当前工作区或冻结发布任务快照不匹配', 403)
     if (!persistence.publishMediaOrphans) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_UNAVAILABLE', '发布媒体恢复记录仓储不可用', 503)
@@ -238,7 +238,7 @@ export async function handleHttpWorkerExecutionRoute(req: IncomingMessage, res: 
       if (state !== 'retained' && state !== 'orphaned') throw new DomainError(ERROR_CODES.FORBIDDEN, 'reconcile worker只能将已存在媒体迁移为 retained 或 orphaned', 403)
       const current = await persistence.publishMediaOrphans.getByKey(workspaceId, job.id, key)
       if (!current) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_NOT_FOUND', '对账事件不能创建媒体生命周期记录', 409)
-      const originalEvent = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(item => item.id === current.eventId)
+      const originalEvent = persistence.outbox && (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, current.eventId)).find(item => item.id === current.eventId)
       if (!originalEvent || originalEvent.eventType !== 'publish.requested' || originalEvent.aggregateId !== job.id || originalEvent.workspaceId !== workspaceId || originalEvent.payload.payload_hash !== job.payloadHash || originalEvent.payload.platform !== job.platform || originalEvent.payload.account_id !== job.accountId) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '媒体回执缺少与当前任务匹配的原始发布事件绑定', 409)
       if (current.sha256 !== selected.sha256 || current.role !== selected.role || current.visualRef !== selected.visualRef) throw new DomainError('PUBLISH_MEDIA_RECEIPT_SCOPE_INVALID', '保存的媒体回执与当前视觉快照不匹配', 409)
       if (current.state !== 'unknown' && current.state !== 'uploaded' && current.state !== state) throw new DomainError('PUBLISH_MEDIA_LIFECYCLE_CONFLICT', '媒体当前状态不允许由对账事件修改', 409)

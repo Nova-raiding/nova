@@ -309,7 +309,15 @@ export class ConnectorRuntime {
         await recordOrphanAndAttemptCleanup(media, mediaReceipt, 'publish_rejected_cleanup_pending_manual_recovery_required')
       }
     } else {
-      for (const media of input.media ?? []) await input.mediaLifecycle?.transition({ media, state: remoteStatus.found && remoteStatus.state !== 'unknown' ? 'retained' : 'unknown', ...(remoteStatus.found && remoteStatus.state !== 'unknown' ? { reason: 'platform_write_confirmed' } : { reason: 'platform_write_status_unknown' }) })
+      for (const mediaReceipt of uploaded) {
+        const media = input.media?.find(item => item.visualRef === mediaReceipt.visualRef)
+        if (!media || !input.mediaLifecycle) continue
+        if (remoteStatus.found && remoteStatus.state === 'published') {
+          await input.mediaLifecycle.transition({ media, state: 'retained', receipt: mediaReceipt, reason: 'platform_write_confirmed' })
+        } else {
+          await input.mediaLifecycle.transition({ media, state: 'unknown', receipt: mediaReceipt, reason: remoteStatus.found && remoteStatus.state === 'submitted' ? 'platform_write_pending_confirmation' : 'platform_write_status_unknown' })
+        }
+      }
     }
     return { receipt, remoteStatus }
     } catch (error) {

@@ -564,6 +564,8 @@ printf '%s\n' Darwin
     expect(reference).toContain('禁止调用宿主生图工具、第三方 provider')
     expect(reference).toContain('创意点、服务端用量/成本')
     expect(packager).toContain("'skills/merchant-marketing/references/product-image-workflow.md'")
+    expect(packager).toContain("resolve(repositoryRoot, 'docs/skill-source-provenance.md')")
+    expect(packager).toContain("destination: 'docs/skill-source-provenance.md'")
   })
 
   it('distinguishes product item numbers from exact SKU codes when searching', () => {

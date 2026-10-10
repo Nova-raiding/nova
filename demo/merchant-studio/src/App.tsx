@@ -5145,28 +5145,7 @@ function ProductAssetRelationDialog({
       {error && (
         <ErrorNotice
           message={`关系读取失败：${error}`}
-          onRetry={() => {
-            setError('')
-            setSaveError('')
-            setLoading(true)
-            void Promise.all([
-              fetchProduct(baseUrl, productId),
-              fetchProductAssetBindings(baseUrl, productId),
-              fetchAssets(baseUrl),
-            ])
-              .then(([nextProduct, bindings, nextAssets]) => {
-                setProduct({
-                  ...nextProduct,
-                  sourceAssetIds: bindings.items
-                    .filter((item) => item.status === 'active')
-                    .sort((left, right) => left.ordinal - right.ordinal)
-                    .map((item) => item.assetId),
-                })
-                setAssets(nextAssets)
-              })
-              .catch((cause) => setError(describeApiError(cause)))
-              .finally(() => setLoading(false))
-          }}
+          onRetry={reload}
         />
       )}
       {!loading && !error && product && (
@@ -5192,6 +5171,18 @@ function ProductAssetRelationDialog({
             <span>
               已绑定关系来自商品 API；可在下方选择通过安全扫描的素材进行绑定或解除绑定，所有变更都会写入审计。
             </span>
+          </div>
+          <div className="relation-refresh-row">
+            <button
+              type="button"
+              className="text-button"
+              onClick={reload}
+              disabled={loading || saving}
+              aria-label="重新读取商品、关系与素材列表"
+            >
+              <RefreshCw size={14} className={loading ? 'spin' : undefined} />
+              {loading ? '正在重新读取…' : '重新读取商品、关系与素材列表'}
+            </button>
           </div>
           <div className="relation-summary" data-testid="canonical-product-relation">
             <StatusChip tone={product.canonical_scope?.verification_status === 'verified' ? 'green' : 'amber'}>
@@ -5278,7 +5269,7 @@ function ProductAssetRelationDialog({
           </div>
           {!selectableAssets.length && (
             <small className="asset-error">
-              当前素材均未通过可信安全扫描；扫描完成后点击“刷新状态”，再回来绑定。
+              当前没有通过可信安全扫描的可绑定素材。扫描结果更新后，可重新读取商品、关系与素材列表。
             </small>
           )}
           {saveError && (

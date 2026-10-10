@@ -153,18 +153,27 @@ const required = [
   'ui/image-local-edit.html', 'ui/recharge.html',
   ...profileSourceFiles,
 ]
+const externalRequired = [{
+  source: resolve(repositoryRoot, 'docs/skill-source-provenance.md'),
+  destination: 'docs/skill-source-provenance.md',
+  repositoryPath: 'docs/skill-source-provenance.md',
+}]
 for (const relativePath of required) {
   if (!existsSync(resolve(pluginRoot, relativePath))) throw new Error(`local plugin input is missing: ${relativePath}`)
+}
+for (const input of externalRequired) {
+  if (!existsSync(input.source)) throw new Error(`local plugin input is missing: ${input.repositoryPath}`)
 }
 // Only source files copied into the bundle and build-time code that determines
 // its contents affect the package's Git provenance. Other applications may be
 // edited concurrently in the same worktree without changing this artifact.
 const sourceProvenanceInputs = [...new Set([
-  ...required,
-  'scripts/package-local-plugin.mjs',
-  'scripts/local-plugin-package-profile.mjs',
-  'scripts/verify-chatgpt-macos.mjs',
-])].map(relativePath => `apps/plugin/${relativePath}`)
+  ...required.map(relativePath => `apps/plugin/${relativePath}`),
+  ...externalRequired.map(input => input.repositoryPath),
+  'apps/plugin/scripts/package-local-plugin.mjs',
+  'apps/plugin/scripts/local-plugin-package-profile.mjs',
+  'apps/plugin/scripts/verify-chatgpt-macos.mjs',
+])]
 const sourceDirty = Boolean(git(['status', '--porcelain', '--untracked-files=all', '--', ...sourceProvenanceInputs]))
 
 const staging = mkdtempSync(resolve(repositoryRoot, '.local-plugin-package-'))
@@ -173,6 +182,11 @@ try {
     const destination = resolve(staging, relativePath)
     mkdirSync(dirname(destination), { recursive: true })
     cpSync(resolve(pluginRoot, relativePath), destination, { recursive: true })
+  }
+  for (const input of externalRequired) {
+    const destination = resolve(staging, input.destination)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(input.source, destination)
   }
   const runtimeFolder = resolve(staging, 'runtime')
   mkdirSync(runtimeFolder, { recursive: true })
@@ -299,7 +313,7 @@ try {
   }
   writeFileSync(resolve(staging, 'bundle-status.json'), `${JSON.stringify(bundleStatus, null, 2)}\n`)
   writeBundleProvenance(staging, { plugin: manifest.id, version, platform, architecture, gitCommit, sourceDirty })
-  const packageEntries = [...required, 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'Store Nova Connect.app', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', 'bundle-profile.json', provenanceFile]
+  const packageEntries = [...required, ...externalRequired.map(input => input.destination), 'runtime', ...(platform === 'darwin' ? ['mcp/keychain-credential-helper', 'mcp/keychain-credential-helper.build.json', 'Store Nova Connect.app', 'login.sh', 'install.command', 'install-all.command'] : []), ...(bundledChatGPTPath ? ['ChatGPT.app.zip'] : []), ...(windowsHelperFiles ? ['windows/StoreNovaCredentialHelper.exe', 'windows/StoreNovaCredentialHelper.exe.sha256', 'windows/credential-signer.txt'] : []), 'marketplace.json', 'install.sh', 'install.cmd', 'login.cmd', 'install-plugin.ps1', 'install-chatgpt.ps1', '.agents/plugins/marketplace.json', 'bundle-status.json', 'bundle-profile.json', provenanceFile]
   assertPackageProfileEntries(packageProfile, packageEntries)
   mkdirSync(dirname(output), { recursive: true })
   if (platform === 'win32') {

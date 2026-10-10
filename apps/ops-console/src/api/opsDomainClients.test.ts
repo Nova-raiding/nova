@@ -193,6 +193,28 @@ describe("Ops domain protocol clients", () => {
     expect(() => parseAuditCenterPage({ records: [{ ...auditRecord, reason: "fixture seed" }], totalRecords: 1, truncated: false })).toThrow(/无效响应/);
   });
 
+  it("rejects invalid ISO timestamps on finance and audit rows before they reach date displays", () => {
+    const financePage = {
+      records: [financeRecord],
+      summary: {
+        totalRecords: 1, rechargeOrderCny: 1, subscriptionOrderCny: 0, walletCreditCny: 0,
+        walletDebitCny: 0, walletNetCny: 0, providerCostCny: 0, customerChargeCny: 0,
+        usageUnits: 0, byKind: { recharge_order: 1, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 },
+      },
+      snapshotAt: "2026-08-29T00:00:00.000Z",
+      scope: { role: "platform_ops", workspaceCount: 1 },
+    };
+    expect(parseFinanceSearchPage(financePage).records).toHaveLength(1);
+    expect(() => parseFinanceSearchPage({ ...financePage, records: [{ ...financeRecord, occurredAt: "not-a-date" }] })).toThrow(/无效响应/);
+    expect(() => parseFinanceSearchPage({ ...financePage, records: [{ ...financeRecord, updatedAt: "2026-02-30T00:00:00.000Z" }] })).toThrow(/无效响应/);
+    expect(() => parseFinanceDetail({ ...financeRecord, updatedAt: "2026-08-29", attributes: {} })).toThrow(/无效响应/);
+
+    const auditPage = { records: [auditRecord], totalRecords: 1, truncated: false };
+    expect(parseAuditCenterPage(auditPage).records).toHaveLength(1);
+    expect(() => parseAuditCenterPage({ ...auditPage, records: [{ ...auditRecord, occurredAt: "2026-02-30T00:00:00.000Z" }] })).toThrow(/无效响应/);
+    expect(() => parseAuditDetail({ ...auditRecord, occurredAt: "2026-08-29", evidence: { redacted: true, fields: {}, omittedFields: 0 } })).toThrow(/无效响应/);
+  });
+
   it("rejects malformed incident and support responses at the transport boundary", () => {
     expect(() => parseIncidentPage({ items: [{ ...incident, affectedComponents: "api" }] })).toThrow(/无效响应/);
     expect(() => parseSupportPage({ items: [{ ...ticket, status: "invented" }] })).toThrow(/无效响应/);

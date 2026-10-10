@@ -170,7 +170,7 @@ describe("IncidentsPage list recovery and filters", () => {
       expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
 
       await page.getByRole("button", { name: "重新核对所选事故" }).click();
-      await page.locator(".ant-timeline").getByText("核对接口故障影响范围", { exact: true }).waitFor();
+      await page.locator(".ant-timeline-item-content").getByText("核对接口故障影响范围", { exact: true }).waitFor();
       expect(await page.getByRole("button", { name: "追加评论" }).isDisabled()).toBe(false);
       expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
     } finally { await page.close(); }
@@ -189,7 +189,13 @@ describe("IncidentsPage list recovery and filters", () => {
       await page.locator(".ant-drawer-close").click();
       await page.locator(".ant-drawer-content-wrapper").waitFor({ state: "hidden" });
       await page.getByRole("button", { name: "查看事故：Worker 队列积压" }).click();
-      await page.getByText("事故详情已验证。", { exact: true }).waitFor();
+      await page.waitForFunction(() => window.__incidentDetailReads >= 2);
+      await page.waitForFunction(() => document.querySelector(".ant-drawer-title")?.textContent?.trim() === "事故详情 · Worker 队列积压");
+      const detail = page.getByRole("region", { name: "事故详情内容" });
+      expect(await detail.getAttribute("aria-busy")).toBe("false");
+      await detail.getByRole("textbox", { name: "事故评论" }).fill("Worker 队列确认评论");
+      expect(await detail.getByRole("button", { name: "追加评论" }).isDisabled()).toBe(true);
+      expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
       await page.evaluate(() => window.__rejectNextIncidentComment?.());
       const alert = page.getByRole("alert").filter({ hasText: "评论请求超时" });
       await alert.getByText("事故操作结果尚未确认").waitFor();
@@ -197,7 +203,7 @@ describe("IncidentsPage list recovery and filters", () => {
       expect(await alert.locator(".ant-alert-description").innerText()).toContain("API 请求失败");
       expect(await alert.getByText("创建结果尚未确认").count()).toBe(0);
       expect(await alert.getByRole("button", { name: "重新核对失败目标：API 请求失败" }).count()).toBe(1);
-      const commentButton = page.getByRole("button", { name: "追加评论" });
+      const commentButton = detail.getByRole("button", { name: "追加评论" });
       expect(await commentButton.isDisabled()).toBe(true);
       await page.getByText("事故操作结果仍待核对：“API 请求失败”（inc-1）", { exact: false }).waitFor();
 
@@ -205,11 +211,13 @@ describe("IncidentsPage list recovery and filters", () => {
       await page.locator(".ant-drawer-close").click();
       await page.locator(".ant-drawer-content-wrapper").waitFor({ state: "hidden" });
       const statusFilter = page.getByRole("combobox", { name: "按状态筛选" });
+      const listCallsBeforeFilter = await page.evaluate(() => window.__incidentListCalls.length);
       await statusFilter.focus();
-      await statusFilter.press("End");
-      await statusFilter.press("Enter");
+      await statusFilter.click();
+      await page.locator(".ant-select-dropdown:visible .ant-select-item-option").filter({ hasText: "已解决" }).click();
       await page.getByRole("button", { name: "应用筛选" }).click();
-      await page.getByText("暂无事故").waitFor();
+      await page.waitForFunction(count => window.__incidentListCalls.length > count, listCallsBeforeFilter);
+      expect(await page.evaluate(() => window.__incidentListCalls.at(-1)?.status)).toBe("resolved");
       await alert.getByRole("button", { name: "重新核对失败目标：API 请求失败" }).click();
       await page.waitForFunction(count => window.__incidentDetailReads === count + 1, detailReadsBeforeRecovery);
       await page.getByText("事故详情已验证。", { exact: true }).waitFor();
@@ -271,8 +279,9 @@ describe("IncidentsPage list recovery and filters", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "创建事故", exact: true }).waitFor({ state: "visible" });
       expect(await page.getByRole("button", { name: "创建事故", exact: true }).isDisabled()).toBe(true);
-      await page.getByRole("button", { name: "我已核对列表，解除创建锁" }).waitFor({ state: "visible" });
-      expect(await page.getByRole("button", { name: "我已核对列表，解除创建锁" }).isDisabled()).toBe(false);
+      const pageRecovery = page.getByRole("status").filter({ hasText: "事故写操作结果待核对" });
+      await pageRecovery.getByRole("button", { name: "我已核对列表，解除创建锁" }).waitFor({ state: "visible" });
+      expect(await pageRecovery.getByRole("button", { name: "我已核对列表，解除创建锁" }).isDisabled()).toBe(false);
     } finally { await page.close(); }
   }, 60_000);
 
@@ -293,9 +302,9 @@ describe("IncidentsPage list recovery and filters", () => {
       await dialog.getByRole("status").getByRole("button", { name: "重新读取事故列表" }).click();
       await dialog.getByRole("alert").getByText("事故列表读取失败").waitFor();
       await dialog.locator(".ant-alert-error button").click();
-      await page.waitForFunction(() => window.__incidentListCalls.length === 3);
-      expect(await dialog.getByRole("alert").getByText("事故列表读取失败").count()).toBe(0);
       await dialog.getByText("上一次事故创建结果仍待核对", { exact: false }).waitFor();
+      await dialog.getByRole("alert").getByText("事故列表读取失败").waitFor({ state: "hidden" });
+      expect(await dialog.getByRole("alert").getByText("事故列表读取失败").count()).toBe(0);
       expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
     } finally { await page.close(); }
   }, 60_000);

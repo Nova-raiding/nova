@@ -22,6 +22,24 @@ describe('tenant-scoped outbox', () => {
     expect(outbox.pending('ws_a')).toHaveLength(1)
   })
 
+  it('finds an exact aggregate event without the default page limit hiding older evidence', () => {
+    const outbox = new InMemoryOutbox()
+    const first = outbox.append({ workspaceId: 'ws_a', aggregateId: 'publish-job', eventType: 'publish.requested', sequence: 1, payload: {} })
+    for (let sequence = 2; sequence <= 1_005; sequence += 1) {
+      outbox.append({ workspaceId: 'ws_a', aggregateId: 'publish-job', eventType: 'publish.reconcile_requested', sequence, payload: {} })
+    }
+
+    expect(outbox.listAggregateEvents('ws_a', 'publish-job', 1, first.id)).toEqual([first])
+    expect(outbox.listAggregateEvents('ws_b', 'publish-job', 1, first.id)).toEqual([])
+  })
+
+  it('keeps an empty exact event ID fail-closed instead of falling back to history', () => {
+    const outbox = new InMemoryOutbox()
+    outbox.append({ workspaceId: 'ws_a', aggregateId: 'publish-job', eventType: 'publish.requested', sequence: 1, payload: {} })
+
+    expect(outbox.listAggregateEvents('ws_a', 'publish-job', 100, '')).toEqual([])
+  })
+
   it('pages workspace events strictly after the compound cursor', () => {
     const outbox = new InMemoryOutbox()
     outbox.append({ workspaceId: 'ws_1', aggregateId: 'a', eventType: 'knowledge.rule.created', sequence: 1, payload: {}, })

@@ -517,7 +517,7 @@ describe('E1 worker execution-check: real signed HTTP with controlled memory rep
         authorization_recheck: { authorized: true, resource_id: resourceId, event_id: event.id, reservation_id: reservationId },
         commercial_access_recheck: { allowed: true, ready: true },
       } } })
-      expect(listEvents).toHaveBeenCalledWith(workspaceId, resourceId, 1000)
+      expect(listEvents).toHaveBeenCalledWith(workspaceId, resourceId, 1, event.id)
       expect(listEvents.mock.invocationCallOrder[0]).toBeLessThan(reserve.mock.invocationCallOrder[0]!)
       expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, resourceId, eventId: event.id, grantId: grant.id }))
       await expect(reserve.mock.results[0]!.value).resolves.toMatchObject({ workspaceId, resourceId, eventId: event.id })

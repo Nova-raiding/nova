@@ -6263,7 +6263,7 @@ async function releaseImageReservationOnFailedReconcile(workspaceId: string, job
   const repository = persistence.creativePoints
   const outbox = persistence.outbox
   if (!repository || !outbox) return { status: 'not_configured' as const, reservationId: null, points: null }
-  const requested = (await outbox.listAggregateEvents(workspaceId, jobId, 100)).find(event => event.id === expected.eventId && event.workspaceId === workspaceId && event.aggregateId === jobId && event.eventType === 'image.generation.requested')
+  const requested = (await outbox.listAggregateEvents(workspaceId, jobId, 1, expected.eventId)).find(event => event.id === expected.eventId && event.workspaceId === workspaceId && event.aggregateId === jobId && event.eventType === 'image.generation.requested')
   const snapshot = requested?.payload.commercial_access_snapshot
   const reservationId = snapshot && typeof snapshot === 'object' && typeof (snapshot as Record<string, unknown>).reservation_id === 'string'
     ? String((snapshot as Record<string, unknown>).reservation_id).trim()
@@ -8661,7 +8661,7 @@ async function applySignedAssetScanResult(workspaceId: string, asset: import('..
   }
   if (!hasPersistedReceipt && (asset.scanStatus !== 'quarantined' || !asset.storageKey.startsWith(`quarantine/${workspaceId}/`))) throw new DomainError('ASSET_SCAN_STATE_INVALID', 'asset is not awaiting an automatic platform scan', 409)
   const scanEvents = persistence.outbox
-    ? await persistence.outbox.listAggregateEvents(workspaceId, asset.id, 100)
+    ? await persistence.outbox.listAggregateEvents(workspaceId, asset.id, 1, receipt.scan_job_id)
     : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === asset.id)
   const scanJob = scanEvents.find(event => event.id === receipt.scan_job_id)
   const approvedEventTypes = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT])
@@ -12776,7 +12776,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const failedProjectionEvents = aggregateEvents.filter(event => event.eventType === 'image.generation.failed' && event.payload.job_id === jobId)
       const matchingFailedProjection = terminalDispatchFailure && failedProjectionEvents.find(event => event.payload.source_event_id === terminalDispatchFailure.id)
       if (!execution && resolution === 'failed' && failedProjectionEvents.some(event => event.payload.source_event_id !== terminalDispatchFailure?.id)) throw new DomainError('IMAGE_GENERATION_PRE_PROVIDER_PROJECTION_CONFLICT', '已有失败投影绑定到其他图片请求事件，禁止覆盖', 409, { reconciliation_required: true })
-      const originalRequestedEvent = execution ? aggregateEvents.find(event => event.id === execution.eventId && event.eventType === 'image.generation.requested') : undefined
+      const originalRequestedEvents = execution
+        ? persistence.outbox
+          ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, execution.eventId)
+          : aggregateEvents.filter(event => event.id === execution.eventId)
+        : []
+      const originalRequestedEvent = originalRequestedEvents.find(event => event.eventType === 'image.generation.requested')
       // A worker can reject an event before creating an execution row (for
       // example, a stale authorization snapshot). That is still a durable,
       // pre-provider failure: it must be closeable and release its point

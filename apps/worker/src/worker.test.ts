@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, publishMediaLifecycleClient, applyReconciledPublishMediaLifecycle, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertPublishMediaRequirement, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, publishMediaLifecycleClient, applyReconciledPublishMediaLifecycle, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -1578,6 +1578,17 @@ describe('worker production entry', () => {
     expect(new URL(requestedUrl).searchParams.get('event_id')).toBe(event.id)
   })
 
+  it('fails closed when the authorized publish contract requires media but none is returned', () => {
+    let failure: unknown
+    try { assertPublishMediaRequirement(true, undefined) } catch (error) { failure = error }
+    expect(failure).toMatchObject({
+      message: expect.stringContaining('requires selected media'),
+      normalized: { code: 'PUBLISH_REQUIRED_MEDIA_MISSING', retryable: false, unknown: false },
+    })
+    expect(() => assertPublishMediaRequirement(true, [])).toThrow('requires selected media')
+    expect(() => assertPublishMediaRequirement(false, undefined)).not.toThrow()
+  })
+
   it('binds reconciliation media reads to the durable reconcile event and signs the reconcile role', async () => {
     const event = { id: 'evt_media_reconcile_fetch', workspaceId: 'ws_a', aggregateId: 'job_media_reconcile_fetch', eventType: 'publish.reconcile_requested', sequence: 2, payload: {}, createdAt: new Date().toISOString() }
     let requestedUrl = ''
@@ -1589,7 +1600,6 @@ describe('worker production entry', () => {
     expect(new URL(requestedUrl).searchParams.get('event_id')).toBe(event.id)
     expect(new URL(requestedUrl).searchParams.get('worker_role')).toBe('reconcile')
     expect(requestedHeaders.get('x-worker-role')).toBe('reconcile')
-  })
   })
 
   it('reuses only a non-empty persisted publish media receipt bound to the exact job and event', async () => {

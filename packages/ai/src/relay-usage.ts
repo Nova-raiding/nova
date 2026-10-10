@@ -168,7 +168,6 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // normalized top-level usage; choosing only the first object could let a
   // conflicting nested receipt silently pass settlement.
   const usageNodes = [root.usage, data?.usage, nestedData?.usage, result?.usage, metadata?.usage].filter(record)
-  const usage = usageNodes[0]
   const rawInputTokenFields = usageNodes.flatMap(node => [node.prompt_tokens, node.input_tokens, node.inputTokens]).filter(value => value !== undefined)
   const rawOutputTokenFields = usageNodes.flatMap(node => [node.completion_tokens, node.output_tokens, node.outputTokens]).filter(value => value !== undefined)
   const rawTotalTokenFields = usageNodes.flatMap(node => [node.total_tokens, node.totalTokens]).filter(value => value !== undefined)
@@ -180,9 +179,13 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const inputTokenAliasesInvalid = tokenAliasesInvalid(inputTokenAliases)
   const outputTokenAliasesInvalid = tokenAliasesInvalid(outputTokenAliases)
   const totalTokenAliasesInvalid = tokenAliasesInvalid(totalTokenAliases)
-  const inputTokens = tokenFrom(usage?.prompt_tokens) ?? tokenFrom(usage?.input_tokens) ?? tokenFrom(usage?.inputTokens)
-  const reportedOutputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
-  const reportedTotal = tokenFrom(usage?.total_tokens) ?? tokenFrom(usage?.totalTokens)
+  // A relay may split normalized and upstream usage fields across supported
+  // envelopes. Reconcile the values collected above instead of validating
+  // every envelope but settling only the first one.
+  const firstValidTokenValue = (values: Array<number | undefined>) => values.find((value): value is number => value !== undefined)
+  const inputTokens = firstValidTokenValue(inputTokenAliases)
+  const reportedOutputTokens = firstValidTokenValue(outputTokenAliases)
+  const reportedTotal = firstValidTokenValue(totalTokenAliases)
   // Some embedding relays report prompt_tokens and total_tokens but omit the
   // completion field. Embeddings produce no completion tokens; record zero
   // only when the provider's total exactly equals its reported input. Do not
@@ -194,12 +197,25 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     && inputTokens !== undefined
     && reportedTotal !== undefined
     && reportedTotal === inputTokens
+  // An embedding receipt without a completion count can only use total as a
+  // second confirmation of its input count. A different total is conflicting
+  // evidence, not a partial usage receipt that can be settled on input alone.
+  const embeddingTotalMismatch = defaults.modality === 'embedding'
+    && reportedOutputTokens === undefined
+    && rawOutputTokenFields.every(value => value === undefined)
+    && inputTokens !== undefined
+    && reportedTotal !== undefined
+    && reportedTotal !== inputTokens
   const outputTokens = reportedOutputTokens ?? (outputTokensDerivedFromEmbeddingTotal ? 0 : undefined)
-  const totalTokens = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && reportedTotal !== inputTokens + outputTokens
+  const derivedTotal = inputTokens !== undefined && outputTokens !== undefined && Number.isSafeInteger(inputTokens + outputTokens)
+    ? inputTokens + outputTokens
+    : undefined
+  const tokenTotalUnsafe = inputTokens !== undefined && outputTokens !== undefined && derivedTotal === undefined
+  const tokenTotalMismatch = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && (derivedTotal === undefined || reportedTotal !== derivedTotal)
+  const totalTokens = tokenTotalMismatch || tokenTotalUnsafe
     ? undefined
-    : reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
-  const tokenTotalMismatch = reportedTotal !== undefined && inputTokens !== undefined && outputTokens !== undefined && reportedTotal !== inputTokens + outputTokens
-  const tokenEvidenceInvalid = inputTokenAliasesInvalid || outputTokenAliasesInvalid || totalTokenAliasesInvalid || tokenTotalMismatch
+    : reportedTotal ?? derivedTotal
+  const tokenEvidenceInvalid = inputTokenAliasesInvalid || outputTokenAliasesInvalid || totalTokenAliasesInvalid || tokenTotalMismatch || tokenTotalUnsafe || embeddingTotalMismatch
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence. Explicit provider
   // cost fields are financial evidence: malformed values or a non-CNY
@@ -319,9 +335,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // job reconcilable even when its usage cannot be settled locally.
   const videoJobId = defaults.modality === 'video' && videoRequestAccepted ? explicitVideoJobIdValue ?? statusBoundVideoIdValue : undefined
   const imageModality = defaults.modality === 'image' || defaults.modality === 'image_edit'
-  const usageObserved = !malformedUsageEnvelope && !providerDurationEvidenceInvalid && (imageModality
+  const usageObserved = !malformedUsageEnvelope && !providerDurationEvidenceInvalid && !tokenEvidenceInvalid && (imageModality
     ? rawOutputImageCounts.length > 0 && reportedOutputImageCountValid && reportedOutputImageCount !== undefined
-    : !tokenEvidenceInvalid && (inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined))
+    : inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || providerDurationSeconds !== undefined)
   const preauthorizationDurationSeconds = defaults.context?.preauthorizationDurationSeconds ?? defaults.context?.durationSeconds
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),

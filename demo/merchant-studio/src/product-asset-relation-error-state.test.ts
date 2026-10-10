@@ -33,6 +33,23 @@ describe('product asset relation dialog separates read failures from write failu
     expect(dialog).toContain('onClick={reload}')
   })
 
+  it('offers an explicit refresh that reloads the product, bindings, and asset list', () => {
+    const refreshRow = dialog.slice(
+      dialog.indexOf('<div className="relation-refresh-row">'),
+      dialog.indexOf('<div className="relation-summary" data-testid="canonical-product-relation">'),
+    )
+    expect(refreshRow).toContain('<button')
+    expect(refreshRow).toContain('aria-label="重新读取商品、关系与素材列表"')
+    expect(refreshRow).toContain('onClick={reload}')
+    expect(refreshRow).toContain('disabled={loading || saving}')
+    const reload = dialog.slice(dialog.indexOf('const reload = () =>'), dialog.indexOf('const mutateBinding = ('))
+    expect(reload).toContain('fetchProduct(baseUrl, productId)')
+    expect(reload).toContain('fetchProductAssetBindings(baseUrl, productId)')
+    expect(reload).toContain('fetchAssets(baseUrl)')
+    expect(reload).toContain('setProduct({')
+    expect(reload).toContain('setAssets(nextAssets)')
+  })
+
   it('blocks continuation when an active source is missing or not generation-ready', () => {
     expect(dialog).toContain('const generationBlockers = productAssetGenerationBlockers(relation)')
     expect(dialog).toContain('generationBlockers.length > 0')

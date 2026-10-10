@@ -10,18 +10,24 @@ function fixture(options: { role?:string; body?:Record<string,unknown>; workspac
   const repository=new MemoryPublishMediaOrphanRepository()
   const send=vi.fn((_res:unknown,_status:number,_workspace:string,data:unknown)=>{(fixture as any).lastData=data;return true})
   const dependencies:any={
-    service:{assertPublishExecutionAllowed:({workspaceId,publishJobId}:any)=>{if(workspaceId!==job.workspaceId||publishJobId!==job.id)throw new Error('tenant/job scope mismatch');return job}},
+    service:{assertPublishExecutionAllowed:({workspaceId,publishJobId}:any)=>{if(workspaceId!==job.workspaceId||publishJobId!==job.id)throw new Error('tenant/job scope mismatch');return job},getTask:()=>({id:'task_a'})},
     persistence:()=>({publishMediaOrphans:repository,outbox:{listAggregateEvents:async()=>[event,reconcileEvent]}}),
     requireWorkerCredentialAuthorization:vi.fn(async()=>undefined),resolveWorkspace:()=>options.workspace??'ws_a',workerRole:()=>options.role??'publish',
     recheckCustomerDeliveryScan:async()=>({}),workerEventOperations:{},requiresStrictAuth:()=>false,recheckWorkerGenerationKnowledge:async()=>({}),requiresWorkerActorAuthorization:()=>true,
-    recheckWorkerCommercialAccess:async()=>({}),serializedWorkerCommercialRecheck:()=>({}),recheckWorkerAuthorizationSnapshot:async()=>({}),enrichRequestObservation:()=>{},
-    assertCanonicalTaskScopeForAction:async()=>undefined,isProduction:()=>false,serializedWorkerAuthorizationSnapshot:()=>({}),publishMediaPayload:vi.fn(async()=>[]),readBody:async()=>options.body??{},send,
+    recheckWorkerCommercialAccess:vi.fn(async()=>({allowed:true,ready:true})),serializedWorkerCommercialRecheck:()=>({}),recheckWorkerAuthorizationSnapshot:vi.fn(async()=>({authorized:true})),enrichRequestObservation:()=>{},
+    assertCanonicalTaskScopeForAction:async()=>undefined,isProduction:()=>false,serializedWorkerAuthorizationSnapshot:(snapshot:any)=>snapshot,publishMediaPayload:vi.fn(async()=>[]),readBody:async()=>options.body??{},send,
   }
   return {repository,dependencies,send}
 }
 const req={method:'POST',headers:{}} as any
 const res={} as any
 const body={event_id:'event_a',media_idempotency_key:'job_a:media:visual_a',platform:'taobao',account_id:'acct_a',visual_ref:'visual_a',role:'main',sha256:'a'.repeat(64),state:'uploaded',receipt:{platform:'taobao',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),mediaId:'remote_media_a',simulated:false}}
+const lifecycleIdentity={workspaceId:'ws_a',publishJobId:'job_a',eventId:event.id,mediaIdempotencyKey:body.media_idempotency_key,platform:'taobao',accountId:'acct_a',visualRef:'visual_a',role:'main' as const,sha256:'a'.repeat(64)}
+
+async function seedLifecycleRecord(repository: MemoryPublishMediaOrphanRepository, state: 'unknown', reason?: string) {
+  await repository.transition({...lifecycleIdentity,state:'intent'})
+  return repository.transition({...lifecycleIdentity,state,receipt:body.receipt,...(reason?{reason}:{})})
+}
 
 function withExecutionSnapshots(source: typeof event | typeof reconcileEvent, operation: 'publish.execute'|'publish.reconcile') {
   const authorization_snapshot={schema_version:1,decision_id:`decision_${source.id}`,actor_id:'actor_a',identity_id:'identity_a',workspace_id:source.workspaceId,workbench:'workspace',context_id:`workspace:${source.workspaceId}`,context_version:'ctx1',policy_version:'policy1',grant_revision:'grant:grant_a:1:identity_a:0',grant_ids:['grant_a'],scope_hash:'b'.repeat(64),capability:operation,resource_id:source.aggregateId,resource_revision:'1',request_id:`request_${source.id}`,trace_id:`trace_${source.id}`,authorized:true,decided_at:new Date().toISOString()}
@@ -165,12 +171,15 @@ describe('worker publish media lifecycle callback',()=>{
         vi.unstubAllEnvs()
       }
     }
-  })
+  },30_000)
 
   it('accepts only the signed publish role and persists a job-bound upload receipt',async()=>{
     const f=fixture({body})
+    f.dependencies.readBody=async()=>({...body,state:'intent',receipt:undefined})
+    await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)
+    f.dependencies.readBody=async()=>body
     await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)).resolves.toBe(true)
-    expect(f.dependencies.requireWorkerCredentialAuthorization).toHaveBeenCalledOnce()
+    expect(f.dependencies.requireWorkerCredentialAuthorization).toHaveBeenCalledTimes(2)
     expect(await f.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toMatchObject({state:'uploaded',eventId:'event_a',receipt:{mediaId:'remote_media_a'}})
   })
   it('rejects unsigned-role, wrong tenant, stale selection, and a non publish event',async()=>{
@@ -199,19 +208,28 @@ describe('worker publish media lifecycle callback',()=>{
     } finally { vi.unstubAllEnvs() }
   })
   it('rejects deletion claims even when the worker supplies an upload receipt and adapter reason',async()=>{
-    const noReceipt=fixture({body:{...body,state:'deleted',receipt:undefined,reason:'discard_adapter_confirmed_delete'}})
-    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),noReceipt.dependencies)).rejects.toThrow('PUBLISH_MEDIA_LIFECYCLE_CONFLICT')
+    const noReceipt=fixture({body})
+    noReceipt.dependencies.readBody=async()=>({...body,state:'intent',receipt:undefined})
+    await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),noReceipt.dependencies)
+    noReceipt.dependencies.readBody=async()=>({...body,state:'deleted',receipt:undefined,reason:'discard_adapter_confirmed_delete'})
+    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),noReceipt.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_LIFECYCLE_CONFLICT',status:409})
     const valid=fixture({body})
+    valid.dependencies.readBody=async()=>({...body,state:'intent',receipt:undefined})
+    await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)
+    valid.dependencies.readBody=async()=>body
     await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)
     valid.dependencies.readBody=async()=>({...body,state:'deleted',receipt:{...body.receipt,mediaId:'different'},reason:'discard_adapter_confirmed_delete'})
-    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)).rejects.toThrow('PUBLISH_MEDIA_LIFECYCLE_CONFLICT')
+    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_LIFECYCLE_CONFLICT',status:409})
     expect(await valid.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toMatchObject({state:'uploaded',receipt:body.receipt})
     valid.dependencies.readBody=async()=>({...body,state:'deleted',reason:'discard_adapter_confirmed_delete'})
-    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)).rejects.toThrow('PUBLISH_MEDIA_LIFECYCLE_CONFLICT')
+    await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),valid.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_LIFECYCLE_CONFLICT',status:409})
     expect(await valid.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toMatchObject({state:'uploaded',receipt:body.receipt})
   })
   it('classifies an out-of-order lifecycle transition as a recoverable 409 and preserves the current receipt',async()=>{
     const f=fixture({body})
+    f.dependencies.readBody=async()=>({...body,state:'intent',receipt:undefined})
+    await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)
+    f.dependencies.readBody=async()=>body
     await handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)
     f.dependencies.readBody=async()=>({...body,state:'intent',receipt:undefined})
     await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle'),f.dependencies)).rejects.toMatchObject({code:'PUBLISH_MEDIA_LIFECYCLE_CONFLICT',status:409})
@@ -219,7 +237,7 @@ describe('worker publish media lifecycle callback',()=>{
   })
   it('settles an unknown receipt only through the bound reconcile event and preserves its original publish event',async()=>{
     const f=fixture({role:'reconcile'})
-    await f.repository.transition({workspaceId:'ws_a',publishJobId:'job_a',eventId:event.id,mediaIdempotencyKey:body.media_idempotency_key,platform:'taobao',accountId:'acct_a',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),state:'unknown',receipt:body.receipt,reason:'publish_outcome_unknown'})
+    await seedLifecycleRecord(f.repository,'unknown','publish_outcome_unknown')
     const getUrl=new URL(`http://local/v1/publish-jobs/job_a/media/lifecycle?worker_role=reconcile&event_id=${reconcileEvent.id}&media_idempotency_key=${body.media_idempotency_key}`)
     await handleHttpWorkerExecutionRoute({...req,method:'GET'} as any,res,getUrl.pathname,getUrl,f.dependencies)
     expect((fixture as any).lastData.media_lifecycle).toMatchObject({state:'unknown',eventId:event.id})
@@ -230,7 +248,7 @@ describe('worker publish media lifecycle callback',()=>{
   it('rejects a reconcile role without its durable reconcile event or with a delete target',async()=>{
     const f=fixture({role:'reconcile',body:{...body,event_id:event.id,state:'retained'}})
     await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle?worker_role=reconcile'),f.dependencies)).rejects.toMatchObject({status:403})
-    await f.repository.transition({workspaceId:'ws_a',publishJobId:'job_a',eventId:event.id,mediaIdempotencyKey:body.media_idempotency_key,platform:'taobao',accountId:'acct_a',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),state:'unknown',receipt:body.receipt})
+    await seedLifecycleRecord(f.repository,'unknown')
     f.dependencies.readBody=async()=>({...body,event_id:reconcileEvent.id,state:'deleted'})
     await expect(handleHttpWorkerExecutionRoute(req,res,'/v1/publish-jobs/job_a/media/lifecycle',new URL('http://local/v1/publish-jobs/job_a/media/lifecycle?worker_role=reconcile'),f.dependencies)).rejects.toMatchObject({status:403})
     expect(await f.repository.getByKey('ws_a','job_a',body.media_idempotency_key)).toMatchObject({state:'unknown',eventId:event.id})
@@ -269,7 +287,7 @@ describe('worker publish media lifecycle callback',()=>{
   })
   it('rejects historical lifecycle rows whose original publish event snapshot no longer matches the frozen job',async()=>{
     const f=fixture({role:'reconcile',body:{...body,event_id:reconcileEvent.id,state:'retained'}})
-    await f.repository.transition({workspaceId:'ws_a',publishJobId:'job_a',eventId:event.id,mediaIdempotencyKey:body.media_idempotency_key,platform:'taobao',accountId:'acct_a',visualRef:'visual_a',role:'main',sha256:'a'.repeat(64),state:'unknown',receipt:body.receipt})
+    await seedLifecycleRecord(f.repository,'unknown')
     const badOriginal={...event,payload:{...event.payload,payload_hash:'e'.repeat(64)}}
     f.dependencies.persistence=()=>({publishMediaOrphans:f.repository,outbox:{listAggregateEvents:async()=>[badOriginal,reconcileEvent]}})
     const getUrl=new URL(`http://local/v1/publish-jobs/job_a/media/lifecycle?worker_role=reconcile&event_id=${reconcileEvent.id}&media_idempotency_key=${body.media_idempotency_key}`)

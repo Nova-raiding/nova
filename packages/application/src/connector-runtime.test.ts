@@ -118,13 +118,18 @@ describe('ConnectorRuntime', () => {
     const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
     const connector = runtime.connector('jd') as any
     const media = { visualRef: 'visual_2', role: 'secondary' as const, mimeType: 'image/png', sha256: 'b'.repeat(64), bytes: new Uint8Array([2]), idempotencyKey: 'job_2:media:visual_2' }
-    const states: string[] = []
+    const transitions: Array<{ state: string; reason?: string }> = []
     connector.uploadMedia = vi.fn(async () => ({ platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'remote_2', sha256: media.sha256, simulated: false }))
     connector.validateWrite = () => [{ field: 'images', code: 'INVALID_VALUE', message: 'rejected', severity: 'error' }]
     connector.discardMedia = vi.fn(async () => ({ deleted: false }))
-    const mediaLifecycle = { transition: vi.fn(async (value: { state: string }) => { states.push(value.state) }) }
+    const mediaLifecycle = { transition: vi.fn(async (value: { state: string; reason?: string }) => { transitions.push({ state: value.state, ...(value.reason ? { reason: value.reason } : {}) }) }) }
     await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: {}, idempotencyKey: 'publish_2', media: [media], mediaLifecycle })).rejects.toThrow('rejected')
-    expect(states).toEqual(['intent', 'uploaded', 'orphaned'])
+    expect(transitions).toEqual([
+      { state: 'intent' },
+      { state: 'uploaded' },
+      { state: 'orphaned', reason: 'prewrite_cleanup_pending_manual_recovery_required' },
+      { state: 'orphaned', reason: 'platform_delete_not_confirmed_manual_recovery_required' },
+    ])
     expect(connector.discardMedia).toHaveBeenCalledOnce()
   })
 
@@ -210,10 +215,25 @@ describe('ConnectorRuntime', () => {
     connector.uploadMedia = vi.fn(async () => { throw new Error('must reuse persisted receipt') })
     const receipt = { platform:'jd' as const,visualRef:media.visualRef,role:media.role,mediaId:'remote_retry',sha256:media.sha256,simulated:false }
     const transition = vi.fn(async () => undefined)
+    connector.queryWrite = vi.fn(async () => ({ found: true, state: 'submitted', remoteId: 'remote_retry', simulated: false }))
     const result = await runtime.executePublish({ platform:'jd',context:{workspaceId:'ws_retry',accountId:'acct_retry'},fields:{title:'retry',category:'outerwear',price:2,stock:1},idempotencyKey:'publish_retry',media:[media],mediaLifecycle:{getReceipt:async()=>receipt,transition} })
     expect(result.receipt.remoteId).toBeTruthy()
     expect(connector.uploadMedia).not.toHaveBeenCalled()
-    expect(transition).toHaveBeenCalledWith({media,state:'retained',reason:'platform_write_confirmed'})
+    expect(transition).toHaveBeenCalledWith({media,state:'unknown',receipt,reason:'platform_write_pending_confirmation'})
+  })
+
+  it('marks uploaded media retained only after a confirmed published state', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef:'visual_published',role:'main' as const,mimeType:'image/png',sha256:'d'.repeat(64),bytes:new Uint8Array([4]),idempotencyKey:'job_published:media:visual_published' }
+    const receipt = { platform:'jd' as const,visualRef:media.visualRef,role:media.role,mediaId:'remote_published',sha256:media.sha256,simulated:false }
+    connector.uploadMedia = vi.fn(async () => receipt)
+    connector.queryWrite = vi.fn(async () => ({ found: true, state: 'published', remoteId: 'remote_published', simulated: false }))
+    const transition = vi.fn(async () => undefined)
+
+    await runtime.executePublish({ platform:'jd',context:{workspaceId:'ws_published',accountId:'acct_published'},fields:{title:'published',category:'outerwear',price:2,stock:1},idempotencyKey:'publish_published',media:[media],mediaLifecycle:{transition} })
+
+    expect(transition).toHaveBeenCalledWith({media,state:'retained',receipt,reason:'platform_write_confirmed'})
   })
 
   it('syncs through a selected profile and keeps platform identity', async () => {

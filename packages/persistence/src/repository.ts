@@ -76,7 +76,7 @@ export interface OutboxRepository {
   append(input: OutboxEventInput): Promise<OutboxEvent>
   pending(workspaceId: string, limit?: number): Promise<OutboxEvent[]>
   markPublished(workspaceId: string, id: string, publishedAt?: string): Promise<OutboxEvent>
-  listAggregateEvents(workspaceId: string, aggregateId: string, limit?: number): Promise<OutboxEvent[]>
+  listAggregateEvents(workspaceId: string, aggregateId: string, limit?: number, eventId?: string): Promise<OutboxEvent[]>
   listWorkspaceEvents?(workspaceId: string, limit?: number): Promise<OutboxEvent[]>
   listWorkspaceEventsAfter?(workspaceId: string, cursor: { createdAt: string; eventId: string } | undefined, limit?: number): Promise<OutboxEvent[]>
   metrics?(workspaceId: string): Promise<{ pending: number; connectorErrors: Record<string, number> }>
@@ -150,11 +150,12 @@ export class InMemoryOutbox {
     return event
   }
   all() { return [...this.events] }
-  listAggregateEvents(workspaceId: string, aggregateId: string, limit = 100) {
+  listAggregateEvents(workspaceId: string, aggregateId: string, limit = 100, eventId?: string) {
     if (!workspaceId.trim()) throw new TenantScopeError()
     if (!aggregateId.trim()) throw new Error('aggregate id is required')
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
-    return this.events.filter(event => event.workspaceId === workspaceId && event.aggregateId === aggregateId).sort((a, b) => a.sequence - b.sequence || a.createdAt.localeCompare(b.createdAt)).slice(-limit)
+    const events = this.events.filter(event => event.workspaceId === workspaceId && event.aggregateId === aggregateId && (eventId === undefined || event.id === eventId)).sort((a, b) => a.sequence - b.sequence || a.createdAt.localeCompare(b.createdAt))
+    return eventId === undefined ? events.slice(-limit) : events.slice(0, 1)
   }
   listWorkspaceEvents(workspaceId: string, limit = 1000) {
     if (!workspaceId.trim()) throw new TenantScopeError()
@@ -337,20 +338,29 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     })
   }
 
-  async listAggregateEvents(workspaceId: string, aggregateId: string, limit = 100): Promise<OutboxEvent[]> {
+  async listAggregateEvents(workspaceId: string, aggregateId: string, limit = 100, eventId?: string): Promise<OutboxEvent[]> {
     const scope = requireWorkspaceScope(workspaceId)
     if (!aggregateId.trim()) throw new Error('aggregate id is required')
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
     return withWorkspaceTransaction(this.pool, scope, async client => {
-      const result = await client.query<OutboxRow>(
-        `SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
-                attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
-           FROM outbox_events
-          WHERE workspace_id = $1 AND aggregate_id = $2
-          ORDER BY sequence ASC, created_at ASC, id ASC
-          LIMIT $3`,
-        [scope, aggregateId, limit],
-      )
+      const result = eventId !== undefined
+        ? await client.query<OutboxRow>(
+          `SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                  attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
+             FROM outbox_events
+            WHERE workspace_id = $1 AND aggregate_id = $2 AND id = $3
+            LIMIT 1`,
+          [scope, aggregateId, eventId],
+        )
+        : await client.query<OutboxRow>(
+          `SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                  attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
+             FROM outbox_events
+            WHERE workspace_id = $1 AND aggregate_id = $2
+            ORDER BY sequence ASC, created_at ASC, id ASC
+            LIMIT $3`,
+          [scope, aggregateId, limit],
+        )
       return result.rows.map(toOutboxEvent)
     })
   }

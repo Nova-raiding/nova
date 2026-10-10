@@ -1308,6 +1308,18 @@ export async function fetchPublishMedia(input: { apiBaseUrl: string; apiToken: s
   })
 }
 
+export function assertPublishMediaRequirement(required: boolean, media: readonly MediaUploadInput[] | undefined): void {
+  if (required && (!Array.isArray(media) || media.length === 0)) {
+    const message = 'publish execution requires selected media but the authorized media response was empty'
+    // handler.ts only treats failures with `normalized.unknown === false` as
+    // known pre-provider failures. Preserve that contract here so the outbox
+    // does not record a synthetic remote unknown for a request never sent.
+    throw Object.assign(new Error(message), {
+      normalized: { code: 'PUBLISH_REQUIRED_MEDIA_MISSING', message, retryable: false, unknown: false as const },
+    })
+  }
+}
+
 export function publishMediaLifecycleClient(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; platform: string; accountId: string; role?: 'publish' | 'reconcile'; workerId?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const base = input.apiBaseUrl.replace(/\/$/u, '')
   const path = `/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/media/lifecycle`
@@ -2706,6 +2718,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal }) : undefined
     if (execution && payload.payload_hash !== execution.payloadHash) throw new Error('publish event payload hash does not match the frozen publish job')
     const media = execution?.mediaRequired && config.apiBaseUrl && config.apiToken ? await fetchPublishMedia({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }) : undefined
+    assertPublishMediaRequirement(execution?.mediaRequired === true, media)
     const remoteId = resolvePublishRemoteId(payload)
     const lockKey = publishLockKey({ workspaceId: event.workspaceId, platform: String(platform), accountId, remoteId, aggregateId: event.aggregateId })
     const idempotencyKey = publishIdempotencyKey(event)
@@ -2719,6 +2732,8 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
             // lock wait nor fetching media may preserve an earlier allow.
             if (config.apiBaseUrl && config.apiToken) currentExecution = await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal })
             if (currentExecution && payload.payload_hash !== currentExecution.payloadHash) throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RESOURCE_STALE', 'publish event payload hash no longer matches the frozen job', { retryable: false })
+            if (execution && currentExecution && execution.mediaRequired !== currentExecution.mediaRequired) throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RESOURCE_STALE', 'publish media requirement changed during execution recheck', { retryable: false })
+            assertPublishMediaRequirement(currentExecution?.mediaRequired === true, media)
           },
           invoke: () => providerDispatchAdmission.run({ event, operation: 'publish.execute', signal, providerRequests: 0 }, () => runtime.executePublish({
             platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',

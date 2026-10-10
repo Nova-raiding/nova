@@ -84,7 +84,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
       job = service.getImageGenerationJob(workspaceId, jobId)
     }
     if (job.intentHash !== intentHash) throw new DomainError('IMAGE_GENERATION_INTENT_MISMATCH', '图片生成回执与任务意图不匹配', 409)
-    const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100) : []
+    const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, eventId) : []
     const requested = requestedEvents.find(event => event.id === eventId && event.eventType === 'image.generation.requested')
     if (!requested) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '图片生成回执未绑定有效的请求事件', 409)
     if (requested.payload.intent_hash !== intentHash) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '图片生成回执的请求事件意图不匹配', 409)
@@ -159,7 +159,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         const eventId = typeof input.event_id === 'string' ? input.event_id.trim() : ''
         if (!eventId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '执行租约缺少 event_id', 400)
         const job = service.getImageGenerationJob(workspaceId, jobId)
-        const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100) : []
+        const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, eventId) : []
         const requested = requestedEvents.find(event => event.id === eventId && event.eventType === 'image.generation.requested')
         if (!requested || requested.payload.intent_hash !== job.intentHash) {
           throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', '执行租约的 event_id 未绑定当前图片任务请求或意图已漂移', 409, { reconciliation_required: true })
@@ -175,7 +175,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
       }
       if (operation === 'begin_provider_dispatch') {
         const current = await repository.get({ workspaceId, jobId })
-        const event = current && persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1000)).find(candidate => candidate.id === current.eventId && candidate.eventType === 'image.generation.requested') : undefined
+        const event = current && persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, current.eventId)).find(candidate => candidate.id === current.eventId && candidate.eventType === 'image.generation.requested') : undefined
         if (!event) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '图片调用缺少持久请求及授权证据', 403)
         let snapshot: WorkerAuthorizationSnapshot
         try { snapshot = parseWorkerAuthorizationSnapshot(event, 'image_generation.execute') }
@@ -206,7 +206,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
       }
       if (operation === 'fail_before_provider') {
         const eventId = requiredStringValue(input, 'event_id')
-        const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1000)).find(candidate => candidate.id === eventId && candidate.eventType === 'image.generation.requested') : undefined
+        const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, eventId)).find(candidate => candidate.id === eventId && candidate.eventType === 'image.generation.requested') : undefined
         const job = service.getImageGenerationJob(workspaceId, jobId)
         const actionId = `image:${job.idempotencyKey}`
         if (!event || event.payload.action_id !== actionId) throw new DomainError('MODEL_USAGE_BUDGET_LINK_CONFLICT', '图片预算清理缺少匹配的持久请求', 409)
@@ -294,7 +294,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     })
     if (idempotencyKey !== expectedIdempotencyKey) throw new DomainError('IMAGE_GENERATION_EVIDENCE_IDEMPOTENCY_KEY_INVALID', 'Provider 对账证据幂等键必须由当前工作区、任务、事件、执行次数、Provider request id 和查询次数稳定生成', 400, { reconciliation_required: true })
     if (job.intentHash !== intentHash) throw new DomainError('IMAGE_GENERATION_INTENT_MISMATCH', 'Provider 对账证据与任务意图不匹配', 409, { reconciliation_required: true })
-    const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100) : []
+    const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 1, eventId) : []
     const requested = requestedEvents.find(event => event.id === eventId && event.eventType === 'image.generation.requested')
     if (!requested || requested.payload.intent_hash !== intentHash || execution.eventId !== eventId) {
       throw new DomainError('IMAGE_GENERATION_EVENT_INVALID', 'Provider 对账证据未绑定当前任务的请求事件', 409, { reconciliation_required: true })
@@ -465,7 +465,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
     // Bind the signed worker claim to the durable event snapshot so a worker
     // cannot turn this internal endpoint into an arbitrary product lock.
     const aggregateEvents = persistence.outbox
-      ? await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 100)
+      ? await persistence.outbox.listAggregateEvents(workspaceId, aggregateId, 1, eventId)
       : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(candidate => candidate.aggregateId === aggregateId)
     const event = aggregateEvents.find(candidate => candidate.id === eventId)
     const payload = event?.payload
@@ -654,7 +654,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
         // owned reserved->failed CAS audit can authorize this recovery.
         if (!await repository.hasPreProviderFailureProof?.({ workspaceId, jobId: job.id, eventId: execution.eventId })) continue
         try {
-          const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(candidate => candidate.id === execution.eventId) : undefined
+          const event = persistence.outbox ? (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, execution.eventId)).find(candidate => candidate.id === execution.eventId) : undefined
           const commercial = event?.payload.commercial_access_snapshot as Record<string, unknown> | undefined
           const reservationId = typeof commercial?.reservation_id === 'string' ? commercial.reservation_id : ''
           const actionId = typeof event?.payload.action_id === 'string' ? event.payload.action_id : ''
@@ -696,7 +696,7 @@ export async function handleInternalRuntimeRoute(context: InternalRuntimeContext
       } else {
         const latestEvidence = persistence.reconciliationEvidence ? await persistence.reconciliationEvidence.getLatest({ workspaceId, jobId: execution.jobId }) : undefined
         if (latestEvidence?.nextAttemptAt && Date.parse(latestEvidence.nextAttemptAt) > Date.now()) continue
-        const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, job.id, 100) : []
+        const requestedEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1, execution.eventId) : []
         const requested = requestedEvents.find(event => event.eventType === 'image.generation.requested' && event.payload.intent_hash === job.intentHash)
         attention.push({ job_id: job.id, event_id: execution.eventId, intent_hash: job.intentHash, execution_attempt: execution.attempt, query_attempt: (latestEvidence?.queryAttempt ?? 0) + 1, execution_state: execution.state, provider_request_id: execution.providerRequestId ?? null, reconciliation_required: true, next_action: 'Worker 必须查询真实 Provider 后提交 reconciliation-evidence；API 禁止直接查询 Provider', ...(providerSettlementPending ? { reason: 'provider_result_or_usage_settlement_pending' } : {}) })
         if (requested?.payload.action_id) attention.at(-1)!.action_id = requested.payload.action_id

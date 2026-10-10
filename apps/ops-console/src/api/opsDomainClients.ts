@@ -24,6 +24,23 @@ const finite = (value: unknown): value is number => typeof value === "number" &&
 const bool = (value: unknown): value is boolean => typeof value === "boolean";
 const optionalText = (value: unknown) => value === undefined || text(value);
 const optionalFinite = (value: unknown) => value === undefined || finite(value);
+const isoTimestamp = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth
+    && hour <= 23 && minute <= 59 && second <= 59
+    && (offsetHourText === undefined || (Number(offsetHourText) <= 23 && Number(offsetMinuteText) <= 59));
+};
 const scalar = (value: unknown) => value === null || typeof value === "string" || finite(value) || bool(value);
 const fail = (domain: string, field: string): never => { throw new OpsDomainResponseError(domain, field); };
 const textArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
@@ -179,6 +196,7 @@ const financeRecord = (value: unknown, detail = false): boolean => {
   if (!object(value)) return false;
   const requiredText = ["id", "workspaceId", "status", "label", "occurredAt", "updatedAt", "version"];
   if (requiredText.some(key => !text(value[key]))) return false;
+  if (!isoTimestamp(value.occurredAt) || !isoTimestamp(value.updatedAt)) return false;
   if (!financeRecordKinds.includes(value.kind as never) || value.redacted !== true) return false;
   if (!optionalText(value.enterpriseName)) return false;
   if (!optionalText(value.reference) || !optionalFinite(value.amountCny) || !optionalFinite(value.providerCostCny) || !optionalFinite(value.customerChargeCny) || !optionalFinite(value.units)) return false;
@@ -217,6 +235,7 @@ export const parseFinanceExport = (value: unknown): FinanceExport => {
 const auditRecord = (value: unknown, detail = false): boolean => {
   if (!object(value)) return false;
   if (!["id", "workspaceId", "actorId", "action", "resourceType", "resourceId", "occurredAt"].every(key => text(value[key])) || typeof value.reason !== "string" || !auditSources.includes(value.source as never) || value.redacted !== true) return false;
+  if (!isoTimestamp(value.occurredAt)) return false;
   if (containsFixtureMarker(value)) return false;
   if (!detail) return true;
   return object(value.evidence) && value.evidence.redacted === true && finite(value.evidence.omittedFields) && object(value.evidence.fields) && Object.values(value.evidence.fields).every(scalar);

@@ -423,15 +423,26 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     }
   };
   const archiveRecord = async (record: CustomerDeliveryRecord) => {
+    const mutationWorkspaceId = targetWorkspaceId;
+    const assertCurrentArchiveScope = () => {
+      if (mounted.current && currentWorkspace.current === mutationWorkspaceId && currentCanRead.current && currentCanUpdate.current) return;
+      const recoveryMessage = "客户工作区或归档权限已变化，已停止后续归档写入。请切回原工作区刷新并核对记录状态后再操作。";
+      if (mounted.current) setMutationError(recoveryMessage);
+      throw new Error(recoveryMessage);
+    };
     const persist = (candidate: CustomerDeliveryRecord) => {
+      assertCurrentArchiveScope();
       if (!Number.isSafeInteger(candidate.revision) || (candidate.revision ?? 0) < 1) throw new Error("客户交付记录缺少有效版本，请刷新后重试");
-      return customerDeliveryClient.update({ targetWorkspaceId, deliveryId: candidate.id, patch: { archivedAt: new Date().toISOString() }, expectedRevision: candidate.revision as number });
+      return customerDeliveryClient.update({ targetWorkspaceId: mutationWorkspaceId, deliveryId: candidate.id, patch: { archivedAt: new Date().toISOString() }, expectedRevision: candidate.revision as number });
     };
     try {
+      assertCurrentArchiveScope();
       try { await persist(record); }
       catch (cause) {
         if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
-        const latest = await customerDeliveryClient.get(targetWorkspaceId, record.id);
+        assertCurrentArchiveScope();
+        const latest = await customerDeliveryClient.get(mutationWorkspaceId, record.id);
+        assertCurrentArchiveScope();
         await recoverCustomerDeliveryArchiveConflict(latest, persist);
       }
       setRecords((current) => current.filter((candidate) => candidate.id !== record.id));

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { server } from './server.js'
 
 type Rpc<T = unknown> = { data: { result: T } | null; error: { code: string; details?: Record<string, unknown> } | null }
+let previousNodeEnv: string | undefined
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -25,6 +26,7 @@ async function call<T>(base: string, token: string, method: string, params: Reco
 
 describe('customer delivery platform authorization and API flow', () => {
   beforeEach(() => {
+    previousNodeEnv = process.env.NODE_ENV
     process.env.NODE_ENV = 'production'
     process.env.MCP_AUTHZ_MODE = 'enforce'
     process.env.SESSION_ID_HASH_SECRET = 'customer-delivery-authz-test-secret'
@@ -39,6 +41,9 @@ describe('customer delivery platform authorization and API flow', () => {
     delete process.env.API_AUTH_TOKENS
     delete process.env.MCP_AUTHZ_MODE
     delete process.env.SESSION_ID_HASH_SECRET
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previousNodeEnv
+    previousNodeEnv = undefined
   })
 
   it('allows platform operator to list and create against an explicit target workspace', async () => {

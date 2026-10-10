@@ -73,6 +73,11 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
       return parsed && (parsed.kind === 'create' || parsed.kind === 'unknown' || (parsed.kind === 'detail' && typeof parsed.incidentId === 'string')) ? parsed : { kind: 'unknown' }
     } catch { return { kind: 'unknown' } }
   })
+  const pendingUncertainWrite = useRef(persistedUncertainWrite)
+  const updatePendingUncertainWrite = useCallback((value: UncertainIncidentWrite | undefined) => {
+    pendingUncertainWrite.current = value
+    setPersistedUncertainWrite(value)
+  }, [])
   const [filters, setFilters] = useState<IncidentFilters>(initialFilters)
   const [incidents, setIncidents] = useState<OpsIncident[]>([])
   const [nextCursor, setNextCursor] = useState<string>()
@@ -97,6 +102,7 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
   const listRequests = useRef(new IncidentRequestGate())
   const detailRequests = useRef(new IncidentRequestGate())
   const selectedIncidentId = useRef<string | undefined>(undefined)
+  const mutationInFlight = useRef(false)
 
   const load = useCallback(async (options: { append?: boolean; filters?: IncidentFilters } = {}) => {
     const request = listRequests.current.begin()
@@ -192,7 +198,7 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
     const detailMatchesTarget = detailResult.status === 'fulfilled' && detailResult.value.id === incident.id
     const timelineMatchesTarget = timelineResult.status === 'fulfilled' && timelineResult.value.items.every((entry) => entry.incidentId === incident.id)
     if (reconcilingUncertainMutation && detailMatchesTarget && timelineMatchesTarget) {
-      setPersistedUncertainWrite(undefined)
+      updatePendingUncertainWrite(undefined)
       try { window.sessionStorage.removeItem(recoveryStorageKey) } catch { /* Keep the current-page state authoritative. */ }
       setUncertainMutationIncidentId(undefined)
       setMutationUncertain(false)
@@ -202,7 +208,7 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
       setErrorIncidentId(undefined)
     }
     setDetailLoading(false)
-  }, [client, persistedUncertainWrite, recoveryStorageKey, uncertainMutationIncidentId])
+  }, [client, persistedUncertainWrite, recoveryStorageKey, uncertainMutationIncidentId, updatePendingUncertainWrite])
 
   const retryDetail = useCallback(() => {
     const target = selected ?? incidents.find((incident) => incident.id === uncertainMutationIncidentId) ?? uncertainMutationTarget
@@ -212,12 +218,12 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
   const acknowledgeCreateReconciliation = useCallback(() => {
     if (persistedUncertainWrite?.kind !== 'create' || !createReconciled) return
     try { window.sessionStorage.removeItem(recoveryStorageKey) } catch { return }
-    setPersistedUncertainWrite(undefined)
+    updatePendingUncertainWrite(undefined)
     setCreateReconciled(false)
     setMutationUncertain(false)
     setUncertainMutationTarget(undefined)
     setError(''); setErrorContext(undefined); setErrorIncidentId(undefined)
-  }, [createReconciled, persistedUncertainWrite, recoveryStorageKey])
+  }, [createReconciled, persistedUncertainWrite, recoveryStorageKey, updatePendingUncertainWrite])
 
   const retryTimeline = useCallback(async () => {
     if (!selected) return
@@ -268,9 +274,12 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
   }, [])
 
   const runMutation = useCallback(async (operation: () => Promise<IncidentMutationResult>, context: Exclude<IncidentErrorContext, 'list-read' | 'append-read'>, shouldSelectResult: (result: IncidentMutationResult) => boolean = () => true, incidentId?: string, incidentSnapshot?: OpsIncident) => {
-    if (context === 'create-mutation' && persistedUncertainWrite) {
+    if (context === 'create-mutation' && pendingUncertainWrite.current) {
       throw new Error('存在尚未核对的事故操作；请先核对失败目标后再创建事故。')
     }
+    if (pendingUncertainWrite.current) throw new Error('存在尚未核对的事故操作；请先完成恢复核对后再写入。')
+    if (mutationInFlight.current) throw new Error('已有事故写操作正在提交，请等待其结果。')
+    mutationInFlight.current = true
     setMutating(true)
     setError('')
     setErrorContext(undefined)
@@ -281,11 +290,11 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
       if (context === 'create-mutation') {
         const record: UncertainIncidentWrite = { kind: 'create' }
         try { window.sessionStorage.setItem(recoveryStorageKey, JSON.stringify(record)) } catch { throw new Error('无法保存事故恢复记录，本次创建请求尚未发送。请检查浏览器存储后重试。') }
-        setPersistedUncertainWrite(record); setMutationUncertain(true); setCreateReconciled(false)
+        updatePendingUncertainWrite(record); setMutationUncertain(true); setCreateReconciled(false)
       } else if (context === 'detail-mutation' && incidentId) {
         const record: UncertainIncidentWrite = { kind: 'detail', incidentId, ...(incidentSnapshot ? { incident: incidentSnapshot } : {}) }
         try { window.sessionStorage.setItem(recoveryStorageKey, JSON.stringify({ kind: 'detail', incidentId })) } catch { throw new Error('无法保存事故恢复记录，本次详情操作尚未发送。请检查浏览器存储后重试。') }
-        setPersistedUncertainWrite(record); setUncertainMutationIncidentId(incidentId); setMutationUncertain(true); setUncertainMutationTarget(incidentSnapshot)
+        updatePendingUncertainWrite(record); setUncertainMutationIncidentId(incidentId); setMutationUncertain(true); setUncertainMutationTarget(incidentSnapshot)
         setDetailVerified(false)
       }
       operationDispatched = true
@@ -296,7 +305,7 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
       }
       const accepted = acceptMutation(result, shouldSelectResult(result))
       if (context === 'create-mutation' || (context === 'detail-mutation' && incidentId)) {
-        setPersistedUncertainWrite(undefined); setUncertainMutationIncidentId(undefined); setMutationUncertain(false); setUncertainMutationTarget(undefined)
+        updatePendingUncertainWrite(undefined); setUncertainMutationIncidentId(undefined); setMutationUncertain(false); setUncertainMutationTarget(undefined)
         try { window.sessionStorage.removeItem(recoveryStorageKey) } catch { /* API success is authoritative for this page. */ }
       }
       return accepted
@@ -306,25 +315,26 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
       setErrorIncidentId(context === 'detail-mutation' ? incidentId : undefined)
       if (!operationDispatched) {
         setRecoveryWriteBlocked(true)
-        setPersistedUncertainWrite(undefined); setUncertainMutationIncidentId(undefined); setMutationUncertain(false); setUncertainMutationTarget(undefined)
+        updatePendingUncertainWrite(undefined); setUncertainMutationIncidentId(undefined); setMutationUncertain(false); setUncertainMutationTarget(undefined)
       } else if (context === 'detail-mutation' && incidentId) {
         const record: UncertainIncidentWrite = { kind: 'detail', incidentId, ...(incidentSnapshot ? { incident: incidentSnapshot } : {}) }
-        setPersistedUncertainWrite(record)
+        updatePendingUncertainWrite(record)
         setUncertainMutationIncidentId(incidentId)
         setMutationUncertain(true)
         setUncertainMutationTarget(incidentSnapshot)
-        setDetailVerified(false)
+        if (selectedIncidentId.current === incidentId) setDetailVerified(false)
       } else if (context === 'create-mutation') {
         const record: UncertainIncidentWrite = { kind: 'create' }
-        setPersistedUncertainWrite(record)
+        updatePendingUncertainWrite(record)
         setCreateReconciled(false)
         setMutationUncertain(true)
       }
       throw cause
     } finally {
+      mutationInFlight.current = false
       setMutating(false)
     }
-  }, [acceptMutation, persistedUncertainWrite, recoveryStorageKey])
+  }, [acceptMutation, persistedUncertainWrite, recoveryStorageKey, updatePendingUncertainWrite])
 
   const create = useCallback((input: Parameters<IncidentsClient['create']>[0]) => runMutation(() => client.create(input), 'create-mutation'), [client, runMutation])
   const runDetailMutation = useCallback((operation: () => Promise<IncidentMutationResult>) => {

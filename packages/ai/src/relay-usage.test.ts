@@ -71,6 +71,29 @@ describe('relay usage normalization', () => {
     expect(sink).not.toHaveBeenCalled()
   })
 
+  it('fails closed when individually safe token counts overflow their derived total', async () => {
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    const payload = {
+      usage: {
+        prompt_tokens: Number.MAX_SAFE_INTEGER,
+        completion_tokens: 1,
+        cost_cny: 0.01,
+      },
+    }
+    const headers = new Headers({ 'x-request-id': 'unsafe-derived-token-total' })
+
+    const parsed = parseRelayUsage(payload, headers, { modality: 'text', model: 'text-v1' })
+    expect(parsed).toMatchObject({
+      costCny: 0.01,
+      metadata: { usage_observed: false, token_evidence_invalid: true },
+    })
+    expect(parsed).not.toHaveProperty('totalTokens')
+    await expect(emitRelayUsage(sink, payload, headers, { modality: 'text', model: 'text-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
+  })
+
   it('rejects conflicting usage objects across supported response envelopes', async () => {
     const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
     const textPayload = {
@@ -108,6 +131,56 @@ describe('relay usage normalization', () => {
     })
   })
 
+  it.each(['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'] as const)(
+    'settles %s when input/output and a matching total are split across usage envelopes', async modality => {
+      const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+      const imageModality = modality === 'image' || modality === 'image_edit'
+      const payload = {
+        usage: {
+          prompt_tokens: 5,
+          completion_tokens: 1,
+          ...(imageModality ? { output_image_count: 1 } : {}),
+          cost_cny: 0.01,
+        },
+        data: { usage: { total_tokens: 6 } },
+      }
+
+      const receipt = await emitRelayUsage(sink, payload, new Headers({ 'x-request-id': `split-consistent-${modality}` }), { modality, model: `${modality}-v1` })
+      expect(receipt).toMatchObject({
+        inputTokens: 5,
+        outputTokens: 1,
+        totalTokens: 6,
+        metadata: { usage_observed: true },
+      })
+      expect(sink).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each(['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'] as const)(
+    'blocks %s when a split total contradicts input plus output', async modality => {
+      const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+      const imageModality = modality === 'image' || modality === 'image_edit'
+      const payload = {
+        usage: {
+          prompt_tokens: 5,
+          completion_tokens: 1,
+          ...(imageModality ? { output_image_count: 1 } : {}),
+          cost_cny: 0.01,
+        },
+        data: { usage: { total_tokens: 50 } },
+      }
+      const headers = new Headers({ 'x-request-id': `split-conflicting-${modality}` })
+
+      expect(parseRelayUsage(payload, headers, { modality, model: `${modality}-v1` })).toMatchObject({
+        metadata: { usage_observed: false, token_evidence_invalid: true },
+      })
+      await expect(emitRelayUsage(sink, payload, headers, { modality, model: `${modality}-v1` })).rejects.toMatchObject({
+        code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+      })
+      expect(sink).not.toHaveBeenCalled()
+    },
+  )
+
   it.each([
     ['text', { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 }],
     ['image', { output_image_count: 1, cost_cny: 0.12 }],
@@ -129,7 +202,7 @@ describe('relay usage normalization', () => {
     expect(sink).not.toHaveBeenCalled()
   })
 
-  it.each(['image', 'image_edit'] as const)('preserves image-unit settlement but drops invalid token aliases for %s', async modality => {
+  it.each(['image', 'image_edit'] as const)('blocks %s settlement when token aliases conflict despite image units', async modality => {
     const sink = vi.fn(async (_record: RelayUsageRecord) => ({ recorded: true as const, costEvidence: true as const }))
     const payload = {
       usage: {
@@ -146,17 +219,15 @@ describe('relay usage normalization', () => {
     const headers = new Headers({ 'x-request-id': `invalid-image-token-evidence-${modality}` })
 
     const parsed = parseRelayUsage(payload, headers, { modality, model: 'image-v1' })
-    expect(parsed).toMatchObject({ costCny: 0.12, metadata: { usage_observed: true, token_evidence_invalid: true, billing_units: 1 } })
+    expect(parsed).toMatchObject({ costCny: 0.12, metadata: { usage_observed: false, token_evidence_invalid: true, billing_units: 1 } })
     expect(parsed).not.toHaveProperty('inputTokens')
     expect(parsed).not.toHaveProperty('outputTokens')
     expect(parsed).not.toHaveProperty('totalTokens')
 
-    const settled = await emitRelayUsage(sink, payload, headers, { modality, model: 'image-v1' })
-    expect(settled.metadata).toMatchObject({ usage_observed: true, token_evidence_invalid: true, settlement: 'recorded' })
-    expect(sink).toHaveBeenCalledOnce()
-    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('inputTokens')
-    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('outputTokens')
-    expect(sink.mock.calls[0]?.[0]).not.toHaveProperty('totalTokens')
+    await expect(emitRelayUsage(sink, payload, headers, { modality, model: 'image-v1' })).rejects.toMatchObject({
+      code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage',
+    })
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -391,7 +462,7 @@ describe('relay usage normalization', () => {
     expect(usage).not.toHaveProperty('totalTokens')
   })
 
-  it('derives zero embedding output tokens only from an exact provider total/input equality', () => {
+  it('derives zero embedding output tokens only from an exact provider total/input equality', async () => {
     const equal = parseRelayUsage(
       { usage: { prompt_tokens: 42, total_tokens: 42 } },
       new Headers(),
@@ -400,13 +471,21 @@ describe('relay usage normalization', () => {
     expect(equal).toMatchObject({ inputTokens: 42, outputTokens: 0, totalTokens: 42, metadata: { usage_observed: true, output_tokens_derivation: 'embedding_total_equals_prompt_tokens' } })
 
     const inconsistent = parseRelayUsage(
-      { usage: { prompt_tokens: 42, total_tokens: 43 } },
+      { usage: { prompt_tokens: 42, total_tokens: 43, cost_cny: 0.001 } },
       new Headers(),
       { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
     )
-    expect(inconsistent).toMatchObject({ inputTokens: 42, totalTokens: 43, metadata: { usage_observed: true } })
+    expect(inconsistent).toMatchObject({ inputTokens: 42, totalTokens: 43, metadata: { usage_observed: false, token_evidence_invalid: true } })
     expect(inconsistent).not.toHaveProperty('outputTokens')
     expect(inconsistent?.metadata).not.toHaveProperty('output_tokens_derivation')
+    const sink = vi.fn(() => ({ recorded: true as const, costEvidence: true as const }))
+    await expect(emitRelayUsage(
+      sink,
+      { usage: { prompt_tokens: 42, total_tokens: 43, cost_cny: 0.001 } },
+      new Headers({ 'x-provider-request-id': 'embed-inconsistent-42-43' }),
+      { modality: 'embedding', model: 'qwen3.7-text-embedding-flash' },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+    expect(sink).not.toHaveBeenCalled()
 
     const malformedExplicitOutput = parseRelayUsage(
       { usage: { prompt_tokens: 42, total_tokens: 42, completion_tokens: null } },

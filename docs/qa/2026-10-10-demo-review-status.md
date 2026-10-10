@@ -297,9 +297,10 @@ Owner 当时报告 `publish-media-lifecycle-migration.postgres.test.ts` 与更�
 - PublishHistory 的只读 503 此前复用通用“操作未确认”并引导检查模型中转/插件连接。现改为 API 读取恢复指引；对应组件单测 **6/6 通过，exit 0**，本地拦截 API 的 Playwright 全套 **10/10 通过，exit 0**（错误文案、旧快照说明、重试，以及分页、深链和键盘标签旅程）；JavaScript 语法检查通过。浏览器截图写入既有本地 QA evidence 目录，不代表真实 Demo/API 业务数据。
 - 素材关联失败会保留已选素材供修正重试；继续生成前置条件现在检查服务端要求的 `aiModificationAllowed=true`。素材权益单测 **23/23**。素材浏览器的一次重复运行 exit 143，另一次 `.last-run` 状态缺少具体断言，因此都不记为浏览器通过。
 - Support 状态变更失败 fixture 改用 `useRef`，避免确认交互重渲染时清掉模拟失败开关；回归仍在串行队列等待，无通过收据。
-- Audit 平台范围增加企业主体选择入口，以满足页面原有“切换到具体企业导出”的指引。首次可见 Audit browser 收据为 **5 tests：2 passed、3 failed，exit 1**。随后有完整综合 runner 收据：Audit/Incidents/Storage 4 files / 25 tests 中 **19 passed、6 failed，exit 1**；Audit 有 2 个 locator/fixture 问题，Incidents 有 4 个重复文本/状态/断言问题，详见 `/tmp/codex-ops-pages-round10.log`。修复后的单域复跑尚待完成，不把失败后的编辑算作通过。Owner 复核另发现目录加载/错误/空状态时不应隐藏企业入口，已补目录空/错误禁用、重试和 journey。
-- API/MCP marketplace bridge 镜像已补空上传拒绝和本地文件参数错误提示；canonical 与镜像一致、两份 `node --check` 及 `git diff --check` 通过，精确回归尚无收据。
-- migration 274 测试元数据与发布媒体 API 生命周期拒绝条件已更新；worker/repository 回归仍待有完整日志的运行结果。`publish_media_orphan_tasks` 尚无商家或 Ops 恢复页面入口，现有存储统计/批次重试不提供人工认领恢复。
+- Audit 平台范围增加企业主体选择入口，以满足页面原有“切换到具体企业导出”的指引。首次可见 Audit browser 收据为 **5 tests：2 passed、3 failed，exit 1**。随后综合 runner 的 Audit/Incidents/Storage 4 files / 25 tests 中 **19 passed、6 failed，exit 1**；Audit 有 2 个 locator/fixture 问题，Incidents 有 4 个状态/断言问题，详见 `/tmp/codex-ops-pages-round10.log`。Audit 中途完整复跑曾为 **4/5 passed、1 failed，exit 1**；两次目录恢复定向复跑也暴露隐藏 option/selection-label locator 不稳定，最终改为键盘 Enter/ArrowDown/Enter 选择，并核对 workspace-scoped `ops.audit.list` 请求及页面切换到企业范围说明。最终完整 Audit route journey **5/5 passed，exit 0**，日志 `/tmp/codex-audit-journey-final.log`；包含筛选、脱敏详情、焦点返回、导出失败重试/CSV 下载、聚合只读、空目录和错误恢复。Browser 使用本地 RPC fixtures，不是 Demo 或真实租户证据。Incidents round3 定向选取4条旅程为 **2 passed、2 failed**；round4 修正 Select 展开与页面级 create 锁恢复后，两条先前失败旅程 **2/2 passed**（其余6项跳过，round4没有可见 shell exit marker）。完整 Incidents spec 尚在排队，待取得完整收据。Owner 复核另发现目录加载/错误/空状态时不应隐藏企业入口，已补目录空/错误禁用、重试和 journey。
+- API/MCP marketplace bridge 镜像已补空上传拒绝和本地文件参数错误提示；canonical 与镜像一致、两份 `node --check` 及 `git diff --check` 通过。新增 bridge error contract 精确测试 **18/18 passed**，覆盖 canonical/mirror、通知与取消、请求参数和 fail-closed。
+- migration 274 测试元数据与发布媒体 API 生命周期拒绝条件已更新；API 生命周期用例 **17/17 passed**，worker production entry 回归 **129/129 passed**。迁移 SQL/仓储回归仍无本轮完整收据。`publish_media_orphan_tasks` 尚无商家或 Ops 恢复页面入口，现有存储统计/批次重试不提供人工认领恢复。
+- 增量 6 文件回归记录 **184 passed、1 failed，exit 1**：repository、worker 129、Ops API client 7、素材关联权益 5、Customer Delivery authz 10 均通过；plugin install-smoke 中 macOS package/install 一条失败，报告 bundle provenance inventory 缺少 `docs/skill-source-provenance.md`。随后该 package/install 用例单独复跑 **1/1 passed**，完整 install-smoke suite **29/29 passed**（`/private/tmp/codex-plugin-install-smoke-owner.log`），未复现缺文件错误；最初失败与并行 runner 重叠，但具体竞争根因尚未证明。
 
 全工作树 `git diff --check HEAD` 最新通过。CodeGraph 最近索引为 2,982 files、40,359 nodes、160,112 edges，但工作树有并行新增/修改尚待 sync；待并行编辑稳定后再统一同步。Audit、Incidents、Support、TaskWorkspace、素材与购买旅程仍有排队、未归档或未执行项；局部修复不代表全页面验收。唯一 Demo 的真实租户、权限、模型 relay/成本、live migration chain 与发布门禁仍保持 **NO-GO**，本轮未访问或写入线上环境。
 
@@ -312,3 +313,13 @@ Owner 当时报告 `publish-media-lifecycle-migration.postgres.test.ts` 与更�
 本轮在共享 `main` 工作树修正/补强了 reconcile worker 执行授权与原始发布快照绑定、媒体事件数据库写入边界及迁移 275 登记、素材 picker 的可信扫描凭据/MIME/授权范围门禁、插件版本传播到 lockfile、若干 Ops/Customer Delivery/merchant UI 错误恢复与分页回归。相应定向测试正在串行队列中；在取得退出码和测试摘要前不记为通过。当前候选仍为 dirty worktree，未构建/安装插件 bundle，未完成 stdio host reload/tool discovery、provider receipt/usage/cost/settlement 或媒体成片验收。
 
 **发布判定继续为 NO-GO。** 不执行 SSH 写入、同步、迁移或部署；源码迁移头、HTTP 200、隔离回归及本地页面测试均不能替代唯一 Demo 的 owner 批准和真实运行环境门禁。
+
+## Owner final review (2026-10-10, local candidate)
+
+- Incidents uncertain-write recovery browser cases: **2/2 passed**, exact log `/private/tmp/codex-incidents-targeted-final-owner.log`. Full spec's other six cases were skipped by the name filter.
+- Connector runtime: **22/22 passed** after updating the orphan transition assertion; worker suite **129/129**, relay usage **82/82**, Audit browser journey **5/5**, API worker-media lifecycle **17/17**, MCP bridge error contract **18/18**, shared Ops navigation/accessibility **151/151**, merchant product asset journey **1/1**, browser entrypoint gate **67/67**, revoke confirmation **3/3**, and Storage pagination **1/1**. These are local fixtures/browser journeys, not live Demo evidence.
+- A combined incremental regression batch reported **184 passed / 1 failed** across 6 files. The failure was plugin install-smoke provenance inventory missing `docs/skill-source-provenance.md`; the packager and test now include that required provenance document. The complete install-smoke file then passed **29/29**, exact log `/private/tmp/codex-plugin-install-smoke-owner.log`.
+- Global `npm run typecheck` remains active in two shared-workspace processes with no final exit code; do not treat it as passed. CodeGraph sync completed: 35 changed files indexed. `git diff --check HEAD` passed.
+- PostgreSQL/RLS and migrations 274–275 have no current successful database execution receipt. Ops route exposure requiring product clarification remains unchanged. No screenshot-level desktop GUI audit was available.
+
+The candidate remains **NO-GO for Demo deployment**. No SSH action, sync, migration, container restart, or deployment was performed. Real API/RLS tenant verification, provider request and cost evidence, migration-chain owner evidence, and host/release approval remain outstanding.
