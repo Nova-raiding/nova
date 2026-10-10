@@ -31,6 +31,9 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
             import { App } from 'antd';
             import { AssistedPurchaseOperationsPanel } from '/src/components/commercial/CommercialOperationsWorkspace.tsx';
             window.__assistedPurchaseCalls = [];
+            window.__failNextCustomerSearch = false;
+            window.__failNextCheckoutPreview = false;
+            window.__failNextCheckoutCreate = false;
             const workspace = 'ws_commercial_browser';
             const catalog = { status: 'ready', data: { items: [
               { id: 'onboarding-v3', skuCode: 'onboarding_once', name: '系统接入服务', type: 'onboarding', visibility: 'public', version: '3', priceLabel: '¥500.00', priceFen: 50000, cycleLabel: '一次性', benefitsSummary: '8小时首响', approvalState: 'approved', executable: true, currentSaleState: 'on_sale', currentSaleVersionId: 'onboarding-v3', validFrom: null, validTo: null, unresolved: [] },
@@ -45,9 +48,26 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
               permissions: { canSearchCustomers: true, canReadOrders: true, canCreateOrder: true },
               data: { catalog },
               client: {
-                searchPurchaseCustomers: async query => { window.__assistedPurchaseCalls.push({ method: 'customer.search', query }); return [{ workspaceId: workspace, memberId: 'member-2048', customerId: 'customer-2048', name: '李女士', enterpriseName: '青禾商贸', status: 'active', workspaceStatus: 'active' }]; },
-                previewAssistedCheckout: async input => { window.__assistedPurchaseCalls.push({ method: 'checkout.preview', input }); return preview; },
-                createAssistedCheckout: async input => { window.__assistedPurchaseCalls.push({ method: 'checkout.create', input }); return { checkout_id: 'checkout-2048', orders: [{ order_id: 'order-opening-2048', workspace_id: workspace, status: 'pending' }, { order_id: 'order-growth-2048', workspace_id: workspace, status: 'pending' }] }; },
+                searchPurchaseCustomers: async query => {
+                  window.__assistedPurchaseCalls.push({ method: 'customer.search', query });
+                  if (window.__failNextCustomerSearch) { window.__failNextCustomerSearch = false; throw new Error('customer lookup temporarily unavailable'); }
+                  if (query === '不存在的客户') return [];
+                  return [{ workspaceId: workspace, memberId: 'member-2048', customerId: 'customer-2048', name: '李女士', enterpriseName: '青禾商贸', status: 'active', workspaceStatus: 'active' }];
+                },
+                previewAssistedCheckout: async input => {
+                  window.__assistedPurchaseCalls.push({ method: 'checkout.preview', input });
+                  if (window.__failNextCheckoutPreview) { window.__failNextCheckoutPreview = false; throw new Error('checkout preview temporarily unavailable'); }
+                  return preview;
+                },
+                createAssistedCheckout: async input => {
+                  window.__assistedPurchaseCalls.push({ method: 'checkout.create', input });
+                  if (window.__failNextCheckoutCreate) { window.__failNextCheckoutCreate = false; const error = new Error('checkout create response unavailable'); error.httpStatus = 503; throw error; }
+                  return { checkout_id: 'checkout-2048', orders: [{ order_id: 'order-opening-2048', workspace_id: workspace, status: 'pending' }, { order_id: 'order-growth-2048', workspace_id: workspace, status: 'pending' }] };
+                },
+                getAssistedCheckoutRequest: async (targetWorkspace, idempotencyKey) => {
+                  window.__assistedPurchaseCalls.push({ method: 'checkout.recover', workspace: targetWorkspace, idempotencyKey });
+                  return { checkout_id: 'checkout-2048', orders: [{ order_id: 'order-opening-2048', workspace_id: workspace, status: 'pending' }, { order_id: 'order-growth-2048', workspace_id: workspace, status: 'pending' }] };
+                },
                 createCommercialPaymentRequest: async input => { window.__assistedPurchaseCalls.push({ method: 'payment.create', input }); },
               },
               loadView: async view => { window.__assistedPurchaseCalls.push({ method: 'read.refresh', view }); },
@@ -121,6 +141,108 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
     } finally { await page.close(); }
   }, 60_000);
 
+  it("keeps preview and order actions unavailable when customer search has no match", async () => {
+    const page = await openFixture();
+    try {
+      await page.getByLabel("查找代购客户").fill("不存在的客户");
+      await page.getByRole("button", { name: "查询真实客户" }).click();
+      await page.getByRole("status").getByText("未找到匹配的有效客户；请核对账号或企业后重试。", { exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "读取服务端代购预览" }).isDisabled()).toBe(true);
+      await page.getByText("客户：尚未核实客户与企业匹配", { exact: false }).waitFor();
+      const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
+      expect(calls.map(call => call.method)).toEqual(["customer.search"]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("retains the customer query and allows retry after customer lookup fails", async () => {
+    const page = await openFixture();
+    try {
+      await page.evaluate(() => { window.__failNextCustomerSearch = true; });
+      const search = page.getByLabel("查找代购客户");
+      await search.fill("李女士");
+      await page.getByRole("button", { name: "查询真实客户" }).click();
+      await page.getByRole("alert").getByText("customer lookup temporarily unavailable", { exact: true }).waitFor();
+      expect(await search.inputValue()).toBe("李女士");
+      await page.getByRole("button", { name: "查询真实客户" }).click();
+      await page.getByLabel("指定客户和企业").click();
+      await page.getByText("李女士 · 青禾商贸", { exact: false }).waitFor();
+      const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
+      expect(calls.filter(call => call.method === "customer.search")).toHaveLength(2);
+      expect(calls.filter(call => ["checkout.preview", "checkout.create", "payment.create"].includes(call.method))).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("allows the operator to retry a failed server preview before any write", async () => {
+    const page = await openFixture();
+    try {
+      await selectFirstPurchaseCustomer(page);
+      await page.evaluate(() => { window.__failNextCheckoutPreview = true; });
+      await page.getByRole("button", { name: "读取服务端代购预览" }).click();
+      await page.getByRole("alert").getByText("checkout preview temporarily unavailable 请刷新客户、目录和报价后重新预览。", { exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "读取服务端代购预览" }).isEnabled()).toBe(true);
+      await page.getByRole("button", { name: "读取服务端代购预览" }).click();
+      await page.getByText("合计 ¥2500.00；开通费不包含首期费用", { exact: false }).waitFor();
+      const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
+      expect(calls.filter(call => call.method === "checkout.preview")).toHaveLength(2);
+      expect(calls.filter(call => ["checkout.create", "payment.create"].includes(call.method))).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("closes confirmation without creating an order and preserves the verified preview", async () => {
+    const page = await openFixture();
+    try {
+      await selectFirstPurchaseCustomer(page);
+      await page.getByRole("button", { name: "读取服务端代购预览" }).click();
+      await page.getByText("合计 ¥2500.00；开通费不包含首期费用", { exact: false }).waitFor();
+      await page.getByRole("button", { name: "确认开通费加首期联合代购" }).click();
+      const dialog = page.locator(".ant-modal").filter({ has: page.getByText("确认指定客户代购", { exact: true }) });
+      await dialog.waitFor({ state: "visible" });
+      const cancel = dialog.getByRole("button", { name: /取\s*消/ });
+      await cancel.waitFor({ state: "visible" });
+      await cancel.click();
+      await dialog.waitFor({ state: "hidden" });
+      await page.getByText("合计 ¥2500.00；开通费不包含首期费用", { exact: false }).waitFor();
+      expect(await page.getByRole("button", { name: "确认开通费加首期联合代购" }).isEnabled()).toBe(true);
+      const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
+      expect(calls.filter(call => ["checkout.create", "payment.create"].includes(call.method))).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("locks uncertain checkout submission to one request until original result recovery", async () => {
+    const page = await openFixture();
+    try {
+      await selectFirstPurchaseCustomer(page);
+      await page.getByRole("button", { name: "读取服务端代购预览" }).click();
+      await page.getByText("合计 ¥2500.00；开通费不包含首期费用", { exact: false }).waitFor();
+      await page.evaluate(() => { window.__failNextCheckoutCreate = true; });
+      await page.getByRole("button", { name: "确认开通费加首期联合代购" }).click();
+      const dialog = page.locator(".ant-modal").filter({ has: page.getByText("确认指定客户代购", { exact: true }) });
+      await dialog.waitFor({ state: "visible" });
+      await dialog.getByRole("button", { name: "确认执行" }).click();
+      await page.getByRole("alert").getByText("原提交结果待确认，禁止另建订单或再次付款。", { exact: false }).waitFor();
+      expect(await page.getByRole("button", { name: "读取服务端代购预览" }).isDisabled()).toBe(true);
+      await page.getByRole("button", { name: "查询原请求结果" }).click();
+      await page.getByRole("status").getByText("已查询原提交结果；请刷新订单及依赖状态，勿再次付款。", { exact: true }).waitFor();
+      const calls = await page.evaluate(() => window.__assistedPurchaseCalls);
+      expect(calls.filter(call => call.method === "checkout.create")).toHaveLength(1);
+      expect(calls.filter(call => call.method === "checkout.recover")).toHaveLength(1);
+      expect(calls.filter(call => call.method === "payment.create")).toEqual([]);
+      expect(calls).toContainEqual({ method: "read.refresh", view: "orders" });
+    } finally { await page.close(); }
+  }, 60_000);
+
+  async function selectFirstPurchaseCustomer(page: Page) {
+    await page.getByLabel("查找代购客户").fill("李女士");
+    await page.getByRole("button", { name: "查询真实客户" }).click();
+    await page.getByLabel("指定客户和企业").click();
+    await page.getByText("李女士 · 青禾商贸", { exact: false }).click();
+    await page.getByLabel("当前上架代购商品").click();
+    await page.getByText("成长版 · ¥2,000.00", { exact: false }).click();
+    await page.getByLabel("当前上架开通费用").click();
+    await page.getByText("系统接入服务 · ¥500.00", { exact: false }).click();
+    await page.getByLabel("代购操作原因").fill("客户书面授权 REF-2048");
+  }
+
   async function openFixture(): Promise<Page> {
     if (!browser) throw new Error("Chromium did not start");
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -139,5 +261,8 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
 declare global {
   interface Window {
     __assistedPurchaseCalls: Array<{ method: string; [key: string]: unknown }>;
+    __failNextCustomerSearch: boolean;
+    __failNextCheckoutPreview: boolean;
+    __failNextCheckoutCreate: boolean;
   }
 }

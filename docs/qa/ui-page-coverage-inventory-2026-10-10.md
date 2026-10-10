@@ -15,7 +15,7 @@
 | 回收站 `/merchant/products?section=trash` | `material-recycle-bin.browser.spec.js` | 有本地 journey；真实租户隔离未验证 |
 | 财务 `/merchant/finance` | `overview-finance.browser.spec.js`、购买中心浏览器测试 | 有局部 journey；页面组合筛选/错误恢复仍需覆盖 |
 | 成员 `/merchant/members` | 隔离 workspace/member 浏览器 runner | 有认证/成员专项；真实账号权限未验收 |
-| 任务 `/merchant/tasks` | task queue、image-generation、delivery-readiness 路径 | 成功选择候选后锁定旧选择表单的 Chromium 回归 1/1；交付错误恢复 1/1、7 tests；完整页面组合仍需覆盖 |
+| 任务 `/merchant/tasks` | task queue、image-generation、delivery-readiness 路径 | image-generation desktop **9/9**、素材卡片键盘/详情交互 **1/1**；安全重试失败与 provider outcome unknown 已覆盖；Responsive 7 项在组合 run 通过但该组合整体受另外两条断言影响，完整页面组合仍需覆盖 |
 | 发布历史/发布详情（任务子流程） | `publish-history.browser.spec.js` | 有列表、深链和恢复 journey；tab ARIA 与键盘交互已补并有专项回归 |
 | 规则 `/merchant/rules` | `rules-page-interactions.browser.spec.js` | 有浏览器专项；需按真实规则状态继续覆盖 |
 
@@ -37,8 +37,8 @@
 | Rules `/ops/rules` | 有测试未完成/未执行 | 页面单测与 sync retry browser fixture 存在；当前状态账本没有完整 route journey 的归属收据。 |
 | Models `/ops/models` | 已完成（定向） | `ModelsPage.overview-navigation.browser.test.tsx` + `StoragePage.error.browser.test.tsx` 合计 **4/4**；覆盖总览跳转、倍率读重试/审计保存、relay fail-closed、存储错误重试。完整模型成本/真实 relay 仍未验收。 |
 | Storage `/ops/storage` | 已完成（定向） | 与 Models 同一浏览器批次 **4/4**；仅本地 fixture 的错误恢复和对账重载，不是 Demo 存储一致性证据。 |
-| Finance `/ops/finance` | 有测试未完成/未执行 | 高级筛选浏览器专项 **2/2**，API/Hook/组件 **26/26**；仍没有全页查询、组合筛选、错误恢复与真实账务旅程的完整 route 收据。 |
-| Support `/ops/support` | 有测试未完成/未执行 | 详情错误、队列/分页/回复等多项浏览器测试存在；最近可归属的完整串行批次曾有失败，修订后没有完整全套通过收据。 |
+| Finance `/ops/finance` | 已完成（定向）；仍有覆盖缺口 | 高级筛选浏览器专项 **2/2**，API/Hook/组件 **26/26**；FinancePage 级检索失败、保留旧结果和关键词、避免“0 条/0 金额”误读并重试 **1/1**。完整 controller route 和真实账务旅程仍未验收。 |
+| Support `/ops/support` | 已完成（定向）；仍有覆盖缺口 | create failure retry、whitespace validation、assignment action feedback 三个浏览器 journey **3/3**，包含在 Ops 5 文件批次 **10/10** 中；完整队列/详情/回复 route suite 仍未验收。 |
 | Audit `/ops/audit` | 已完成（定向） | 完整 route journey **5/5**；覆盖范围筛选、脱敏详情、导出失败重试/CSV、聚合只读、空目录和目录错误恢复，均为本地 RPC fixture。 |
 | Incidents `/ops/incidents` | 无页面覆盖（路由不存在） | 独立 `IncidentsPage.error.browser.test.tsx` 覆盖组件状态，不证明生产路由存在；`/ops/incidents` 会作为未知 Ops path 退回 Overview。已有组件旅程不可计入 Ops 页面覆盖。 |
 

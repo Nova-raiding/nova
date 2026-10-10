@@ -33,6 +33,7 @@ const files = [
   "src/components/delivery/CustomerDeliveryAccountBinding.search.browser.test.tsx",
   "src/components/delivery/CustomerDeliverySection.pagination.browser.test.tsx",
   "src/components/finance/FinanceSearchSection.advanced-filter.browser.test.tsx",
+  "src/pages/FinancePage.error-recovery.browser.test.tsx",
   "src/components/rules/RuleSyncStatusSection.retry.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.boundary-result.browser.test.tsx",
   "src/components/stores/StoreDirectorySection.registration-error.browser.test.tsx",

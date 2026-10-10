@@ -74,8 +74,9 @@ test.afterEach(async ({}, testInfo) => {
   expect(unexpectedApiRequests, 'all browser API requests must use an explicit fixture').toEqual([])
 })
 
-async function installApiRoutes(page, { jobs = [], detail, details, retryJob, imageFailureOnce = false, detailDelayMs = 0, detailDelayByJob = {} } = {}) {
+async function installApiRoutes(page, { jobs = [], detail, details, retryJob, retryFailureOnce = false, imageFailureOnce = false, detailDelayMs = 0, detailDelayByJob = {} } = {}) {
   unexpectedApiRequests = []
+  let retryFailed = false
   // Unmodeled API calls fail closed instead of receiving an empty success that
   // could hide an endpoint or contract change.
   await page.route('**/v1/**', route => {
@@ -108,6 +109,10 @@ async function installApiRoutes(page, { jobs = [], detail, details, retryJob, im
   }))
   await page.route('**/mcp', async route => {
     const body = route.request().postDataJSON?.() ?? {}
+    if (body.method === 'catalog.image.retry' && retryFailureOnce && !retryFailed) {
+      retryFailed = true
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ...envelope(null), error: { code: 'IMAGE_RETRY_UNAVAILABLE', message: '重试请求暂时不可用' } }) })
+    }
     const result = body.method === 'platform.model.status'
       ? { state: 'ready', capabilities: { image_generation: true, image_editing: true }, next_actions: [] }
       : body.method === 'workspace.metrics'
@@ -218,18 +223,53 @@ test('surfaces a failed job and exposes only the safe retry recovery', async () 
     images: [],
     next_action: { type: 'retry', label: '可以安全重试', allowed: true },
   })
-  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail })
+  const retriedJob = baseJob({ job_id: 'job_image_retry', revision: 1, state: 'queued', archive_state: 'pending', execution_state: 'queued', error_code: null, error_message: null, next_action: { type: 'wait', label: '生成已排队', allowed: false } })
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail, details: { job_image_retry: retriedJob }, retryFailureOnce: true })
+  const retryRequests = []
+  page.on('request', request => {
+    const body = request.postDataJSON?.()
+    if (body?.method === 'catalog.image.retry') retryRequests.push(body)
+  })
   try {
     await expect(page.getByRole('alert')).toContainText('IMAGE_GENERATION_PRE_PROVIDER_FAILED')
     const retry = page.getByRole('button', { name: '安全重试' })
     await expect(retry).toBeVisible()
-    let retryRequest
-    page.on('request', request => {
-      if (request.url().includes('/mcp') && request.postData()?.includes('catalog.image.retry')) retryRequest = request
-    })
     await retry.focus()
     await page.keyboard.press('Enter')
-    await expect.poll(() => Boolean(retryRequest)).toBe(true)
+    const retryError = page.locator('#image-job-retry-error')
+    await expect(retryError).toContainText('安全重试结果未确认')
+    await expect(retryError).toContainText('服务端没有返回确认')
+    await expect(page.locator('#image-job-read-error')).toHaveCount(0)
+    expect(retryRequests).toHaveLength(1)
+
+    await retry.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByText('任务 job_image_retry · 商品 product_1', { exact: false })).toBeVisible()
+    await expect(page.locator('#image-job-retry-error')).toHaveCount(0)
+    expect(retryRequests).toHaveLength(2)
+    expect(retryRequests[0]).toMatchObject({ method: 'catalog.image.retry', params: { job_id: 'job_image_matrix', expected_revision: '3', idempotency_key: 'merchant-studio-image-retry-job_image_matrix-3' } })
+    expect(retryRequests[1]?.params).toEqual(retryRequests[0]?.params)
+  } finally {
+    await context.close(); await browser.close()
+  }
+})
+
+test('does not offer retry when the image provider outcome is uncertain', async () => {
+  const detail = baseJob({
+    state: 'failed',
+    archive_state: 'pending',
+    execution_state: 'outcome_unknown',
+    reconciliation_required: true,
+    error_code: 'IMAGE_GENERATION_PRE_PROVIDER_FAILED',
+    error_message: '模型请求结果暂未确认',
+    next_action: { type: 'retry', label: '来源不可信的重试提示', allowed: true },
+  })
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail })
+  try {
+    await expect(page.getByRole('alert').filter({ hasText: '模型结果尚未确认；请先对账，系统不会再次生成或扣费。' }))
+      .toContainText('模型结果尚未确认；请先对账，系统不会再次生成或扣费。')
+    await expect(page.getByRole('button', { name: '安全重试' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '刷新图片任务状态' })).toBeEnabled()
   } finally {
     await context.close(); await browser.close()
   }

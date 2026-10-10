@@ -9840,7 +9840,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
   const selectionErrorRef = useRef<HTMLDivElement>(null)
   const imageJobReadErrorRef = useRef<HTMLDivElement>(null)
   const imageJobConfigurationErrorRef = useRef<HTMLDivElement>(null)
-  const retryErrorFocusRequestedRef = useRef(false)
+  const retryActionErrorRef = useRef<HTMLDivElement>(null)
+  const [retryError, setRetryError] = useState('')
   const [retrying, setRetrying] = useState(false)
   const pollDelayRef = useRef(IMAGE_JOB_INITIAL_POLL_DELAY_MS)
   // A safe retry creates a new durable job. Keep polling that returned job
@@ -9860,7 +9861,6 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
         const next = await fetchImageGenerationJob(baseUrl, requestedFetchJobId)
         shouldPoll = shouldPollImageJob(next)
         if (isCurrent()) {
-          retryErrorFocusRequestedRef.current = false
           setJobSnapshot({ routeJobId: requestedRouteJobId, job: next })
           setError('')
           setConfigurationError(false)
@@ -9902,15 +9902,18 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
     setSelectionMessage('')
     setSelectionNotice('')
     setSelectedContentVersionId('')
+    setRetryError('')
     setRetrying(false)
   }, [routeScopeId])
   useEffect(() => { setCandidatePage(1) }, [currentJobId])
   useEffect(() => {
-    if (error && !loading && (!job || retryErrorFocusRequestedRef.current)) {
-      retryErrorFocusRequestedRef.current = false
+    if (error && !loading && !job) {
       window.requestAnimationFrame(() => imageJobReadErrorRef.current?.focus())
     }
   }, [error, job, loading])
+  useEffect(() => {
+    if (retryError) window.requestAnimationFrame(() => retryActionErrorRef.current?.focus())
+  }, [retryError])
   useEffect(() => {
     if (configurationError && !loading) window.requestAnimationFrame(() => imageJobConfigurationErrorRef.current?.focus())
   }, [configurationError, loading])
@@ -9977,11 +9980,11 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
     const submittedJobId = job.jobId
     const isCurrent = () => isImageJobRequestCurrent(submittedRouteJobId, routeJobIdRef.current)
     setRetrying(true)
-    try { const next = await retryImageGeneration(baseUrl, submittedJobId, job.revision); if (!isCurrent()) return; setJobSnapshot(current => { const routed = imageJobForRoute(current, submittedRouteJobId); return routed ? { routeJobId: submittedRouteJobId, job: { ...routed, jobId: next.job_id, state: next.state, archiveState: 'pending', errorCode: null, errorMessage: null } } : current }); setReload(value => value + 1) }
+    setRetryError('')
+    try { const next = await retryImageGeneration(baseUrl, submittedJobId, job.revision); if (!isCurrent()) return; setRetryError(''); setJobSnapshot(current => { const routed = imageJobForRoute(current, submittedRouteJobId); return routed ? { routeJobId: submittedRouteJobId, job: { ...routed, jobId: next.job_id, state: next.state, archiveState: 'pending', errorCode: null, errorMessage: null } } : current }); setReload(value => value + 1) }
     catch (cause) {
       if (!isCurrent()) return
-      retryErrorFocusRequestedRef.current = true
-      setError(describeApiError(cause))
+      setRetryError(describeApiError(cause))
     }
     finally { if (isCurrent()) setRetrying(false) }
   }
@@ -10021,7 +10024,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
     </> : null}
     {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting' || selectionState === 'succeeded'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || selectionState === 'succeeded' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
     {job?.nextAction && <div className="info-notice" role={job.reconciliationRequired || imageGenerationNeedsReconciliation(job.executionState) ? 'alert' : 'status'}><ShieldCheck size={16} /><span>{imageGenerationNeedsReconciliation(job.executionState) ? '模型结果尚未确认；请先对账，系统不会再次生成或扣费。' : `下一步：${job.nextAction.label}`}</span>{job.nextAction.type === 'review_error' && job.nextAction.allowed && <button className="text-button" type="button" onClick={focusImageError}>查看失败原因</button>}{imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction.allowed }) && !job.reconciliationRequired && ['IMAGE_GENERATION_NOT_CONFIGURED', 'IMAGE_GENERATION_PRE_PROVIDER_FAILED'].includes(job.errorCode ?? '') && <button className="text-button" type="button" onClick={() => void retrySafeImageJob()} disabled={retrying}>{retrying ? '重试入队中…' : '安全重试'}</button>}</div>}
-    <div className="action-row"><button className="secondary-button" type="button" onClick={() => { setError(''); setFailedImages(new Set()); setReload(value => value + 1) }} disabled={loading} aria-label="刷新图片任务状态" aria-describedby="image-job-refresh-hint"><RefreshCw size={15} aria-hidden="true" />刷新任务状态</button><span id="image-job-refresh-hint" className="sr-only">刷新期间按钮不可重复操作，当前状态和候选不会被清空。</span>{imageGenerationProviderCallStarted(job?.executionState) && <span className="muted-note">Provider 已进入提交链路，结果未收口前禁止重复生成。</span>}{isTerminal && job?.images?.length ? <span className="muted-note">候选仍需单独通过人工审核和内容版本选择，生成完成不等于可发布。</span> : null}</div>
+    {retryError && <div ref={retryActionErrorRef} id="image-job-retry-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>安全重试结果未确认</strong><span>服务端没有返回确认：{retryError}。再次点击“安全重试”会使用同一幂等标识；也可刷新任务状态核对。</span></div>}
+    <div className="action-row"><button className="secondary-button" type="button" onClick={() => { setError(''); setRetryError(''); setFailedImages(new Set()); setReload(value => value + 1) }} disabled={loading} aria-label="刷新图片任务状态" aria-describedby="image-job-refresh-hint"><RefreshCw size={15} aria-hidden="true" />刷新任务状态</button><span id="image-job-refresh-hint" className="sr-only">刷新期间按钮不可重复操作，当前状态和候选不会被清空。</span>{imageGenerationProviderCallStarted(job?.executionState) && <span className="muted-note">Provider 已进入提交链路，结果未收口前禁止重复生成。</span>}{isTerminal && job?.images?.length ? <span className="muted-note">候选仍需单独通过人工审核和内容版本选择，生成完成不等于可发布。</span> : null}</div>
   </section>
 }
 
