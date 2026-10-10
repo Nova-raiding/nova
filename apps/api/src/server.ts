@@ -15250,7 +15250,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       },
     })
     if (cleanup.manualAttention > 0) {
-      const alert = await (persistence.alerts ?? memoryAlerts).upsert({ workspaceId, alertKey: `storage-orphans:${workspaceId}`, code: 'OBJECT_STORAGE_ORPHAN_MANUAL_ATTENTION', severity: 'high', entityType: 'object_storage', entityId: workspaceId, title: `${cleanup.manualAttention} 个对象清理失败，需人工处理`, observedAt: new Date().toISOString(), evidence: cleanup as unknown as Record<string, unknown>, nextAction: '在运营后台核对对象键和存储服务状态，人工删除后关闭告警。' })
+      const alert = await (persistence.alerts ?? memoryAlerts).upsert({ workspaceId, alertKey: `storage-orphans:${workspaceId}`, code: 'OBJECT_STORAGE_ORPHAN_MANUAL_ATTENTION', severity: 'high', entityType: 'object_storage', entityId: workspaceId, title: `${cleanup.manualAttention} 个对象清理失败，需人工处理`, observedAt: new Date().toISOString(), evidence: cleanup as unknown as Record<string, unknown>, nextAction: '由有权限的存储负责人通过受控存储工具核对对象键、归属和状态；完成清理并留存凭据后，再由运营人员确认告警。本告警确认只记录确认状态与原因，不执行或证明对象已删除。' })
       void persistOperationalAlertNotification(alert)
     }
     return send(res, 200, workspaceId, { ...cleanup, worker_id: workerId }, null, req)
