@@ -199,7 +199,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         setSupportOwnerOptions(result.supportOwnerOptions);
       }
     }
-    catch (cause) { if (request.isCurrent()) { setRecords([]); setProjectOwnerOptions([]); setSupportOwnerOptions([]); setError(describeOpsError(cause)); } }
+    catch (cause) { if (request.isCurrent()) { setRecords([]); setListTotal(0); setProjectOwnerOptions([]); setSupportOwnerOptions([]); setError(describeOpsError(cause)); } }
     finally { if (request.isCurrent()) setLoading(false); }
   };
   useEffect(() => {
