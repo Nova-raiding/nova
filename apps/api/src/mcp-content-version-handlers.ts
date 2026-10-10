@@ -102,7 +102,16 @@ export async function handleMcpContentVersion(method: string, params: JsonObject
     case 'content.restore': {
       const scoped = scopeContentVersion(req, required(params, 'content_version_id'))
       await assertCanonicalTaskScopeForAction(scoped.task)
-      const restored = service.restoreContentVersion(workspaceId, scoped.version.id, typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
+      let expectedVersion: number | undefined
+      if (params.expected_version !== undefined) {
+        expectedVersion = typeof params.expected_version === 'number'
+          ? params.expected_version
+          : typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version)
+            ? Number(params.expected_version)
+            : Number.NaN
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是正安全整数', 400)
+      }
+      const restored = service.restoreContentVersion(workspaceId, scoped.version.id, expectedVersion)
       await persistSnapshot(workspaceId, 'content_version', restored.version, restored.version as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', restored.task, restored.task as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, restored.version.id, 'content.version_restored', restored.version.revision, { task_id: restored.task.id, source_version_id: restored.source.id, content_version_id: restored.version.id })

@@ -182,7 +182,12 @@ describe('factual cash receipts PostgreSQL',()=>{
    expect((await db.query(`SELECT to_regprocedure('enforce_commercial_cash_return_scope_v2()') AS fn`)).rows[0]?.fn).toBeNull()
 
    await db.query(`INSERT INTO commercial_cash_receipt_balances_v2(receipt_id,workspace_id) VALUES('legacy-receipt-without-balance',NULL)`)
-   expect(await new MigrationRunner(db,migrations).run()).toEqual([271])
+   // MigrationRunner applies every pending migration in the supplied release
+   // chain. The failed first attempt rolled back 271, and this repaired retry
+   // must therefore advance the database through the current head.
+   const pendingVersions=migrations.filter(migration=>migration.version>270).map(migration=>migration.version)
+   expect(await new MigrationRunner(db,migrations).run()).toEqual(pendingVersions)
+   expect((await db.query(`SELECT version FROM schema_migrations ORDER BY version`)).rows.map(row=>row.version)).toEqual(migrations.map(migration=>migration.version))
    expect((await db.query(`SELECT version,name FROM schema_migrations WHERE version=271`)).rows).toEqual([{version:271,name:'cash_return_receipt_scope'}])
    await db.query(`UPDATE commercial_cash_returns_v2 SET reason='reconciled unmatched return' WHERE id='legacy-return-without-balance'`)
   }finally{

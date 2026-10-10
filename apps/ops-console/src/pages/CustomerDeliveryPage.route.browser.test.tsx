@@ -111,12 +111,15 @@ describe("customer delivery controller route journey", () => {
       await page.getByRole("button", { name: "新建客户", exact: true }).click();
       const companyName = page.getByLabel("公司名称", { exact: true });
       await companyName.fill("待确认路由客户");
-      await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
-      const confirmation = page.getByRole("dialog", { name: "放弃未保存的客户建档？" });
+      const returnToRegistry = page.getByRole("button", { name: "返回客户建档", exact: true });
+      await returnToRegistry.click();
+      expect(await returnToRegistry.getAttribute("aria-expanded")).toBe("true");
+      const confirmation = page.locator(".ant-modal:visible").filter({ hasText: "当前填写内容和勾选尚未保存" });
       await confirmation.getByRole("button", { name: "继续填写", exact: true }).click();
       expect(await companyName.inputValue()).toBe("待确认路由客户");
-      await page.getByRole("button", { name: "返回客户建档", exact: true }).click();
-      await page.getByRole("dialog", { name: "放弃未保存的客户建档？" }).getByRole("button", { name: "放弃并返回", exact: true }).click();
+      await returnToRegistry.click();
+      await page.locator(".ant-modal:visible").filter({ hasText: "当前填写内容和勾选尚未保存" })
+        .getByRole("button", { name: "放弃并返回", exact: true }).click();
       await page.getByRole("button", { name: "新建客户", exact: true }).waitFor({ state: "visible" });
       expect(calls.some(call => call.method.startsWith("ops.customer-delivery.") && call.method !== "ops.customer-delivery.list")).toBe(false);
       expect(unexpectedRequests).toEqual([]);

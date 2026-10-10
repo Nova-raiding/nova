@@ -354,8 +354,10 @@ test('a partial product-fact confirmation failure can be retried without importi
     ])
     expect(unexpectedRequests).toEqual([])
     expect(pageErrors).toEqual([])
-    expect(consoleErrors).toHaveLength(1)
-    expect(consoleErrors[0]).toMatch(/503/u)
+    expect(consoleErrors).toEqual([
+      expect.stringMatching(/status of 504 \(Gateway Timeout\)/u),
+      expect.stringMatching(/status of 503 \(Service Unavailable\)/u),
+    ])
   } finally {
     await context.close()
     await browser.close()

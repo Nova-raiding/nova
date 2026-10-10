@@ -16,6 +16,15 @@ describe('OperationsRepository audit sink boundary', () => {
     await expect(repository.list('ws_a')).resolves.toEqual([])
   })
 
+  it('validates a replay before returning an existing memory audit', async () => {
+    const repository = new MemoryOperationsRepository()
+    await repository.append(valid())
+
+    await expect(repository.appendIfAbsent({ ...valid(), reason: 'ticket\u0000forged' }))
+      .rejects.toBeInstanceOf(OperationAuditValidationError)
+    await expect(repository.list('ws_a')).resolves.toHaveLength(1)
+  })
+
   it('rejects malformed input before opening a Postgres transaction', async () => {
     const connect = vi.fn()
     const pool: SqlPool = { connect } as unknown as SqlPool
@@ -112,5 +121,32 @@ describe('PostgresOperationsRepository timestamp contract (controlled SQL rows, 
     await expect(repository.list('ws_a')).resolves.toEqual([])
     await expect(repository.find('ws_a', 'member.update', 'workspace_member', 'missing')).resolves.toBeUndefined()
     expect(query.mock.calls.filter(([sql]) => /^(INSERT|UPDATE|DELETE)/u.test(sql))).toEqual([])
+  })
+})
+
+describe('PostgresOperationsRepository appendIfAbsent lock key (controlled SQL rows, not PostgreSQL evidence)', () => {
+  it('binds a NUL-free, tuple-unambiguous key for the advisory lock', async () => {
+    const lockKeys: string[] = []
+    const connect = async () => {
+      const query = vi.fn(async (sql: string, values?: readonly unknown[]) => {
+        if (sql.includes('pg_advisory_xact_lock')) lockKeys.push(String(values?.[0]))
+        if (sql.startsWith('INSERT INTO workspace_operation_audit')) {
+          return { rows: [{ ...valid(), id: 'audit_a', createdAt: '2026-09-01T00:00:00.000Z' }] }
+        }
+        return { rows: [] }
+      })
+      return { query: query as unknown as SqlClient['query'], release: vi.fn() }
+    }
+    const repository = new PostgresOperationsRepository({ connect })
+
+    await repository.appendIfAbsent({ ...valid(), workspaceId: 'a', action: 'bc', resourceType: 'd', resourceId: 'e' })
+    await repository.appendIfAbsent({ ...valid(), workspaceId: 'ab', action: 'c', resourceType: 'd', resourceId: 'e' })
+
+    expect(lockKeys).toEqual([
+      JSON.stringify(['a', 'bc', 'd', 'e']),
+      JSON.stringify(['ab', 'c', 'd', 'e']),
+    ])
+    expect(lockKeys.every(key => !key.includes('\u0000'))).toBe(true)
+    expect(new Set(lockKeys).size).toBe(2)
   })
 })

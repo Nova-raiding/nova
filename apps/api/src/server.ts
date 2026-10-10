@@ -11680,7 +11680,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result(await handleWorkspaceInteractiveConfirm(workspaceId, params, { principal: requestPrincipals.get(req), actorHeader: header(req, 'x-actor-id'), repository: persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets }))
       }
     case 'commercial.service-boundary.accept': {
-      return result(await handleServiceBoundaryAccept(workspaceId, params, { required, actorId: () => requestActor(req), policyVersion: SERVICE_BOUNDARY_POLICY_VERSION, policyChecksum: SERVICE_BOUNDARY_POLICY_CHECKSUM, operations: persistence.operations ?? memoryOperations, recordAudit: recordOperationAudit }))
+      const operations = persistence.operations ?? memoryOperations
+      return result(await handleServiceBoundaryAccept(workspaceId, params, { required, actorId: () => requestActor(req), policyVersion: SERVICE_BOUNDARY_POLICY_VERSION, policyChecksum: SERVICE_BOUNDARY_POLICY_CHECKSUM, operations: { appendIfAbsent: async input => {
+        validateOperationAuditContext(input)
+        return operations.appendIfAbsent({ ...input, reason: redactAuditReason(input.reason) })
+      } } }))
     }
     case 'merchant.start': {
       const requestedPlatform = typeof params.requested_platform === 'string' ? params.requested_platform : undefined
@@ -13882,7 +13886,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(await handleCatalogTitle(method, workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, brandUnits: persistence.brandUnits ?? memoryBrandUnits, required, observeWallet: observeLegacyWalletShadow, enforceProductBrandAccess: (workspaceId: string, productId: string) => enforceProductBrandAccess(req, workspaceId, productId), canonicalProductReadControl, requireGenerationRulePreflight, requireRuleSafeGenerationText: (preflight: unknown, values: unknown[], message?: string) => requireRuleSafeGenerationText(preflight as Awaited<ReturnType<typeof generationRulePreflight>>, values, message), enforceCommercialAccess: (workspaceId: string, method: string) => enforceMcpCommercialAccess(req, workspaceId, method), actor: () => requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', persistSnapshot, persistEvent, refundWallet: refundPluginWalletDebit }))
     }
     case 'catalog.import': {
-      return result(await handleCatalogImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, brandUnits: persistence.brandUnits ?? memoryBrandUnits, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceBrandAccess: (workspaceId: string, brandId: string, role: 'editor') => enforceBrandAccess(req, workspaceId, brandId, role), scanImportedProductRules, persistSnapshot }))
+      return result(await handleCatalogImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, brandUnits: persistence.brandUnits ?? memoryBrandUnits, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceBrandAccess: (workspaceId: string, brandId: string, role: 'editor') => enforceBrandAccess(req, workspaceId, brandId, role), enforceAssetAccess: (workspaceId: string, assetId: string, role: 'viewer') => enforceAssetAccess(req, workspaceId, assetId, role), assetForWorkspace, scanImportedProductRules, persistSnapshot }))
     }
     case 'catalog.import.batch': {
       return result(await handleCatalogBatchImport(workspaceId, params, { service, supportedPlatforms: SUPPORTED_PLATFORMS, isProduction, knowledgeRepository: persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge, required, enforceAssetAccess: (workspaceId: string, assetId: string, role: 'editor' | 'viewer') => enforceAssetAccess(req, workspaceId, assetId, role), assetForWorkspace, scanImportedProductRules, persistSnapshotsAndEvent, recordOperationAudit, rollbackBatchProducts, actor: () => requestActor(req), idempotency: persistence.catalogBatchImportIdempotency }))

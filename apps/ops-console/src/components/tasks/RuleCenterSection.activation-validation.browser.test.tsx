@@ -116,9 +116,8 @@ describe("platform rule activation form validation", () => {
       await page.goto(`${baseUrl}/__rule-activation-validation-test`);
       page.setDefaultTimeout(5_000);
       await page.getByRole("button", { name: "标记过期" }).click();
-      const confirmation = page.getByRole("dialog", { name: "确认标记过期？" });
-      await confirmation.getByText("将对所有商家应用", { exact: false }).waitFor({ timeout: 5_000 });
-      await confirmation.locator(".ant-modal-confirm-btns button").first().click();
+      await page.getByText("将对所有商家应用", { exact: false }).waitFor({ timeout: 5_000 });
+      await page.locator(".ant-modal-confirm-btns button").first().click();
       await page.waitForTimeout(500);
       expect(await page.evaluate(() => window.__ruleStatusUpdates)).toEqual([]);
 
@@ -136,9 +135,8 @@ describe("platform rule activation form validation", () => {
     try {
       await page.goto(`${baseUrl}/__rule-activation-validation-test?scope=workspace`);
       await page.getByRole("button", { name: "标记过期" }).click();
-      const confirmation = page.getByRole("dialog", { name: "确认标记过期？" });
-      await confirmation.getByText("将对当前工作区应用", { exact: false }).waitFor();
-      await confirmation.getByRole("button", { name: "取消" }).click();
+      await page.getByText("将对当前工作区应用", { exact: false }).waitFor();
+      await page.locator(".ant-modal-confirm-btns button").first().click();
     } finally { await page.close(); }
   }, 30_000);
 });

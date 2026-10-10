@@ -80,16 +80,18 @@ describe("manual store registration boundary result", () => {
 
       const submitRegistration = async () => {
         await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
-        const dialog = page.getByRole("dialog", { name: "登记人工店铺" });
+        const dialog = dialogByTitle(page, "登记人工店铺");
         await dialog.waitFor();
-        await dialog.locator("#manual-store-workspace").click();
+        await page.locator("#manual-store-workspace").focus();
+        await page.locator("#manual-store-workspace").press("ArrowDown");
         await page.getByText("隔离测试企业 · ws_test", { exact: true }).click();
-        await dialog.locator("#manual-store-platform").click();
+        await page.locator("#manual-store-platform").focus();
+        await page.locator("#manual-store-platform").press("ArrowDown");
         await page.getByText("淘宝", { exact: true }).click();
-        await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("isolated-store-1");
-        await dialog.getByLabel("登记理由", { exact: true }).fill("边界响应状态回归");
-        await dialog.getByRole("button", { name: "确认登记", exact: true }).click();
-        await dialog.waitFor({ state: "detached" });
+        await page.locator("#manual-store-account").fill("isolated-store-1");
+        await page.locator("#manual-store-reason").fill("边界响应状态回归");
+        await page.getByRole("button", { name: "确认登记", exact: true }).click();
+        await dialog.waitFor({ state: "hidden" });
         return dialog;
       };
 
@@ -110,3 +112,7 @@ describe("manual store registration boundary result", () => {
 });
 
 function join(...parts: string[]) { return parts.join("/"); }
+
+function dialogByTitle(page: import("playwright").Page, title: string) {
+  return page.locator('[role="dialog"]').filter({ has: page.locator(".ant-modal-title").getByText(title, { exact: true }) });
+}

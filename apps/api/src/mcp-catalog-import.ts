@@ -4,6 +4,7 @@ import { manualKnowledgeProduct, projectImportedProductsToKnowledge } from '../.
 import type { ApiPersistence } from './server.js'
 
 type Params = Record<string, unknown>
+type ProductAsset = MerchantService['assets'] extends Map<string, infer Asset> ? Asset : never
 export interface CatalogImportDependencies {
   service: Pick<MerchantService, 'getActionablePlatformAccount' | 'importProduct'>
   supportedPlatforms: readonly Platform[]
@@ -12,12 +13,14 @@ export interface CatalogImportDependencies {
   knowledgeRepository: NonNullable<ApiPersistence['knowledge']>
   required(params: Params, key: string): string
   enforceBrandAccess(workspaceId: string, brandId: string, role: 'editor'): Promise<unknown>
+  enforceAssetAccess(workspaceId: string, assetId: string, role: 'viewer'): Promise<unknown>
+  assetForWorkspace(workspaceId: string, assetId: string): ProductAsset
   scanImportedProductRules(workspaceId: string, product: Product): Promise<unknown>
   persistSnapshot(workspaceId: string, entityType: 'product', entity: Product, value: Record<string, unknown>): Promise<unknown>
 }
 
 export async function handleCatalogImport(workspaceId: string, params: Params, deps: CatalogImportDependencies) {
-  const { service, supportedPlatforms, isProduction, brandUnits, knowledgeRepository, required, enforceBrandAccess, scanImportedProductRules, persistSnapshot } = deps
+  const { service, supportedPlatforms, isProduction, brandUnits, knowledgeRepository, required, enforceBrandAccess, enforceAssetAccess, assetForWorkspace, scanImportedProductRules, persistSnapshot } = deps
 
       const platform = required(params, 'platform') as Platform
       const draftOnly = params.draft_only === 'true'
@@ -50,7 +53,11 @@ export async function handleCatalogImport(workspaceId: string, params: Params, d
         try {
           const parsed = JSON.parse(params.skus_json)
           if (!Array.isArray(parsed) || parsed.some(item => !item || typeof item !== 'object' || typeof item.id !== 'string' || typeof item.name !== 'string' || typeof item.price !== 'number' || typeof item.stock !== 'number')) throw new Error('skus_json')
-          skus = parsed.map((item: Record<string, any>) => ({ id: item.id.trim(), name: item.name.trim(), price: item.price, stock: item.stock, ...(Array.isArray(item.images) ? { images: item.images.filter((value: unknown): value is string => typeof value === 'string') } : {}), ...(item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? { attributes: Object.fromEntries(Object.entries(item.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}) }))
+          skus = parsed.map((item: Record<string, any>, index: number) => {
+            const assetIds = item.sourceAssetIds
+            if (assetIds !== undefined && (!Array.isArray(assetIds) || assetIds.length > 50 || assetIds.some((value: unknown) => typeof value !== 'string' || !value.trim()) || new Set(assetIds).size !== assetIds.length)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `第 ${index + 1} 项 SKU 原图素材必须是最多 50 个不重复素材 ID`, 400)
+            return { id: item.id.trim(), name: item.name.trim(), price: item.price, stock: item.stock, ...(Array.isArray(assetIds) ? { sourceAssetIds: assetIds.map((value: string) => value.trim()) } : {}), ...(Array.isArray(item.images) ? { images: item.images.filter((value: unknown): value is string => typeof value === 'string') } : {}), ...(item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? { attributes: Object.fromEntries(Object.entries(item.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}) }
+          })
         } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'skus_json 必须是包含 id、name、price、stock 的 SKU 数组', 400) }
       }
       let attributes: Record<string, string> | undefined
@@ -75,6 +82,11 @@ export async function handleCatalogImport(workspaceId: string, params: Params, d
       if (!supportedPlatforms.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
       if (isProduction() && !accountId && !draftOnly) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号；如仅需做内容草稿，请显式传 draft_only=true', 400)
       if (accountId) service.getActionablePlatformAccount(workspaceId, accountId, platform)
+      const linkedAssetIds = new Set([...(sourceAssetIds ?? []), ...(skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])])
+      for (const assetId of linkedAssetIds) {
+        await enforceAssetAccess(workspaceId, assetId, 'viewer')
+        assetForWorkspace(workspaceId, assetId)
+      }
       if (brandId) {
         if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '绑定品牌导入商品必须同时指定已授权店铺', 400)
         await enforceBrandAccess(workspaceId, brandId, 'editor')

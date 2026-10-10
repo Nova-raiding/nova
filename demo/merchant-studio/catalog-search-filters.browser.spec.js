@@ -2,7 +2,11 @@ import { expect, test, chromium } from '@playwright/test'
 
 test.setTimeout(60_000)
 
-const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081'
+const catalogFixtureMode = process.env.MERCHANT_CATALOG_BROWSER_FIXTURE === '1'
+if (!process.env.MERCHANT_STUDIO_URL && !catalogFixtureMode) {
+  throw new Error('Set MERCHANT_CATALOG_BROWSER_FIXTURE=1 to use the local Vite fixture, or provide an explicit MERCHANT_STUDIO_URL.')
+}
+const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:4188'
 const workspaceId = 'ws_catalog_search_fixture'
 const accountId = 'jd-catalog-search-store'
 const envelope = (data, error = null) => ({ request_id: 'catalog-search-fixture', trace_id: 'catalog-search-fixture', workspace_id: workspaceId, data, warnings: [], next_actions: [], error })
@@ -67,7 +71,10 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
 
   try {
     await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /^京东/u })).toHaveAttribute('aria-pressed', 'true')
+    const jdPlatform = page.getByRole('button', { name: /^京东/u })
+    await expect(jdPlatform).toBeVisible()
+    if (await jdPlatform.getAttribute('aria-pressed') !== 'true') await jdPlatform.click()
+    await expect(jdPlatform).toHaveAttribute('aria-pressed', 'true')
     const store = page.locator('.catalog-store-card').filter({ hasText: '目录搜索验收店' })
     await expect(store).toBeVisible()
     await store.getByRole('button', { name: /进入商品库/u }).click()

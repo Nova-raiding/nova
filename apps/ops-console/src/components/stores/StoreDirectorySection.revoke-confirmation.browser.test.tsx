@@ -77,11 +77,11 @@ describe("store authorization revoke confirmation", () => {
     try {
       await page.goto(`${baseUrl}/__store-revoke-confirm`);
       await page.getByRole("button", { name: "撤销", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      const dialog = dialogByTitle(page, "确认撤销平台授权？");
       await dialog.waitFor();
-      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(await page.locator('[role="dialog"]:visible').count()).toBe(1);
       await dialog.getByRole("button", { name: "确认撤销", exact: true }).click();
-      await dialog.waitFor({ state: "detached" });
+      await dialog.waitFor({ state: "hidden" });
       expect(await page.evaluate(() => (window as any).__storeConfirmCount)).toBe(1);
       expect(revokeRequests).toBe(1);
     } finally { await context.close(); }
@@ -98,7 +98,7 @@ describe("store authorization revoke confirmation", () => {
     try {
       await page.goto(`${baseUrl}/__store-revoke-confirm`);
       await page.getByRole("button", { name: "撤销", exact: true }).click();
-      const firstDialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      const firstDialog = dialogByTitle(page, "确认撤销平台授权？");
       await firstDialog.waitFor();
       let cancelButton = firstDialog.getByRole("button", { name: /取消/u });
       if (await cancelButton.count() === 0) {
@@ -118,14 +118,14 @@ describe("store authorization revoke confirmation", () => {
         throw new Error(`Revoke confirmation cancel button was not exposed by role; footer buttons: ${JSON.stringify(footerButtons)}`);
       }
       await cancelButton.first().click();
-      await firstDialog.waitFor({ state: "detached" });
+      await firstDialog.waitFor({ state: "hidden" });
       expect(revokeRequests).toBe(0);
 
       await page.getByRole("button", { name: "撤销", exact: true }).click();
-      const secondDialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      const secondDialog = dialogByTitle(page, "确认撤销平台授权？");
       await secondDialog.waitFor();
       await page.keyboard.press("Escape");
-      await secondDialog.waitFor({ state: "detached" });
+      await secondDialog.waitFor({ state: "hidden" });
       expect(revokeRequests).toBe(0);
     } finally { await context.close(); }
   }, 45_000);
@@ -143,16 +143,21 @@ describe("store authorization revoke confirmation", () => {
     try {
       await page.goto(`${baseUrl}/__store-revoke-confirm`);
       await page.getByRole("button", { name: "撤销", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      const dialog = dialogByTitle(page, "确认撤销平台授权？");
       await dialog.getByRole("button", { name: "确认撤销", exact: true }).click();
       await dialog.getByRole("alert").getByText("revoke failed", { exact: true }).waitFor();
       expect(await dialog.getByText("撤销回归店铺", { exact: false }).count()).toBe(1);
       const confirm = dialog.getByRole("button", { name: /撤销/u });
       await confirm.waitFor({ state: "visible" });
       await confirm.click();
-      await dialog.waitFor({ state: "detached" });
+      await dialog.waitFor({ state: "hidden" });
       expect(revokeRequests).toBe(2);
       expect(pageErrors).toEqual([]);
     } finally { await context.close(); }
   }, 45_000);
 });
+
+function dialogByTitle(page: import("playwright").Page, title: string) {
+  // rc-component's NODE_ENV=test useId stub reuses "test-id" across dialogs.
+  return page.locator('[role="dialog"]').filter({ has: page.locator(".ant-modal-title").getByText(title, { exact: true }) });
+}

@@ -36,12 +36,20 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
 
       const draftOnly = params.draft_only === 'true'
       let rawItems: unknown
+      let sourceAssetId: string | undefined
       try {
-        if (typeof params.products_json === 'string' && params.products_json.trim()) rawItems = JSON.parse(params.products_json)
+        if (typeof params.products_json === 'string' && params.products_json.trim()) {
+          rawItems = JSON.parse(params.products_json)
+          sourceAssetId = typeof params.source_asset_id === 'string' && params.source_asset_id.trim() ? params.source_asset_id.trim() : undefined
+          if (sourceAssetId) {
+            await enforceAssetAccess(workspaceId, sourceAssetId, 'editor')
+            assetForWorkspace(workspaceId, sourceAssetId)
+          }
+        }
         else {
-          const assetId = required(params, 'source_asset_id')
-          await enforceAssetAccess(workspaceId, assetId, 'editor')
-          const asset = assetForWorkspace(workspaceId, assetId)
+          sourceAssetId = required(params, 'source_asset_id')
+          await enforceAssetAccess(workspaceId, sourceAssetId, 'editor')
+          const asset = assetForWorkspace(workspaceId, sourceAssetId)
           if (asset.parseStatus !== 'succeeded' || !asset.extractedFacts) throw new DomainError('PRODUCT_IMPORT_SOURCE_NOT_PARSED', '商品表格尚未解析成功，请先完成表格解析', 409, { asset_id: asset.id, next_action: 'asset.parse' })
           if (!asset.factsConfirmedBy || !asset.factsConfirmedAt) throw new DomainError('PRODUCT_IMPORT_SOURCE_FACTS_UNCONFIRMED', '商品表格事实尚未由商家确认，不能批量导入', 409, { asset_id: asset.id, next_action: 'asset.facts.confirm' })
           rawItems = spreadsheetFactsToBatchProducts(asset.extractedFacts)
@@ -97,12 +105,15 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
         return { platform, ...(accountId ? { accountId } : {}), ...(typeof item.remote_id === 'string' && item.remote_id.trim() ? { remoteId: item.remote_id.trim() } : {}), ...(typeof item.local_product_key === 'string' ? { localProductKey: item.local_product_key } : {}), title, ...(typeof item.category === 'string' ? { category: item.category } : {}), ...(typeof item.store_name === 'string' ? { storeName: item.store_name } : {}), ...(typeof item.store_differentiation === 'string' ? { storeDifferentiation: item.store_differentiation } : {}), ...(images ? { images } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(attributes ? { attributes } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(skus ? { skus, skuCount: skus.length } : {}), ...(numeric(item.price, '价格', index) !== undefined ? { price: numeric(item.price, '价格', index) } : {}), ...(numeric(item.stock, '库存', index) !== undefined ? { stock: numeric(item.stock, '库存', index) } : {}), ...(numeric(item.sku_count, 'SKU 数量', index) !== undefined ? { skuCount: numeric(item.sku_count, 'SKU 数量', index) } : {}) }
       })
       assertUniqueBatchProductImportIdentities(items)
-      for (const assetId of new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]))) await enforceAssetAccess(workspaceId, assetId, 'viewer')
+      for (const assetId of new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]))) {
+        await enforceAssetAccess(workspaceId, assetId, 'viewer')
+        assetForWorkspace(workspaceId, assetId)
+      }
       const rawKey = params.idempotency_key
       const idempotencyKey = rawKey === undefined ? undefined : typeof rawKey === 'string' ? rawKey.trim() : ''
       if (rawKey !== undefined && (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'idempotency_key 必须为 8 至 200 位字母、数字或 . _ : -', 400)
       const idempotency = deps.idempotency ?? memoryBatchImportIdempotency
-      const idempotencyInput = idempotencyKey ? { workspaceId, actorId: actor(), key: idempotencyKey, requestHash: hashCatalogBatchImportIntent({ draftOnly, items, sourceAssetId: typeof params.source_asset_id === 'string' ? params.source_asset_id.trim() : null, manualSource: deps.manualSource ? { reference: deps.manualSource.reference, sha256: deps.manualSource.sha256 } : null }) } : undefined
+      const idempotencyInput = idempotencyKey ? { workspaceId, actorId: actor(), key: idempotencyKey, requestHash: hashCatalogBatchImportIntent({ draftOnly, items, sourceAssetId: sourceAssetId ?? null, manualSource: deps.manualSource ? { reference: deps.manualSource.reference, sha256: deps.manualSource.sha256 } : null }) } : undefined
       const created: ReturnType<typeof service.importProduct>[] = []
       const writes: BatchProductWrite[] = []
       const importedKnowledge = knowledgeRepository
@@ -134,7 +145,7 @@ export async function handleCatalogBatchImport(workspaceId: string, params: Para
           await idempotency.start({ ...idempotencyInput, token: idempotencyToken })
           durableSideEffectsStarted = true
         }
-        const knowledgeProjection = await projectImportedProductsToKnowledge({ repository: importedKnowledge, workspaceId, products: created, ...(typeof params.source_asset_id === 'string' && params.source_asset_id.trim() ? { sourceAssetId: params.source_asset_id.trim() } : {}), sourceMetadata: { importMode: deps.manualSource ? 'platform_manual_upload' : typeof params.products_json === 'string' ? 'products_json' : 'spreadsheet', ...(deps.manualSource ? { sourceReference: deps.manualSource.reference, sourceSha256: deps.manualSource.sha256 } : {}) } })
+        const knowledgeProjection = await projectImportedProductsToKnowledge({ repository: importedKnowledge, workspaceId, products: created, ...(sourceAssetId ? { sourceAssetId } : {}), sourceMetadata: { importMode: deps.manualSource ? 'platform_manual_upload' : typeof params.products_json === 'string' ? 'products_json' : 'spreadsheet', ...(deps.manualSource ? { sourceReference: deps.manualSource.reference, sourceSha256: deps.manualSource.sha256 } : {}) } })
         const batchId = `catalog_import_batch_${randomUUID()}`
         await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id), ...(deps.manualSource ? { source_ref: deps.manualSource.reference, source_sha256: deps.manualSource.sha256, import_mode: 'platform_manual_upload' } : {}) } })
         await recordOperationAudit({ workspaceId, actorId: actor(), action: deps.manualSource ? 'platform.catalog.import.batch' : 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: false, atomic_scope: 'none_across_workflow', snapshot_outbox_transactional: true, ...(deps.manualSource ? { source_ref: deps.manualSource.reference, source_sha256: deps.manualSource.sha256, import_mode: 'platform_manual_upload' } : {}) }, reason: deps.manualSource?.reason ?? '批量导入商品并建立持久化快照' })

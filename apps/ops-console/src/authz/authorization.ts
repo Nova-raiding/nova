@@ -46,7 +46,7 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   // not part of the reduced grant. Keep the product-import entry discoverable
   // without widening any API authorization; the page still gates each action
   // by its own capability.
-  stores: ["platform.settings.read", "store.connection.read", "customer.manual_import"],
+  stores: ["platform.settings.read", "store.connection.read", "customer.manual_import", "workspace.directory.read"],
   rules: ["rule.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],

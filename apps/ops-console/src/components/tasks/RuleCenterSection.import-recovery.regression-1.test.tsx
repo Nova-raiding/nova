@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseMarkdownDraftInputs, uploadMarkdownDrafts } from "./RuleCenterSection";
+import { markdownImportAnnouncementRole, parseMarkdownDraftInputs, uploadMarkdownDrafts } from "./RuleCenterSection";
 
 const markdown = [
   "## JD-RECOVERY-001｜京东规则一",
@@ -13,6 +13,11 @@ const markdown = [
 ].join("\n");
 
 describe("rule Markdown import API failure recovery", () => {
+  it("announces a failed import urgently and a successful import politely", () => {
+    expect(markdownImportAnnouncementRole({ failedCard: "jd-recovery-001" })).toBe("alert");
+    expect(markdownImportAnnouncementRole({})).toBe("status");
+  });
+
   it("rejects a rule card with official metadata but no actual rule content", () => {
     const metadataOnly = markdown.replace("规则内容一\n## JD-RECOVERY-002", "\n## JD-RECOVERY-002");
 

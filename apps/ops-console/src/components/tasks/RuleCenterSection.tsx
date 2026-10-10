@@ -16,6 +16,10 @@ export function isValidApprovalTimestamp(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
+export function markdownImportAnnouncementRole(result: { failedCard?: string }) {
+  return result.failedCard ? "alert" : "status";
+}
+
 const platformByMarkdownName = new Map<string, Platform>(
   platforms.flatMap((platform) => [
     [platform, platform] as const,
@@ -297,7 +301,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
     <Alert type="info" showIcon title="人工资料须独立审核" description="上传 Markdown 只创建公共草稿。规则管理员核对官方依据并完成独立审批后，规则才可能生效。" style={{ marginBottom: 16 }} />
     <input ref={markdownInputRef} type="file" accept=".md,.zip,text/markdown,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importMarkdownFile(file); }} />
     <Button disabled={!canRules || markdownImporting} loading={markdownImporting} onClick={() => markdownInputRef.current?.click()}>上传平台规则（Markdown/ZIP）</Button>
-    {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role="status" title={markdownImportResult.failedCard ? "规则文件导入未完成" : "规则草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
+    {markdownImportResult && <Alert style={{ marginTop: 16 }} type={markdownImportResult.failedCard ? "error" : "success"} role={markdownImportAnnouncementRole(markdownImportResult)} title={markdownImportResult.failedCard ? "规则文件导入未完成" : "规则草稿导入完成"} description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`} />}
   </Card>;
 
   return (
@@ -338,7 +342,7 @@ export function RuleCenterSection({ model, platformOnly = false }: RuleCenterSec
         <Alert
           showIcon
           type={markdownImportResult.failedCard ? "error" : "success"}
-          role="status"
+          role={markdownImportAnnouncementRole(markdownImportResult)}
           title={markdownImportResult.failedCard ? "规则文件导入未完成" : "规则草稿导入完成"}
           description={`成功 ${markdownImportResult.succeeded} 张${markdownImportResult.failedCard ? `；失败卡片 ${markdownImportResult.failedCard}：${markdownImportResult.reason}` : "；没有失败卡片"}`}
           style={{ marginBottom: 16 }}

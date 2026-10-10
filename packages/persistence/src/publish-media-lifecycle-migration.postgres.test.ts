@@ -26,6 +26,9 @@ describe('publish media lifecycle migration 274', () => {
     try {
       await client.query('BEGIN')
       await client.query('INSERT INTO workspaces(id,status) VALUES($1,$2)', [workspace, 'active'])
+      // The task-event SECURITY DEFINER trigger reads the bound task under the
+      // workspace RLS policy, so establish the same tenant scope as production.
+      await client.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
       await client.query('INSERT INTO products(id,workspace_id,platform,remote_product_id,title,source) VALUES($1,$2,$3,$4,$5,$6)', [product,workspace,'taobao',`remote_product_${suffix}`,'fixture','fixture'])
       await client.query('INSERT INTO tasks(id,workspace_id,product_id,platform,state) VALUES($1,$2,$3,$4,$5)', [task,workspace,product,'taobao','publishing'])
       await client.query('INSERT INTO content_versions(id,workspace_id,task_id,version,body,state,created_by) VALUES($1,$2,$3,1,$4::jsonb,$5,$6)', [version,workspace,task,'{}','approved','migration-test'])

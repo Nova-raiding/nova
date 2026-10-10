@@ -1030,7 +1030,9 @@ export function useOpsConsoleModel() {
         platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
           ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20", merchant_only: "true" }))
           : Promise.resolve(undefined),
-        platformStoreScope ? authorizedOptional("ops.stores.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator && allowedHydrationMethods.has("ops.stores.list")
+          ? authorizedOptional("ops.stores.list", { platform_scope: "platform" })
+          : Promise.resolve(undefined),
         platformStoreScope ? deferredOptional("ops.brand-units.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("canonical.product.consistency"),
         platformStoreScope ? deferredOptional("ops.tasks.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),

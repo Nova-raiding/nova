@@ -181,6 +181,24 @@ node apps/plugin/scripts/upgrade-installed-plugin.mjs \
 
 同一版本的内容必须保持不可变；源码内容变化时先更新插件版本并同步本地源码适配器。升级验真通过后仍须完全退出 ChatGPT/Codex，并在新会话重新发现工具。
 
+### 卸载与移除本地 marketplace
+
+本次只读核验使用的 Codex CLI 版本为 `0.162.1`。CLI 提供两个不同操作：卸载具体插件会删除其本地缓存；移除 marketplace 只移除一个已配置的 marketplace source。一个 marketplace 可以列出多个插件，因此移除 source 前应确认没有其他插件仍依赖它。不要把移除 source 当作卸载插件。
+
+先用 `codex plugin list --marketplace merchant-local` 确认该 source 下的插件，再对要卸载的插件逐个执行：
+
+```bash
+codex plugin remove merchant-marketing@merchant-local
+```
+
+只有在确定不再需要该 source 时，再执行：
+
+```bash
+codex plugin marketplace remove merchant-local
+```
+
+这两条是 Codex CLI 的本地配置操作；执行前核对插件名和 marketplace 名称。卸载/移除后完全退出并重启 ChatGPT/Codex，再在新会话检查工具发现状态。不要手动删除 `~/.codex/plugins/cache`，也不要直接编辑用户配置来模拟卸载。
+
 主图候选先由 `catalog.image.get` 展示，并按现有 `catalog.image.review` 与人工审阅要求检查。独立未绑定候选保持未批准、未发布。已有正式内容版本需要选图时，商家明确选择 1–6 张及顺序后才调用 `content.visual.select`，派生新的 `review_required` 版本；选图、审核与批准分别确认，不复用旧版本证据，也不附带平台发布操作。
 
 平台发布及批量发布不属于当前商家入口。内容审核通过或文件导出成功都不代表已写入平台；现有后端发布审批、幂等、账号范围和媒体适配器门禁继续保留，不在插件中提供绕过路径。

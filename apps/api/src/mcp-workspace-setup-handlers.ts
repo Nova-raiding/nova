@@ -4,7 +4,7 @@ import { ERROR_CODES, type OpsWorkbench } from '../../../packages/contracts/src/
 import { WorkspaceBootstrapError, type WorkspaceBootstrapRepository } from '../../../packages/persistence/src/workspace-bootstrap-repository.js'
 import type { WorkspaceContentSetupRepository } from '../../../packages/persistence/src/workspace-content-setup-repository.js'
 import type { InteractiveConfirmationTicketRepository } from '../../../packages/persistence/src/interactive-confirmation-ticket-repository.js'
-import type { OperationsRepository, OperationAudit } from '../../../packages/persistence/src/operations-repository.js'
+import type { OperationsRepository } from '../../../packages/persistence/src/operations-repository.js'
 
 type Params = Record<string, unknown>
 type Principal = { actorId: string; externalSubject?: string; identityId?: string; workspaceIdentityIssuer?: string; issuer?: string; workbench: OpsWorkbench; memberRole?: string; sessionId?: string; sessionSubject?: string }
@@ -85,8 +85,7 @@ export async function handleServiceBoundaryAccept(workspaceId: string, params: P
   actorId: () => string
   policyVersion: string
   policyChecksum: string
-  operations: Pick<OperationsRepository, 'find'>
-  recordAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<void>
+  operations: Pick<OperationsRepository, 'appendIfAbsent'>
 }) {
   const actorId = deps.actorId()
   const policyVersion = deps.required(params, 'policy_version')
@@ -98,12 +97,12 @@ export async function handleServiceBoundaryAccept(workspaceId: string, params: P
   if (policyVersion !== deps.policyVersion || policyChecksum !== deps.policyChecksum) throw new DomainError('SERVICE_BOUNDARY_POLICY_VERSION_INVALID', '服务边界协议版本或校验和已失效，请刷新后重新确认', 409, { current_policy_version: deps.policyVersion, current_policy_checksum: deps.policyChecksum })
   const acceptedTime = Date.parse(acceptedAt)
   if (!Number.isFinite(acceptedTime) || new Date(acceptedTime).toISOString() !== acceptedAt || acceptedTime > Date.now()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'accepted_at 必须是规范 ISO 格式且不晚于当前时间的时间戳', 400)
-  const existing = await deps.operations.find(workspaceId, 'commercial.service-boundary.accept', 'service_boundary_acceptance', acceptanceRef)
-  if (existing) {
+  const appended = await deps.operations.appendIfAbsent({ workspaceId, actorId, action: 'commercial.service-boundary.accept', resourceType: 'service_boundary_acceptance', resourceId: acceptanceRef, before: {}, after: { acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, idempotency_key: idempotencyKey, accepted: true }, reason: '客户确认人工服务边界及结果声明' })
+  if (!appended.created) {
+    const existing = appended.audit
     const same = existing.actorId === actorId && existing.after.customer_subject_ref === customerSubjectRef && existing.after.policy_version === policyVersion && existing.after.policy_checksum === policyChecksum && existing.after.accepted_at === acceptedAt && existing.after.idempotency_key === idempotencyKey && existing.after.accepted === true
     if (!same) throw new DomainError('SERVICE_BOUNDARY_ACCEPTANCE_CONFLICT', 'acceptance_ref 已绑定其他客户确认事实', 409)
     return { schema_version: 'commercial.service-boundary.acceptance.v1', acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, accepted: true, replayed: true }
   }
-  await deps.recordAudit({ workspaceId, actorId, action: 'commercial.service-boundary.accept', resourceType: 'service_boundary_acceptance', resourceId: acceptanceRef, before: {}, after: { acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, idempotency_key: idempotencyKey, accepted: true }, reason: '客户确认人工服务边界及结果声明' })
   return { schema_version: 'commercial.service-boundary.acceptance.v1', acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, accepted: true, replayed: false }
 }

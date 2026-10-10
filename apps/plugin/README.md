@@ -183,7 +183,7 @@ node apps/plugin/scripts/upgrade-installed-plugin.mjs \
 
 ### 卸载与移除本地 marketplace
 
-本地 Codex CLI（当前验收环境为 `0.160.1`）提供两个不同操作：卸载具体插件会删除其本地缓存；移除 marketplace 只移除一个已配置的 marketplace source。一个 marketplace 可以列出多个插件，因此移除 source 前应确认没有其他插件仍依赖它。不要把移除 source 当作卸载插件。
+本次只读核验使用的 Codex CLI 版本为 `0.162.1`。CLI 提供两个不同操作：卸载具体插件会删除其本地缓存；移除 marketplace 只移除一个已配置的 marketplace source。一个 marketplace 可以列出多个插件，因此移除 source 前应确认没有其他插件仍依赖它。不要把移除 source 当作卸载插件。
 
 先用 `codex plugin list --marketplace merchant-local` 确认该 source 下的插件，再对要卸载的插件逐个执行：
 

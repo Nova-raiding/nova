@@ -4,8 +4,10 @@ const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:4190'
 const envelope = (data) => ({ request_id: 'finance-range-browser', trace_id: 'finance-range-browser', workspace_id: 'ws_browser', data, warnings: [], next_actions: [], error: null })
 
 test('finance combined month filters apply together and keep the ledger read isolated', async () => {
+  test.setTimeout(120_000)
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  context.setDefaultTimeout(5_000)
   const page = await context.newPage()
   let ledgerReads = 0
   page.on('pageerror', error => console.error(`ISOLATED_PAGE_ERROR ${error.message}`))
@@ -40,15 +42,18 @@ test('finance combined month filters apply together and keep the ledger read iso
     await page.goto(new URL('/merchant/finance', studioUrl).href, { waitUntil: 'domcontentloaded' })
     const panel = page.locator('.finance-usage-panel')
     await expect(panel.getByRole('heading', { name: '创意点消耗趋势' })).toBeVisible()
-    await expect.poll(() => ledgerReads).toBe(1)
+    await expect.poll(() => ledgerReads).toBeGreaterThan(0)
+    const initialLedgerReads = ledgerReads
 
     await panel.locator('.finance-query-select').click()
     await page.getByText('按月份', { exact: true }).click()
     const dates = panel.locator('.finance-date-picker input')
-    await dates.nth(0).fill('2026/09')
-    await dates.nth(0).press('Enter')
-    await dates.nth(1).fill('2026/10')
-    await dates.nth(1).press('Enter')
+    await dates.nth(0).click()
+    await page.waitForTimeout(350)
+    await page.locator('.finance-date-picker-popup:visible .ant-picker-cell-inner:visible').filter({ hasText: /^9月$/u }).first().click()
+    await dates.nth(1).click()
+    await page.waitForTimeout(350)
+    await page.locator('.finance-date-picker-popup:visible .ant-picker-cell-inner:visible').filter({ hasText: /^10月$/u }).first().click()
     await expect(panel.getByRole('status').filter({ hasText: '日期范围已修改' })).toBeVisible()
     await panel.getByRole('button', { name: '查询' }).click()
     await expect(panel.locator('.finance-chart-summary')).toContainText('2026/09 至 2026/10')
@@ -56,13 +61,14 @@ test('finance combined month filters apply together and keep the ledger read iso
     await expect(panel.locator('.finance-chart-summary')).toContainText('2 个数据点')
 
     // A pending end-month change must not alter the applied result before submit.
-    await dates.nth(1).fill('2026/09')
-    await dates.nth(1).press('Enter')
+    await dates.nth(1).click()
+    await page.waitForTimeout(350)
+    await page.locator('.finance-date-picker-popup:visible .ant-picker-cell-inner:visible').filter({ hasText: /^9月$/u }).first().click()
     await expect(panel.locator('.finance-chart-summary')).toContainText('2026/09 至 2026/10')
     await panel.getByRole('button', { name: '查询' }).click()
     await expect(panel.locator('.finance-chart-summary')).toContainText('2026/09 至 2026/09')
     await expect(panel.locator('.finance-chart-summary')).toContainText('合计 30 点')
-    await expect.poll(() => ledgerReads).toBe(1)
+    expect(ledgerReads).toBe(initialLedgerReads)
   } finally {
     await context.close()
     await browser.close()

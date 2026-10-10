@@ -30,22 +30,29 @@ describe("Ops Overview page read-only journey", () => {
       import { OverviewPage } from '/src/pages/OverviewPage.tsx';
       window.__overviewCalls = { loads: 0, navigations: [] };
       const canReadModel = new URLSearchParams(location.search).get('modelRead') === 'true';
-      const financeReadFails = new URLSearchParams(location.search).get('financeFailure') === 'true';
-      const model = {
-        authorization: { can: capability => capability === 'model.status.read' && canReadModel },
-        workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
-        platformFinanceSummary: undefined,
-        platformMonthlyFinanceSummary: undefined,
-        platformMonthlyFinanceMonth: '2026年10月',
-        platformCommercialCatalog: [],
-        platformModelUsageSummary: undefined,
-        modelStatus: undefined,
-        modelStatusLoading: false,
-        dataSource: { fixtureDataPresent: false },
-        dataSetError: method => method === 'platform.model.status' ? '本地fixture：状态尚未读取' : method === 'ops.finance.search' && financeReadFails ? '本地fixture：财务读取失败' : undefined,
-        load: async () => { window.__overviewCalls.loads += 1; },
-      };
       function Root() {
+        const [financeReadFails, setFinanceReadFails] = React.useState(new URLSearchParams(location.search).get('financeFailure') === 'true');
+        const [platformFinanceSummary, setPlatformFinanceSummary] = React.useState(undefined);
+        const model = {
+          authorization: { can: capability => capability === 'model.status.read' && canReadModel },
+          workspaceDirectory: { items: [], total: 0, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0 },
+          platformFinanceSummary,
+          platformMonthlyFinanceSummary: undefined,
+          platformMonthlyFinanceMonth: '2026年10月',
+          platformCommercialCatalog: [],
+          platformModelUsageSummary: undefined,
+          modelStatus: undefined,
+          modelStatusLoading: false,
+          dataSource: { fixtureDataPresent: false },
+          dataSetError: method => method === 'platform.model.status' ? '本地fixture：状态尚未读取' : method === 'ops.finance.search' && financeReadFails ? '本地fixture：财务读取失败' : undefined,
+          load: async () => {
+            window.__overviewCalls.loads += 1;
+            if (financeReadFails) {
+              setPlatformFinanceSummary({ onboardingOrderCny: 432.1 });
+              setFinanceReadFails(false);
+            }
+          },
+        };
         return React.createElement(App, null,
           React.createElement(OverviewPage, {
             model,
@@ -136,7 +143,8 @@ describe("Ops Overview page read-only journey", () => {
       await retry.focus();
       await page.keyboard.press("Enter");
       await expect.poll(() => page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
-      expect(await retry.evaluate(element => document.activeElement === element)).toBe(true);
+      await failure.waitFor({ state: "hidden" });
+      await expectMetric(page, "接入费总收入", "432.1");
     } finally {
       await page.close();
     }

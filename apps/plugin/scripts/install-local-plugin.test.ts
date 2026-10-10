@@ -81,6 +81,26 @@ function rollbackDirectories(fixture: ReturnType<typeof setup>) {
 }
 
 describe('direct local plugin install runtime build', () => {
+  it('keeps the local installer byte-identical to its installable marketplace mirror', () => {
+    const marketplaceScript = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing/scripts/install-local-plugin.mjs')
+    expect(readFileSync(marketplaceScript, 'utf8')).toBe(readFileSync(script, 'utf8'))
+  })
+
+  it('rejects duplicate package profile arguments before invoking Codex', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'production', '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: fixture.env, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('argument may be specified only once: --package-profile')
+      expect(existsSync(fixture.calls)).toBe(false)
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
   // The macOS path builds the Keychain helper under its own 120s bound.
   it('installs the checked-in marketplace mirror with its explicit QA-only package profile', () => {
     const fixture = setup(source, { marketplaceSourceRoot: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing') })

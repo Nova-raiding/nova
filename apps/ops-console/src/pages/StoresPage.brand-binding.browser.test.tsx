@@ -162,13 +162,19 @@ describe("StoresPage brand-store binding browser flow", () => {
     try {
       await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "登记人工店铺" });
-      await dialog.locator("#manual-store-workspace").click();
+      const workspaceSelect = page.locator("#manual-store-workspace");
+      await workspaceSelect.focus();
+      await workspaceSelect.press("ArrowDown");
       await page.getByText("隔离工作区 · ws-brand-scope", { exact: true }).click();
-      await dialog.locator("#manual-store-platform").click();
+      const platformSelect = page.locator("#manual-store-platform");
+      await platformSelect.focus();
+      await platformSelect.press("ArrowDown");
       await page.getByText("淘宝", { exact: true }).last().click();
-      await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("manual-store-route");
-      await dialog.getByLabel("登记理由", { exact: true }).fill("验证运营台实际登记路由");
-      await dialog.getByRole("button", { name: "确认登记", exact: true }).click();
+      const accountInput = page.getByRole("textbox", { name: "平台店铺账号 ID", exact: true });
+      const reasonInput = page.getByRole("textbox", { name: "登记理由", exact: true });
+      await accountInput.fill("manual-store-route");
+      await reasonInput.fill("验证运营台实际登记路由");
+      await page.getByRole("button", { name: "确认登记", exact: true }).click();
       await page.getByRole("status").filter({ hasText: "人工店铺已登记" }).waitFor();
       expect(requests).toEqual([{
         method: "ops.platform.store.record.create",

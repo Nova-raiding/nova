@@ -9,13 +9,13 @@
 | 页面/子入口 | 当前可定位的浏览器证据 | 当前状态/下一步 |
 |---|---|---|
 | 运营概览 `/merchant/overview` | `overview-finance.browser.spec.js` **5/5**，含概览连接跳转与指标失败恢复 | 本轮本地 fixture 浏览器通过；全卡片和唯一 Demo 数据仍未验收 |
-| 商品与店铺 `/merchant/products?section=products` | `material-product-import.browser.spec.js` **2/2**，含导入后事实确认失败的重试；`catalog-search-filters.browser.spec.js` **1/1**；`manual-store-registration.browser.spec.js` **1/1**，覆盖登记成功但首次列表回读失败后的 GET 核对，禁止重复 POST | 本轮本地 fixture 桌面浏览器通过；完整商品/店铺旅程仍需覆盖 |
-| 品牌资产 `/merchant/products?section=assets` | `overview-finance.browser.spec.js` 中品牌 scope 页面场景 **1/1**；另有上传/竞态与上传重试 fixture | 本轮本地 scope 状态浏览器通过；保存后回读和所有表单错误态仍需覆盖 |
+| 商品与店铺 `/merchant/products?section=products` | `material-product-import.browser.spec.js` **2/2**，含导入后事实确认失败的重试；`catalog-search-filters.browser.spec.js` **1/1**；`catalog-import-search-readback.browser.spec.js` **1/1**，覆盖搜索、CSV 导入、事实确认及刷新后同店铺回读；`catalog-read-retry.browser.spec.js` **1/1**，覆盖目录读取 503、显式重试与服务端商品回读；`manual-store-registration.browser.spec.js` **1/1** | 本地 mock 桌面旅程通过；完整商品/店铺旅程和真实租户仍需验收 |
+| 品牌资产 `/merchant/products?section=assets` | `brand-scope-save-readback.browser.spec.js` **1/1**，覆盖编辑、单次 PUT、刷新后 GET 回读；另有 scope 页面、上传/竞态与上传重试 fixture | 保存回读的定向旅程通过；其他字段错误态及真实租户仍需覆盖 |
 | 素材库 `/merchant/products?section=knowledge` | 素材搜索/预览/导入、素材权益控件（本轮浏览器验证） | 受限 scope 无法升级商用；approved restricted 仍可调整。服务拒绝与保存后 GET 回读已覆盖；老 AssetLibrary 无路由 caller |
 | 回收站 `/merchant/products?section=trash` | `material-recycle-bin.browser.spec.js` **1/1** | 本轮桌面浏览器通过读失败恢复和工作区内素材恢复；真实租户隔离未验证 |
-| 财务 `/merchant/finance` | `overview-finance.browser.spec.js` **2/2**（当前版本/有效期和 legacy 事实 fail-closed）、购买中心浏览器测试 | 本轮基础计划状态通过；组合筛选与页面错误恢复仍需覆盖 |
+| 财务 `/merchant/finance` | `overview-finance.browser.spec.js` **2/2**（当前版本/有效期和 legacy 事实 fail-closed）、购买中心浏览器测试；`finance-combined-range.browser.spec.js` **1/1**（组合月区间、提交前结果保持、账本不因筛选重读）；`commercial-subscription-read-retry.browser.spec.js` **1/1**（套餐读取错误可见、刷新后恢复且不创建订单） | 本地 mock 读取恢复通过；页面其他错误路径及真实账务仍需覆盖 |
 | 成员 `/merchant/members` | `MerchantMembersPage.test.ts` **10/10**；`MerchantMembersPage.mount.test.ts` **1/1**，覆盖初次加载及工作区切换后的 session/list 顺序和邀请草稿清除 | 本轮修复重置与加载 effect 的竞态并通过本地挂载回归；真实账号权限未验收 |
-| 任务 `/merchant/tasks` | task queue、image-generation、delivery-readiness 路径 | image-generation desktop **12/12**（本轮，含三个桌面视口）、素材卡片键盘/详情交互 **1/1**；安全重试失败与 provider outcome unknown 已覆盖；完整页面组合仍需覆盖 |
+| 任务 `/merchant/tasks` | task queue、image-generation、delivery-readiness 路径 | image-generation desktop **12/12**（含三个桌面视口）、素材卡片键盘/详情交互 **1/1**；安全重试失败与 provider outcome unknown 已覆盖；`delivery-readiness-recovery.browser.spec.js` **1/1**，覆盖证据重试保留深链并恢复键盘焦点；完整页面组合仍需覆盖。商品详情的图片用途/尺寸/校验与生成 payload **1/1**、取消确认且不创建任务 **1/1** |
 | 发布历史/发布详情（任务子流程） | `publish-history.browser.spec.js` | 有列表、深链和恢复 journey；tab ARIA 与键盘交互已补并有专项回归 |
 | 规则 `/merchant/rules` | `rules-page-interactions.browser.spec.js` | 有浏览器专项；需按真实规则状态继续覆盖 |
 
@@ -33,8 +33,8 @@
 | Members `/ops/members` | 有测试未完成/未执行 | 新增的 route browser 场景检查平台账号明确阻断、sidebar 不显示 workspace 页，以及“返回总览”；首次运行 **2 tests failed**，因测试 fixture 在 Node 回调中读取 `window`，已移除该错误并改为匹配实际 `role=status`，修订尚未复跑。成员邀请/角色/状态/分页/恢复 journey 无覆盖；该页面按现有工作台边界在 Ops 中不可达。 |
 | Tasks `/ops/tasks` | 有测试未完成/未执行 | `BrandStoreTasksDeepLink.browser.test.tsx` 只覆盖任务深链；完整页面列表、筛选、输入、空/错恢复没有页面旅程收据。 |
 | Knowledge `/ops/knowledge` | 无页面覆盖 | 组件/读状态单测存在；`workbench=workspace` 由平台控制台 fail closed，审批路径不属于可访问的 Ops 页面。 |
-| Stores `/ops/stores` | 有测试未完成/未执行 | `StoreDirectorySection.registration-error.browser.test.tsx` 五项交互均通过（4 项完整运行通过；修正后的失败恢复场景隔离复跑 **1/1**）；覆盖筛选重置、别名失败重试、登记失败保留输入和重新提交。完整 route page 组合仍缺。 |
-| Rules `/ops/rules` | 有测试未完成/未执行 | `PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx` **4/4**；`RuleCenterSection.activation-validation.browser.test.tsx` 的两项校验和确认/取消场景合计 **3/3**（确认用例独立复跑通过）。仍无完整 controller route journey 收据。 |
+| Stores `/ops/stores` | 有测试未完成/未执行 | `StoresPage.route.browser.test.tsx` **1/1**：目录筛选/空结果、平台工作台显式目标工作区、登记失败保留输入和安全重试、成功后刷新未授权记录；其余组件测试照常保留。更广 route/权限组合仍缺。 |
+| Rules `/ops/rules` | 有测试未完成/未执行 | `PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx` **4/4**；`RuleCenterSection.activation-validation.browser.test.tsx` **3/3**；Markdown 导入失败使用 `role=alert`、成功使用 `role=status` 的回归 **4/4**。完整 controller route journey 仍缺。 |
 | Models `/ops/models` | 已完成（定向） | `ModelsPage.overview-navigation.browser.test.tsx` + `StoragePage.error.browser.test.tsx` 合计 **4/4**；覆盖总览跳转、倍率读重试/审计保存、relay fail-closed、存储错误重试。完整模型成本/真实 relay 仍未验收。 |
 | Storage `/ops/storage` | 已完成（定向） | 与 Models 同一浏览器批次 **4/4**；仅本地 fixture 的错误恢复和对账重载，不是 Demo 存储一致性证据。 |
 | Finance `/ops/finance` | 已完成（定向）；仍有覆盖缺口 | 高级筛选浏览器专项 **2/2**，API/Hook/组件 **26/26**；FinancePage 级失败恢复与筛选快照导出 **1/1**，hook stale/export truncation **3/3**，FinanceSearchSection **14/14**。完整 controller route 和真实账务旅程仍未验收。 |
@@ -76,6 +76,14 @@
 Ops shell/registry 审查未发现确定缺陷：13 个路由有注册，sidebar 按 capability 与平台 workbench 边界过滤。缺少逐一经真实 controller 挂载全部 13 个页面的测试。唯一 demo、真实租户权限和生产模型证据不在本地 fixture 的验收能力内。
 
 本轮新增验证收据：MCP `asset.preference.update` 无效 revision 回归 **2/2**；MCP 缺 token/401 提示回归 **2/2**；Ops authorization 与 navigation **95/95**；发布确认 Escape 取消浏览器场景 **1/1**；全仓 `npm run typecheck` **通过**。另修复 Merchant catalog filter 的方向键/Home/End/Enter 与 Escape 焦点返回，并新增 Customer Delivery controller 到页面的路由场景；两项浏览器测试尚未运行。Overview 错误恢复浏览器测试也待运行。所有证据均为本地测试，不是 ECS Demo 实机验收。
+
+## 10 月 11 日继续审查
+
+- Merchant Studio：商品导入回读、品牌 scope 保存回读、财务组合月份筛选，以及商品详情图片生成/取消确认等本地浏览器旅程均取得各 **1/1** 收据。筛选提交不触发账本重读；取消确认不创建图片任务。
+- Ops Console：Stores controller 路由旅程 **1/1**；平台工作台请求显式携带目标 `workspace_id`，但不伪装成商家工作台请求。规则 Markdown 导入错误播报回归 **4/4**，失败用 `alert`、成功用 `status`。
+- API：`commercial.service-boundary.accept` 曾在并发重放时可能双写审计。当前实现通过 PostgreSQL 事务 advisory lock 序列化同一 acceptance key，并用唯一 JSON tuple 生成无 NUL 锁键；定向测试 **27/27**。全仓类型检查仍在执行；未运行 PostgreSQL 测试或连接数据库。
+- 插件：电商图片工作流契约测试 **3/3**；本地插件安装器重复参数防覆盖测试 **1/1**。本机仍同时启用 `merchant-local` 与 `personal` 两个 provider，缓存版本不同；没有写入本机配置或安装插件。
+- 仍未完成的页面旅程包括 Ops Tasks 的筛选按钮、Rules 的完整 controller 路由，以及各真实租户/账务/服务环境验收。视频成片能力的 MCP 门禁已有测试，但 Merchant Studio 尚无视频创建入口；本地视频 skill cache 与源码版本也有差异。
 
 ## PM/NN/g UX 摘要
 

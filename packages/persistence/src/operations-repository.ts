@@ -4,6 +4,7 @@ import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTrans
 export interface OperationAudit { id: string; workspaceId: string; actorId: string; action: string; resourceType: string; resourceId: string; before: Record<string, unknown>; after: Record<string, unknown>; reason: string; createdAt: string }
 export interface OperationsRepository {
   append(input: Omit<OperationAudit, 'id' | 'createdAt'>): Promise<OperationAudit>
+  appendIfAbsent(input: Omit<OperationAudit, 'id' | 'createdAt'>): Promise<{ audit: OperationAudit; created: boolean }>
   list(workspaceId: string, limit?: number): Promise<OperationAudit[]>
   find(workspaceId: string, action: string, resourceType: string, resourceId: string): Promise<OperationAudit | undefined>
 }
@@ -29,7 +30,22 @@ export function validateOperationAuditInput(input: Omit<OperationAudit, 'id' | '
 
 export class MemoryOperationsRepository implements OperationsRepository {
   private readonly rows: OperationAudit[] = []
+  private appendIfAbsentTail: Promise<void> = Promise.resolve()
   async append(input: Omit<OperationAudit, 'id' | 'createdAt'>) { validateOperationAuditInput(input); const row = { ...input, id: `audit_${randomUUID()}`, createdAt: new Date().toISOString() }; this.rows.push(row); return row }
+  async appendIfAbsent(input: Omit<OperationAudit, 'id' | 'createdAt'>) {
+    validateOperationAuditInput(input)
+    let release!: () => void
+    const previous = this.appendIfAbsentTail
+    this.appendIfAbsentTail = new Promise<void>(resolve => { release = resolve })
+    await previous
+    try {
+      const existing = await this.find(input.workspaceId, input.action, input.resourceType, input.resourceId)
+      if (existing) return { audit: existing, created: false }
+      return { audit: await this.append(input), created: true }
+    } finally {
+      release()
+    }
+  }
   async list(workspaceId: string, limit = 100) { return this.rows.filter(row => row.workspaceId === workspaceId).slice(-Math.min(500, Math.max(1, limit))).reverse() }
   async find(workspaceId: string, action: string, resourceType: string, resourceId: string) { return [...this.rows].reverse().find(row => row.workspaceId === workspaceId && row.action === action && row.resourceType === resourceType && row.resourceId === resourceId) }
 }
@@ -52,6 +68,19 @@ export async function appendOperationAuditInTransaction(client: SqlClient, input
 export class PostgresOperationsRepository implements OperationsRepository {
   constructor(private readonly pool: SqlPool) {}
   async append(input: Omit<OperationAudit, 'id' | 'createdAt'>) { validateOperationAuditInput(input); requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, input.workspaceId, client => appendOperationAuditInTransaction(client, input)) }
+  async appendIfAbsent(input: Omit<OperationAudit, 'id' | 'createdAt'>) {
+    validateOperationAuditInput(input)
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      // PostgreSQL text parameters reject NUL bytes. JSON tuple encoding is
+      // both valid UTF-8 text and unambiguous across component boundaries.
+      const lockKey = JSON.stringify([workspaceId, input.action, input.resourceType, input.resourceId])
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [lockKey])
+      const existing = await client.query<OperationAuditRow>(`SELECT id, workspace_id AS "workspaceId", actor_id AS "actorId", action, resource_type AS "resourceType", resource_id AS "resourceId", before_json AS "before", after_json AS "after", reason, created_at AS "createdAt" FROM workspace_operation_audit WHERE workspace_id=$1 AND action=$2 AND resource_type=$3 AND resource_id=$4 ORDER BY created_at DESC, id DESC LIMIT 1`, [workspaceId, input.action, input.resourceType, input.resourceId])
+      if (existing.rows[0]) return { audit: operationAuditFromRow(existing.rows[0]), created: false }
+      return { audit: await appendOperationAuditInTransaction(client, input), created: true }
+    })
+  }
   async list(workspaceId: string, limit = 100) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<OperationAuditRow>(`SELECT id, workspace_id AS "workspaceId", actor_id AS "actorId", action, resource_type AS "resourceType", resource_id AS "resourceId", before_json AS "before", after_json AS "after", reason, created_at AS "createdAt" FROM workspace_operation_audit WHERE workspace_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2`, [workspaceId, Math.min(500, Math.max(1, limit))]); return result.rows.map(operationAuditFromRow) }) }
   async find(workspaceId: string, action: string, resourceType: string, resourceId: string) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<OperationAuditRow>(`SELECT id, workspace_id AS "workspaceId", actor_id AS "actorId", action, resource_type AS "resourceType", resource_id AS "resourceId", before_json AS "before", after_json AS "after", reason, created_at AS "createdAt" FROM workspace_operation_audit WHERE workspace_id=$1 AND action=$2 AND resource_type=$3 AND resource_id=$4 ORDER BY created_at DESC,id DESC LIMIT 1`, [workspaceId, action, resourceType, resourceId]); return result.rows[0] ? operationAuditFromRow(result.rows[0]) : undefined }) }
 }

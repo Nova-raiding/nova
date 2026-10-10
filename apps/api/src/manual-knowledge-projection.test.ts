@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { DomainError } from '../../../packages/application/src/service.js'
 import { manualKnowledgeProduct, projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 import { MemoryKnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
 import { handleCatalogImport, type CatalogImportDependencies } from './mcp-catalog-import.js'
@@ -55,6 +56,79 @@ describe('manual draft sparse knowledge projection', () => {
     const [document] = await repository.listDocuments('ws')
     if (stock === '0' || stock === '5') expect(document!.extractedText).toContain(`商品库存：${stock}`)
     else expect(document!.extractedText).not.toContain('库存')
+  })
+  it('checks workspace access for source assets before creating a draft product', async () => {
+    const importProduct = vi.fn(() => structuredClone(product))
+    const enforceAssetAccess = vi.fn(async () => { throw new DomainError('ASSET_ACCESS_DENIED', '素材不存在或不属于当前工作区', 404) })
+    const deps = {
+      service: { importProduct },
+      supportedPlatforms: ['taobao'], isProduction: () => false,
+      knowledgeRepository: new MemoryKnowledgeRepository(),
+      required: (params: Record<string, unknown>, key: string) => String(params[key]),
+      enforceBrandAccess: async () => undefined,
+      enforceAssetAccess,
+      scanImportedProductRules: vi.fn(async () => undefined),
+      persistSnapshot: vi.fn(async () => undefined),
+    } as unknown as CatalogImportDependencies
+
+    await expect(handleCatalogImport('ws', {
+      platform: 'taobao', title: '蓝袋QA', draft_only: 'true', asset_ids_json: '["asset_other_workspace"]',
+    }, deps)).rejects.toMatchObject({ code: 'ASSET_ACCESS_DENIED' })
+
+    expect(enforceAssetAccess).toHaveBeenCalledWith('ws', 'asset_other_workspace', 'viewer')
+    expect(importProduct).not.toHaveBeenCalled()
+  })
+  it('checks workspace access for SKU source assets before creating a product', async () => {
+    const importProduct = vi.fn(() => structuredClone(product))
+    const enforceAssetAccess = vi.fn(async () => { throw new DomainError('ASSET_ACCESS_DENIED', '素材不存在或不属于当前工作区', 404) })
+    const deps = {
+      service: { importProduct },
+      supportedPlatforms: ['taobao'], isProduction: () => false,
+      knowledgeRepository: new MemoryKnowledgeRepository(),
+      required: (params: Record<string, unknown>, key: string) => String(params[key]),
+      enforceBrandAccess: async () => undefined,
+      enforceAssetAccess,
+      assetForWorkspace: vi.fn(),
+      scanImportedProductRules: vi.fn(async () => undefined),
+      persistSnapshot: vi.fn(async () => undefined),
+    } as unknown as CatalogImportDependencies
+
+    await expect(handleCatalogImport('ws', {
+      platform: 'taobao', title: '蓝袋QA', skus_json: JSON.stringify([{ id: 'sku_1', name: '蓝色', price: 10, stock: 1, sourceAssetIds: ['asset_other_workspace'] }]),
+    }, deps)).rejects.toMatchObject({ code: 'ASSET_ACCESS_DENIED' })
+
+    expect(enforceAssetAccess).toHaveBeenCalledWith('ws', 'asset_other_workspace', 'viewer')
+    expect(importProduct).not.toHaveBeenCalled()
+  })
+  it('checks target-workspace ownership for permitted product and SKU source assets', async () => {
+    const importProduct = vi.fn(() => structuredClone(product))
+    const enforceAssetAccess = vi.fn(async () => undefined)
+    const assetForWorkspace = vi.fn((_workspaceId: string, assetId: string) => {
+      if (assetId === 'asset_other_workspace') throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
+      return {}
+    })
+    const deps = {
+      service: { importProduct },
+      supportedPlatforms: ['taobao'], isProduction: () => false,
+      knowledgeRepository: new MemoryKnowledgeRepository(),
+      required: (params: Record<string, unknown>, key: string) => String(params[key]),
+      enforceBrandAccess: async () => undefined,
+      enforceAssetAccess,
+      assetForWorkspace,
+      scanImportedProductRules: vi.fn(async () => undefined),
+      persistSnapshot: vi.fn(async () => undefined),
+    } as unknown as CatalogImportDependencies
+
+    await expect(handleCatalogImport('ws', {
+      platform: 'taobao', title: '蓝袋QA', asset_ids_json: '["asset_in_workspace"]',
+      skus_json: JSON.stringify([{ id: 'sku_1', name: '蓝色', price: 10, stock: 1, sourceAssetIds: ['asset_other_workspace'] }]),
+    }, deps)).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' })
+
+    expect(enforceAssetAccess).toHaveBeenNthCalledWith(1, 'ws', 'asset_in_workspace', 'viewer')
+    expect(enforceAssetAccess).toHaveBeenNthCalledWith(2, 'ws', 'asset_other_workspace', 'viewer')
+    expect(assetForWorkspace).toHaveBeenNthCalledWith(1, 'ws', 'asset_in_workspace')
+    expect(assetForWorkspace).toHaveBeenNthCalledWith(2, 'ws', 'asset_other_workspace')
+    expect(importProduct).not.toHaveBeenCalled()
   })
   it.each([
     ['price', 'not-a-number'],

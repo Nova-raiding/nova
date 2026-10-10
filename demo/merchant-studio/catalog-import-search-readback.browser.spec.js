@@ -61,7 +61,9 @@ test('商品目录内搜索、表格导入和重新读取同一店铺商品闭�
   })
   await page.route('**/v1/auth/session', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ account: { id: 'catalog-import-reader', login: 'catalog-import@example.invalid', accountType: 'merchant', status: 'active', roles: ['merchant_owner'], workspaceIds: [workspaceId] } })) }))
   await page.route('**/v1/auth/mcp-token', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ access_token: 'fixture-access', refresh_token: 'fixture-refresh', expires_in: 300, workspace_id: workspaceId })) }))
-  await page.route('**/healthz', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true } })) }))
+  // This route is fully mocked in memory; enabling writes exercises the
+  // customer confirmation flow without reaching a real service.
+  await page.route('**/healthz', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'fixture', ready: true } })) }))
   await page.route('**/v1/platform-accounts*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [{ platform: 'taobao', state: 'connected', readEnabled: true, writeEnabled: true, dataMode: 'fixture', accountId, storeName: '目录导入回读验收店', label: '目录导入回读验收店' }] })) }))
   await page.route('**/v1/products*', route => {
     productsReadbacks += 1
@@ -99,6 +101,8 @@ test('商品目录内搜索、表格导入和重新读取同一店铺商品闭�
       if (imported) imported.factsConfirmed = true
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result: { id: productId, workspaceId, platform: 'taobao', accountId, title: productTitle, factsConfirmed: Boolean(imported?.factsConfirmed) } })) })
     }
+    if (rpc?.method === 'creative-points.balance.get') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result: { available_points: 100 } })) })
+    if (rpc?.method === 'billing.transactions') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result: { balance_cny: '0.00', transactions: [] } })) })
     unexpectedRequests.push(`unmocked MCP ${rpc?.method ?? 'unknown'}`)
     return route.fulfill({ status: 599, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'UNMOCKED_MCP_METHOD' })) })
   })
@@ -120,6 +124,7 @@ test('商品目录内搜索、表格导入和重新读取同一店铺商品闭�
     const importer = page.getByTestId('merchant-product-spreadsheet-import')
     await importer.locator('input[type="file"]').setInputFiles({ name: 'catalog-import.csv', mimeType: 'text/csv', buffer: Buffer.from('平台,商品名称,店铺账号,价格,库存\n淘宝,目录导入回读验收商品,taobao-catalog-import-fixture,199,12') })
     await expect(importer.getByText(productTitle, { exact: true })).toBeVisible()
+    await importer.getByRole('radio', { name: /绑定真实店铺/ }).check()
     await expect(importer.getByRole('button', { name: '确认并导入真实店铺' })).toBeVisible()
     await importer.getByRole('button', { name: '确认并导入真实店铺' }).click()
     await expect(importer.getByText('已导入并确认 1 个真实店铺商品。', { exact: true })).toBeVisible()

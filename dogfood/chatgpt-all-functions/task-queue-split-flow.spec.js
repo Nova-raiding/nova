@@ -437,3 +437,70 @@ test('canceling the manual-publish confirmation returns focus without creating a
     await browser.close()
   }
 })
+
+test('publish confirmation close icon closes safely and wraps Tab focus at both ends', async () => {
+  const { browser, context, page, approvalRequests, publishPreviewRequests, publishConfirmRequests, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
+  try {
+    await page.getByRole('button', { name: /突出核心功能/u }).click()
+    await page.getByRole('button', { name: '确认制作方案并生成' }).click()
+    await expect(page.getByRole('heading', { name: '可以进入人工确认' })).toBeVisible()
+    const approvalCheckbox = page.getByRole('checkbox', { name: /我已核对事实、规则和最终内容/u })
+    await approvalCheckbox.click()
+    await expect.poll(() => approvalRequests.length).toBe(1)
+    await expect(approvalCheckbox).toBeChecked()
+
+    const openConfirmation = page.getByRole('button', { name: '继续确认发布' })
+    await openConfirmation.click()
+    const dialog = page.getByRole('dialog', { name: '提交人工发布任务' })
+    await expect(dialog).toBeVisible()
+    const closeButton = dialog.getByRole('button', { name: '关闭发布确认' })
+    const returnButton = dialog.getByRole('button', { name: '返回检查' })
+    await expect(returnButton).toBeFocused()
+
+    await page.keyboard.press('Tab')
+    await expect(closeButton).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(returnButton).toBeFocused()
+
+    await closeButton.click()
+    await expect(dialog).toBeHidden()
+    await expect(openConfirmation).toBeFocused()
+    expect(publishPreviewRequests).toHaveLength(1)
+    expect(publishConfirmRequests).toEqual([])
+    expect(unmockedApiCalls).toEqual([])
+    expect(unexpectedNetworkRequests).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
+
+test('publish confirmation returns to review without creating a publish job', async () => {
+  const { browser, context, page, approvalRequests, publishPreviewRequests, publishConfirmRequests, unmockedApiCalls, unexpectedNetworkRequests } = await openApp('/merchant/tasks/task-creative', { creativeJourney: true })
+  try {
+    await page.getByRole('button', { name: /突出核心功能/u }).click()
+    await page.getByRole('button', { name: '确认制作方案并生成' }).click()
+    await expect(page.getByRole('heading', { name: '可以进入人工确认' })).toBeVisible()
+    const approvalCheckbox = page.getByRole('checkbox', { name: /我已核对事实、规则和最终内容/u })
+    await approvalCheckbox.click()
+    await expect.poll(() => approvalRequests.length).toBe(1)
+    await expect(approvalCheckbox).toBeChecked()
+
+    const openConfirmation = page.getByRole('button', { name: '继续确认发布' })
+    await openConfirmation.click()
+    const dialog = page.getByRole('dialog', { name: '提交人工发布任务' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '提交人工发布任务' })).toBeDisabled()
+    await dialog.getByRole('button', { name: '返回检查' }).click()
+
+    await expect(dialog).toBeHidden()
+    await expect(openConfirmation).toBeFocused()
+    expect(publishPreviewRequests).toHaveLength(1)
+    expect(publishConfirmRequests).toEqual([])
+    expect(unmockedApiCalls).toEqual([])
+    expect(unexpectedNetworkRequests).toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})

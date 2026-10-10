@@ -162,6 +162,17 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     const generation = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'generation.get', { job_id: generationJob.id }))
     expect(generation).toMatchObject({ id: generationJob.id, workspaceId, taskId: generationTask.id, state: 'queued' })
 
+    const beforeInvalidRestore = api.service.getTask(contentTask.id)
+    for (const expected_version of ['not-a-version', '', true]) {
+      const invalidRestore = await callMcp(tokens.rules, workspaceId, 'content.restore', {
+        content_version_id: sourceVersion.id,
+        expected_version,
+      })
+      expect(invalidRestore.status).toBe(400)
+      expect(invalidRestore.body.error?.code).toBe('INVALID_REQUEST')
+      expect(api.service.getTask(contentTask.id)).toMatchObject({ version: beforeInvalidRestore.version, contentVersionId: beforeInvalidRestore.contentVersionId })
+    }
+
     const restored = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'content.restore', {
       content_version_id: sourceVersion.id,
       expected_version: String(restoreExpectedVersion),
@@ -363,6 +374,11 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     })
     expect(restoreReplay.status).toBe(409)
     expect(restoreReplay.body.error?.code).toBe('VERSION_CONFLICT')
+
+    const compatibilityRestore = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'content.restore', {
+      content_version_id: sourceVersion.id,
+    }))
+    expect(compatibilityRestore).toMatchObject({ source: { id: sourceVersion.id }, version: { parentId: sourceVersion.id, state: 'review_required' } })
 
     const adHocIdempotency = await callMcp(tokens.operator, workspaceId, 'knowledge.feedback.record', {
       kind: 'feedback',

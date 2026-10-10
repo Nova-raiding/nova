@@ -102,7 +102,51 @@ describe("Ops stores route directory and registration journey", () => {
       await page.getByText("人工登记（未授权）", { exact: true }).waitFor();
       const registrations = rpcCalls.filter(call => call.method === "ops.platform.store.record.create");
       expect(registrations).toHaveLength(2);
-      expect(registrations[0]).toMatchObject({ params: { workspace_id: "ws-isolated", platform: "taobao", account_id: "route-fixture-store", reason: "隔离路由验收" }, workspace: "ws-isolated", workbench: "workspace" });
+      expect(registrations[0]).toMatchObject({ params: { workspace_id: "ws-isolated", platform: "taobao", account_id: "route-fixture-store", reason: "隔离路由验收" }, workspace: undefined, workbench: "platform" });
+      expect(unexpected).toEqual([]);
+    } finally { await page.close(); }
+  }, 60_000);
+
+  it("opens for directory-only operators and requests only reads granted by that capability", async () => {
+    if (!browser) throw new Error("Chromium did not start");
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(20_000);
+    const rpcCalls: Array<{ method: string; params: Record<string, unknown>; workbench?: string }> = [];
+    const unexpected: string[] = [];
+    try {
+      await page.route("**/*", async route => {
+        const url = new URL(route.request().url());
+        if (url.hostname === "127.0.0.1" && url.port === new URL(baseUrl).port) return route.fallback();
+        unexpected.push(url.origin); await route.abort();
+      });
+      await page.route(url => url.origin === new URL(baseUrl).origin && url.pathname.startsWith("/api/"), async route => {
+        const request = route.request(); const url = new URL(request.url());
+        if (url.pathname !== "/api/mcp" || request.method() !== "POST") {
+          unexpected.push(`${request.method()} ${url.pathname}`); await route.fulfill({ status: 403, body: "fixture only" }); return;
+        }
+        const rpc = request.postDataJSON() as { id?: string | number; method: string; params?: Record<string, unknown> };
+        rpcCalls.push({ method: rpc.method, params: rpc.params ?? {}, workbench: request.headers()["x-ops-workbench"] });
+        let result: unknown = null;
+        if (rpc.method === "ops.session") result = { actor_id: "directory-reader", workspace_id: "", roles: [], workspace_granted: false, workbench: "platform", scope: { type: "platform" }, capabilities: ["workspace.directory.read"] };
+        if (rpc.method === "ops.workspaces.list") result = { items: [], total: 0, offset: 0, limit: 20 };
+        if (rpc.method === "ops.stores.list") result = { items: [ { platform: "taobao", accountId: "readable-store", label: "目录可读店铺", state: "connected", dataMode: "official_api", readable: true, writeEnabled: false, revision: 1 } ] };
+        if (rpc.method === "ops.growth.funnel") result = { counts: {}, totalEvents: 0 };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
+      });
+
+      await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "平台与店铺", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "平台连接汇总" }).waitFor();
+      await page.getByText("目录可读店铺", { exact: true }).waitFor();
+      await page.waitForTimeout(1_800);
+
+      expect(rpcCalls.filter(call => call.method !== "ops.session").map(call => call.method).sort()).toEqual([
+        "ops.growth.funnel", "ops.stores.list", "ops.workspaces.list",
+      ]);
+      expect(rpcCalls.filter(call => call.method === "ops.stores.list")).toEqual([
+        expect.objectContaining({ params: { platform_scope: "platform" }, workbench: "platform" }),
+      ]);
+      expect(rpcCalls.some(call => call.method.includes("create") || call.method.includes("update") || call.method.includes("delete"))).toBe(false);
       expect(unexpected).toEqual([]);
     } finally { await page.close(); }
   }, 60_000);

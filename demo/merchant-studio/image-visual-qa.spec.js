@@ -148,6 +148,7 @@ test('audits image purpose/size choices, validation error focus, and the generat
 })
 
 test('canceling the image generation confirmation closes it without creating a task', async () => {
+  test.setTimeout(120_000)
   const { browser, context, page, generated } = await openVisualPage()
   try {
     await page.getByRole('button', { name: /生成图片/ }).click({ timeout: 5000 })

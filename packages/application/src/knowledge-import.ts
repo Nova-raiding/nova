@@ -75,6 +75,12 @@ export async function projectImportedProductsToKnowledge(input: {
   sourceVersion?: number
   sourceMetadata?: Record<string, unknown>
 }): Promise<ImportedKnowledgeProjection> {
+  // Validate the full batch before the first repository write. Otherwise a
+  // mismatched product can leak facts into another workspace, or leave a
+  // partially projected batch behind when the mismatch appears later.
+  const foreignProduct = input.products.find(product => product.workspaceId !== input.workspaceId)
+  if (foreignProduct) throw new Error(`商品 ${foreignProduct.id} 不属于目标工作区`)
+
   const assets: KnowledgeAsset[] = []
   const documents: KnowledgeDocument[] = []
   const chunks: KnowledgeChunk[] = []

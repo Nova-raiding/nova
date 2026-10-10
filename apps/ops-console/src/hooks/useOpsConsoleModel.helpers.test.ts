@@ -53,6 +53,15 @@ describe("Ops Console model helpers", () => {
     ]);
   });
 
+  it("does not hydrate the platform store directory without workspace directory read", () => {
+    const authorization = createAuthorizationProjection({
+      capabilities: ["platform.settings.read"],
+      scope: { type: "platform" },
+    } as never, true);
+
+    expect(allowedBackgroundHydrationMethods(authorization)).not.toContain("ops.stores.list");
+  });
+
   it("does not probe the legacy commercial snapshot with summary-only access", () => {
     const authorization = createAuthorizationProjection({
       capabilities: ["workspace.summary.read"],

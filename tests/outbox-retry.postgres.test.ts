@@ -131,6 +131,38 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     const retry = await append(scope, 'retry_without_optional_unknown')
     await repository.recordFailure(scope, retry.id, { code: 'RATE_LIMITED', message: 'retry is explicit', retryable: true }, due)
 
+    // Capture the persisted retry evidence and evaluate the same claim gates
+    // before claiming. This distinguishes a bad fixture/clock from a failure
+    // in claimPending's JSON or timestamp predicates.
+    const retryState = (await database!.query<{
+      next_attempt_at: Date | string
+      last_error: Record<string, unknown>
+      lease_token: string | null
+      lease_until: Date | string | null
+      unknown_at: Date | string | null
+      published_at: Date | string | null
+      due_at_claim_time: boolean
+      retryable_boolean: boolean
+      unknown_absent_or_false: boolean
+      non_terminal: boolean
+    }>(`SELECT next_attempt_at, last_error, lease_token, lease_until, unknown_at, published_at,
+               next_attempt_at <= $2::timestamptz AS due_at_claim_time,
+               last_error->'retryable' = 'true'::jsonb AS retryable_boolean,
+               COALESCE(last_error->'unknown', 'false'::jsonb) = 'false'::jsonb AS unknown_absent_or_false,
+               COALESCE(last_error->>'terminal', 'false') <> 'true' AS non_terminal
+          FROM outbox_events WHERE workspace_id=$1 AND id=$3`, [scope, due, retry.id])).rows[0]
+    expect(retryState).toMatchObject({
+      last_error: { code: 'RATE_LIMITED', message: 'retry is explicit', retryable: true },
+      lease_token: null,
+      lease_until: null,
+      unknown_at: null,
+      published_at: null,
+      due_at_claim_time: true,
+      retryable_boolean: true,
+      unknown_absent_or_false: true,
+      non_terminal: true,
+    })
+
     const before = (await database!.query('SELECT * FROM outbox_events WHERE id=ANY($1::text[]) ORDER BY id', [blocked])).rows
     const claims = await repository.claimPending(scope, { now: due, leaseMs: 60_000 })
     expect(claims.map(event => event.id).sort()).toEqual([fresh.id, retry.id].sort())
