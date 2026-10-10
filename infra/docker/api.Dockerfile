@@ -1,5 +1,8 @@
 FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+# The host ECS builder has limited RAM; the full composite build needs more
+# than Node's default 2 GiB heap while compiling the complete API dependency graph.
+ENV NODE_OPTIONS=--max-old-space-size=3072
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
