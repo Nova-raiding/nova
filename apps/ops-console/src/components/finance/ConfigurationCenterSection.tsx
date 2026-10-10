@@ -40,6 +40,7 @@ export function ConfigurationCenterSection({
   const canUpdateCommercialSettings = model.authorization.can("workspace.settings.update");
   const canUpdatePlatformSettings = model.authorization.can("platform.settings.update");
   const configurationError = dataSetError("workspace.commercial.get");
+  const configurationReadFailed = Boolean(configurationError);
   const configurationErrorRef = useRef<HTMLDivElement>(null);
   const platformSaveInFlight = useRef(new Set<Platform>());
   const [savingPlatforms, setSavingPlatforms] = useState<Set<Platform>>(() => new Set());
@@ -75,7 +76,7 @@ export function ConfigurationCenterSection({
       extra={<Tag color="blue">Revision {settings?.revision ?? "-"}</Tag>}
     >
       {configurationError ? (
-        <div ref={configurationErrorRef} tabIndex={-1} role="alert" aria-label="配置中心错误摘要" style={{ marginBottom: 16 }}>
+        <div ref={configurationErrorRef} tabIndex={-1} role="group" aria-label="配置中心错误摘要" style={{ marginBottom: 16 }}>
           <Alert
             type="error"
             showIcon
@@ -98,7 +99,7 @@ export function ConfigurationCenterSection({
                 layout="vertical"
                 onFinish={saveCommercial}
                 className="config-form"
-                disabled={!canUpdateCommercialSettings || !settings}
+                disabled={!canUpdateCommercialSettings || !settings || configurationReadFailed}
               >
                 <Row gutter={16}>
                   <Col xs={24} md={8}>
@@ -165,7 +166,7 @@ export function ConfigurationCenterSection({
                   </Col>
                 </Row>
                 <Button
-                  disabled={!canUpdateCommercialSettings || !settings}
+                  disabled={!canUpdateCommercialSettings || !settings || configurationReadFailed}
                   type="primary"
                   htmlType="submit"
                   icon={<SaveOutlined />}
@@ -215,7 +216,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "displayName",
                     render: (_: string, row: PlatformSetting) => (
                       <Input
-                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        disabled={!canUpdatePlatformSettings || configurationReadFailed || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 展示名称`}
                         value={row.displayName}
                         onChange={(event) =>
@@ -238,7 +239,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "storeAlias",
                     render: (_: string, row: PlatformSetting) => (
                       <Input
-                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        disabled={!canUpdatePlatformSettings || configurationReadFailed || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 店铺别名`}
                         value={row.storeAlias}
                         onChange={(event) =>
@@ -288,7 +289,7 @@ export function ConfigurationCenterSection({
                     title: "变更原因",
                     render: (_: unknown, row: PlatformSetting) => (
                       <Input
-                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        disabled={!canUpdatePlatformSettings || configurationReadFailed || savingPlatforms.has(row.platform)}
                         aria-label={`${row.platform} 变更原因`}
                         placeholder="原因可留空，系统使用默认审计说明"
                         value={row.changeReason}
@@ -312,7 +313,7 @@ export function ConfigurationCenterSection({
                     dataIndex: "enabled",
                     render: (_: boolean, row: PlatformSetting) => (
                       <Switch
-                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        disabled={!canUpdatePlatformSettings || configurationReadFailed || savingPlatforms.has(row.platform)}
                         checked={row.enabled}
                         onChange={(checked) =>
                           setPlatformRows((current) =>
@@ -330,7 +331,7 @@ export function ConfigurationCenterSection({
                     title: "操作",
                     render: (_: unknown, row: PlatformSetting) => (
                       <Button
-                        disabled={!canUpdatePlatformSettings || savingPlatforms.has(row.platform)}
+                        disabled={!canUpdatePlatformSettings || configurationReadFailed || savingPlatforms.has(row.platform)}
                         loading={savingPlatforms.has(row.platform)}
                         type="link"
                         onClick={() => void savePlatformRow(row)}

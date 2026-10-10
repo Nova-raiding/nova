@@ -2546,6 +2546,17 @@ describe('API HTTP vertical slice', () => {
     expect((versions.data as Array<{ version: number }>).map(item => item.version)).toEqual([1])
     const pagedVersions = await fetch(`${base}/v1/tasks/${taskId}/content-versions?limit=1&offset=0`, { headers }).then(json)
     expect(pagedVersions.data).toMatchObject({ items: [expect.objectContaining({ id: firstId })], total: 1, limit: 1, offset: 0 })
+    const taskVersionBeforeInvalidRestore = service.getTask(taskId).version
+    for (const expected_version of ['not-a-version', '', true, 1.5]) {
+      const invalidResponse = await fetch(`${base}/v1/content-versions/${firstId}/restore`, { method: 'POST', headers, body: JSON.stringify({ expected_version }) })
+      const invalid = await invalidResponse.json() as { error?: { code?: string } }
+      expect(invalidResponse.status).toBe(400)
+      expect(invalid.error?.code).toBe('INVALID_REQUEST')
+      expect(service.getTask(taskId).version).toBe(taskVersionBeforeInvalidRestore)
+      const unchanged = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
+      expect((unchanged.data as Array<{ id: string }>).map(item => item.id)).toEqual([firstId])
+    }
+    // Omitting expected_version remains supported for clients that do not use optimistic concurrency.
     const restored = await fetch(`${base}/v1/content-versions/${firstId}/restore`, { method: 'POST', headers }).then(json)
     expect(restored.error).toBeNull()
     const second = restored.data as { version: { id: string; version: number; parentId: string; state: string } }

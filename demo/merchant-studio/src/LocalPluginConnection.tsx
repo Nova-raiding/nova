@@ -68,6 +68,27 @@ export function pairingMatchesWorkspace(pairing: PairingReturn | null, workspace
 
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
 type OneClickState = 'checking' | 'available' | 'release_gate' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
+
+type CapabilityReadApi = <T>(baseUrl: string, path: string, init?: RequestInit, workspaceId?: string) => Promise<T>
+
+export async function readLocalPluginCapability(apiBaseUrl: string, workspaceId: string, readApi: CapabilityReadApi = requestApi) {
+  const result = await readApi<{ one_click_available: boolean; supported_platforms: string[] }>(
+    apiBaseUrl, '/v1/auth/local-plugin/connect-capability', {}, workspaceId,
+  )
+  return result.one_click_available === true && result.supported_platforms?.includes('macos') === true
+    ? 'available' as const
+    : 'release_gate' as const
+}
+
+export function LocalPluginCapabilityRetryButton({ visible, loading, onRetry }: {
+  visible: boolean
+  loading: boolean
+  onRetry: () => void
+}) {
+  if (!visible) return null
+  return <Button type="link" size="small" aria-label="重新检查一键连接" loading={loading} disabled={loading} onClick={onRetry}>重新检查一键连接</Button>
+}
+
 export type LocalPluginPlatform = 'macos' | 'windows' | 'other'
 
 export function detectLocalPluginPlatform(userAgent = '', platform = ''): LocalPluginPlatform {
@@ -119,6 +140,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   const [oneClickState, setOneClickState] = useState<OneClickState>('checking')
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionAttempt = useRef(0)
+  const capabilityReadAttempt = useRef(0)
   const scope = JSON.stringify([apiBaseUrl, account.id, account.login, account.status, account.workspaceIds, activeWorkspaceId])
   const eligible = account.accountType === 'merchant' && account.status === 'active'
   const candidateWorkspaceId = activeWorkspaceId && account.workspaceIds.includes(activeWorkspaceId) ? activeWorkspaceId : null
@@ -152,17 +174,30 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
 
   useEffect(() => {
     let active = true
+    const attempt = ++capabilityReadAttempt.current
     if (!macosBrowser) setOneClickState('unsupported_platform')
     else if (!workspaceId) setOneClickState('workspace_required')
     else if (eligible) {
       setOneClickState('checking')
-      void requestApi<{ one_click_available: boolean; supported_platforms: string[] }>(apiBaseUrl,
-        '/v1/auth/local-plugin/connect-capability', {}, workspaceId ?? undefined)
-        .then(result => { if (active) setOneClickState(result.one_click_available === true && result.supported_platforms?.includes('macos') === true ? 'available' : 'release_gate') })
-        .catch(() => { if (active) setOneClickState('check_failed') })
+      void readLocalPluginCapability(apiBaseUrl, workspaceId).then(state => {
+        if (active && capabilityReadAttempt.current === attempt) setOneClickState(state)
+      }).catch(() => {
+        if (active && capabilityReadAttempt.current === attempt) setOneClickState('check_failed')
+      })
     }
-    return () => { active = false }
+    return () => { active = false; capabilityReadAttempt.current += 1 }
   }, [scope, workspaceId, eligible, macosBrowser, apiBaseUrl])
+
+  const retryCapabilityRead = () => {
+    if (oneClickState !== 'check_failed' || !macosBrowser || !eligible || !workspaceId) return
+    const attempt = ++capabilityReadAttempt.current
+    setOneClickState('checking')
+    void readLocalPluginCapability(apiBaseUrl, workspaceId).then(state => {
+      if (capabilityReadAttempt.current === attempt) setOneClickState(state)
+    }).catch(() => {
+      if (capabilityReadAttempt.current === attempt) setOneClickState('check_failed')
+    })
+  }
 
   useEffect(() => {
     const fragment = window.location.hash
@@ -269,6 +304,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
       {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
+      <LocalPluginCapabilityRetryButton visible={oneClickState === 'check_failed'} loading={oneClickState === 'checking'} onRetry={retryCapabilityRead} />
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
       <Button onClick={(event) => { event.stopPropagation(); setOpenScope(null) }}>关闭</Button>

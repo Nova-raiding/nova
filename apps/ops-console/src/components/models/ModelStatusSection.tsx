@@ -85,7 +85,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
       />
       <ModelReadinessTable status={displayStatus} />
       {modelError ? (
-        <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true">
+        <div ref={errorRef} tabIndex={-1} role="group" aria-label="平台模型状态错误摘要">
           <Alert
             type="error"
             showIcon

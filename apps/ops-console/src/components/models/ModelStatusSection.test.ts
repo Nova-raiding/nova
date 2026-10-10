@@ -122,8 +122,10 @@ describe("ModelStatusSection", () => {
         } as OpsConsoleModel,
       }),
     );
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-live="assertive"');
+    expect(markup).toContain('role="group"');
+    expect(markup).toContain('aria-label="平台模型状态错误摘要"');
+    const summaryStart = markup.indexOf('aria-label="平台模型状态错误摘要"');
+    expect(markup.slice(summaryStart, markup.indexOf('</div>', summaryStart))).toContain('role="alert"');
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-label="重试加载平台模型状态"');
     expect(markup).toContain("min-height:44px");

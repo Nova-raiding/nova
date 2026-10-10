@@ -218,6 +218,46 @@ describe('Codex App merchant conversation flow', { timeout: 15000 }, () => {
     })
   })
 
+  it('requires every product import to be an unbound draft before forwarding', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, { id: 'should-not-be-called' })))
+    }, async (child, calls) => {
+      const missingSingleMode = await request(child, 1, 'catalog.import', { platform: 'jd', title: '资料草稿' })
+      const boundSingleDraft = await request(child, 2, 'catalog.import', { platform: 'jd', title: '资料草稿', draft_only: 'true', account_id: 'store_1' })
+      const missingBatchMode = await request(child, 3, 'catalog.import.batch', { products_json: '[]' })
+
+      for (const response of [missingSingleMode, boundSingleDraft, missingBatchMode]) {
+        expect(response.result).toMatchObject({
+          isError: true,
+          structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' },
+        })
+      }
+      expect((missingSingleMode.result as Json).content).toMatchObject([
+        { text: expect.stringContaining('只能导入为未绑定草稿') },
+      ])
+      expect((boundSingleDraft.result as Json).content).toMatchObject([
+        { text: expect.stringContaining('不能指定店铺或品牌') },
+      ])
+      expect(calls).toEqual([])
+
+      const unconfirmedValidDraft = await request(child, 4, 'catalog.import', { platform: 'jd', title: '资料草稿', draft_only: 'true' })
+      expect(unconfirmedValidDraft.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(calls).toEqual([])
+
+      const confirmation = await request(child, 5, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
+      expect((confirmation.result as Json).isError).toBe(false)
+      await request(child, 6, 'catalog.import', { platform: 'jd', title: '资料草稿', draft_only: 'true' })
+      await request(child, 7, 'catalog.import.batch', { products_json: '[{"title":"资料草稿"}]', draft_only: 'true' })
+      expect(calls.map(call => call.method)).toEqual(['workspace.interactive.confirm', 'catalog.import', 'catalog.import.batch'])
+      const importCalls = calls.filter(call => call.method === 'catalog.import' || call.method === 'catalog.import.batch')
+      expect(importCalls).toMatchObject([
+        { method: 'catalog.import', params: { draft_only: 'true' } },
+        { method: 'catalog.import.batch', params: { draft_only: 'true' } },
+      ])
+    })
+  })
+
   it('introduces content production when a legacy server only returns a greeting', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')

@@ -14,6 +14,14 @@ describe("visibleUsersGovernanceSections", () => {
     expect(visibleUsersGovernanceSections(authorization(["identity.read"]))).toEqual(["directory"]);
   });
 
+  it("does not show an empty registration tab to users with write but no read access", () => {
+    expect(visibleUsersGovernanceSections(authorization(["identity.update"]))).toEqual([]);
+  });
+
+  it("shows registration review only when both list reading and review writing are allowed", () => {
+    expect(visibleUsersGovernanceSections(authorization(["identity.read", "identity.update"]))).toEqual(["directory", "registrations"]);
+  });
+
   it("shows only the task areas backed by server capabilities", () => {
     expect(visibleUsersGovernanceSections(authorization([
       "workspace.directory.read",
@@ -51,8 +59,8 @@ describe("visibleUsersGovernanceSections", () => {
       model: { authorization: authorization([]) } as never,
       onRefresh: () => undefined,
     }));
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-live="assertive"');
+    expect(markup.match(/role="alert"/g)).toHaveLength(1);
+    expect(markup).toContain('role="group"');
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-labelledby="users-governance-unavailable-title"');
     expect(markup).toContain("刷新用户治理权限");

@@ -27,6 +27,7 @@ const job = {
 
 test('image task detail recovers from a failed status read using its explicit refresh action', async () => {
   test.setTimeout(120_000)
+  expect.configure({ timeout: 15_000 })
   const vite = await createServer({
     configFile: false, envDir: false, root: studioRoot, plugins: [react()],
     define: { 'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api'), 'import.meta.env.MODE': JSON.stringify('test') },
@@ -44,7 +45,9 @@ test('image task detail recovers from a failed status read using its explicit re
   const page = await context.newPage()
   const detailResponses = []
   const pageErrors = []
+  const visualSelectionRequests = []
   let allowJobRead = false
+  let visualSelectionOutcomeUnknown = true
   page.on('pageerror', error => pageErrors.push(error.message))
 
   await page.route('**/*', async (route) => {
@@ -67,9 +70,46 @@ test('image task detail recovers from a failed status read using its explicit re
       }
       detailResponses.push('200')
       data = job
+    } else if (path === `/v1/tasks/${job.task_id}/content-versions`) {
+      data = { items: [
+        {
+          id: 'content_task_detail_selected', taskId: job.task_id, parentId: job.content_version_id,
+          version: 5, revision: 1,
+          body: { title: '选图后的待审核版本', detail: '商品详情', sellingPoints: [] },
+          factVersionIds: [], ruleVersionIds: [], state: 'review_required',
+        },
+        {
+          id: job.content_version_id, taskId: job.task_id, version: 4, revision: 4,
+          body: { title: '任务审核版本', detail: '商品详情', sellingPoints: [] },
+          factVersionIds: [], ruleVersionIds: [], state: 'review_required',
+        },
+      ], total: 2, limit: 50, offset: 0 }
+    } else if (path === `/v1/tasks/${job.task_id}`) {
+      data = { id: job.task_id, workspaceId, productId: job.product_id, platform: 'taobao', accountId: 'store_task_detail_status', state: 'draft', version: 4, createdAt: job.created_at, contentVersionId: job.content_version_id }
+    } else if (path === `/v1/products/${job.product_id}`) {
+      data = { id: job.product_id, workspaceId, platform: 'taobao', accountId: 'store_task_detail_status', storeName: '任务状态恢复店', title: '任务审核版本', skuCount: 1, stock: 5, factsConfirmed: true, source: 'browser_fixture', version: 3 }
+    } else if (path === `/v1/tasks/${job.task_id}/feedback`) {
+      data = { items: [], total: 0, limit: 50, offset: 0 }
+    } else if (path === `/v1/tasks/${job.task_id}/timeline` || path === `/v1/tasks/${job.task_id}/directions`) {
+      data = []
+    } else if (path.startsWith('/v1/content-versions/') && path.endsWith('/review')) {
+      data = { findings: [], categories: [], blocking: false }
     } else if (path === '/mcp') {
       const method = request.postDataJSON()?.method
-      data = { result: method === 'workspace.metrics'
+      if (method === 'content.visual.select') {
+        visualSelectionRequests.push(request.postDataJSON().params)
+        if (visualSelectionOutcomeUnknown) {
+          visualSelectionOutcomeUnknown = false
+          return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'CONTENT_VISUAL_SELECT_OUTCOME_UNKNOWN', message: '选择结果待确认' })) })
+        }
+        data = { result: {
+          content_version_id: 'content_task_detail_selected',
+          parent_content_version_id: job.content_version_id,
+          version: 5, revision: 5, state: 'review_required',
+          visualSelection: { state: 'selected', count: 1, items: [{ visualRef: 'visual_task_detail_status', ordinal: 1, reviewStatus: 'passed', publishable: true }] },
+          reviewRequired: true, approvalRequired: true,
+        } }
+      } else data = { result: method === 'workspace.metrics'
         ? { source: 'fixture', stores: [], productSummary: { total: 0, lowStock: 0, missingImages: 0 }, riskSummary: { total: 0, returned: 0, truncated: false }, riskItems: [], taskFunnel: {} }
         : method === 'platform.model.status' ? { state: 'ready', capabilities: { image_generation: false } }
           : method === 'creative-points.balance.get' ? { balance_state: 'known', available_points: 0 }
@@ -95,6 +135,34 @@ test('image task detail recovers from a failed status read using its explicit re
     expect(new URL(page.url()).searchParams.get('image_job')).toBe(jobId)
     expect(detailResponses).toContain('200')
     expect(detailResponses.length).toBeGreaterThanOrEqual(2)
+
+    const selection = panel.locator('.image-selection-panel')
+    const candidateCheckbox = panel.getByRole('figure', { name: /候选 1/u }).locator('input[type="checkbox"]')
+    await candidateCheckbox.check()
+    await expect(candidateCheckbox).toBeChecked()
+    await selection.getByLabel('选图原因（必填）').fill('首张候选通过门禁，作为审核版本主图')
+    const submitSelection = selection.getByRole('button', { name: '提交选择（1/6）' })
+    await expect(submitSelection).toBeEnabled()
+    await submitSelection.click()
+    await expect(selection.getByRole('alert')).toContainText('提交结果尚未确认')
+    await expect(candidateCheckbox).toBeDisabled()
+    await expect(selection.getByLabel('选图原因（必填）')).toBeDisabled()
+    const recoverSelection = selection.getByRole('button', { name: '使用原请求恢复任务' })
+    await recoverSelection.click()
+    await expect(selection.locator('.info-notice[role="status"]')).toContainText('生成新的待审核内容版本 content_task_detail_selected')
+    expect(visualSelectionRequests).toHaveLength(2)
+    expect(visualSelectionRequests[0]).toMatchObject({
+      content_version_id: job.content_version_id,
+      visual_refs_json: JSON.stringify(['visual_task_detail_status']),
+      expected_revision: '4',
+      idempotency_key: `merchant-studio-visual-selection-${jobId}-4`,
+      reason: '首张候选通过门禁，作为审核版本主图',
+    })
+    expect(visualSelectionRequests[1]).toEqual(visualSelectionRequests[0])
+    await selection.getByRole('button', { name: '进入新版本审核' }).click()
+    await expect(page).toHaveURL(new RegExp(`/merchant/tasks/${job.task_id}$`))
+    await expect(page.getByRole('heading', { name: '任务协作线程' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '选图后的待审核版本', exact: true }).first()).toBeVisible()
     expect(pageErrors).toEqual([])
   } finally {
     await context.close()

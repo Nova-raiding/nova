@@ -74,11 +74,11 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
     </Typography.Text>
 
     <AuditFilters value={controller.filters} onChange={controller.setFilters} />
-    {controller.error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-labelledby="audit-load-error-title">
+    {controller.error ? <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby="audit-load-error-title">
       <Alert type="error" showIcon title={<span id="audit-load-error-title">审计记录加载失败</span>} description={controller.error}
         action={<Button onClick={() => void controller.reload()} style={{ minHeight: 44 }}>重试</Button>} />
     </div> : null}
-    {controller.exportError ? <div ref={exportErrorRef} tabIndex={-1} role="alert" aria-labelledby="audit-export-error-title">
+    {controller.exportError ? <div ref={exportErrorRef} tabIndex={-1} role="group" aria-labelledby="audit-export-error-title">
       <Alert type="error" showIcon title={<span id="audit-export-error-title">审计导出失败</span>} description={controller.exportError}
         action={<Button onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>重试导出</Button>} />
     </div> : null}

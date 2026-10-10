@@ -1,5 +1,4 @@
 import { OpsPage } from "../components/OpsPage";
-import { OpsPageError } from "../components/OpsPageError";
 import { RuleCenterSection } from "../components/tasks/RuleCenterSection";
 import { RuleSyncStatusSection } from "../components/rules/RuleSyncStatusSection";
 import { WorkspaceRuleAuditPanel } from "../components/rules/WorkspaceRuleAuditPanel";
@@ -30,7 +29,6 @@ export function RulesPage({ model }: RulesPageProps) {
       actions={<Button type="primary" loading={model.ruleSyncLoading} onClick={() => void model.loadRules()}>刷新规则</Button>}
     >
       <div className="ops-rules-page">
-      <OpsPageError error={ruleError} onRetry={() => void model.loadRules()} />
       <Alert
         type="info"
         showIcon

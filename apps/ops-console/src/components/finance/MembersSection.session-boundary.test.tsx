@@ -43,6 +43,8 @@ describe("members session boundary", () => {
             const mutations = [];
             const failInitialRead = new URLSearchParams(location.search).has('fail-initial-read');
             const failPostMutationRefresh = new URLSearchParams(location.search).has('fail-post-mutation-refresh');
+            const holdMemberMutation = new URLSearchParams(location.search).has('hold-member-mutation');
+            window.__releaseMemberMutation = undefined;
             const client = {
               async list(workspaceId) {
                 reads.push({ actor: currentActor, workspaceId });
@@ -50,11 +52,17 @@ describe("members session boundary", () => {
                 if (failInitialRead && reads.length === 1) throw new Error('初始成员列表暂不可用');
                 if (failPostMutationRefresh && reads.length === 2) throw new Error('变更后的列表刷新超时');
                 const name = currentActor === 'actor-a' ? '成员甲' : '成员乙';
-                return { items: [{ id: name, externalSubject: name, displayName: name, role: 'merchant_admin', status: currentActor === 'actor-a' ? currentMemberStatus : 'active', revision: currentMemberStatus === 'suspended' ? 2 : 1, updatedAt: '2026-09-29T00:00:00.000Z', governance: { protectedTarget: false, canChangeTarget: true, canDeactivateTarget: true } }], total: 1, offset: 0, limit: 20, hasMore: false };
+                return { items: [{ id: name, externalSubject: name, displayName: name, role: 'merchant_admin', status: currentActor === 'actor-a' ? currentMemberStatus : 'active', revision: currentMemberStatus === 'suspended' ? 2 : 1, updatedAt: '2026-09-29T00:00:00.000Z', governance: { protectedTarget: false, canChangeTarget: true, canDeactivateTarget: true } }], total: holdMemberMutation ? 21 : 1, offset: 0, limit: 20, hasMore: holdMemberMutation };
               },
               async invite(...args) { mutations.push(['invite', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected invite'); },
               async changeRole(...args) { mutations.push(['changeRole', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected role change'); },
-              async deactivate(workspaceId, member, reason) { mutations.push(['deactivate', workspaceId, member.externalSubject, reason]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); currentMemberStatus = 'suspended'; return { ...member, status: 'suspended', revision: member.revision + 1 }; },
+              async deactivate(workspaceId, member, reason) {
+                mutations.push(['deactivate', workspaceId, member.externalSubject, reason]);
+                document.documentElement.dataset.membersMutations = JSON.stringify(mutations);
+                if (holdMemberMutation) await new Promise(resolve => { window.__releaseMemberMutation = resolve; });
+                currentMemberStatus = 'suspended';
+                return { ...member, status: 'suspended', revision: member.revision + 1 };
+              },
               async reactivate(...args) { mutations.push(['reactivate', ...args]); document.documentElement.dataset.membersMutations = JSON.stringify(mutations); throw new Error('unexpected reactivation'); },
             };
             const capabilities = new Set(['workspace.member.read', 'workspace.member.manage', 'workspace.status.update']);
@@ -174,4 +182,31 @@ describe("members session boundary", () => {
       expect(JSON.parse(await page.locator("html").getAttribute("data-members-mutations") ?? "[]")).toHaveLength(1);
     } finally { await page.close(); }
   }, 45_000);
+
+  it("keeps a pending member write safe from dismissal and concurrent pagination reads", async () => {
+    const page: Page = await openPage("?hold-member-mutation");
+    try {
+      await page.getByRole("button", { name: "停用 成员甲" }).click();
+      const dialog = page.getByRole("dialog", { name: "确认停用成员" });
+      await dialog.locator("textarea").fill("岗位调整后收回成员访问");
+      await dialog.getByRole("button", { name: "确认停用", exact: true }).click();
+      await page.waitForFunction(() => typeof window.__releaseMemberMutation === "function");
+
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "visible" });
+      await page.locator(".ant-pagination-next").evaluate(element => (element as HTMLElement).click());
+      await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]"))).toHaveLength(1);
+
+      await page.evaluate(() => window.__releaseMemberMutation?.());
+      await page.getByRole("status").filter({ hasText: "已停用 成员甲" }).waitFor();
+      await dialog.waitFor({ state: "hidden" });
+      await expect.poll(() => page.locator("html").getAttribute("data-members-reads").then(value => JSON.parse(value ?? "[]"))).toHaveLength(2);
+      expect(await page.getByRole("button", { name: "邀请成员" }).isDisabled()).toBe(false);
+      expect(JSON.parse(await page.locator("html").getAttribute("data-members-mutations") ?? "[]")).toHaveLength(1);
+    } finally { await page.close(); }
+  }, 45_000);
 });
+
+declare global {
+  interface Window { __releaseMemberMutation?: () => void }
+}

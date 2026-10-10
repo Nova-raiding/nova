@@ -58,7 +58,8 @@ describe("AuditDetailDrawer", () => {
   it("exposes a retryable, focusable error state", () => {
     const onRetry = vi.fn();
     const html = renderToStaticMarkup(<AuditDetailDrawer {...baseProps} selected={selected} error="详情服务不可用" onRetry={onRetry} />);
-    expect(html).toContain('role="alert"');
+    expect(html.match(/role="alert"/g)).toHaveLength(1);
+    expect(html).toContain('role="group" tabindex="-1" aria-labelledby="audit-detail-error-title"');
     expect(html).toContain("详情服务不可用");
     expect(html).toContain("重试");
   });

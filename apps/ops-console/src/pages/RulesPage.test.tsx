@@ -39,10 +39,11 @@ describe("rules page error scope", () => {
     expect(html).not.toContain("ops.storage.reconciliation.list");
   });
 
-  it("still surfaces a failing rule dataset on both rule surfaces", () => {
+  it("surfaces a failing rule dataset once with the sync section recovery action", () => {
     const html = render({ ruleError: "规则数据加载失败，请重试；空列表不代表没有平台规则。" });
     expect(html).toContain("规则同步状态读取失败");
     expect(html).toContain("规则数据加载失败，请重试");
+    expect(html.match(/规则数据加载失败，请重试/gu)).toHaveLength(1);
   });
 
   it("mounts public draft review only in the platform workbench", () => {

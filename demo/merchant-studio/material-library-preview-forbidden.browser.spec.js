@@ -38,6 +38,7 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
     throw new Error('Local Merchant Studio fixture did not bind an ephemeral TCP port')
   }
 
+  const studioUrl = `http://127.0.0.1:${address.port}`
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   await context.addCookies([{
@@ -53,15 +54,22 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
   const apiPaths = []
   const mcpMethods = []
   const pageErrors = []
+  const unexpectedExternalRequests = []
   const unexpected404Responses = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('response', (response) => {
     if (response.status() === 404) unexpected404Responses.push(response.url())
   })
 
-  await page.route('**/api/**', async (route) => {
+  await page.route('**/*', async (route) => {
     const request = route.request()
-    const path = new URL(request.url()).pathname
+    const url = new URL(request.url())
+    if (url.origin !== studioUrl) {
+      unexpectedExternalRequests.push(url.href)
+      return route.abort('blockedbyclient')
+    }
+    if (!url.pathname.startsWith('/api/')) return route.fallback()
+    const path = url.pathname
     apiPaths.push(path)
     if (path === '/api/healthz') {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
@@ -143,7 +151,7 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
   })
 
   try {
-    await page.goto(`http://127.0.0.1:${address.port}/merchant/products?section=knowledge`, {
+    await page.goto(`${studioUrl}/merchant/products?section=knowledge`, {
       waitUntil: 'domcontentloaded',
     })
     const workspace = page.getByTestId('material-library-workspace')
@@ -161,6 +169,7 @@ test('keeps an asset card usable when its authenticated preview read is forbidde
       accept: 'application/octet-stream',
     })
     expect(unexpected404Responses, 'Unexpected browser HTTP 404 responses').toEqual([])
+    expect(unexpectedExternalRequests, 'The fixture attempted an external request').toEqual([])
 
     await card.getByRole('button', { name: '查看无权限样图.png详情' }).click()
     const detailPreview = page.locator('.material-detail-preview')

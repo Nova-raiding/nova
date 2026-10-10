@@ -1,6 +1,6 @@
 import { CloudSyncOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Table, Tag, Typography } from "antd";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { RuleSyncStatus } from "../../types/ops";
 
 interface RuleSyncStatusSectionProps {
@@ -45,7 +45,7 @@ export function RuleSyncStatusSection({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (error) errorRef.current?.focus({ preventScroll: true });
   }, [error]);
 

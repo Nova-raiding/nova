@@ -93,6 +93,7 @@ test('catalog search, date filter, empty-state recovery, and pagination use the 
     await expect(page.getByText('该店铺还没有商品', { exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: '清除全部条件' }).click()
     await expect(search).toHaveValue('')
+    await expect(page).not.toHaveURL(/(?:[?&])(?:q|query|search)=/u)
     await expect(page.locator('.catalog-product-card')).toHaveCount(6)
 
     await page.getByRole('button', { name: '按添加时间筛选' }).click()

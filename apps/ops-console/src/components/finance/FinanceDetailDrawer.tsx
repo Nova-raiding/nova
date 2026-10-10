@@ -60,7 +60,7 @@ export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry,
       aria-busy={loading || undefined}
     >
       {loading && <div role="status" aria-live="polite" aria-label="正在加载财务详情"><Skeleton active paragraph={{ rows: 8 }} /></div>}
-      {!loading && error && <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="财务详情错误摘要">
+      {!loading && error && <div ref={errorRef} tabIndex={-1} role="group" aria-label="财务详情错误摘要">
         <Alert type="error" showIcon title="详情加载失败" description={error} action={<Button htmlType="button" onClick={onRetry} aria-label="重试财务详情" style={{ minHeight: 44 }}>重试详情</Button>} />
       </div>}
       {!loading && !error && !detail && <Empty description="没有可显示的财务详情" />}

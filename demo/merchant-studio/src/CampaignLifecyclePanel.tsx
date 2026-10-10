@@ -99,6 +99,7 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
   const actionErrorRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const actionIntentRef = useRef<{ signature: string; idempotencyKey: string } | null>(null)
   const openProductSelection = () => {
     window.history.pushState(null, '', '/merchant/products')
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -150,9 +151,15 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
     if (!baseUrl || !campaign || !action) return
     setSubmitting(true); setError('')
     try {
-      const params = buildCampaignLifecycleParams({ campaign, action, reason, selectedItemIds: selected, idempotencyKey: `merchant:${action}:${campaign.id}:${crypto.randomUUID()}` })
+      const intentSignature = JSON.stringify({ campaignId: campaign.id, action, reason: reason.trim(), selectedItemIds: action === 'retry_failed' ? [...selected].sort() : [] })
+      const idempotencyKey = actionIntentRef.current?.signature === intentSignature
+        ? actionIntentRef.current.idempotencyKey
+        : `merchant:${action}:${campaign.id}:${crypto.randomUUID()}`
+      actionIntentRef.current = { signature: intentSignature, idempotencyKey }
+      const params = buildCampaignLifecycleParams({ campaign, action, reason, selectedItemIds: selected, idempotencyKey })
       const next = parseCampaignSnapshot(await requestMcp(baseUrl, `campaign.batch.${action}`, params))
       setCampaign(next); setAction(undefined); setReason(''); setConfirmed(false)
+      actionIntentRef.current = null
     } catch (cause) { setError(describeApiError(cause)) }
     finally { setSubmitting(false) }
   }

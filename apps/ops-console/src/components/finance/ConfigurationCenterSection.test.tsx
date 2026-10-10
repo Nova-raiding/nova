@@ -8,7 +8,9 @@ describe("ConfigurationCenterSection error recovery", () => {
   it("moves focus to a recoverable error summary", () => {
     expect(source).toContain("configurationErrorRef.current?.focus({ preventScroll: true })");
     expect(source).toContain('tabIndex={-1}');
-    expect(source).toContain('role="alert"');
+    expect(source).toContain('role="group"');
+    expect(source).toContain('<Alert');
+    expect(source).not.toContain('tabIndex={-1} role="alert"');
     expect(source).toContain('aria-label="配置中心错误摘要"');
   });
 

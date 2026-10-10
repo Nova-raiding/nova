@@ -96,7 +96,16 @@ export async function handleHttpContentVersionRoutes(req: IncomingMessage, res: 
     const scoped = scopeContentVersion(req, versionRestoreMatch[1]!)
     await assertCanonicalTaskScopeForAction(scoped.task)
     const input = await body(req)
-    const restored = service.restoreContentVersion(scoped.task.workspaceId, scoped.version.id, typeof input.expected_version === 'number' ? input.expected_version : undefined)
+    let expectedVersion: number | undefined
+    if (input.expected_version !== undefined) {
+      expectedVersion = typeof input.expected_version === 'number'
+        ? input.expected_version
+        : typeof input.expected_version === 'string' && /^\d+$/u.test(input.expected_version)
+          ? Number(input.expected_version)
+          : Number.NaN
+      if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_version 必须是正安全整数', 400)
+    }
+    const restored = service.restoreContentVersion(scoped.task.workspaceId, scoped.version.id, expectedVersion)
     await persistSnapshot(scoped.task.workspaceId, 'content_version', restored.version, restored.version as unknown as Record<string, unknown>)
     await persistSnapshot(scoped.task.workspaceId, 'task', restored.task, restored.task as unknown as Record<string, unknown>)
     await persistEvent(scoped.task.workspaceId, restored.version.id, 'content.version_restored', restored.version.revision, { task_id: restored.task.id, source_version_id: restored.source.id, content_version_id: restored.version.id, version: restored.version.version })

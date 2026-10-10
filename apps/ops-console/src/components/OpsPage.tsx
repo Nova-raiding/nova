@@ -29,7 +29,10 @@ export function OpsPage({
     // Route pages are lazy-mounted in the workbench. Move focus to the
     // stable page landmark so keyboard and screen-reader operators do not
     // remain on the previous route's control after navigation.
-    pageRef.current?.focus({ preventScroll: true });
+    const page = pageRef.current;
+    // A child may already have focused an actionable error summary while the
+    // route mounted. Keep that more specific target instead of stealing focus.
+    if (!page?.contains(document.activeElement)) page?.focus({ preventScroll: true });
   }, []);
   return (
     <section

@@ -75,7 +75,10 @@ describe("FinanceDetailDrawer", () => {
     expect(html).toContain("演示企业");
 
     const errorHtml = renderToStaticMarkup(<FinanceDetailDrawer selected={selected} loading={false} error="详情服务不可用" onRetry={vi.fn()} onClose={vi.fn()} />);
-    expect(errorHtml).toContain('role="alert"');
+    expect(errorHtml.match(/role="alert"/g)).toHaveLength(1);
+    expect(errorHtml).toContain('role="group"');
+    expect(errorHtml).toContain('tabindex="-1"');
+    expect(errorHtml).toContain('aria-label="财务详情错误摘要"');
     expect(errorHtml).toContain("详情服务不可用");
     expect(errorHtml).toContain("重试详情");
   });

@@ -799,12 +799,12 @@ const METHODS = {
   'automation.tick': { description: '执行已到期的店铺同步与风险扫描策略；不自动重发或发布。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'automation.pause': { description: '暂停店铺自动化运营并记录原因。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
   'catalog.import': {
-    description: '导入或绑定商品；支持后续主图生成和发布。',
-    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, draft_only: { type: 'string', enum: ['true'], description: '仅导入本地资料用于草稿候选；不绑定店铺、不可同步或发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
+    description: '仅将用户提供或已核验的资料导入为未绑定商品草稿；必须显式设置 draft_only="true"。不连接店铺、不同步、不发布。',
+    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, draft_only: { type: 'string', enum: ['true'], description: '必填：仅导入未绑定草稿，不连接店铺、不同步、不发布。' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title', 'draft_only'], additionalProperties: false },
   },
   'catalog.import.batch': {
-    description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材。显式 draft_only=true 时只建立未绑定、待审核知识草稿，不需要店铺账号，不同步、不发布。相同批次重试时保持 idempotency_key 不变。',
-    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' }, source_asset_id: { type: 'string', description: '已解析且已由商家确认事实的 XLSX/CSV 商品表格素材' }, draft_only: { type: 'string', enum: ['true'], description: '仅建立未绑定商品和待审核知识，不连接店铺、不同步、不发布。' }, idempotency_key: idempotencyKeyProperty }, oneOf: [{ required: ['products_json'] }, { required: ['source_asset_id'] }], additionalProperties: false },
+    description: '批量导入最多 50 个商品草稿；必须显式设置 draft_only="true"。只建立未绑定商品和待审核知识，不连接店铺、不同步、不发布。相同批次重试时保持 idempotency_key 不变。',
+    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' }, source_asset_id: { type: 'string', description: '已解析且已由商家确认事实的 XLSX/CSV 商品表格素材' }, draft_only: { type: 'string', enum: ['true'], description: '必填：仅建立未绑定商品草稿，不连接店铺、不同步、不发布。' }, idempotency_key: idempotencyKeyProperty }, required: ['draft_only'], oneOf: [{ required: ['products_json'] }, { required: ['source_asset_id'] }], additionalProperties: false },
   },
   'catalog.sku.update': { description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id', 'sku_id'], additionalProperties: false } },
   'catalog.product.update': { description: '修改商品级标题、类目、主副图、属性、卖点和店铺差异化；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_differentiation: { type: 'string' }, price: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id'], additionalProperties: false } },
@@ -4215,6 +4215,14 @@ async function handle(request, signal) {
     // Validate the public tool contract before prompting for write consent.
     // This is a pure in-memory check: malformed requests need no user approval
     // and must fail before any transport work.
+    if (name === 'catalog.import' || name === 'catalog.import.batch') {
+      if (args.draft_only !== 'true') {
+        return toolArgumentError(id, '商品导入必须显式选择未绑定草稿模式（draft_only="true"）；插件不支持绑定店铺、同步或发布。', '商品资料只能导入为未绑定草稿；请确认后重试。')
+      }
+      if (Object.prototype.hasOwnProperty.call(args, 'account_id') || Object.prototype.hasOwnProperty.call(args, 'brand_id')) {
+        return toolArgumentError(id, '未绑定草稿导入不能指定店铺或品牌；请移除 account_id 和 brand_id 后重试。', '未绑定草稿不能指定店铺或品牌；请移除相关信息后重试。')
+      }
+    }
     const argumentError = validateToolArguments(name, args)
     if (argumentError) return toolArgumentError(id, argumentError.message)
     if (name === 'workspace.interactive.confirm') {

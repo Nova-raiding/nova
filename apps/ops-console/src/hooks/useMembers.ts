@@ -157,10 +157,15 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
   const [error, setError] = useState("");
   const [errorKind, setErrorKind] = useState<"read" | "mutation" | "refresh">();
   const gate = useRef(new MembersRequestGate());
+  const mutationInFlight = useRef(false);
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
 
   const load = useCallback(async (requestedPage = 1, requestedLimit = page.limit) => {
+    // A directory read advances the shared generation gate. Do not let a
+    // pagination/refresh request invalidate an audited write while it is in
+    // flight; the write owns the post-mutation refresh until it settles.
+    if (mutationInFlight.current) return;
     if (!workspaceId) {
       gate.current.invalidate();
       setMembers([]);
@@ -188,13 +193,16 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
   useEffect(() => {
     setMembers([]);
     setError("");
+    setMutating(false);
+    mutationInFlight.current = false;
     void load();
-    return () => gate.current.invalidate();
+    return () => { gate.current.invalidate(); mutationInFlight.current = false; };
   }, [load]);
 
   const mutate = useCallback(async (operation: (activeWorkspaceId: string) => Promise<WorkspaceMember>) => {
     if (!workspaceId) throw new Error("请先选择工作区后再管理成员。");
     const token = gate.current.begin(workspaceId);
+    mutationInFlight.current = true;
     setMutating(true);
     setError("");
     setErrorKind(undefined);
@@ -227,7 +235,10 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
       }
       throw cause;
     } finally {
-      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setMutating(false);
+      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+        mutationInFlight.current = false;
+        setMutating(false);
+      }
     }
   }, [page.limit, page.offset, workspaceId]);
 

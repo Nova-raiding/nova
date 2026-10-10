@@ -148,6 +148,24 @@ describe("registration applications error state", () => {
     } finally { await page.close(); }
   }, 45_000);
 
+  it("marks the previous page stale and disables review after a refresh failure", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    let reads = 0;
+    try {
+      await page.route(applicationsUrl(), route => ++reads === 1 ? succeed(route, [application]) : fail(route));
+      await open(page);
+      const row = page.getByRole("row").filter({ hasText: application.login });
+      await page.getByText(application.login, { exact: true }).waitFor();
+      const review = row.getByRole("button").filter({ hasText: /审\s*核/u });
+      await review.waitFor();
+      await page.getByText("刷新申请", { exact: true }).click();
+      await expect.poll(() => page.locator('.ops-page-error[data-state="error"]').count()).toBe(1);
+      await page.getByText("当前申请列表读取失败，显示的是上次读取结果；审核操作已暂停，请先重新读取。", { exact: true }).waitFor();
+      expect(await review.isDisabled()).toBe(true);
+      expect(reads).toBe(2);
+    } finally { await page.close(); }
+  }, 45_000);
+
   it("keeps a genuine empty answer as an empty state, not as a failure", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     try {

@@ -6,6 +6,7 @@ import 'dayjs/locale/zh-cn'
 import './capability.css'
 import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'
 import { MaterialRightsControl } from './MaterialRightsControl'
+import { BrandScopeSaveControls } from './BrandScopeSaveControls'
 import { CommercialNotificationPanel, notificationPanelScope } from './CommercialNotificationPanel'
 import { CommercialPointLedger } from './CommercialGiftDetails'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
@@ -6029,7 +6030,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 <PackageSearch size={25} />
                 <strong>{!storeItemsRead ? '商品列表未读取' : storeProducts.length ? '没有找到符合条件的商品' : '该店铺还没有商品'}</strong>
                 <span>{!storeItemsRead ? '请使用上方重新读取操作重试。' : storeProducts.length ? '可以减少筛选条件，或换一个关键词再试。' : selectedStore.readable ? '服务端未返回这家店铺的商品事实。' : '平台运营尚未为这家店铺导入商品。'}</span>
-                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
+                {storeItemsRead && storeProducts.length > 0 && <button onClick={() => { setCatalogQuery(''); onCatalogQueryChange(''); setCatalogAddedTime('all'); setCatalogSort('default'); setCatalogSelectedIds([]) }}>清除全部条件</button>}
               </div>
             )}
           </div>
@@ -6582,9 +6583,26 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
     if (!previewId) return
     window.requestAnimationFrame(() => previewDialogRef.current?.focus({ preventScroll: true }))
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      closePreview()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        closePreview()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const dialog = previewDialogRef.current
+      if (!dialog) return
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+      if (!focusable.length) { event.preventDefault(); dialog.focus({ preventScroll: true }); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); first.focus()
+      }
     }
     document.addEventListener('keydown', closeOnEscape, true)
     return () => document.removeEventListener('keydown', closeOnEscape, true)
@@ -7040,6 +7058,7 @@ export function MaterialLibraryWorkspace({
   const [scopedBrandError, setScopedBrandError] = useState('')
   const [scopedBrandSaved, setScopedBrandSaved] = useState('')
   const [scopedBrandDraftDirty, setScopedBrandDraftDirty] = useState(false)
+  const [scopedBrandNeedsRefresh, setScopedBrandNeedsRefresh] = useState(false)
   const uploadInput = useRef<HTMLInputElement>(null)
   const seriesManagerTriggerRef = useRef<HTMLButtonElement>(null)
   const storeBrandTransitionTimer = useRef<number | null>(null)
@@ -7370,11 +7389,29 @@ export function MaterialLibraryWorkspace({
       const saved = await saveScopedBrandSettings(baseUrl, settings, scopedBrandRead.revision)
       setScopedBrandRead({ ...scopedBrandRead, settings: saved.settings, revision: saved.revision, updated_at: saved.updatedAt, series: seriesRows, assignments })
       setScopedBrandDraftDirty(false)
+      setScopedBrandNeedsRefresh(false)
       setScopedBrandSaved(`已保存第 ${saved.revision} 版；文本与品牌色将在新确认的内容任务中生效。${deferredReferenceIds.length ? ` ${deferredReferenceIds.length} 个素材引用尚未通过检查，暂未写入；请在素材库完成扫描、权益确认、解析和事实确认后重新选择。` : ''}`)
     } catch (cause) {
       setScopedBrandError(`品牌配置保存失败：${describeApiError(cause)}`)
+      if ((cause as { status?: number; code?: string } | undefined)?.status === 409 || (cause as { code?: string } | undefined)?.code === 'BRAND_SETTINGS_REVISION_CONFLICT') setScopedBrandNeedsRefresh(true)
     } finally {
       setScopedBrandBusy(false)
+    }
+  }
+
+  const refreshMaterialBrandScopes = async () => {
+    if (!baseUrl || scopedBrandBusy || scopedBrandLoading) return
+    setScopedBrandLoading(true)
+    setScopedBrandError('')
+    try {
+      const latest = await fetchScopedBrandSettings(baseUrl)
+      setScopedBrandRead(latest)
+      setScopedBrandNeedsRefresh(false)
+      setScopedBrandError(`最新版本 r${latest.revision} 已读取；你编辑的内容仍保留。核对后请再次点击“保存品牌配置”。`)
+    } catch (cause) {
+      setScopedBrandError(`最新品牌配置读取失败：${describeApiError(cause)}；草稿仍保留，请重试读取。`)
+    } finally {
+      setScopedBrandLoading(false)
     }
   }
 
@@ -7384,6 +7421,7 @@ export function MaterialLibraryWorkspace({
     if (!nextStore) return
     const commitSwitch = () => {
       setScopedBrandDraftDirty(false)
+      setScopedBrandNeedsRefresh(false)
       setScopedBrandLoading(true)
       if (storeBrandTransitionTimer.current !== null) window.clearTimeout(storeBrandTransitionTimer.current)
       setStoreBrandTransition(`切换至 ${nextStore.name}`)
@@ -7688,7 +7726,7 @@ export function MaterialLibraryWorkspace({
       </section>
       {detailIsImage && <section className="material-image-brand-settings">
         <div className="material-brand-panel-heading"><div><span className="section-kicker">单图品牌配置</span><h2>单图品牌配置</h2><p>编辑后点击下方“保存品牌配置”；服务端确认保存后，设置才会用于之后确认的内容任务。</p></div><div className="material-brand-priority" aria-label="本页预览的覆盖顺序"><strong>预览覆盖顺序：</strong><span>单图配置 &gt; 系列配置 &gt; 店铺配置 &gt; 全局配置</span></div></div>
-        {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-brand-save-row"><button type="button" className="material-upload-button" disabled={!scopedBrandRead || scopedBrandBusy || scopedBrandLoading} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandLoading ? '正在读取品牌配置…' : scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button><span role="status">{scopedBrandError || scopedBrandSaved || (scopedBrandLoading ? '切换范围时暂不可保存，正在读取最新服务端配置…' : scopedBrandRead ? `当前服务端版本：${scopedBrandRead.revision}` : '正在读取服务端品牌配置…')}</span>{scopedBrandError && !scopedBrandRead && <button type="button" disabled={scopedBrandLoading} onClick={() => setScopedBrandReadAttempt((attempt) => attempt + 1)}>{scopedBrandLoading ? '正在重试…' : '重试读取品牌配置'}</button>}</div>}
+        {(scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <BrandScopeSaveControls dirty={scopedBrandDraftDirty} busy={scopedBrandBusy} loading={scopedBrandLoading} revision={scopedBrandRead?.revision ?? null} error={scopedBrandError} saved={scopedBrandSaved} needsRefresh={scopedBrandNeedsRefresh} onSave={() => { void saveMaterialBrandScopes() }} onRefresh={() => { void refreshMaterialBrandScopes() }} /> }
         {scopedBrandLoading && <p role="status" aria-live="polite">正在读取当前工作区的最新品牌配置；读取完成前暂不可编辑。</p>}
         <article className="material-brand-row material-image-brand-row">
           <div className="material-brand-config-card"><div className="material-brand-row-heading"><span>04</span><div><strong>单图配置</strong><small>优先级最高，只应用于当前图片</small></div></div><MaterialBrandFields value={detailImageBrand} label="单图" scopeKey={`image:${currentStorageScopeKey}:${detailMaterial.id}`} baseUrl={baseUrl} assets={remoteAssets ?? []} onAssetUploaded={registerUploadedBrandAsset} disabled={scopedBrandLoading} onChange={(next) => { setImageBrands((current) => ({ ...current, [detailMaterial.id]: next })); setImageBrandContexts((current) => ({ ...current, [detailMaterial.id]: { accountId: activeStoreId, seriesName: detailMaterial.series } })); setScopedBrandDraftDirty(true); setScopedBrandError(''); setScopedBrandSaved('') }} /></div>
@@ -7708,10 +7746,7 @@ export function MaterialLibraryWorkspace({
             <h1>品牌资产</h1>
             <p>维护全局、系列与单图品牌信息。</p>
           </div>
-          {scopedBrandRead && (scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <div className="material-library-brand-save">
-            {(scopedBrandDraftDirty || scopedBrandLoading) && <button type="button" className="material-upload-button" disabled={scopedBrandBusy || scopedBrandLoading || Boolean(accountsError) || accounts === null} onClick={() => { void saveMaterialBrandScopes() }}>{scopedBrandLoading ? '正在读取品牌配置…' : scopedBrandBusy ? '正在保存…' : '保存品牌配置'}</button>}
-            {(scopedBrandError || scopedBrandSaved) && <span role="status">{scopedBrandError || scopedBrandSaved}</span>}
-          </div>}
+          {scopedBrandRead && (scopedBrandDraftDirty || scopedBrandError || scopedBrandSaved || scopedBrandLoading) && <BrandScopeSaveControls dirty={scopedBrandDraftDirty} busy={scopedBrandBusy || Boolean(accountsError) || accounts === null} loading={scopedBrandLoading} revision={scopedBrandRead.revision} error={scopedBrandError} saved={scopedBrandSaved} needsRefresh={scopedBrandNeedsRefresh} onSave={() => { void saveMaterialBrandScopes() }} onRefresh={() => { void refreshMaterialBrandScopes() }} />}
         </div>
       </section>}
 
@@ -9968,6 +10003,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
   const selectedVisualRefs = visualRefsForRoute(visualSelection, routeScopeId)
   const [selectionReason, setSelectionReason] = useState('人工确认候选图并进入内容版本审阅')
   const [selectionState, setSelectionState] = useState<'idle' | 'submitting' | 'succeeded' | 'failed'>('idle')
+  const [selectionOutcomeUnknown, setSelectionOutcomeUnknown] = useState(false)
+  const selectionIntentRef = useRef<{ routeJobId: string; taskId: string; contentVersionId: string; refs: string[]; revision: number; reason: string; idempotencyKey: string } | null>(null)
   const [selectionMessage, setSelectionMessage] = useState('')
   const [selectedContentVersionId, setSelectedContentVersionId] = useState('')
   const [selectionNotice, setSelectionNotice] = useState('')
@@ -10033,6 +10070,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
     setVisualSelection({ routeJobId: routeScopeId, refs: [] })
     setSelectionReason('人工确认候选图并进入内容版本审阅')
     setSelectionState('idle')
+    setSelectionOutcomeUnknown(false)
+    selectionIntentRef.current = null
     setSelectionMessage('')
     setSelectionNotice('')
     setSelectedContentVersionId('')
@@ -10078,18 +10117,29 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
     const isCurrent = () => isImageJobRequestCurrent(submittedRouteJobId, routeJobIdRef.current)
     setSelectionState('submitting'); setSelectionMessage('')
     try {
-      const versions = await fetchContentVersions(baseUrl, job.taskId)
+      let intent = selectionIntentRef.current
+      if (!intent || intent.routeJobId !== submittedRouteJobId) {
+        const versions = await fetchContentVersions(baseUrl, job.taskId)
+        if (!isCurrent()) return
+        const current = versions.find(version => version.id === job.contentVersionId)
+        if (!current) throw new Error('当前内容版本不存在或已变化，请返回任务页刷新')
+        intent = { routeJobId: submittedRouteJobId, taskId: job.taskId, contentVersionId: current.id, refs: submittedRefs, revision: current.revision, reason: selectionReason.trim(), idempotencyKey: `merchant-studio-visual-selection-${submittedJobId}-${current.revision}` }
+        selectionIntentRef.current = intent
+      }
+      const selected = await selectVisualCandidates(baseUrl, intent.contentVersionId, intent.refs, intent.revision, intent.reason, intent.idempotencyKey)
       if (!isCurrent()) return
-      const current = versions.find(version => version.id === job.contentVersionId)
-      if (!current) throw new Error('当前内容版本不存在或已变化，请返回任务页刷新')
-      const selected = await selectVisualCandidates(baseUrl, current.id, submittedRefs, current.revision, selectionReason.trim(), `merchant-studio-visual-selection-${submittedJobId}-${current.revision}`)
-      if (!isCurrent()) return
+      selectionIntentRef.current = null
+      setSelectionOutcomeUnknown(false)
       setSelectedContentVersionId(selected.content_version_id)
       setSelectionState('succeeded'); setSelectionMessage(`已提交 ${selected.visualSelection.count} 张候选，生成新的待审核内容版本 ${selected.content_version_id}。`)
     } catch (cause) {
       if (!isCurrent()) return
+      const apiError = cause as { code?: string; status?: number; details?: Record<string, unknown> }
+      const uncertain = Boolean(selectionIntentRef.current && (apiError.code === 'API_REQUEST_TIMEOUT' || (apiError.status ?? 0) >= 500 || apiError.code?.includes('OUTCOME_UNKNOWN') || apiError.details?.outcome === 'unknown' || apiError.details?.outcome_unknown === true))
+      setSelectionOutcomeUnknown(uncertain)
+      if (!uncertain) selectionIntentRef.current = null
       setSelectionState('failed')
-      setSelectionMessage(describeApiError(cause))
+      setSelectionMessage(uncertain ? `提交结果尚未确认：${describeApiError(cause)}。请使用原请求恢复；选图和原因已锁定，系统会沿用原版本、内容和幂等标识。` : describeApiError(cause))
       window.requestAnimationFrame(() => selectionErrorRef.current?.focus())
     }
   }
@@ -10151,12 +10201,12 @@ function ImageGenerationJobPanel({ baseUrl, jobId, workspaceId }: { baseUrl?: st
       const selected = selectedVisualRefs.includes(visualRef)
       return <figure key={visualRef} className={`${gate?.selectable ? 'candidate-ready' : 'candidate-blocked'}${selected ? ' candidate-selected' : ''}`}>
         {failed ? <div className="image-candidate-fallback" role="alert" aria-labelledby={`candidate-image-error-${index}`}><span id={`candidate-image-error-${index}`}>候选图片读取失败，当前任务状态和候选门禁仍保留。</span><button className="text-button image-candidate-retry" type="button" onClick={() => { setFailedImages(current => { const next = new Set(current); next.delete(visualRef); return next }); setImageReloads(current => ({ ...current, [visualRef]: (current[visualRef] ?? 0) + 1 })) }} aria-label={`重新读取图片候选 ${index + 1}`} aria-describedby={`candidate-image-error-${index}`}>重新读取</button></div> : <img key={`${visualRef}-${imageReloads[visualRef] ?? 0}`} src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} {...imageCandidateLoading(candidatePageData.page, visibleIndex)} decoding="async" onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
-        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting' || selectionState === 'succeeded'} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
+        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting' || selectionState === 'succeeded' || selectionOutcomeUnknown} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
       </figure>
     })}</div>
       {candidatePageData.pageCount > 1 && <nav className="image-candidate-pagination" aria-label="图片候选分页"><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page - 1)} disabled={candidatePageData.page === 1}>上一页</button><span aria-live="polite">第 {candidatePageData.page} / {candidatePageData.pageCount} 页 · 共 {candidatePageData.total} 张候选</span><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page + 1)} disabled={candidatePageData.page === candidatePageData.pageCount}>下一页</button></nav>}
     </> : null}
-    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting' || selectionState === 'succeeded'} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || selectionState === 'succeeded' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
+    {job?.contentVersionId ? <div className="image-selection-panel" aria-label="候选选择"><label htmlFor="visual-selection-reason">选图原因（必填）</label><input id="visual-selection-reason" value={selectionReason} maxLength={300} onChange={event => { setSelectionReason(event.target.value); setSelectionNotice('') }} disabled={selectionState === 'submitting' || selectionState === 'succeeded' || selectionOutcomeUnknown} /><div className="action-row"><button className="primary-button" type="button" onClick={() => void submitVisualSelection()} disabled={selectionState === 'submitting' || selectionState === 'succeeded' || !selectedVisualRefs.length || !selectionReason.trim()} aria-describedby="visual-selection-hint">{selectionState === 'submitting' ? '提交中…' : selectionOutcomeUnknown ? '使用原请求恢复任务' : `提交选择（${selectedVisualRefs.length}/6）`}</button><span id="visual-selection-hint" className="muted-note">服务端会再次校验任务、商品、版本、扫描和审核状态。</span></div><div className="sr-only" role="status" aria-live="polite" aria-atomic="true">已选择 {selectedVisualRefs.length} 张候选{selectionNotice ? `。${selectionNotice}` : ''}</div>{selectionMessage && <div ref={selectionErrorRef} tabIndex={selectionState === 'failed' ? -1 : undefined} className={selectionState === 'failed' ? 'error-notice' : 'info-notice'} role={selectionState === 'failed' ? 'alert' : 'status'}>{selectionMessage}</div>}{selectionState === 'succeeded' && selectedContentVersionId && reviewTaskId && <div className="action-row"><button className="primary-button" type="button" onClick={() => { window.location.href = urlForMerchantRoute(window.location, { page: 'task', target: { kind: 'task', taskId: reviewTaskId } }) }}>进入新版本审核</button><span className="muted-note">先审核并批准新版本，再提交人工发布任务。</span></div>}</div> : <div className="info-notice" role="status">当前图片任务未绑定内容版本，不能直接选择候选；请从营销任务进入内容版本后再操作。</div>}
     {job?.nextAction && <div className="info-notice" role={job.reconciliationRequired || imageGenerationNeedsReconciliation(job.executionState) ? 'alert' : 'status'}><ShieldCheck size={16} /><span>{imageGenerationNeedsReconciliation(job.executionState) ? '模型结果尚未确认；请先对账，系统不会再次生成或扣费。' : `下一步：${job.nextAction.label}`}</span>{job.nextAction.type === 'review_error' && job.nextAction.allowed && <button className="text-button" type="button" onClick={focusImageError}>查看失败原因</button>}{imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction.allowed }) && !job.reconciliationRequired && ['IMAGE_GENERATION_NOT_CONFIGURED', 'IMAGE_GENERATION_PRE_PROVIDER_FAILED'].includes(job.errorCode ?? '') && <button className="text-button" type="button" onClick={() => void retrySafeImageJob()} disabled={retrying}>{retrying ? '重试入队中…' : '安全重试'}</button>}</div>}
     {retryError && <div ref={retryActionErrorRef} id="image-job-retry-error" className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>安全重试结果未确认</strong><span>服务端没有返回确认：{retryError}。再次点击“安全重试”会使用同一幂等标识；也可刷新任务状态核对。</span></div>}
     <div className="action-row"><button className="secondary-button" type="button" onClick={() => { setError(''); setRetryError(''); setFailedImages(new Set()); setReload(value => value + 1) }} disabled={loading} aria-label="刷新图片任务状态" aria-describedby="image-job-refresh-hint"><RefreshCw size={15} aria-hidden="true" />刷新任务状态</button><span id="image-job-refresh-hint" className="sr-only">刷新期间按钮不可重复操作，当前状态和候选不会被清空。</span>{imageGenerationProviderCallStarted(job?.executionState) && <span className="muted-note">Provider 已进入提交链路，结果未收口前禁止重复生成。</span>}{isTerminal && job?.images?.length ? <span className="muted-note">候选仍需单独通过人工审核和内容版本选择，生成完成不等于可发布。</span> : null}</div>
@@ -10772,7 +10822,6 @@ function TaskWorkspace({
         if (!contentReviewRequests.current.isCurrent(reviewRequestId)) return
         setReviewStatus('failed')
         setReviewError(describeApiError(cause))
-        setError(describeApiError(cause))
       })
       .finally(() => {
         if (contentReviewRequests.current.isCurrent(reviewRequestId)) setOperation('')

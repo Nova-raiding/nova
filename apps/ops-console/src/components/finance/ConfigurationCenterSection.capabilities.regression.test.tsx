@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ConfigurationCenterSection } from "./ConfigurationCenterSection.js";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel.js";
 
-function renderConfiguration(grants: string[]) {
+function renderConfiguration(grants: string[], error = "") {
   const model = {
     authorization: { can: (capability: string) => grants.includes(capability) },
     settings: {
@@ -30,7 +30,7 @@ function renderConfiguration(grants: string[]) {
     saving: false,
     saveCommercial: async () => undefined,
     savePlatform: async () => undefined,
-    dataSetError: () => "",
+    dataSetError: () => error,
   } as unknown as OpsConsoleModel;
 
   return renderToStaticMarkup(<ConfigurationCenterSection model={model} />);
@@ -42,6 +42,12 @@ function inputById(html: string, id: string) {
 
 function inputByLabel(html: string, label: string) {
   return html.match(new RegExp(`<input\\b[^>]*\\baria-label="${label}"[^>]*>`))?.[0] ?? "";
+}
+
+function buttonByText(html: string, text: string) {
+  return [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/gu)]
+    .map(([button]) => button)
+    .find((button) => button.replace(/<[^>]*>/gu, "").includes(text)) ?? "";
 }
 
 describe("ConfigurationCenterSection capability-specific controls", () => {
@@ -59,5 +65,23 @@ describe("ConfigurationCenterSection capability-specific controls", () => {
     const html = renderConfiguration(["store.connection.update", "commercial.update"]);
     expect(inputById(html, "planName")).toContain("disabled");
     expect(inputByLabel(html, "taobao 展示名称")).toContain("disabled");
+  });
+
+  it("keeps the last settings snapshot visible but blocks writes after the settings read fails", () => {
+    const grants = ["workspace.settings.update", "platform.settings.update"];
+    const html = renderConfiguration(grants, "读取配置失败");
+    expect(html).toContain("配置中心读取失败");
+    expect(inputById(html, "planName")).toContain('value="Basic"');
+    expect(inputById(html, "planName")).toContain("disabled");
+    expect(inputByLabel(html, "taobao 展示名称")).toContain('value="淘宝"');
+    expect(inputByLabel(html, "taobao 展示名称")).toContain("disabled");
+    expect(buttonByText(html, "保存商业配置")).toContain("disabled");
+    expect(buttonByText(html, "保存")).toContain("disabled");
+
+    const recoveredHtml = renderConfiguration(grants);
+    expect(inputById(recoveredHtml, "planName")).not.toContain("disabled");
+    expect(inputByLabel(recoveredHtml, "taobao 展示名称")).not.toContain("disabled");
+    expect(buttonByText(recoveredHtml, "保存商业配置")).not.toContain("disabled");
+    expect(buttonByText(recoveredHtml, "保存")).not.toContain("disabled");
   });
 });

@@ -77,8 +77,9 @@ describe("StorageReconciliationSection accessibility states", () => {
     const onRetry = vi.fn();
     const markup = renderToStaticMarkup(<StorageReconciliationSection error="对账服务暂时不可用" onRetry={onRetry} />);
     expect(markup).toContain('tabindex="-1"');
-    expect(markup).toContain('role="alert"');
-    expect(markup).toContain('aria-live="assertive"');
+    expect(markup.match(/role="alert"/g)).toHaveLength(1);
+    expect(markup).toContain('role="group"');
+    expect(markup).toContain('tabindex="-1" role="group"');
     expect(markup).toContain('data-focus-target="error-summary"');
     expect(markup).toContain("aria-labelledby=");
     expect(markup).toContain("aria-describedby=");

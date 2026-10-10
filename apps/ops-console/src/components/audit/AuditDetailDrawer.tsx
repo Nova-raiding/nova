@@ -32,7 +32,7 @@ export function AuditDetailDrawer({ selected, detail, loading, error, onRetry, o
     aria-busy={loading || undefined}
     styles={{ body: { overflowWrap: 'anywhere' } }}
   >
-    {error ? <div ref={errorRef} role="alert" tabIndex={-1} aria-labelledby="audit-detail-error-title"
+    {error ? <div ref={errorRef} role="group" tabIndex={-1} aria-labelledby="audit-detail-error-title"
       style={{ outlineOffset: 3 }}>
       <Alert type="error" showIcon title={<span id="audit-detail-error-title">详情加载失败</span>} description={error}
         action={onRetry ? <Button onClick={onRetry} style={{ minHeight: 44 }}>重试</Button> : undefined} />

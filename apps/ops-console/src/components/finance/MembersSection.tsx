@@ -209,7 +209,10 @@ function MembersSectionForSession({ model, client }: MembersSectionProps) {
         cancelText="取消"
         okButtonProps={{ danger: pending?.kind === "deactivate", loading: state.mutating, style: { minHeight: 44 } }}
         cancelButtonProps={{ disabled: state.mutating, style: { minHeight: 44 } }}
-        onCancel={closeAction}
+        closable={!state.mutating}
+        keyboard={!state.mutating}
+        maskClosable={!state.mutating}
+        onCancel={() => { if (!state.mutating) closeAction(); }}
         onOk={() => void submitAction().catch(() => undefined)}
         destroyOnHidden
         focusable={{ focusTriggerAfterClose: true }}

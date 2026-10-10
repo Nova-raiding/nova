@@ -81,7 +81,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
       {loading ? <Alert role="status" aria-live="polite" aria-atomic="true" showIcon title={hasSnapshot ? "正在刷新；以下数据为上次快照" : "正在加载对账结果"} description={hasSnapshot ? "正在读取平台范围的脱敏容量和一致性摘要。刷新完成前，下面保留的容量、计数和 workspace 状态未经本次复核。" : "正在读取平台范围的脱敏容量和一致性摘要。"} /> : null}
       {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含演示数据，对象存储状态不可视为真实就绪" description="请先切换到无 fixture 的真实 API/对象存储数据源；本页面保持 fail-closed。" /> : null}
       {unknownStatus ? <Alert type="warning" showIcon title="对象存储对账状态待确认，不能视为正常" description="API 返回了未识别的对账状态；请升级契约或检查服务端响应。" /> : null}
-      {error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId} data-state="error" data-focus-target="error-summary">
+      {error ? <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId} data-state="error" data-focus-target="error-summary">
         <Alert type="error" showIcon title={<span id={errorTitleId}>对账结果加载失败</span>} description={<span id={errorDescriptionId}>{error}</span>} action={onRetry ? <Button type="primary" icon={<ReloadOutlined aria-hidden />} aria-label="重试加载对账结果" style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
       </div> : null}
       {error && hasSnapshot ? <Alert type="warning" showIcon title="以下是上次成功快照，不能视为当前对账结果" description="本次刷新失败；容量、计数和 workspace 状态可能已过期，请恢复对账读取后再据此处理。" /> : null}

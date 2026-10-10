@@ -55,6 +55,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   await context.addCookies([{ name: 'preview-auth-fixture', value: 'same-origin-session', domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }])
   const page = await context.newPage()
   const downloads = []
+  const unexpectedExternalRequests = []
   const revokedObjectUrls = []
   const restoreRequests = []
   const purgeRequests = []
@@ -82,9 +83,14 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     }
   })
 
-  await page.route('**/api/**', async (route) => {
+  await page.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (url.origin !== studioUrl) {
+      unexpectedExternalRequests.push(url.href)
+      return route.abort('blockedbyclient')
+    }
+    if (!url.pathname.startsWith('/api/')) return route.fallback()
     const path = url.pathname
     if (path === '/api/healthz') {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
@@ -268,6 +274,10 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     const recyclePreviewDialog = page.getByRole('dialog', { name: '素材预览：已删除样图.png' })
     await expect(recyclePreviewDialog).toBeVisible()
     await expect(recyclePreviewDialog).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(recyclePreviewDialog).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(recyclePreviewDialog).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(recyclePreviewDialog).toHaveCount(0)
     await expect(recyclePreviewTrigger).toBeFocused()
@@ -332,6 +342,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     expect(downloads.every(({ accept }) => accept === 'application/octet-stream')).toBe(true)
     expect(downloads.every(({ cookie }) => cookie.includes('preview-auth-fixture=same-origin-session'))).toBe(true)
     expect(downloads.every(({ workspaceId: requestWorkspaceId }) => requestWorkspaceId === workspaceId)).toBe(true)
+    expect(unexpectedExternalRequests, 'The fixture attempted an external request').toEqual([])
   } finally {
     await context.close()
     await browser.close()
