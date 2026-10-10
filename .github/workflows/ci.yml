@@ -277,6 +277,8 @@ jobs:
           packages/persistence/src/billing-repository.postgres.test.ts
           packages/persistence/src/business-repository.postgres.test.ts
           packages/persistence/src/asset-lifecycle-release.postgres.test.ts
+          packages/persistence/src/publish-media-orphan-event-guard.postgres.test.ts
+          packages/persistence/src/publish-media-lifecycle-migration.postgres.test.ts
           packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts
           packages/persistence/src/canonical-product-backfill.postgres.test.ts
           packages/persistence/src/local-212-collision-bridge.postgres.test.ts

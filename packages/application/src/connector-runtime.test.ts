@@ -128,7 +128,7 @@ describe('ConnectorRuntime', () => {
     expect(connector.discardMedia).toHaveBeenCalledOnce()
   })
 
-  it('cleans up uploaded media after the platform definitively rejects the publish', async () => {
+  it('keeps media orphaned when the delete adapter claims success without independent proof', async () => {
     const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
     const connector = runtime.connector('jd') as any
     const media = { visualRef: 'visual_rejected', role: 'main' as const, mimeType: 'image/png', sha256: 'f'.repeat(64), bytes: new Uint8Array([6]), idempotencyKey: 'job_rejected:media:visual_rejected' }
@@ -149,10 +149,32 @@ describe('ConnectorRuntime', () => {
     })
 
     expect(result.remoteStatus).toMatchObject({ found: true, state: 'rejected' })
-    expect(states).toEqual(['intent', 'uploaded', 'orphaned', 'deleted'])
-    expect(connector.discardMedia).toHaveBeenCalledWith(expect.anything(), mediaReceipt, 'publish_rejected', media.idempotencyKey)
-    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'platform_rejected_cleanup_pending_manual_recovery_required' })
-    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
+    expect(states).toEqual(['intent', 'uploaded', 'orphaned', 'orphaned'])
+    expect(connector.discardMedia).toHaveBeenCalledWith(expect.anything(), mediaReceipt, 'publish_rejected_cleanup_pending_manual_recovery_required', media.idempotencyKey)
+    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'publish_rejected_cleanup_pending_manual_recovery_required' })
+    expect(mediaLifecycle.transition).toHaveBeenCalledWith({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'adapter_delete_claim_unverified_manual_recovery_required' })
+    expect(mediaLifecycle.transition).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'deleted' }))
+  })
+
+  it('does not repeat a destructive delete when the final orphan receipt write fails', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
+    const connector = runtime.connector('jd') as any
+    const media = { visualRef: 'visual_delete_receipt_failure', role: 'main' as const, mimeType: 'image/png', sha256: '9'.repeat(64), bytes: new Uint8Array([9]), idempotencyKey: 'job_delete_receipt_failure:media:visual_delete_receipt_failure' }
+    const mediaReceipt = { platform: 'jd', visualRef: media.visualRef, role: media.role, mediaId: 'remote_delete_receipt_failure', sha256: media.sha256, simulated: false }
+    connector.uploadMedia = vi.fn(async () => mediaReceipt)
+    connector.validateWrite = () => [{ field: 'title', code: 'INVALID_VALUE', message: 'preflight rejected', severity: 'error' }]
+    connector.discardMedia = vi.fn(async () => ({ deleted: true }))
+    const transition = vi.fn(async (value: { state: string; reason?: string }) => {
+      if (value.reason === 'adapter_delete_claim_unverified_manual_recovery_required') throw new Error('lifecycle callback unavailable')
+    })
+
+    await expect(runtime.executePublish({
+      platform: 'jd', context: { workspaceId: 'ws_media', accountId: 'acct_media' }, fields: {},
+      idempotencyKey: 'publish_delete_receipt_failure', media: [media], mediaLifecycle: { transition },
+    })).rejects.toThrow('lifecycle callback unavailable')
+
+    expect(connector.discardMedia).toHaveBeenCalledOnce()
+    expect(transition.mock.calls.map(([value]) => value.state)).toEqual(['intent', 'uploaded', 'orphaned', 'orphaned'])
   })
 
   it('does not mark media unknown when durable intent recording fails before upload dispatch', async () => {

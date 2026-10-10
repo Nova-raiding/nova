@@ -11,6 +11,7 @@ import { accountLabel } from "../authz/accountLabel.js";
 import { useUnsavedChanges } from "../components/authz/UnsavedChangesContext.js";
 import type { CustomerDeliveryRecord } from "../components/delivery/CustomerDeliverySection.js";
 import { waitForDeliveryScan } from "../components/delivery/CustomerDeliveryUpload.js";
+import { recoverCustomerDeliveryArchiveConflict } from "./customerDeliveryArchiveConflict.js";
 
 export function isCustomerDeliveryRevisionConflict(cause: unknown) {
   return /revision(?:[_ ]changed|[_ ]conflict)|版本.*(?:变化|冲突)/iu.test(describeOpsError(cause));
@@ -430,7 +431,8 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
       try { await persist(record); }
       catch (cause) {
         if (!isCustomerDeliveryRevisionConflict(cause)) throw cause;
-        await persist(await customerDeliveryClient.get(targetWorkspaceId, record.id));
+        const latest = await customerDeliveryClient.get(targetWorkspaceId, record.id);
+        await recoverCustomerDeliveryArchiveConflict(latest, persist);
       }
       setRecords((current) => current.filter((candidate) => candidate.id !== record.id));
       const nextTotal = Math.max(0, listTotal - 1);

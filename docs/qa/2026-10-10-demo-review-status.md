@@ -18,10 +18,10 @@
 ## 当前本地候选与迁移门禁
 
 - 历史只读快照：HEAD `f1f2d1c88a1279bf6dd1f088f05e6469faf8b590`；当时统计为 **171 dirty paths**（含本账本文件）。工作树随后持续变化；当前仍有大量未提交改动，不是 clean/frozen candidate。不要把历史计数当作当前状态。
-- `release-metadata.json` 记录 `sourceMigrationVersion=270`、`expectedMigrationVersion=272`，源码包含新增迁移 271/272。2026-10-10 主机观察没有读取 DB migration chain；既有 runbook/摘要提到的 270 不能当成本轮核实的 live baseline。无迁移快速更新必须先由 DB owner 提供 live 完整 `{version,name,checksum}` 链，并与目标链逐行比对；在确认前不批准无迁移路径，任何需要应用 271/272 的候选都须停止，等待另行批准的 migration window。
+- 本段早期历史阶段的 metadata 目标迁移版本曾为 272、273，随后为 274；这些数值均已被 2026-10-10 09:09 UTC 增量 supersede。当前 `release-metadata.json` 为 `sourceMigrationVersion=270`、`expectedMigrationVersion=275`，源码链包含新增迁移 271–275。migration 273 的隔离 PostgreSQL 回归有历史通过收据；迁移 274/275 均无本轮通过收据。主机观察没有读取 DB migration chain；既有 runbook/摘要提到的 270 不能当成本轮核实的 live baseline。无迁移快速更新必须先由 DB owner 提供 live 完整 `{version,name,checksum}` 链，并与目标链逐行比对；在确认前不批准无迁移路径，任何需要应用 271–275 的候选都须停止，等待另行批准的 migration window。
 - 隔离 PostgreSQL 3/3 通过仅覆盖测试内构造的数据。它尚未覆盖几类历史组合：终态 NULL-scope return 对应已匹配 tenant balance；非空 return workspace 与 balance 不一致；tenant balance 缺少/错配 append-only match fact；source receipt 已有 tenant scope 但 balance 仍为 NULL。DBA 必须先在真实 Demo 只读计数并确认这些状态的合同，必要时补隔离迁移夹具；不能从 3/3 通过推断这些历史行不存在。
 - 当前 runbook 要求唯一 Demo inventory `release_approved=true`、所有运行容器由 owner 分类、既有共享锁来源/权限/唯一 mutator 证明；还要求 API `setup.mode=demo`。健康与 `/releasez` 探针是必要检查，不能代替真实桌面权限、业务读回和插件/模型账单验收。
-- 旧 owner-current-state 报告的 257/258、既有归档提到的 270 与当前源码候选链尾 272 之间仍缺可审计的 live migration history 衔接。不得从 metadata 或旧 runbook 数字推断线上已执行迁移。
+- 旧 owner-current-state 报告的 257/258、既有归档提到的 270 与当前源码候选链尾 275 之间仍缺可审计的 live migration history 衔接。不得从 metadata 或旧 runbook 数字推断线上已执行迁移。
 
 ## 插件与本地测试证据边界
 
@@ -45,7 +45,7 @@
 
 1. Host/release owner 对唯一 `101 / merchant-demo-85575f9c` 提供新鲜只读 inventory 原始结果：exit 0、`release_approved=true`，并对全部运行容器（含 Compose 项目外容器）逐项确认分类。
 2. Host owner 提供无 secret 的受保护 Compose/env 来源标识与摘要，以及既有共享锁的 canonical path、owner/mode、逐级目录权限和所有 Demo Compose mutator 共用该锁的证据。
-3. DB owner 提供 live migration 完整 `{version,name,checksum}` 链及当前实际基线，解释 257/258、既有归档 270 与当前源码 272 的差异。只有目标链与核实后的 live 链逐行一致，才可评估无 DDL 的组件候选；若需应用 271/272，必须另行批准迁移窗口，并提供受保护执行器、备份/隔离恢复、前向迁移及旧版兼容/恢复证据。当前源码 272 的隔离 PostgreSQL 通过不代表 Demo live chain 已到 272。
+3. DB owner 提供 live migration 完整 `{version,name,checksum}` 链及当前实际基线，解释 257/258、既有归档 270 与当前源码 275 的差异。只有目标链与核实后的 live 链逐行一致，才可评估无 DDL 的组件候选；若需应用 271–275，必须另行批准迁移窗口，并提供受保护执行器、备份/隔离恢复、前向迁移及旧版兼容/恢复证据。migration 273 的隔离 PostgreSQL 通过不代表 Demo live chain 已到 273，更不证明新 migration 274/275 可安全应用。
 4. 本地整合者在 `main` 形成 clean commit，从精确 SHA 构建，并绑定 archive/source、每个目标镜像 digest、Compose/env 摘要和回滚材料；逐项 semantic owner approval 绑定该 SHA。
 5. 获准部署后，owner 记录当前候选的 `setup.mode=demo`、实际桌面登录/角色/租户与受影响业务读回；当前本地 stdio 插件完成宿主 reload/tool discovery，并对实际 MCP/模型请求核对 provider receipt、usage/cost 和账务结算。
 
@@ -62,7 +62,7 @@
 | `GET https://ops.yxsona.com/healthz` | HTTP 200；返回与 API 相同的 setup/readiness 投影。 | 仍需真实 Ops 登录、角色/租户访问及业务读回；本检查没有登录或写业务数据。 |
 | API 容器 `DEMO_RUNTIME_MODE` 环境项 | api 与 api-replica 的 Docker inspect 环境投影中均未设置该项。 | 与健康响应的 `production` 模式相符；需由发布 owner 按单 Demo runbook 修复受保护 Compose 候选并重新验证。当前工作树改动未部署。 |
 
-以上为当前 host 的只读观察摘要，修正“缺少 10 月 10 日 host 实读”的旧状态描述。独立原始 SSH/HTTP 命令输出、脱敏 inspect 投影及其 hash 未归档；因此不能独立复核摘要，也不能替代 owner 批准或签名 inventory。该观察没有核验 `release_approved`、全量容器 owner 分类、共享锁、配置归属或 DB 迁移链。健康端点显示 `setup.mode=production`，与唯一 Demo 的 `setup.mode=demo` 要求冲突；不改变迁移历史、候选来源、逐项 owner 批准和业务验收仍缺失的结论。
+以上是 2026-10-10 04:02 UTC 的历史 host 只读观察摘要，修正当时“缺少 10 月 10 日 host 实读”的旧状态描述；它不是当前 host 状态。独立原始 SSH/HTTP 命令输出、脱敏 inspect 投影及其 hash 未归档，因此不能独立复核摘要，也不能替代 owner 批准或签名 inventory。该观察没有核验 `release_approved`、全量容器 owner 分类、共享锁、配置归属或 DB 迁移链。健康端点当时显示 `setup.mode=production`；09:09 UTC 可复核健康响应见下文归档。上述观察不改变迁移历史、候选来源、逐项 owner 批准和业务验收仍缺失的结论。
 
 ## 2026-10-10 第二轮体验审查与回归
 
@@ -215,7 +215,7 @@ UI 页面清单已更新在 [`ui-page-coverage-inventory-2026-10-10.md`](ui-page
 - 发布媒体回执 API 与内存仓储定向回归合计 7/7；修正后的 API route 用例 4/4。隔离 PostgreSQL 的 migration 272 / RLS 用例 1/1，覆盖 `deleted` 必须基于既有上传回执、回执必须匹配、且原因为 `discard_adapter_confirmed_delete`。该签名 worker reason 是内部 worker 的受限声明，不是第三方平台独立删除凭证；平台删除查询证据与 Ops orphan 恢复/认领入口仍缺。
 - `git diff --check HEAD` 通过。一个全局 `npm run typecheck` 进程由先前工作发起，观察到它运行中但未取得最终退出码，故本轮不记全局类型检查通过。
 
-2026-10-10 07:28 UTC 通过固定 101 只读 inventory 脚本重新采样：覆盖 94 个容器，79 个仍被分类为未分类外部 consumer，并出现预期服务重复、非运行或不健康项。该脚本明确是 inventory-only、`release_approved=false`，不构成部署批准。随后 API 与 Ops healthz 均为 HTTP 200，但业务投影显示 `setup.mode=production`、`productionGate=true`、`writesEnabled=false`，与唯一 Demo runbook 所需 `demo` 模式不符。
+2026-10-10 07:28 UTC 曾通过固定 101 只读 inventory 脚本采样：摘要记录覆盖 94 个容器，79 个仍被分类为未分类外部 consumer，并出现预期服务重复、非运行或不健康项。该脚本明确是 inventory-only、`release_approved=false`，不构成部署批准；本次未归档原始 inventory。随后 healthz 的 HTTP 200/production 摘要也没有 07:28 原始响应归档；它已由下文 09:09 UTC 可复核的 healthz artifact 更新。09:09 响应仍显示 `setup.mode=production`、`writesEnabled=false`，与唯一 Demo runbook 所需 `demo` 模式不符。
 
 Demo 仍为 **NO-GO，未进行同步、构建、重启、迁移或部署**。此外，数据库 owner 尚未提供 live `{version,name,checksum}` 迁移全链，host owner 尚未提供容器归属与共享锁证据；当前工作树仍有大量未提交改动，不能构建候选。缺少对应 host/DB owner 证据时，不能用本地隔离 PG、HTTP 200 或静态代码替代 Demo 运行态验收。真实 ChatGPT host reload、真实 API/RLS 租户读写、provider 请求回执/usage/cost/结算/归档及媒体人工恢复流程也未验收。
 
@@ -227,11 +227,11 @@ Demo 仍为 **NO-GO，未进行同步、构建、重启、迁移或部署**。�
 - Ops `StoresPage` 品牌绑定新增隔离浏览器用例。成功路径首轮 **1/1 通过**，覆盖 workspace header、品牌 revision、RPC 参数及成功刷新。409 场景首轮只因读取 Ant Design 隐藏 input 的断言失败，已改为检查可见选择器文本；修正后的共享 Vitest 执行缺少可归因的输出，当前不记通过。该新测试未修改产品代码。
 - Customer Delivery PostgreSQL RLS 新增测试的隔离运行未到达断言：`artifacts/isolated-postgres/run-3JKfvH/run-result.json` 记录唯一断言 skipped、0 passed，runner 因跳过断言拒绝该次运行。执行报告没有收集到完整 hook 错误；运行 agent 观察到 `beforeAll` 在创建临时数据库时连接断开。隔离容器 disposal 产物只记录通用身份核验/精确停止失败，不能确认具体环节；随后 Colima socket 启动返回 `context canceled`。未手动清理容器。此项不是 RLS 通过，也不能把 API 授权用例当作数据库 RLS 证据。
 - 本轮另一组 publish-media PostgreSQL 测试在容器启动阶段超时，见 `artifacts/isolated-postgres/run-tB2Ua1/run-result.json`；其结果不代表 SQL 断言失败。之前 migration 272 隔离测试曾有 1/1 通过收据，但本次 fixture 故障没有新收据。
-- 插件元数据发现版本 `0.1.0+codex.20261010030424` 已被禁用的 merchant-local cache 使用，而该 cache 不含新增图片技能。source、marketplace 两端及 release metadata 已同步改为新的唯一候选版本 `0.1.0+codex.20261010154450`。更新后的 plugin install-smoke 正在由外部测试队列执行，当前未取得明确汇总；release-manifest gate 尚待队列执行。当前启用的 personal cache 仍是旧版本，ChatGPT 宿主未安装/加载候选技能。
+- 插件元数据发现版本 `0.1.0+codex.20261010030424` 已被禁用的 merchant-local cache 使用，而该 cache 不含新增图片技能。此前候选 `0.1.0+codex.20261010154450` 的 bridge 字节在版本标记后继续变化，可能触发不可变版本内容碰撞；本轮已将 source、marketplace 两端及 release metadata 统一升级到新候选版本 `0.1.0+codex.20261010170000`。该候选仍是 dirty source，尚未构建或安装；当前启用的 personal cache 仍是旧版本，ChatGPT 宿主未安装/加载候选技能。
 - worker 的正常清理逻辑仅在 adapter 返回 `deleted: true` 时记录删除；失败维持 orphan。但签名 worker 可以直接提交相同上传回执和固定 reason，仓储/API 仍无法证明平台确实删除。固定 reason 是 worker 声明，不能当作独立 provider 删除证据；生产环境也没有已证实的媒体删除适配器注入。
 - 视频请求、relay、异步 usage/cost 结算、隔离归档与扫描有 mock/fixture 合同覆盖；当前没有唯一 Demo 的真实 provider 请求、结算、clean scan、归档与下载证据。Merchant Studio 缺少视频播放/抽帧的成片验收表面，因此不能声称视频内容、时长或商品保真已通过。
 
-本轮全局 `npm run typecheck` 正在执行，但前序同名进程没有被 owner 收到 exit code；当前新进程也尚无收据。不要将其记为通过。工作树仍有约 284 条 dirty/untracked 路径，Merchant 深链测试依赖混合在 `App.tsx` 的大批未提交改动；本轮没有创建可部署候选或进行提交/部署。
+以上段落是当时的历史快照，不代表当前执行状态。快照记录全局 `npm run typecheck` 正在执行、没有 exit code，以及当时约 284 条 dirty/untracked 路径；后续工作树和进程均有变化。Merchant 深链测试依赖当时混合在 `App.tsx` 的未提交改动；该快照没有创建可部署候选或进行提交/部署。
 
 Demo 继续 **NO-GO**：没有新鲜、原始的全容器 owner 分类与 host/release 批准，没有共享锁证明，没有两 API 副本 `setup.mode=demo` 证据，也没有 Demo live 全迁移链。任何这些门禁都不能由本地 fixture、类型检查或插件打包测试替代。
 
@@ -244,3 +244,71 @@ Demo 继续 **NO-GO**：没有新鲜、原始的全容器 owner 分类与 host/r
 - Isolated PostgreSQL fixture startup timed out before migration 273 SQL execution. The new forward migration has source-level/migration metadata coverage only; its database execution remains unverified.
 - Current source migration head is 273. Live Demo migration chain, owner inventory/classification, shared-lock ownership, and required `setup.mode=demo` remain unverified or blocked by previously recorded host evidence. No deployment or container mutation was performed; unique Demo remains **NO-GO**.
 - Browser coverage remains selective and does not establish that every route, component, or code file passed. The three failed/unverified Ops browser journeys and PostgreSQL startup limitation must be resolved before claiming full acceptance.
+
+## 2026-10-10 第九轮页面交互复核（进行中）
+
+按用户要求以 10 个角色（owner + 9 个页面域）并行复核，并使用 PM dogfood/gstack 维度和 CodeGraph 调用关系定位影响面。CodeGraph 在本轮增量同步后报告 2,980 files、40,758 nodes、160,274 edges，`pendingChanges=0`、`worktreeMismatch=null`。索引只证明结构关系，不能替代运行验收或逐行人工审阅。
+
+当前确认的改进：
+
+- API/MCP 本地素材上传拒绝 0 字节文件，避免无效 API 请求，并给出输入错误提示。
+- 商品人工导入明确素材来源/代上传原因；列表刷新后禁用不适用的提交，提交期间禁用刷新；模板错误显示在页面。
+- 商家登录状态探测期间增加可访问的等待提示，说明账号输入暂不可用。
+- Ops Models 只读用户不能填写商业配置变更理由。
+- Support 工单错误提示可真正关闭；重开操作或错误变化后再展示新提示。
+- Finance 高级筛选补充 workspace、类型、状态、关键词同时提交的浏览器旅程。
+- Merchant TaskWorkspace 列表读取失败时保留最后成功数据并提示当前快照可能过期；PublishHistory 同样保留列表与聚焦详情并提供重试。
+- 补充待付款代购创建旅程，断言不会触发支付；此测试尚未通过定位器复核。
+
+验证收据及限制：插件 MCP 0 字节上传 1/1、商品导入单测 1/1、Models 4/4、Support 详情 6/6、TaskWorkspace 搜索 3/3、登录/工作区定向单测 18/18（新增登录状态文本 5/5）已由角色报告通过。Finance 高级筛选提交浏览器场景没有可归因的新通过收据；上一次可归因运行在提交动作断言失败，后续修正的 root run 被取消，不能记为 2/2 通过。Support status-controls 在测试初始挂载期间找不到按钮，代购旅程找不到确认弹窗，随后分别增加诊断/等待和精确标题定位，但最新修订仍未获成功浏览器收据。一次 PublishHistory 浏览器尝试遭遇并发过载并失败，不能作为产品结论；登录与任务队列浏览器的新断言亦尚未取得完整收据。Merchant Studio scoped TypeScript 检查先发现 `App.tsx` 条件 JSX 缺少 `{`，owner 已修正；随后又发现 PublishHistory 快照判空类型错误并修正。修正后的 `npx tsc -p demo/merchant-studio/tsconfig.json --pretty false --noEmit` exit 0。`git diff --check HEAD` 已通过；本轮 CodeGraph 已同步（pending changes 0，unresolved refs 6,685）。
+
+工作树仍包含并行修改与未提交文件；旧 safe-runner stdout 无法恢复，不能为其没有 owner session 收据的 suite 记为通过。真实 Demo、真实商家权限与租户、真实平台写入、模型用量/成本、插件宿主加载均未在本轮验收；没有部署。各域页面和全仓代码文件仍未逐个完成审阅，Demo 保持 **NO-GO**。
+
+## 2026-10-10 当时的回归收据与 Demo 门禁状态（历史快照；已由 09:09 UTC 增量更新）
+
+以下记录补充并 supersede 本文较早的“插件安装/manifest 尚待测试”“migration 273 SQL 未验证”与 Finance 高级筛选“2/2 通过”状态。当前目录在 **2026-10-10 16:46 CST** 核对时处于 `main`，HEAD 为 `fe30eb504d267f2e1b7e74d1d6214f6cca00773a`，`git status --short` 显示 **35 条**未提交/未跟踪路径（含本 QA 报告与并行修改）；此工作树不是 clean/frozen deployment candidate。路径计数是该次观察的快照，不代表之后的实时计数。
+
+本轮可归因的本地回归：
+
+- Owner 汇报的串行 safe-runner 批次为 **13 files / 192 tests passed**；该批包括 `tests/release-manifest-gate.test.ts`、`apps/plugin/install-smoke.test.ts`、marketplace `install-smoke.test.ts`、`apps/plugin/scripts/package-release-profile-contract.test.ts`，以及 API、application、persistence、worker、Merchant 和 Ops 定向用例。此收据更新了本节前“release-manifest/install-smoke 待执行”的状态；它是共享 dirty worktree 的本地测试，不代表新 ChatGPT 会话已加载插件，也没有绑定一个已冻结的部署 SHA。
+- `npm run test:postgres:isolated packages/persistence/src/publish-media-orphan-repository.postgres.test.ts` 的 run `f27a423d-830e-47df-b9f8-9b83e6d2a368` 于 2026-10-10 08:28:16–08:29:17 UTC 执行，退出码 0；Vitest **1/1 passed**，测试确认 migration head 为 273，并覆盖 publish-media workspace/job/event、回执与生命周期约束。结果和容器自动处置收据见 [`run-result.json`](../../artifacts/isolated-postgres/run-6jDVs3/run-result.json)、[`vitest.json`](../../artifacts/isolated-postgres/run-6jDVs3/vitest.json) 与 [`fixture-disposal`](../../artifacts/isolated-postgres/run-6jDVs3/fixture-disposal-f27a423d-830e-47df-b9f8-9b83e6d2a368.json)：两个本次 fixture 容器均停止，`leftRunning=[]`，未触碰外部容器。当前 `PERSISTENCE_RELEASE_DATABASE_URL` 未配置；此测试使用 runner 新建的隔离 fixture。它验证了本地 273 SQL 执行，不证明 Demo live migration chain。
+- 最近一次全局 `npm run typecheck` 的可确认通过收据早于这些最终源/测试修改；本轮无新的全仓 typecheck exit code。上述 13 文件测试汇总也不替代类型检查收据。
+- Finance 高级筛选提交、Support 状态/错误提示交互和 Assisted Purchase 待付款创建的浏览器场景仍为 **未验证**：已有可归因失败或没有修订后通过收据。Finance stale-snapshot 测试的通过结果覆盖另一条恢复路径，不代表高级筛选提交成功。不得把取消或无法归因的 runner 输出记为通过。
+- 此前 13 files / 192 tests 批次包含 install-smoke 与 release manifest 合同测试；本轮版本号已统一为 `0.1.0+codex.20261010170000`，并新增版本一致性断言，但该版本变更和断言尚未重跑测试。尚无该版本的 package archive、bundle digest/provenance 或安装收据。没有本地 ChatGPT 宿主 reload/tool discovery 证据。真实 provider 请求、usage/cost/结算及视频成片播放/内容验收也未在本轮完成。
+
+在此历史快照时，Demo 发布门禁为 **NO-GO，不得部署**。当时记录的 07:28 inventory 摘要为 94 个容器中 79 个未分类、`release_approved=false`，但没有原始 inventory artifact；当时 healthz 摘要也没有对应原始响应。当前可复核的 healthz 与 inventory 状态见下文 09:09 UTC 增量。此历史快照时没有精确干净 SHA 的候选 archive、镜像 digest、Compose/env 摘要、owner approval 与回滚材料，也没有唯一 Demo 的桌面权限/租户业务读回与真实 MCP/模型账单验收；不得把隔离 PostgreSQL 与本地 UI/插件测试视为这些门禁证据。
+
+## 2026-10-10 migration 274 增量与门禁复核（当时快照；目标链现为 275）
+
+记录该段时的源码 metadata 为 `sourceMigrationVersion=270`、`expectedMigrationVersion=274`；此值已被下文 09:09 UTC 的候选增量 supersede。新增 `packages/persistence/src/migrations/274_unverified_publish_media_deletion.sql` 与 `packages/persistence/src/publish-media-lifecycle-migration.postgres.test.ts` 当时尚处于未提交工作树。migration 274 将既有 `deleted` 状态记录降为 `orphaned` 并追加恢复事件，同时禁止后续未经独立 provider 证据的 `deleted` 状态；SQL 包含 legacy receipt preflight 和 `row_security=off`，要求迁移执行器具备受保护的 BYPASSRLS/superuser 权限。该迁移会修改既有业务行，不能按无 DDL 快速更新处理。
+
+Owner 当时报告 `publish-media-lifecycle-migration.postgres.test.ts` 与更新后的 `publish-media-orphan-repository.postgres.test.ts` 正在排队/执行；该时点尚无可归因的 run artifact、Vitest 汇总或 exit code，不记为通过。已通过的 migration 273 PostgreSQL run `f27a423d-830e-47df-b9f8-9b83e6d2a368` 只覆盖 273 链，不覆盖 274。09:09 UTC 更新确认 274/275 均无本轮通过收据；即便隔离 PostgreSQL 回归通过，也只证明隔离数据库执行，不能证明唯一 Demo live chain、历史 `deleted` 行预检结果或受保护迁移窗口。
+
+本轮部署判定继续为 **NO-GO**：最近记录的 host inventory 仍是 inventory-only、`release_approved=false`，且 94 个运行容器中 79 个未分类；API/Ops 健康投影为 `setup.mode=production`、`writesEnabled=false`。缺少 owner 签字的全容器 inventory、共享锁所有权/权限/所有 mutator 共用证明、DB owner 提供的完整 live `{version,name,checksum}` 链，以及能执行 migration 274 的获批窗口、BYPASSRLS/superuser 受保护执行器、备份/隔离恢复和旧版兼容/回滚证据。当前没有 clean/frozen commit 或绑定精确 SHA 的候选 archive、镜像 digest、Compose/env 摘要与 owner approval；桌面登录/租户业务读回、插件 host reload、真实 provider usage/cost/结算仍未验收。新增迁移与测试不解除上述阻断。
+
+## 第十轮页面交互与调用链复核（进行中）
+
+本轮按 Merchant 素材、购买/结账、任务/发布、API/MCP、Support/Stores、Finance、Audit、Incidents/Models、migration/worker 分区复核。采用 PM dogfood 的可见交互与错误恢复观察，并用 CodeGraph 检查组件到 hook/client/API 的调用关系；API `server.ts` 不在 CodeGraph 索引中，相关门禁仍由直接源码核对。共享工作树继续沿用 `main`，未清理、提交或部署。
+
+本轮可确认的本地修复与验证：
+
+- Finance 高级筛选折叠时原先卸载目标节点，导致 `aria-controls` 失效。现保持目标挂载并控制显隐；诊断版 Chromium spec **2/2 通过，exit 0**，覆盖展开/折叠、ARIA 目标和 workspace/type/status/keyword 组合提交。Finance API client、搜索 Hook 与组件单测有 **26/26** 收据，组件单测复跑 **13/13**。
+- TaskWorkspace 搜索/换页失败时明确标出屏幕保留的旧页码与最近成功查询，避免旧快照被误认作新条件结果；四文件定向单测仍在队列中，无退出码/计数收据。
+- PublishHistory 的只读 503 此前复用通用“操作未确认”并引导检查模型中转/插件连接。现改为 API 读取恢复指引；对应组件单测 **6/6 通过，exit 0**，本地拦截 API 的 Playwright 全套 **10/10 通过，exit 0**（错误文案、旧快照说明、重试，以及分页、深链和键盘标签旅程）；JavaScript 语法检查通过。浏览器截图写入既有本地 QA evidence 目录，不代表真实 Demo/API 业务数据。
+- 素材关联失败会保留已选素材供修正重试；继续生成前置条件现在检查服务端要求的 `aiModificationAllowed=true`。素材权益单测 **23/23**。素材浏览器的一次重复运行 exit 143，另一次 `.last-run` 状态缺少具体断言，因此都不记为浏览器通过。
+- Support 状态变更失败 fixture 改用 `useRef`，避免确认交互重渲染时清掉模拟失败开关；回归仍在串行队列等待，无通过收据。
+- Audit 平台范围增加企业主体选择入口，以满足页面原有“切换到具体企业导出”的指引。首次可见 Audit browser 收据为 **5 tests：2 passed、3 failed，exit 1**。随后有完整综合 runner 收据：Audit/Incidents/Storage 4 files / 25 tests 中 **19 passed、6 failed，exit 1**；Audit 有 2 个 locator/fixture 问题，Incidents 有 4 个重复文本/状态/断言问题，详见 `/tmp/codex-ops-pages-round10.log`。修复后的单域复跑尚待完成，不把失败后的编辑算作通过。Owner 复核另发现目录加载/错误/空状态时不应隐藏企业入口，已补目录空/错误禁用、重试和 journey。
+- API/MCP marketplace bridge 镜像已补空上传拒绝和本地文件参数错误提示；canonical 与镜像一致、两份 `node --check` 及 `git diff --check` 通过，精确回归尚无收据。
+- migration 274 测试元数据与发布媒体 API 生命周期拒绝条件已更新；worker/repository 回归仍待有完整日志的运行结果。`publish_media_orphan_tasks` 尚无商家或 Ops 恢复页面入口，现有存储统计/批次重试不提供人工认领恢复。
+
+全工作树 `git diff --check HEAD` 最新通过。CodeGraph 最近索引为 2,982 files、40,359 nodes、160,112 edges，但工作树有并行新增/修改尚待 sync；待并行编辑稳定后再统一同步。Audit、Incidents、Support、TaskWorkspace、素材与购买旅程仍有排队、未归档或未执行项；局部修复不代表全页面验收。唯一 Demo 的真实租户、权限、模型 relay/成本、live migration chain 与发布门禁仍保持 **NO-GO**，本轮未访问或写入线上环境。
+
+## 2026-10-10 09:09 UTC 候选与只读健康检查增量
+
+源码候选迁移链现为 `sourceMigrationVersion=270`、`expectedMigrationVersion=275`；`loadMigrations()` 已登记 275。迁移 274/275 的新隔离 PostgreSQL 回归均尚无本轮通过收据，migration 273 的旧收据不覆盖 274/275。迁移 274 会改写既有媒体生命周期行并要求受保护的 BYPASSRLS/superuser 执行器及旧 worker 兼容窗口；迁移 275 要求 `merchant_schema_owner` 为专用 NOLOGIN、非 superuser/非 BYPASSRLS 角色，且不得与 `merchant_app`/`merchant_ops` 互相继承。测试会在临时隔离数据库创建/配置该 owner；这不代表 Demo 已 provision 该角色。迁移前仍须 DB owner 提供完整 live `{version,name,checksum}` 链、预检/备份与恢复证据及单独批准窗口。
+
+本轮只读采集的 API 与 Ops healthz 均为 HTTP 200，采集时间 2026-10-10 09:09 UTC；原始 JSON、响应头、状态码和 SHA-256 清单归档于 [`artifacts/demo-health-readonly/20261010T090947Z`](../../artifacts/demo-health-readonly/20261010T090947Z)。两份响应都显示 `setup.mode=production`、`writesEnabled=false`。这只证明端点当时可读，不证明 Demo 业务、权限、MCP、模型账务或部署验收通过。主机容器 inventory 本轮未取得可归档的新鲜输出；此前“94 个容器/79 个未分类”仅为 07:28 UTC 历史摘要，原始 inventory 未归档，不作为当前状态。
+
+本轮在共享 `main` 工作树修正/补强了 reconcile worker 执行授权与原始发布快照绑定、媒体事件数据库写入边界及迁移 275 登记、素材 picker 的可信扫描凭据/MIME/授权范围门禁、插件版本传播到 lockfile、若干 Ops/Customer Delivery/merchant UI 错误恢复与分页回归。相应定向测试正在串行队列中；在取得退出码和测试摘要前不记为通过。当前候选仍为 dirty worktree，未构建/安装插件 bundle，未完成 stdio host reload/tool discovery、provider receipt/usage/cost/settlement 或媒体成片验收。
+
+**发布判定继续为 NO-GO。** 不执行 SSH 写入、同步、迁移或部署；源码迁移头、HTTP 200、隔离回归及本地页面测试均不能替代唯一 Demo 的 owner 批准和真实运行环境门禁。

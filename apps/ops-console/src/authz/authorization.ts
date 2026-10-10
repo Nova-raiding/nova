@@ -9,6 +9,7 @@ export type OpsScope = {
 };
 
 export type AuthorizationProjection = {
+  readonly actorId?: string;
   readonly managed: boolean;
   readonly roles: readonly string[];
   readonly capabilities: ReadonlySet<OpsCapability>;
@@ -155,6 +156,7 @@ export function createAuthorizationProjection(
   const capabilities = projected.present ? projected.allow : new Set<string>();
   const can = (capability: string) => !projected.deny.has(capability) && capabilities.has(capability);
   return {
+    actorId: session?.actor_id,
     managed,
     roles: session?.canonical_roles ?? session?.roles ?? [],
     capabilities,

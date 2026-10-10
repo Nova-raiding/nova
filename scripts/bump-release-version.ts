@@ -32,13 +32,15 @@ export function bumpRelease(root = process.cwd(), date = new Date()): { previous
   writeFileSync(versionPath, `${next}\n`, 'utf8')
 
   replaceJsonVersion(at('package.json'), next)
+  const pluginVersion = codexPluginVersion(date)
   const lockPath = at('package-lock.json')
   const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as { version?: string; packages?: Record<string, { version?: string }> }
+  if (!lock.packages?.['apps/plugin']) throw new Error('package-lock plugin workspace entry is missing')
   lock.version = next
   if (lock.packages?.['']) lock.packages[''].version = next
+  lock.packages['apps/plugin'].version = pluginVersion
   writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`, 'utf8')
 
-  const pluginVersion = codexPluginVersion(date)
   for (const path of ['apps/plugin/package.json', 'apps/plugin/.codex-plugin/plugin.json', '.codex-marketplace/plugins/merchant-marketing/package.json', '.codex-marketplace/plugins/merchant-marketing/.codex-plugin/plugin.json']) {
     replaceJsonVersion(at(path), pluginVersion)
   }

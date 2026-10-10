@@ -107,10 +107,10 @@ export function FinanceSearchSection({ controller, canExport = false, showProvid
           <Col xs={24} md={9}><Form.Item name="workspaceIds" label="Workspace ID"><Input allowClear placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔" /></Form.Item></Col>
           <Col xs={24} md={6}><Form.Item label=" "><Space.Compact block><Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={controller.loading} block>检索</Button><Button type="default" aria-expanded={showAdvancedFilters} aria-controls="finance-advanced-filters" onClick={() => setShowAdvancedFilters(visible => !visible)}>{showAdvancedFilters ? "收起筛选" : "高级筛选"}</Button></Space.Compact></Form.Item></Col>
         </Row>
-        {showAdvancedFilters ? <Row id="finance-advanced-filters" gutter={[16, 0]} align="bottom">
+        <Row id="finance-advanced-filters" style={{ display: showAdvancedFilters ? undefined : "none" }} gutter={[16, 0]} align="bottom">
           <Col xs={24} md={8}><Form.Item name="kinds" label="记录类型"><Select mode="multiple" allowClear options={financeRecordKinds.map(value => ({ value, label: kindLabel[value] }))} /></Form.Item></Col>
           <Col xs={24} md={16}><Form.Item name="statuses" label="状态"><Select mode="tags" tokenSeparators={[",", "，"]} maxTagCount="responsive" placeholder="输入状态后回车，可多选" /></Form.Item></Col>
-        </Row> : null}
+        </Row>
       </Form>
 
       {hasStaleSnapshot ? <Alert

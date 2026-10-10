@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
 import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
-import { enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
+import { deriveWorkerContinuationAuthorizationSnapshot, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, persistenceReady, recheckWorkerAuthorizationSnapshot, revokeContinuousFeatureEntitlementForTests, server, service, setAuthorizationRepositoryForTests } from './server.js'
 import { MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCreativePointRepository, MemoryKnowledgeRepository, MemoryMembersRepository } from '../../../packages/persistence/src/index.js'
 import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -255,7 +255,7 @@ describe('worker canonical identity to login-subject membership boundary', () =>
   })
 })
 
-type HttpOperation = 'generation.execute' | 'publish.execute' | 'asset.scan.execute' | 'asset.continuation.execute'
+type HttpOperation = 'generation.execute' | 'publish.execute' | 'publish.reconcile' | 'asset.scan.execute' | 'asset.continuation.execute'
 type ExecutionEnvelope = {
   data: {
     allowed?: boolean
@@ -288,6 +288,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
   const originalKnowledge = persistence.knowledge
   const fixtureMaps = [service.products, service.tasks, service.platformAccounts, service.publishJobs, service.generationJobs] as const
   const initialIds = fixtureMaps.map(map => new Set(map.keys()))
+  let fixtureWorkspaceId: string | undefined
   vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({
     generation: { token: 'test-authz-generation-token', signing_secret: 'test-authz-generation-secret' },
     publish: { token: 'test-authz-publish-token', signing_secret: 'test-authz-publish-secret' },
@@ -299,6 +300,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
   persistence.knowledge = new MemoryKnowledgeRepository()
   try {
     const fixture = await createFixture(operation)
+    fixtureWorkspaceId = fixture.workspaceId
     await test(fixture)
   } finally {
     try {
@@ -311,6 +313,7 @@ async function withHttpExecutionFixture(operation: HttpOperation, test: (fixture
       persistence.creativePoints = originalCreativePoints
       persistence.knowledge = originalKnowledge
       setAuthorizationRepositoryForTests()
+      if (fixtureWorkspaceId) revokeContinuousFeatureEntitlementForTests(fixtureWorkspaceId)
       fixtureMaps.forEach((map, index) => { for (const id of map.keys()) if (!initialIds[index]!.has(id)) map.delete(id) })
       vi.restoreAllMocks()
       vi.unstubAllEnvs()
@@ -326,7 +329,8 @@ async function createFixture(operation: HttpOperation) {
   // well as points; neither is evidence of a real paid subscription.
   grantContinuousFeatureEntitlementForTests(workspaceId)
   const identityId = `identity_${suffix}`
-  const resourceId = `${operation === 'publish.execute' ? 'publish_job' : operation === 'asset.scan.execute' ? 'asset' : operation === 'asset.continuation.execute' ? 'asset_continuation' : 'generation_job'}_${suffix}`
+  const isPublishOperation = operation === 'publish.execute' || operation === 'publish.reconcile'
+  const resourceId = `${isPublishOperation ? 'publish_job' : operation === 'asset.scan.execute' ? 'asset' : operation === 'asset.continuation.execute' ? 'asset_continuation' : 'generation_job'}_${suffix}`
   const repository = new MemoryAuthorizationRepository()
   const outbox = new InMemoryOutbox()
   const outboxAdapter: OutboxRepository = {
@@ -337,14 +341,18 @@ async function createFixture(operation: HttpOperation) {
   const listEvents = vi.spyOn(outboxAdapter, 'listAggregateEvents')
   persistence.outbox = outboxAdapter
   persistence.creativePoints = new MemoryCreativePointRepository()
-  await persistence.creativePoints.grant({ workspaceId, points: 10, sourceType: 'test_fixture', sourceId: suffix, idempotencyKey: suffix })
+  await persistence.creativePoints.grant({
+    workspaceId, points: 10, sourceType: 'test_fixture', sourceId: suffix, idempotencyKey: suffix,
+    ...(operation === 'publish.reconcile' ? { expiresAt: '2020-01-01T00:00:00.000Z' } : {}),
+  })
   const balance = await persistence.creativePoints.getBalance(workspaceId)
   const entitlementFact = { schema_version: 1, workspace_id: workspaceId, balance_state: 'known', available_points: balance.availablePoints, reserved_points: balance.reservedPoints, settled_points: balance.settledPoints, access_revision: String(balance.revision) }
   const now = new Date()
-  const capability = operation === 'publish.execute' ? 'customer.publish.execute' : 'customer.content.update'
+  const capability = isPublishOperation ? 'customer.publish.execute' : 'customer.content.update'
+  const grantedCapabilities = isPublishOperation ? ['customer.publish.execute', 'customer.content.read'] : [capability]
   const issued = await repository.issueGrant({
     grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId,
-    capabilities: [capability], resourceScope: { workspace_ids: [workspaceId] },
+    capabilities: grantedCapabilities, resourceScope: { workspace_ids: [workspaceId] },
     reason: 'execute approved HTTP fixture job', ticketRef: `AUTHZ-HTTP-${suffix}`, issuedBy: 'operator_a', approvedBy: 'security_a',
     approvedAt: now.toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(now.getTime() + 60_000).toISOString(), maxUses: 1,
   })
@@ -352,17 +360,20 @@ async function createFixture(operation: HttpOperation) {
   if (!grant) throw new Error('HTTP grant fixture was not consumed')
   setAuthorizationRepositoryForTests(repository)
   const reserve = vi.spyOn(repository, 'reserveExecution')
-  const snapshot: WorkerAuthorizationSnapshot = {
+  const sourceSnapshot: WorkerAuthorizationSnapshot = {
     schemaVersion: 1, decisionId: `decision_${suffix}`, actorId: 'operator_a', identityId, workspaceId, workbench: 'workspace',
     contextId: `workspace:${workspaceId}`, contextVersion: 'policy_context', policyVersion: 'policy_1',
     grantRevision: `grant:${grant.id}:${grant.revision}:${identityId}:${grant.authorizationRevision}`, grantIds: [grant.id], scopeHash: grant.scopeHash,
-    capability: operation, resourceId, resourceRevision: '1', requestId: `request_${suffix}`, traceId: `trace_${suffix}`,
+    capability: operation === 'publish.reconcile' ? 'publish.execute' : operation, resourceId, resourceRevision: '1', requestId: `request_${suffix}`, traceId: `trace_${suffix}`,
     authorized: true, decidedAt: now.toISOString(),
   }
+  const snapshot: WorkerAuthorizationSnapshot = operation === 'publish.reconcile'
+    ? await deriveWorkerContinuationAuthorizationSnapshot(sourceSnapshot, workspaceId, resourceId, 'publish.reconcile', { event: 'publish.reconcile_requested', publish_job_id: resourceId })
+    : sourceSnapshot
   let job: PublishJob | undefined
   let generationTaskId: string | undefined
   let generationProductId: string | undefined
-  if (operation === 'publish.execute') {
+  if (isPublishOperation) {
     // Seed a controlled queued job, but use the real service getters and all
     // execution-time tenant/account/canonical-binding/state checks over it.
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `remote_${suffix}`, credentialRef: `vault://test-only/${suffix}` })
@@ -375,7 +386,7 @@ async function createFixture(operation: HttpOperation) {
     service.tasks.set(task.id, task)
     job = {
       id: resourceId, workspaceId, taskId: task.id, contentVersionId: `content_${suffix}`, platform: 'taobao', accountId: account.id,
-      accountRevision: account.authRevision ?? account.revision, authorizationSnapshot: { ...snapshot, capability: 'publish.execute' },
+      accountRevision: account.authRevision ?? account.revision, authorizationSnapshot: { ...sourceSnapshot, capability: 'publish.execute' },
       idempotencyKey: suffix, state: 'queued', confirmationHash: 'a'.repeat(64), remoteSnapshotHash: 'b'.repeat(64),
       payloadSnapshot: { operation: 'update', fields: { title: 'controlled fixture' }, imageMode: 'unchanged' }, payloadHash: 'c'.repeat(64), selectedVisuals: [],
       canonicalBinding: buildCanonicalExecutionBinding({ workspaceId, taskId: task.id, productId: product.id, platform: 'taobao', accountId: account.id, inputSnapshotId: task.inputSnapshotId }),
@@ -394,11 +405,13 @@ async function createFixture(operation: HttpOperation) {
     service.generationJobs.set(generationJob.id, generationJob)
   }
   const eventType = operation === 'publish.execute' ? 'publish.requested'
+    : operation === 'publish.reconcile' ? 'publish.reconcile_requested'
     : operation === 'asset.scan.execute' ? 'asset.uploaded'
       : operation === 'asset.continuation.execute' ? 'asset.generation_continuations.ready'
         : 'generation.requested'
   const generationInput = generationProductId ? { platform: 'taobao', product: { id: generationProductId, title: 'Controlled fixture' }, knowledgeContext: { documents: [] } } : undefined
   const event = outbox.append({ workspaceId, aggregateId: resourceId, eventType, sequence: 1, payload: {
+    ...(isPublishOperation ? { payload_hash: job!.payloadHash, platform: job!.platform, account_id: job!.accountId } : {}),
     ...(generationInput ? { task_id: generationTaskId, input: generationInput, context_hash: contextEnvelopeHash(generationInput) } : {}),
     authorization_snapshot: serializeSnapshot(snapshot),
     commercial_access_snapshot: {
@@ -416,17 +429,17 @@ async function createFixture(operation: HttpOperation) {
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('HTTP fixture failed to bind loopback')
   const baseUrl = `http://127.0.0.1:${address.port}`
-  const request = async (options: { workspaceId?: string; eventId?: string; resourceId?: string; operation?: HttpOperation; invalidProof?: boolean; omitAttemptProof?: boolean } = {}) => {
+  const request = async (options: { workspaceId?: string; eventId?: string; resourceId?: string; operation?: HttpOperation; workerRole?: 'publish' | 'reconcile' | 'generation' | 'scan'; invalidProof?: boolean; omitAttemptProof?: boolean } = {}) => {
     const requestedWorkspace = options.workspaceId ?? workspaceId
     const requestedResource = options.resourceId ?? resourceId
     const nonce = randomUUID().replaceAll('-', '')
     const attemptQuery = operation === 'generation.execute' && !options.omitAttemptProof
       ? `&attempt=0&provider_attempt_key=mm-${'a'.repeat(64)}&request_body_sha256=${'b'.repeat(64)}&request_nonce=${nonce}`
       : ''
-    const target = operation === 'publish.execute'
-      ? `/v1/publish-jobs/${requestedResource}/execution-check?event_id=${options.eventId ?? event.id}`
+    const target = operation === 'publish.execute' || operation === 'publish.reconcile'
+      ? `/v1/publish-jobs/${requestedResource}/execution-check?event_id=${options.eventId ?? event.id}${operation === 'publish.reconcile' ? '&worker_role=reconcile' : ''}`
       : `/v1/worker-events/${options.eventId ?? event.id}/execution-check?aggregate_id=${requestedResource}&operation=${options.operation ?? operation}${attemptQuery}`
-    const role = operation === 'publish.execute' ? 'publish' : operation === 'asset.scan.execute' ? 'scan' : 'generation'
+    const role = options.workerRole ?? (operation === 'publish.execute' ? 'publish' : operation === 'publish.reconcile' ? 'reconcile' : operation === 'asset.scan.execute' ? 'scan' : 'generation')
     const proof = createWorkerRequestProof({ secret: `test-authz-${role}-secret`, role, workerId: 'authz-http-fixture', method: 'GET', requestTarget: target, workspaceId: requestedWorkspace })
     const response = await fetch(`http://127.0.0.1:${address.port}${target}`, { headers: {
       authorization: `Bearer test-authz-${role}-token`, 'x-workspace-id': requestedWorkspace, ...proof.headers,
@@ -523,32 +536,79 @@ describe('E1 worker execution-check: real signed HTTP with controlled memory rep
     })
   })
 
-  it('publish.execute: a reconcile worker rechecks through its own role, not the publish role', async () => {
-    await withHttpExecutionFixture('publish.execute', async fixture => {
-      const path = `/v1/publish-jobs/${fixture.resourceId}/execution-check?event_id=${fixture.event.id}`
-      const workerId = 'authz-http-fixture'
-      // Pre-fix production shape: the reconcile worker signs with its own
-      // credentials but the proof is labelled with the publish role. The API
-      // selects the publish credential set from x-worker-role, so neither the
-      // reconcile bearer token nor the reconcile signature can match: 403, and
-      // the worker treats a 403 as non-retryable, so the event dead-letters.
-      const mislabelled = createWorkerRequestProof({ secret: 'test-authz-reconcile-secret', role: 'publish', workerId, method: 'GET', requestTarget: path, workspaceId: fixture.workspaceId })
-      const mislabelledResponse = await fetch(`${fixture.baseUrl}${path}`, { headers: { authorization: 'Bearer test-authz-reconcile-token', 'x-workspace-id': fixture.workspaceId, ...mislabelled.headers } })
-      expect(mislabelledResponse.status).toBe(403)
-
-      // Fixed shape: the reconcile credentials are signed, labelled and
-      // authenticated as reconcile, which is the role the route already admits.
+  it('publish.reconcile: requires the exact durable reconcile event and its continuation snapshot', async () => {
+    await withHttpExecutionFixture('publish.reconcile', async fixture => {
+      expect(fixture.event.eventType).toBe('publish.reconcile_requested')
+      expect(fixture.event.payload.commercial_access_snapshot).toMatchObject({
+        operation: 'publish.reconcile', access_mode: 'POINT_REQUIRED_NO_CHARGE',
+        balance_state: 'known', quoted_points: 0, rate_version: null,
+      })
+      expect(fixture.event.payload.commercial_access_snapshot).not.toHaveProperty('reservation_id')
+      expect(fixture.event.payload.authorization_snapshot).toMatchObject({ capability: 'publish.reconcile', resource_id: fixture.resourceId, workspace_id: fixture.workspaceId })
       const execution = await assertPublishExecution({
         apiBaseUrl: fixture.baseUrl, apiToken: 'test-authz-reconcile-token', signingSecret: 'test-authz-reconcile-secret', role: 'reconcile', event: fixture.event,
       })
-      expect(execution).toMatchObject({ payloadHash: fixture.job!.payloadHash, mediaRequired: false })
+      expect(execution).toMatchObject({ payloadHash: fixture.job!.payloadHash, mediaRequired: false, authorizationSnapshot: { capability: 'publish.reconcile' } })
       expect(execution.credentialRef).toMatch(/^vault:\/\/test-only\//u)
+      expect(fixture.reserve).toHaveBeenCalledWith(expect.objectContaining({ eventId: fixture.event.id, capability: 'customer.content.read' }))
 
-      // Declaring the reconcile role is not an escalation: a caller that only
-      // holds publish credentials still fails the role's bearer and proof check.
-      const forged = createWorkerRequestProof({ secret: 'test-authz-publish-secret', role: 'reconcile', workerId, method: 'GET', requestTarget: path, workspaceId: fixture.workspaceId })
-      const forgedResponse = await fetch(`${fixture.baseUrl}${path}`, { headers: { authorization: 'Bearer test-authz-publish-token', 'x-workspace-id': fixture.workspaceId, ...forged.headers } })
-      expect(forgedResponse.status).toBe(403)
+      const response = await fixture.request()
+      const commercialSnapshot = fixture.event.payload.commercial_access_snapshot as { access_revision: string }
+      expect(response).toMatchObject({ status: 200, body: { data: { commercial_access_recheck: {
+        allowed: true, ready: true, access_mode: 'POINT_REQUIRED_NO_CHARGE', balance_state: 'known',
+        quoted_points: 0, reservation_state: 'not_required', access_revision: commercialSnapshot.access_revision,
+      } } } })
+
+      const runtime = await persistenceReady
+      await runtime.creativePoints!.grant({ workspaceId: fixture.workspaceId, points: 1, sourceType: 'test_fixture', sourceId: 'revision-drift', idempotencyKey: 'revision-drift' })
+      expect(await fixture.request()).toMatchObject({ status: 200, body: { data: { commercial_access_recheck: {
+        allowed: false, ready: false, denial_code: 'COMMERCIAL_EXECUTION_REVISION_STALE', reservation_state: 'not_required',
+      } } } })
+      revokeContinuousFeatureEntitlementForTests(fixture.workspaceId)
+      expect(await fixture.request()).toMatchObject({ status: 403, body: { error: { code: 'COMMERCIAL_ENTITLEMENT_REQUIRED' }, data: null } })
+
+      // The URL binds the persisted reconcile event, but the signed credential
+      // role is authoritative. A valid publish credential is admitted for
+      // publish routes, then cannot use a reconcile event as a publish event.
+      const reservationsBeforeWrongRole = fixture.reserve.mock.calls.length
+      expect(await fixture.request({ workerRole: 'publish' })).toMatchObject({ status: 404, body: { error: { code: 'AUTHORIZATION_EVENT_NOT_FOUND' }, data: null } })
+      expect(fixture.reserve).toHaveBeenCalledTimes(reservationsBeforeWrongRole)
+      expect(await fixture.request({ eventId: 'evt_wrong_reconcile_event' })).toMatchObject({ status: 404, body: { error: { code: 'AUTHORIZATION_EVENT_NOT_FOUND' }, data: null } })
+    })
+  })
+
+  it('publish.reconcile: rejects mismatched role credentials before authorization reservation', async () => {
+    await withHttpExecutionFixture('publish.reconcile', async fixture => {
+      const target = `/v1/publish-jobs/${fixture.resourceId}/execution-check?event_id=${fixture.event.id}&worker_role=reconcile`
+      const proof = createWorkerRequestProof({
+        secret: 'test-authz-reconcile-secret', role: 'reconcile', workerId: 'authz-http-fixture',
+        method: 'GET', requestTarget: target, workspaceId: fixture.workspaceId,
+      })
+      const response = await fetch(`${fixture.baseUrl}${target}`, { headers: {
+        authorization: 'Bearer test-authz-publish-token', 'x-workspace-id': fixture.workspaceId, ...proof.headers,
+      } })
+      expect(response.status).toBe(403)
+      expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' }, data: null })
+      expect(fixture.reserve).not.toHaveBeenCalled()
+    })
+  })
+
+  it.each(['payload hash', 'platform', 'account', 'workspace'] as const)('publish.execute: rejects an event with a mismatched frozen %s before reservation', async mismatch => {
+    await withHttpExecutionFixture('publish.execute', async fixture => {
+      if (mismatch === 'payload hash') fixture.event.payload.payload_hash = 'f'.repeat(64)
+      if (mismatch === 'platform') fixture.event.payload.platform = 'jd'
+      if (mismatch === 'account') fixture.event.payload.account_id = 'acct_other'
+      if (mismatch === 'workspace') {
+        fixture.event.workspaceId = 'ws_foreign_execution_event'
+        // Surface the foreign event to the route so this asserts its explicit
+        // workspace binding check as well as the repository's normal filter.
+        fixture.listEvents.mockImplementation(async () => [fixture.event])
+      }
+      const result = await fixture.request()
+      expect(result.status).toBe(mismatch === 'workspace' ? 404 : 403)
+      expect(result.body.data).toBeNull()
+      expect(result.body.error?.code).toBe(mismatch === 'workspace' ? 'AUTHORIZATION_EVENT_NOT_FOUND' : 'AUTHORIZATION_EVENT_SCOPE_INVALID')
+      expect(fixture.reserve).not.toHaveBeenCalled()
     })
   })
 

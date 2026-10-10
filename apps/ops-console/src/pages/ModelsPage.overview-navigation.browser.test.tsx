@@ -29,17 +29,43 @@ describe("ModelsPage overview navigation", () => {
       import { App } from 'antd';
       import { ModelsPage } from '/src/pages/ModelsPage.tsx';
       window.__modelNavigations = [];
-      const model = {
-        canModelMarkup: false,
-        modelStatusLoading: false,
-        dataSetError: () => undefined,
-        dataSource: { fixtureDataPresent: false },
-      };
-      createRoot(document.getElementById('root')).render(
-        React.createElement(App, null,
+      window.__modelMarkupCalls = { loads: 0, saves: [] };
+      function Root() {
+        const billingJourney = new URLSearchParams(location.search).get('billing') === '1';
+        const relayBlocked = new URLSearchParams(location.search).get('billing') === 'blocked';
+        const [modelMarkup, setModelMarkup] = React.useState(undefined);
+        const [modelMarkupError, setModelMarkupError] = React.useState(billingJourney ? '倍率服务暂时不可用' : '');
+        const [modelMarkupLoading, setModelMarkupLoading] = React.useState(false);
+        const [modelMarkupReason, setModelMarkupReason] = React.useState('');
+        const model = {
+          authorization: { can: capability => capability === 'model.status.read' },
+          canModelMarkup: billingJourney || relayBlocked,
+          canModelMarkupUpdate: billingJourney || relayBlocked,
+          modelMarkup, modelMarkupError, modelMarkupLoading, modelMarkupReason,
+          modelStatus: billingJourney ? { state: 'ready', relay: { configured: true } } : relayBlocked ? { state: 'model_relay_blocked', relay: { configured: false } } : undefined,
+          modelStatusLoading: false,
+          dataSetError: () => undefined,
+          dataSource: { fixtureDataPresent: false },
+          setModelMarkup,
+          setModelMarkupReason,
+          loadModelMarkup: async () => {
+            window.__modelMarkupCalls.loads += 1;
+            setModelMarkupLoading(true);
+            await Promise.resolve();
+            setModelMarkup({ multiplier: 2.5, revision: 7 });
+            setModelMarkupError('');
+            setModelMarkupLoading(false);
+          },
+          saveModelMarkup: async () => {
+            window.__modelMarkupCalls.saves.push({ multiplier: modelMarkup?.multiplier, reason: modelMarkupReason });
+            setModelMarkup(current => current ? { ...current, revision: current.revision + 1 } : current);
+          },
+        };
+        return React.createElement(App, null,
           React.createElement(ModelsPage, { model, onNavigate: domain => window.__modelNavigations.push(domain) })
-        )
-      );
+        );
+      }
+      createRoot(document.getElementById('root')).render(React.createElement(Root));
     `, { flag: "wx" });
     vite = await createServer({
       configFile: false,
@@ -82,10 +108,53 @@ describe("ModelsPage overview navigation", () => {
       await page.close();
     }
   }, 60_000);
+
+  it("recovers the billing policy read before enabling an audited multiplier change", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(30_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?billing=1`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.getByRole("alert").filter({ hasText: "倍率服务暂时不可用" }).waitFor();
+      await expect.poll(() => page.getByRole("button", { name: "保存并生效" }).isDisabled()).toBe(true);
+
+      await page.getByRole("button", { name: "重试" }).click();
+      await page.getByText("Revision 7").waitFor();
+      const multiplier = page.getByRole("spinbutton", { name: "Token 计费倍率" });
+      await multiplier.fill("3.5");
+      await page.getByRole("textbox", { name: "Token 计费倍率变更原因" }).fill("依据已核验的供应商计价单调整");
+      const save = page.getByRole("button", { name: "保存并生效" });
+      await expect.poll(() => save.isEnabled()).toBe(true);
+      await save.click();
+
+      await page.getByText("Revision 8").waitFor();
+      expect(await page.evaluate(() => window.__modelMarkupCalls)).toEqual({
+        loads: 1,
+        saves: [{ multiplier: 3.5, reason: "依据已核验的供应商计价单调整" }],
+      });
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it("keeps billing configuration closed when the platform relay readiness gate is blocked", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(30_000);
+    try {
+      await page.goto(`${baseUrl}/${harnessName}.html?billing=blocked`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.getByText("模型中转状态未通过读取门禁").waitFor();
+      await page.getByText("模型中转未就绪").waitFor();
+      expect(await page.getByRole("button", { name: "保存并生效" }).count()).toBe(0);
+      expect(await page.evaluate(() => window.__modelMarkupCalls.loads)).toBe(0);
+      expect(await page.evaluate(() => window.__modelMarkupCalls.saves)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
 
 declare global {
   interface Window {
     __modelNavigations: string[];
+    __modelMarkupCalls: { loads: number; saves: Array<{ multiplier?: number; reason: string }> };
   }
 }

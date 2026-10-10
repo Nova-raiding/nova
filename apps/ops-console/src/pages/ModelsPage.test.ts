@@ -18,6 +18,8 @@ describe("models page sections", () => {
     const markup = renderToStaticMarkup(createElement(ModelsPage, {
       onNavigate: vi.fn(),
       model: {
+        authorization: { can: (capability: string) => capability === "model.status.read" },
+        modelStatus: { state: "ready", relay: { configured: true } },
         canModelMarkup: false,
         canModelMarkupUpdate: false,
         modelStatusLoading: false,
@@ -36,6 +38,8 @@ describe("models page sections", () => {
     const markup = renderToStaticMarkup(createElement(ModelsPage, {
       onNavigate: vi.fn(),
       model: {
+        authorization: { can: (capability: string) => capability === "model.status.read" },
+        modelStatus: { state: "ready", relay: { configured: true } },
         canModelMarkup: true,
         canModelMarkupUpdate: true,
         modelMarkup: undefined,
@@ -61,5 +65,28 @@ describe("models page sections", () => {
     expect(markup).toContain("重 试");
     expect(markup).toContain("MODEL BILLING");
     expect(markup).not.toContain("模型服务关键指标");
+  });
+
+  it("does not expose billing policy controls until the real relay gate is verified ready", () => {
+    const markup = renderToStaticMarkup(createElement(ModelsPage, {
+      onNavigate: vi.fn(),
+      model: {
+        authorization: { can: (capability: string) => capability === "model.status.read" },
+        modelStatus: { state: "model_relay_blocked", relay: { configured: false } },
+        canModelMarkup: true,
+        canModelMarkupUpdate: true,
+        modelMarkup: { multiplier: 2.5, revision: 4 },
+        modelMarkupLoading: false,
+        modelMarkupError: "",
+        modelStatusLoading: false,
+        dataSetError: () => undefined,
+        dataSource: { fixtureDataPresent: false },
+      } as unknown as OpsConsoleModel,
+    }));
+
+    expect(markup).toContain("模型中转状态未通过读取门禁");
+    expect(markup).toContain("模型中转未就绪");
+    expect(markup).not.toContain("Token 成本倍率");
+    expect(markup).not.toContain("保存并生效");
   });
 });

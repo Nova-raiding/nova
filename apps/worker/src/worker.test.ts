@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, publishMediaLifecycleClient, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertGenerationKnowledgeExecution, assertPublishExecution, assertWorkerReadinessDependencies, assertBridgeStartupMigrationVersion, shouldRunAssetLifecyclePurge, claimChargedTextDispatchWithRetryRecovery, claimGenerationKnowledgeAttempt, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, enrichImageUsageSettlement, executeImageGenerationContinuations, fetchPublishMedia, publishMediaLifecycleClient, applyReconciledPublishMediaLifecycle, hasCompleteScanCallbackCredentials, imageProviderRequestIdFromError, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, planPaymentReconciliationRun, pollOnce, postAutomationTick, postAssetLifecyclePurge, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postKnowledgeEmbeddingAdmission, postKnowledgeEmbeddingOutcome, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postPaymentReconciliation, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, NON_SCAN_EVENT_TYPES, createReadyFileHeartbeat, writeWorkerReadyMarker, rethrowPollFailureInOnceMode, runAutomationMaintenance, runPaymentReconciliationSweep, scannerOperationalMetrics, transitionGenerationKnowledgeClaim, workerDatabasePoolOptions, workerRoleForRequest, READY_FILE_PROBE_WINDOW_MS, runWorker, workerQueueKey } from './main.js'
 import { contextEnvelopeHash, loadMigrations, type PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { generationKnowledgeReceiptHash } from '../../../packages/application/src/knowledge-execution-fence.js'
 import { verifyWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
@@ -404,7 +404,7 @@ describe('worker production entry', () => {
         .resolves.toEqual({ migrationVersion: version, apiReady: false })
     }
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 272')
+      .rejects.toThrow('expected complete migration chain through 275')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 253)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 254 or 255')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254).map((row, index) => index === 253 ? { ...row, checksum: 'a'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_254_or_255', bridgeMigrations: migrations }))
@@ -425,7 +425,7 @@ describe('worker production entry', () => {
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 254)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('exactly 255 or 256')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 255)), expectedMigrations: migrations }))
-      .rejects.toThrow('expected complete migration chain through 272')
+      .rejects.toThrow('expected complete migration chain through 275')
     await expect(assertWorkerReadinessDependencies({ database: database(rows.slice(0, 256).map((row, index) => index === 255 ? { ...row, checksum: 'b'.repeat(64) } : row)), expectedMigrations: migrations, bridgeMode: 'prefix_255_or_256', bridgeMigrations: migrations }))
       .rejects.toThrow('checksum mismatch')
   })
@@ -1570,10 +1570,26 @@ describe('worker production entry', () => {
 
   it('rejects publish media whose declared base64 content does not match its digest', async () => {
     const event = { id: 'evt_media', workspaceId: 'ws_a', aggregateId: 'job_media', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    let requestedUrl = ''
     await expect(fetchPublishMedia({
       apiBaseUrl: 'http://api.test', apiToken: 'token', event,
-      fetcher: async () => new Response(JSON.stringify({ data: { media: [{ visual_ref: 'dvis_1', role: 'main', mime_type: 'image/png', sha256: 'a'.repeat(64), content_base64: Buffer.from('not-a-png').toString('base64') }] } }), { status: 200 }),
+      fetcher: async input => { requestedUrl=String(input);return new Response(JSON.stringify({ data: { media: [{ visual_ref: 'dvis_1', role: 'main', mime_type: 'image/png', sha256: 'a'.repeat(64), content_base64: Buffer.from('not-a-png').toString('base64') }] } }), { status: 200 }) },
     })).rejects.toThrow('invalid size or SHA-256 digest')
+    expect(new URL(requestedUrl).searchParams.get('event_id')).toBe(event.id)
+  })
+
+  it('binds reconciliation media reads to the durable reconcile event and signs the reconcile role', async () => {
+    const event = { id: 'evt_media_reconcile_fetch', workspaceId: 'ws_a', aggregateId: 'job_media_reconcile_fetch', eventType: 'publish.reconcile_requested', sequence: 2, payload: {}, createdAt: new Date().toISOString() }
+    let requestedUrl = ''
+    let requestedHeaders = new Headers()
+    await fetchPublishMedia({
+      apiBaseUrl: 'http://api.test', apiToken: 'reconcile-token', signingSecret: 'reconcile-secret', role: 'reconcile', event,
+      fetcher: async (input, init) => { requestedUrl=String(input);requestedHeaders=new Headers(init?.headers);return new Response(JSON.stringify({ data: { media: [] } }), { status: 200 }) },
+    })
+    expect(new URL(requestedUrl).searchParams.get('event_id')).toBe(event.id)
+    expect(new URL(requestedUrl).searchParams.get('worker_role')).toBe('reconcile')
+    expect(requestedHeaders.get('x-worker-role')).toBe('reconcile')
+  })
   })
 
   it('reuses only a non-empty persisted publish media receipt bound to the exact job and event', async () => {
@@ -1583,7 +1599,7 @@ describe('worker production entry', () => {
     const persisted = {
       workspaceId: event.workspaceId, publishJobId: event.aggregateId, eventId: event.id, mediaIdempotencyKey: media.idempotencyKey,
       platform: 'taobao', accountId: 'acct_a', visualRef: media.visualRef, role: media.role, sha256: media.sha256, state: 'uploaded',
-      receipt: { platform: 'taobao', visualRef: media.visualRef, role: media.role, sha256: media.sha256, mediaId: 'remote_media_a' },
+      receipt: { platform: 'taobao', visualRef: media.visualRef, role: media.role, sha256: media.sha256, mediaId: 'remote_media_a', simulated: false },
     }
     const calls: Array<{ url: string; headers: Headers }> = []
     const client = publishMediaLifecycleClient({
@@ -1603,6 +1619,8 @@ describe('worker production entry', () => {
       { ...persisted, eventId: 'another-event' },
       { ...persisted, receipt: { ...persisted.receipt, mediaId: '   ' } },
       { ...persisted, receipt: { ...persisted.receipt, url: ' ' } },
+      { ...persisted, receipt: { ...persisted.receipt, simulated: undefined } },
+      { ...persisted, receipt: { ...persisted.receipt, visualRef: 'another-visual' } },
     ]) {
       const invalidClient = publishMediaLifecycleClient({
         apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event, platform: 'taobao', accountId: 'acct_a',
@@ -1635,6 +1653,47 @@ describe('worker production entry', () => {
     controller.abort(new Error('durable lease lost'))
     expect(observedSignal?.aborted).toBe(true)
     await expect(transition).rejects.toThrow('durable lease lost')
+  })
+
+  it('settles an unknown publish receipt through the reconcile role without deleting media', async () => {
+    const publishEvent = { id: 'evt_media_original', workspaceId: 'ws_a', aggregateId: 'job_media_reconcile', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    const reconcileEvent = { ...publishEvent, id: 'evt_media_reconcile', eventType: 'publish.reconcile_requested', sequence: 2 }
+    const bytes = Buffer.from('image')
+    const media = { visualRef: 'visual_reconcile', role: 'main' as const, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes, idempotencyKey: 'job_media_reconcile:media:visual_reconcile' }
+    const persisted: Record<string, unknown> = { workspaceId: 'ws_a', publishJobId: 'job_media_reconcile', eventId: publishEvent.id, mediaIdempotencyKey: media.idempotencyKey, platform: 'taobao', accountId: 'acct_a', visualRef: media.visualRef, role: media.role, sha256: media.sha256, state: 'unknown', receipt: { platform: 'taobao', visualRef: media.visualRef, role: media.role, sha256: media.sha256, mediaId: 'remote_media_reconcile', simulated: false } }
+    const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = []
+    const lifecycle = publishMediaLifecycleClient({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event: reconcileEvent, platform: 'taobao', accountId: 'acct_a', role: 'reconcile',
+      fetcher: async (input, init) => {
+        const url = new URL(String(input))
+        const entry = { url: url.toString(), method: init?.method ?? 'GET', ...(init?.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}) }
+        requests.push(entry)
+        if (entry.method === 'POST') persisted.state = entry.body?.state
+        return new Response(JSON.stringify({ data: { media_lifecycle: persisted } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    await applyReconciledPublishMediaLifecycle({ remoteStatus: { found: true, state: 'published' }, media: [media], lifecycle })
+    expect(persisted).toMatchObject({ state: 'retained', eventId: publishEvent.id })
+    expect(requests.every(request => new URL(request.url).searchParams.get('worker_role') === 'reconcile')).toBe(true)
+    expect(requests[1]?.body).toMatchObject({ event_id: reconcileEvent.id, state: 'retained' })
+    expect(workerRoleForRequest('POST', requests[1]!.url, JSON.stringify(requests[1]!.body))).toBe('reconcile')
+    expect(requests.some(request => request.body?.state === 'deleted')).toBe(false)
+  })
+
+  it('keeps media recoverable when reconciliation authoritatively rejects the publish', async () => {
+    const reconcileEvent = { id: 'evt_media_reconcile_rejected', workspaceId: 'ws_a', aggregateId: 'job_media_reconcile_rejected', eventType: 'publish.reconcile_requested', sequence: 2, payload: {}, createdAt: new Date().toISOString() }
+    const bytes = Buffer.from('image')
+    const media = { visualRef: 'visual_rejected', role: 'main' as const, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes, idempotencyKey: 'job_media_reconcile_rejected:media:visual_rejected' }
+    const persisted: Record<string, unknown> = { workspaceId: 'ws_a', publishJobId: reconcileEvent.aggregateId, eventId: 'evt_media_original_rejected', mediaIdempotencyKey: media.idempotencyKey, platform: 'taobao', accountId: 'acct_a', visualRef: media.visualRef, role: media.role, sha256: media.sha256, state: 'unknown', receipt: { platform: 'taobao', visualRef: media.visualRef, role: media.role, sha256: media.sha256, mediaId: 'remote_media_rejected', simulated: false } }
+    const states: unknown[] = []
+    const lifecycle = publishMediaLifecycleClient({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', event: reconcileEvent, platform: 'taobao', accountId: 'acct_a', role: 'reconcile', fetcher: async (_input, init) => {
+      if (init?.method === 'POST') { const value = JSON.parse(String(init.body)); states.push(value.state); persisted.state = value.state }
+      return new Response(JSON.stringify({ data: { media_lifecycle: persisted } }), { status: 200 })
+    } })
+    await applyReconciledPublishMediaLifecycle({ remoteStatus: { found: true, state: 'rejected' }, media: [media], lifecycle })
+    await applyReconciledPublishMediaLifecycle({ remoteStatus: { found: true, state: 'rejected' }, media: [media], lifecycle })
+    expect(persisted).toMatchObject({ state: 'orphaned', eventId: 'evt_media_original_rejected' })
+    expect(states).toEqual(['orphaned'])
   })
 })
 

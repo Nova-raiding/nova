@@ -87,6 +87,49 @@ describe("store authorization revoke confirmation", () => {
     } finally { await context.close(); }
   }, 45_000);
 
+  it("sends no revoke request when the operator cancels or presses Escape", async () => {
+    const context = await browser!.newContext();
+    const page = await context.newPage();
+    let revokeRequests = 0;
+    await page.route("**/__store-revoke", async route => {
+      revokeRequests += 1;
+      await route.fulfill({ status: 200, body: "{}", contentType: "application/json" });
+    });
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      await page.getByRole("button", { name: "撤销", exact: true }).click();
+      const firstDialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      await firstDialog.waitFor();
+      let cancelButton = firstDialog.getByRole("button", { name: /取消/u });
+      if (await cancelButton.count() === 0) {
+        // Ant Design may expose the cancel label with an inserted whitespace
+        // node, so retain the semantic dialog boundary and fall back to the
+        // rendered cancel text within its own footer.
+        cancelButton = firstDialog.locator(".ant-modal-footer button").filter({ hasText: /取\s*消/u });
+      }
+      if (await cancelButton.count() === 0) {
+        const footerButtons = await firstDialog.locator(".ant-modal-footer button").evaluateAll(buttons => buttons.map(button => ({
+          text: button.textContent?.trim() ?? "",
+          ariaLabel: button.getAttribute("aria-label"),
+          title: button.getAttribute("title"),
+          className: button.className,
+          disabled: (button as HTMLButtonElement).disabled,
+        })));
+        throw new Error(`Revoke confirmation cancel button was not exposed by role; footer buttons: ${JSON.stringify(footerButtons)}`);
+      }
+      await cancelButton.first().click();
+      await firstDialog.waitFor({ state: "detached" });
+      expect(revokeRequests).toBe(0);
+
+      await page.getByRole("button", { name: "撤销", exact: true }).click();
+      const secondDialog = page.getByRole("dialog", { name: "确认撤销平台授权？" });
+      await secondDialog.waitFor();
+      await page.keyboard.press("Escape");
+      await secondDialog.waitFor({ state: "detached" });
+      expect(revokeRequests).toBe(0);
+    } finally { await context.close(); }
+  }, 45_000);
+
   it("keeps the target and explains a failed revoke so the operator can retry", async () => {
     const context = await browser!.newContext();
     const page = await context.newPage();
@@ -104,7 +147,7 @@ describe("store authorization revoke confirmation", () => {
       await dialog.getByRole("button", { name: "确认撤销", exact: true }).click();
       await dialog.getByRole("alert").getByText("revoke failed", { exact: true }).waitFor();
       expect(await dialog.getByText("撤销回归店铺", { exact: false }).count()).toBe(1);
-      const confirm = dialog.getByRole("button", { name: "确认撤销", exact: true });
+      const confirm = dialog.getByRole("button", { name: /撤销/u });
       await confirm.waitFor({ state: "visible" });
       await confirm.click();
       await dialog.waitFor({ state: "detached" });

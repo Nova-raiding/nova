@@ -1,18 +1,20 @@
 # ECS demo 直接部署与上线验收
 
-适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**只有本 runbook 所有前置门禁均通过后，才可提交待审查候选、从精确提交构建并部署到该唯一 Demo，再验证变更；任一门禁未通过即 STOP/NO-GO。当前 inventory 未获批准且仍有容器未分类，当前必须 STOP，不得提交为可部署候选或执行部署。**
+适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**只有本 runbook 所有前置门禁均通过后，才可提交待审查候选、从精确提交构建并部署到该唯一 Demo，再验证变更；任一门禁未通过即 STOP/NO-GO。当前仍有容器未分类，当前必须 STOP，不得提交为可部署候选或执行部署。**
 
 本流程只要求与本次变更相称的类型检查、单元/API 测试、桌面浏览器验收和唯一 Demo 容器健康检查；不把其他环境的发布门禁作为 Demo 验收。真实模型中转鉴权、请求、用量和成本仍须保留证据；配置或凭据缺失时 fail closed，并明确阻断对应模型能力。
 
 日常更新入口与时间预算见 [101 快速更新方案](ecs-fast-update.md)，支持只读现状检查与按组件构建。
 
-执行本 runbook 前必须先满足 [快速更新方案的 Demo inventory 与锁证据门槛](ecs-fast-update.md)：唯一 Demo 的 `release_approved` 必须为 `true`；inventory 列出的所有运行容器（包括 Demo Compose 项目之外的容器）必须有 owner 确认的分类；同一任务还须留存该 runbook 要求的既有共享锁来源、所有权、逐级目录权限和唯一 mutator 共用证明。任一项为 false、缺失或未经确认均 **STOP/NO-GO**。当前 inventory 报告 `release_approved=false` 且仍有未获 owner 确认分类的容器，因此当前不得执行本 runbook；不得以其他环境或生产门禁替代唯一 Demo 证据。
+执行本 runbook 前必须先满足 [快速更新方案的 Demo inventory 与锁证据门槛](ecs-fast-update.md)。每轮先运行 `npm run deploy:101:status` 获取最新只读状态；它固定输出 `scope=inventory_only` 和 `release_approved=false`，这个字段永远不会授予批准，退出 0 也不代表候选获准。owner 必须在绑定候选完整 SHA 的唯一任务单/受保护审查记录中明确记载 `GO`/`NO-GO`、批准人、UTC 时间、status 输出及 SHA-256、inventory 列出的所有运行容器（包括 Demo Compose 项目之外的容器）的 owner 分类、迁移链证据、候选/回滚信息和本 runbook 要求的既有共享锁来源/所有权/逐级目录权限/唯一 mutator 共用证明。缺少 owner 的明确 `GO`、任一容器未分类、状态或证据过期、或任一门禁未满足，均 **STOP/NO-GO**。该任务单/审查记录是审批权威来源；没有脚本或 inventory 字段可以替代它。当前仍有未获 owner 确认分类的容器，因此当前不得执行本 runbook；不得以其他环境或生产门禁替代唯一 Demo 证据。
 
 ## 1. 锁定本次改动
 
 - 本地只用 `main` 分支和唯一主工作目录。每项独立修复做最小相关检查，通过后单独提交；不要把其他 agent 同时修改的文件一起暂存。发布前确认工作目录干净，并从已提交的精确 SHA 构建。
 - 从提交的完整 SHA 用 `git archive` 生成干净源码快照，传到通过 101 只读状态和当前 Demo 受保护部署配置确认的候选暂存目录；不得从文档、旧环境记录或猜测中硬编码目录。不得从带有未提交改动的共享工作目录构建镜像。记录所用目录、快照 SHA、目标组件、镜像 digest 和构建结果。
-- 仅为改动的组件构建镜像。API、Ops UI、Merchant UI、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。当前快速更新适配器不覆盖 gateway/payment；这两类变更必须停止并另行完成专用候选、切流、回滚和验收方案后再部署。既有 runbook/metadata 记录的 Demo 迁移基线为 1–270，但 2026-10-10 主机观察未读取 live migration chain，故该基线尚待 DB owner 逐行核实。当前源码候选链尾为 273（metadata source=270,target=273，含新增迁移 271–273）。无迁移快速更新必须以 DB owner 提供的 live 完整链与目标链逐行一致为前提；核实前不能确认无迁移路径可用。当前没有已批准的 Demo 全量 migration 执行入口或窗口，任何需要应用 271–273 的候选均须停止本 runbook 与快速更新流程；不得手动运行迁移，也不得用 metadata 数字作为批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另开迁移窗口。
+- 仅为改动的组件构建镜像。API、Ops UI、Merchant UI、worker 各自有独立镜像；若运行中的组件来自不同提交，记录每个组件的真实提交及 digest，不把统一 release 标识误写成所有组件的源码版本。当前快速更新适配器不覆盖 gateway/payment；这两类变更必须停止并另行完成专用候选、切流、回滚和验收方案后再部署。既有 runbook/metadata 记录的 Demo 迁移基线为 1–270，但 2026-10-10 主机观察未读取 live migration chain，故该基线尚待 DB owner 逐行核实。当前源码候选链尾为 275（metadata source=270,target=275，含新增迁移 271–275）；迁移 275 尚未在真实 PostgreSQL/Demo 验证或部署。无迁移快速更新必须以 DB owner 提供的 live 完整链与目标链逐行一致为前提；核实前不能确认无迁移路径可用。当前没有已批准的 Demo 全量 migration 执行入口或窗口，任何需要应用 271–275 的候选均须停止本 runbook 与快速更新流程；不得手动运行迁移，也不得用 metadata 数字作为批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另开迁移窗口。
+
+Migration 274/275 的维护窗口还必须满足具体数据库前置条件：274 的 `row_security=off` 在 FORCE RLS 表上要求经 DB owner 核验的受保护 BYPASSRLS/superuser 执行器；窗口前只读核验既有 `deleted` 行数量和 receipt preflight，异常时停止，不手工改写或跳过记录，并在执行前完成可恢复备份与隔离恢复演练。受保护迁移链须先运行 `infra/local/ensure-app-role.sql`，由获准的迁移执行器幂等创建/规范化专用 `merchant_schema_owner` NOLOGIN 角色；275 会校验其非 superuser、非 BYPASSRLS、无 CREATEROLE/CREATEDB、NOINHERIT，且与 `merchant_app`/`merchant_ops` 双向无成员关系，然后在事务内把 `publish_media_orphan_events` 和 SECURITY DEFINER writer 函数 owner 转交给该角色。执行账号必须是经 DB owner 核验的受保护 superuser，或满足 PostgreSQL owner 转换规则的现有对象 owner/角色成员；否则迁移应失败并停止。迁移临时授予目标 owner 对 `public` 的 CREATE，完成 owner 转移后撤销 CREATE 并保留 USAGE。该 owner 只获 `publish_media_orphan_tasks` 的 SELECT，仍受 FORCE RLS 与 workspace policy 限制。迁移前还须停用/排空仍可写 `deleted` 的旧 worker，核对 API/worker 版本兼容性，并确认运行账号不能直接 INSERT 事件表、而 task trigger 能原子地产生单条事件。事件账本是 task 行的持久化投影；`merchant_app` 仍有 task UPDATE 权限，因此账本反映该运行角色可写入的 task 值，不独立证明 repository 调用来源或 reason 的业务授权。DB owner 必须绑定批准人、执行者、窗口、备份标识、预检结果、迁移 checksum 和恢复点；缺少任一项即 STOP。本段是门禁要求，不是迁移执行指令。
 - 密钥、数据库连接和部署环境只放 101 上当前 Demo 对应的受保护目录；以只读状态检查发现的现存配置为准，不硬编码过期目录、不复制到其他环境。不要让这些内容进入 Git、源码归档、日志、聊天或客户包。修改受保护 Compose 时保存新文件、核对目标服务和镜像 digest，并记录文件 SHA-256。
 
 ## 2. 更新目标服务并验证公网入口

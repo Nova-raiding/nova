@@ -75,18 +75,36 @@ describe("Finance advanced filters", () => {
   it("shows the advanced filter controls when the operator expands them", async () => {
     const page = await browser!.newPage();
     const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
+    const failedRequests: string[] = [];
+    const errorResponses: string[] = [];
     page.on("pageerror", error => pageErrors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
+    page.on("requestfailed", request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "unknown failure"}`));
+    page.on("response", response => { if (response.status() >= 400) errorResponses.push(`${response.status()} ${response.url()}`); });
     page.setDefaultTimeout(10_000);
     try {
       await page.goto(`${baseUrl}/__finance-advanced-filter`, { waitUntil: "commit", timeout: 60_000 });
-      await page.waitForTimeout(1000);
-      expect(pageErrors).toEqual([]);
+      try {
+        await page.waitForFunction(() => window.__financeFilterCalls !== undefined && Boolean(document.querySelector("#root")?.firstElementChild));
+      } catch {
+        throw new Error(`Finance filter React mount did not become ready: ${JSON.stringify(await collectFinanceBrowserDiagnostics(page, { pageErrors, consoleErrors, failedRequests, errorResponses }))}`);
+      }
       const toggle = page.getByRole("button", { name: "高级筛选", exact: true });
-      await toggle.waitFor({ state: "visible" });
+      try {
+        await toggle.waitFor({ state: "visible" });
+      } catch {
+        throw new Error(`Finance filter toggle did not become visible after React mount: ${JSON.stringify(await collectFinanceBrowserDiagnostics(page, { pageErrors, consoleErrors, failedRequests, errorResponses }))}`);
+      }
+      expect(pageErrors).toEqual([]);
       expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      const controls = await toggle.getAttribute("aria-controls");
+      expect(controls).toBe("finance-advanced-filters");
+      const advanced = page.locator(`#${controls}`);
+      expect(await advanced.count()).toBe(1);
+      expect(await advanced.isVisible()).toBe(false);
       await toggle.click();
       expect(await page.getByRole("button", { name: "收起筛选", exact: true }).getAttribute("aria-expanded")).toBe("true");
-      const advanced = page.locator("#finance-advanced-filters");
       await advanced.waitFor({ state: "visible" });
       expect(await advanced.locator(".ant-select").count()).toBe(2);
     } finally { await page.close(); }
@@ -110,9 +128,10 @@ describe("Finance advanced filters", () => {
       const submit = page.locator('form[aria-label="财务检索筛选"] button[type="submit"]');
       await submit.waitFor({ state: "visible" });
       expect(await submit.innerText()).toContain("检索");
+      const previousCallCount = await page.evaluate(() => window.__financeFilterCalls?.length ?? 0);
       await submit.click();
 
-      await page.waitForFunction(() => (window.__financeFilterCalls?.length ?? 0) > 0);
+      await page.waitForFunction(count => (window.__financeFilterCalls?.length ?? 0) > count, previousCallCount);
       expect(await page.evaluate(() => window.__financeFilterCalls?.at(-1))).toEqual({
         text: "recharge_42",
         workspaceIds: ["ws-a", "ws-b"],
@@ -124,3 +143,19 @@ describe("Finance advanced filters", () => {
 });
 
 function joinPath(...parts: string[]): string { return parts.join("/"); }
+
+async function collectFinanceBrowserDiagnostics(page: import("playwright").Page, errors: {
+  pageErrors: string[];
+  consoleErrors: string[];
+  failedRequests: string[];
+  errorResponses: string[];
+}) {
+  return {
+    rootHtml: await page.locator("#root").innerHTML().catch(() => "<unavailable>"),
+    visibleButtons: await page.getByRole("button").allTextContents().catch(() => []),
+    pageErrors: errors.pageErrors,
+    consoleErrors: errors.consoleErrors,
+    failedRequests: errors.failedRequests,
+    errorResponses: errors.errorResponses,
+  };
+}

@@ -25,7 +25,7 @@ describe("support ticket detail status controls", () => {
         load(id: string) {
           if (id !== `\0${entryPath}`) return;
           return `
-            import React, { useState } from 'react';
+            import React, { useRef, useState } from 'react';
             import { createRoot } from 'react-dom/client';
             import { App } from 'antd';
             import { SupportTicketDetailSection } from '/src/components/support/SupportTicketDetailSection.tsx';
@@ -36,10 +36,12 @@ describe("support ticket detail status controls", () => {
               const [status,setStatus] = useState('open');
               const [ticketId,setTicketId] = useState('ticket-1');
               const [error,setError] = useState('');
+              const failNextTransition = useRef(false);
               window.__setSupportStatus = setStatus;
               window.__setSupportTicket = (id, nextStatus) => { setTicketId(id); setStatus(nextStatus); };
               window.__setSupportError = setError;
-              const model = { workspaceId:'ws-1', tickets:[], selected:{ticket:{...baseTicket,id:ticketId,status},events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, error, hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{}, transition:async()=>{}, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
+              window.__failNextSupportTransition = () => { failNextTransition.current = true; };
+              const model = { workspaceId:'ws-1', tickets:[], selected:{ticket:{...baseTicket,id:ticketId,status},events:[]}, filters:{query:''}, loading:false, loadingMore:false, detailLoading:false, mutating:false, error, hasMore:false, setFilters:()=>{}, reload:async()=>{}, loadMore:async()=>{}, selectTicket:async()=>{}, clearSelection:()=>{}, create:async()=>{}, assign:async()=>{}, transition:async()=>{ if (failNextTransition.current) { failNextTransition.current = false; throw new Error('权限已失效，请刷新权限后重试。'); } }, comment:async()=>{}, reportLoading:false, loadReport:async()=>{} };
               return React.createElement(App,null,React.createElement(SupportTicketDetailSection,{model,canMutate:true}));
             }
             createRoot(document.getElementById('root')).render(React.createElement(Harness));
@@ -52,7 +54,7 @@ describe("support ticket detail status controls", () => {
     const address = vite.httpServer?.address();
     if (!address || typeof address === "string") throw new Error("Support detail status listener did not bind");
     baseUrl = `http://127.0.0.1:${address.port}`;
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   }, 60_000);
 
   afterAll(async () => {
@@ -62,10 +64,19 @@ describe("support ticket detail status controls", () => {
 
   it("shows localized status and offers only service-approved transitions for every current status", async () => {
     const page = await browser!.newPage();
-    page.setDefaultTimeout(10_000);
+    page.setDefaultTimeout(60_000);
+    const diagnostics: { failed: string[]; errors: string[]; console: string[]; modules: string[] } = { failed: [], errors: [], console: [], modules: [] };
+    page.on("requestfailed", request => diagnostics.failed.push(`${request.url()} ${request.failure()?.errorText ?? "unknown"}`));
+    page.on("pageerror", error => diagnostics.errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") diagnostics.console.push(message.text()); });
+    page.on("response", response => { if (response.url().includes("/src/components/support/SupportTicketDetailSection.tsx")) diagnostics.modules.push(`${response.status()} ${response.url()}`); });
     try {
       await page.goto(`${baseUrl}/__support-detail-status-test`, { waitUntil: "commit" });
-      await page.getByRole("button", { name: "变更状态" }).waitFor({ state: "visible" });
+      try { await page.getByRole("button", { name: "变更状态" }).waitFor({ state: "visible", timeout: 60_000 }); }
+      catch {
+        const runtime = await page.evaluate(() => ({ readyState: document.readyState, root: document.querySelector("#root")?.innerHTML ?? "", resources: performance.getEntriesByType("resource").map(entry => entry.name), harnessReady: typeof window.__setSupportStatus === "function" }));
+        throw new Error(`Support status fixture failed before mount: ${JSON.stringify({ runtime, diagnostics })}`);
+      }
       const matrix: Record<string, { label: string; allowed: string[] }> = {
         open: { label: "待处理", allowed: ["in_progress", "closed"] },
         in_progress: { label: "处理中", allowed: ["open", "waiting_customer", "resolved"] },
@@ -99,10 +110,16 @@ describe("support ticket detail status controls", () => {
       await page.evaluate(() => window.__setSupportStatus("in_progress"));
       await page.getByRole("button", { name: "变更状态" }).click();
       let dialog = page.getByRole("dialog");
+      await page.evaluate(() => window.__failNextSupportTransition());
       await dialog.locator(".ant-select").click();
       await page.locator(".ant-select-item-option-content").getByText("已解决", { exact: true }).click();
       await dialog.locator("textarea").fill("问题已定位并修复");
-      await page.locator(".ant-modal-footer button").first().click();
+      await page.locator(".ant-modal-footer button").last().click();
+      await dialog.getByRole("alert").getByText("权限已失效，请刷新权限后重试。", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "关闭提示" }).waitFor({ state: "visible" });
+      await dialog.getByRole("button", { name: "关闭提示" }).click();
+      await dialog.getByRole("alert").waitFor({ state: "detached" });
+      await dialog.getByRole("button", { name: "确认变更", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
 
       await page.getByRole("button", { name: "变更状态" }).click();
@@ -131,8 +148,13 @@ describe("support ticket detail status controls", () => {
       await operationError.waitFor();
       await operationError.getByRole("button", { name: "关闭提示" }).click();
       await operationError.waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "变更状态" }).click();
+      const errorDialog = page.getByRole("dialog");
+      await errorDialog.getByText("权限已失效，请刷新权限后重试。", { exact: true }).waitFor();
+      await page.keyboard.press("Escape");
+      await errorDialog.waitFor({ state: "hidden" });
       await page.evaluate(() => window.__setSupportError("工单状态已更新，请刷新后重试。"));
-      await page.getByRole("alert").filter({ hasText: "工单状态已更新" }).waitFor();
+      await page.locator('[aria-labelledby="support-detail-error-title"]').getByText("工单状态已更新", { exact: false }).waitFor();
     } finally { await page.close(); }
   }, 60_000);
 });
@@ -142,5 +164,6 @@ declare global {
     __setSupportStatus: (status: string) => void;
     __setSupportTicket: (id: string, status: string) => void;
     __setSupportError: (error: string) => void;
+    __failNextSupportTransition: () => void;
   }
 }

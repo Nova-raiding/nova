@@ -29,16 +29,20 @@ describe("StoragePage reconciliation failure recovery", () => {
       import { App } from 'antd';
       import { StoragePage } from '/src/pages/StoragePage.tsx';
       window.__storageLoads = 0;
-      const model = {
-        authorization: { scope: { kind: 'platform' }, can: () => true },
-        loading: false,
-        dataSource: { fixtureDataPresent: false },
-        dataSetError: () => '对账服务暂时不可用',
-        workspaceMetrics: undefined,
-        storageReconciliationWorkspaces: [],
-        load: async () => { window.__storageLoads += 1; },
-      };
-      createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(StoragePage, { model })));
+      function Root() {
+        const [failed, setFailed] = React.useState(true);
+        const model = {
+          authorization: { scope: { kind: 'platform' }, can: () => true },
+          loading: false,
+          dataSource: { fixtureDataPresent: false },
+          dataSetError: () => failed ? '对账服务暂时不可用' : undefined,
+          workspaceMetrics: undefined,
+          storageReconciliationWorkspaces: [],
+          load: async () => { window.__storageLoads += 1; setFailed(false); },
+        };
+        return React.createElement(App, null, React.createElement(StoragePage, { model }));
+      }
+      createRoot(document.getElementById('root')).render(React.createElement(Root));
     `, { flag: "wx" });
     vite = await createServer({
       configFile: false,
@@ -75,6 +79,9 @@ describe("StoragePage reconciliation failure recovery", () => {
       expect(await retry.count()).toBe(1);
       await retry.click();
       await page.waitForFunction(() => window.__storageLoads === 1);
+      await page.getByText('暂无可验证的对象清单对账结果').waitFor();
+      expect(await page.getByText('对账结果加载失败').count()).toBe(0);
+      expect(await page.getByRole('button', { name: '重试加载对账结果' }).count()).toBe(0);
     } finally { await page.close(); }
   }, 60_000);
 });

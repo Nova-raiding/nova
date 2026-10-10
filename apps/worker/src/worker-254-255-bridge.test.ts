@@ -7,7 +7,7 @@ describe('worker schema bridge readiness', () => {
   it('accepts only complete, checksummed prefixes approved by each bridge mode', async () => {
     const migrations = await loadMigrations()
     const latestMigration = migrations.at(-1)!
-    expect(latestMigration).toMatchObject({ version: 273, name: 'publish_media_lifecycle_guard' })
+    expect(latestMigration).toMatchObject({ version: 275, name: 'publish_media_orphan_event_guard' })
     expect(migrations.map(migration => migration.version)).toEqual(
       Array.from({ length: latestMigration.version }, (_, index) => index + 1),
     )

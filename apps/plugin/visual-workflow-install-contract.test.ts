@@ -34,6 +34,8 @@ describe('installed e-commerce image/video workflow contract', () => {
   it('ships the planning skills with their guarded local MCP image and video surfaces', async () => {
     const manifest = JSON.parse(read('.codex-plugin/plugin.json')) as { skills: string }
     const packager = read('scripts/package-local-plugin.mjs')
+    const imageWorkflowSkill = read('skills/ecommerce-image-workflow/SKILL.md')
+    const marketplaceImageWorkflowSkill = read('../../.codex-marketplace/plugins/merchant-marketing/skills/ecommerce-image-workflow/SKILL.md')
     const merchantSkill = read('skills/merchant-marketing/SKILL.md')
     const marketplaceMerchantSkill = read('../../.codex-marketplace/plugins/merchant-marketing/skills/merchant-marketing/SKILL.md')
     const imageReference = read('skills/merchant-marketing/references/product-image-workflow.md')
@@ -45,11 +47,18 @@ describe('installed e-commerce image/video workflow contract', () => {
 
     expect(manifest.skills).toBe('./skills/')
     for (const path of [
+      'skills/ecommerce-image-workflow/SKILL.md',
       'skills/merchant-marketing/SKILL.md',
       'skills/merchant-marketing/references/product-image-workflow.md',
       'skills/ecommerce-video-marketing/SKILL.md',
       'skills/storyboard-prompt-assistant/SKILL.md',
     ]) expect(packager).toContain(`'${path}'`)
+
+    expect(imageWorkflowSkill).toBe(marketplaceImageWorkflowSkill)
+    expect(imageWorkflowSkill).toContain('一组主图或详情套图')
+    expect(imageWorkflowSkill).toContain('不假定有批量能力')
+    expect(imageWorkflowSkill).toContain('实际上传、生成、查询和交付只通过')
+    expect(imageWorkflowSkill).not.toContain('这次要做哪一种电商图？')
 
     expect(imageReference).toContain('只能使用当前 `tools/list` 中可用的 Merchant Marketing MCP 工具及现有服务端中转')
     expect(imageReference).toContain('禁止调用宿主生图工具、第三方 provider')
@@ -58,6 +67,9 @@ describe('installed e-commerce image/video workflow contract', () => {
     expect(imageReference).toContain('不得把人工观察、对话清单、模型自述或普通生成成功响应冒充工具验证')
     expect(imageReference).toBe(marketplaceImageReference)
     expect(imageReference).toContain('套图候选清单与续作')
+    expect(imageReference).toContain('风格参考只提炼抽象方向')
+    expect(imageReference).toContain('不得逐像素复刻参考图或复制其品牌标识、原文案和独特版式')
+    expect(imageReference).toBe(marketplaceImageReference)
     expect(imageReference).toContain('清单只是对话中的规划与跟进记录，不是服务端状态')
     expect(imageReference).toContain('queued 槽位只查询同一任务，禁止重新提交')
     expect(imageReference).toContain('清单本身不能触发批量调用')

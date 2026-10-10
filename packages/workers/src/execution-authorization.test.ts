@@ -79,9 +79,23 @@ describe('worker execution-time authorization', () => {
     expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: contextId }), 'publish.execute')).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
   })
 
-  it.each<CriticalWorkerOperation>(['publish.reconcile', 'catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'])('never admits brand context for %s', operation => {
+  it.each<CriticalWorkerOperation>(['catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'])('never admits brand context for %s', operation => {
     expect(() => parseWorkerAuthorizationSnapshot(event({ context_id: 'brand:brand_a', capability: operation }), operation)).toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
     expect(parseWorkerAuthorizationSnapshot(event({ capability: operation }), operation)).toMatchObject({ contextId: 'workspace:ws_a', capability: operation })
+  })
+
+  it('admits brand context for the exact publish reconciliation event and rejects other event types', () => {
+    const reconcileEvent = {
+      ...event({ context_id: 'brand:brand_a', capability: 'publish.reconcile' }),
+      eventType: 'publish.reconcile_requested',
+    }
+    expect(parseWorkerAuthorizationSnapshot(reconcileEvent, 'publish.reconcile')).toMatchObject({
+      contextId: 'brand:brand_a', capability: 'publish.reconcile', workspaceId: 'ws_a', resourceId: 'publish_1',
+    })
+    expect(() => parseWorkerAuthorizationSnapshot({ ...reconcileEvent, eventType: 'publish.requested' }, 'publish.reconcile'))
+      .toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
+    expect(() => parseWorkerAuthorizationSnapshot({ ...reconcileEvent, eventType: 'publish.reconcile_requested' }, 'publish.execute'))
+      .toThrowError(expect.objectContaining({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' }))
   })
 
   it.each([

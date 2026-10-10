@@ -299,6 +299,21 @@ BEGIN
 END
 $$;
 
+-- Migrations 275+ use this dedicated non-login owner for trusted SECURITY
+-- DEFINER ledger writers. Keep it separate from both runtime credentials;
+-- migration 275 performs the ownership transfer after validating its attrs.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'merchant_schema_owner') THEN
+    CREATE ROLE merchant_schema_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  ELSE
+    ALTER ROLE merchant_schema_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  END IF;
+END
+$$;
+REVOKE merchant_schema_owner FROM merchant_app, merchant_ops;
+REVOKE merchant_app, merchant_ops FROM merchant_schema_owner;
+
 GRANT CONNECT ON DATABASE merchant TO merchant_ops;
 GRANT USAGE ON SCHEMA public TO merchant_ops;
 
@@ -735,4 +750,13 @@ BEGIN
   GRANT SELECT ON commercial_order_snapshots_v2 TO merchant_app;
  END IF;
 END $commercial_order_snapshot_runtime_acl$;
+
+-- The broad compatibility grant near the top must not re-expose the append-
+-- only event ledger when this bootstrap runs after migration 275.
+DO $publish_media_event_runtime_acl$
+BEGIN
+ IF to_regclass('public.publish_media_orphan_events') IS NOT NULL THEN
+  REVOKE INSERT ON TABLE public.publish_media_orphan_events FROM merchant_app, merchant_ops;
+ END IF;
+END $publish_media_event_runtime_acl$;
 COMMIT;

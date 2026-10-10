@@ -79,6 +79,8 @@ export const POSTGRES_SCOPE_FIXTURE_PREFIXES = [
   'release_fresh_',
   'release_migration_integrity_',
   'release_password_auth_',
+  'release_pmedia_event_guard_',
+  'release_pmedia_repo_',
   'release_plugin_rls_',
   'release_payment_callback_',
   'release_restore_',

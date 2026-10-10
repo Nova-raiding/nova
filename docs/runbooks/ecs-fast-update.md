@@ -10,13 +10,15 @@
 
 先执行只读现状检查：
 
-本轮唯一 Demo 的 host inventory 返回 `release_approved=false`，且存在尚无 owner 确认分类的运行容器，因此当前必须 **STOP/NO-GO**，不得归档构建、准备部署或执行部署。后续每轮只有在 inventory 对唯一 Demo 返回 `release_approved=true` 且所有观察到的容器均有 owner 确认的分类后才能继续；任一条件不满足、状态缺失或证据过期都停止，不猜分类、不把未分类容器忽略，也不以独立生产门禁替代该 Demo 条件。
+本轮唯一 Demo 的 host inventory 显示仍有运行容器未获 owner 确认分类，因此当前必须 **STOP/NO-GO**，不得归档构建、准备部署或执行部署。`npm run deploy:101:status` 是只读现状采集器，输出 `scope=inventory_only` 并固定返回 `release_approved=false`；这个字段是保守兼容标记，永远不会变成 true，也不是审批输入。不得等待该命令返回 true，也不得把退出 0 当作候选批准。
+
+每轮唯一有效的批准输入是该轮唯一任务单/受保护审查记录中的 owner 明确决定，并且绑定完整候选 SHA、更新服务列表和镜像 digest、最新 status 输出及 SHA-256、每个运行容器的 owner 分类、迁移链核验、共享锁证据、回滚配置与所需验收结果。审批记录须明确写出 `GO` 或 `NO-GO`、批准人和 UTC 时间；缺少字段、分类仍待确认、证据过期或决定不是 `GO` 一律 STOP。先执行以下固定命令采集当前状态，再由 owner 将输出和摘要附到任务单并完成分类/审查；没有另一条命令可以授予或推导批准：
 
 ```sh
 npm run deploy:101:status
 ```
 
-该命令固定读取 SSH `101`、`merchant-demo-85575f9c` 和四个公网探针，输出每个运行服务的真实 Git SHA、镜像引用、镜像 ID、Compose 路径及磁盘可用空间。不输出环境变量和密钥，不修改服务器。退出 2 表示应用更新的前置检查有问题，退出 1 表示检查未完成；退出 0 只代表现状检查通过，**不代表目标版本可发布**。8 GiB 是构建前的保守磁盘检查下限，不代表构建空间足够；完整镜像集仍需独立估算。数据库/Redis 的 tag 引用作为提示记录，常规应用更新保留其当前容器和镜像 ID。
+该命令固定读取 SSH `101`、`merchant-demo-85575f9c` 和四个公网探针，输出每个运行服务的真实 Git SHA、镜像引用、镜像 ID、Compose 路径及磁盘可用空间。不输出环境变量和密钥，不修改服务器。退出 2 表示应用更新的前置检查有问题，退出 1 表示检查未完成；退出 0 只代表现状检查通过，**不代表 owner 已批准目标版本**。owner 的批准记录而非脚本字段是发布决定的权威来源。8 GiB 是构建前的保守磁盘检查下限，不代表构建空间足够；完整镜像集仍需独立估算。数据库/Redis 的 tag 引用作为提示记录，常规应用更新保留其当前容器和镜像 ID。
 
 以每个镜像标签的 Git SHA 为基线做 `git diff <component-sha> <target-sha> -- <相关目录>`，不要只与公网 release SHA 比较。共享包、依赖锁文件或迁移有变化时，检查所有依赖组件，不能把“只改 API 入口”当作 API 是唯一受影响组件。
 
@@ -50,7 +52,9 @@ sh infra/scripts/build-ecs-release-images.sh
 多个组件用空格分隔，例如 `merchant-api merchant-worker merchant-ops-ui`。该构建器保持共享构建锁、归档摘要验证、镜像标签校验与不可变 digest。未知或重复组件在调用 Docker 前拒绝。部分构建只输出 `component-images.json`，不输出完整运行清单；本 runbook 只服务唯一 Demo `merchant-demo-85575f9c`，不操作、创建或推断任何独立环境。
 
 4. 在主机受保护目录准备本轮完整 Compose、env 和回滚 Compose。未变组件保留各自实际镜像 digest 与真实提交；新组件采用刚构建的 digest。为完整实际运行集准备 release manifest 和 `/releasez` 输入，不手改版本号冒充镜像更新。配置只在 Demo 主机保存，`docker compose config` 输出可能含密钥，不能回传聊天或提交 Git。
-5. 核对运行数据库迁移链与目标代码：版本、名称、checksum 均一致才进入无迁移路径。既有 runbook/metadata 记录的 Demo 基线为迁移 1–270，但 2026-10-10 主机观察未读取 live migration chain，故当前 live 基线仍待 DB owner 提供完整逐行链核实。当前源码候选链尾为 273（见 `release-metadata.json`，source=270、target=273，新增 271–273）；源码 metadata 不代表 Demo live chain。本仓库当前没有已批准的唯一 Demo 全量 migration 执行入口或迁移窗口；在确认 live chain 前不能批准无迁移快速更新，任何需要应用 271–273 的候选必须停止本快速更新和 `ecs-demo-direct-deploy` 流程。不得手动运行迁移，也不得把 metadata 数字当作部署批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另行开启迁移窗口。数据库不兼容时，旧镜像不能自动回滚。
+5. 核对运行数据库迁移链与目标代码：版本、名称、checksum 均一致才进入无迁移路径。既有 runbook/metadata 记录的 Demo 基线为迁移 1–270，但 2026-10-10 主机观察未读取 live migration chain，故当前 live 基线仍待 DB owner 提供完整逐行链核实。当前源码候选链尾为 275（见 `release-metadata.json`，source=270、target=275，新增 271–275）；迁移 275 尚未在真实 PostgreSQL/Demo 验证或部署，源码 metadata 不代表 Demo live chain。本仓库当前没有已批准的唯一 Demo 全量 migration 执行入口或迁移窗口；在确认 live chain 前不能批准无迁移快速更新，任何需要应用 271–275 的候选必须停止本快速更新和 `ecs-demo-direct-deploy` 流程。不得手动运行迁移，也不得把 metadata 数字当作部署批准。只有单独审批并具备受保护迁移执行器、备份与隔离恢复证据、前向迁移及旧版兼容/恢复证据后，才可另行开启迁移窗口。数据库不兼容时，旧镜像不能自动回滚。
+
+Migration 274/275 的维护窗口还必须满足具体数据库前置条件：274 的 `row_security=off` 在 FORCE RLS 表上要求经 DB owner 核验的受保护 BYPASSRLS/superuser 执行器；窗口前只读核验既有 `deleted` 行数量和 receipt preflight，异常时停止，不手工改写或跳过记录，并在执行前完成可恢复备份与隔离恢复演练。275 要求 `publish_media_orphan_events` 的 owner 为专用 `merchant_schema_owner`，且该角色为 NOLOGIN、非 superuser、非 BYPASSRLS、无 CREATEROLE/CREATEDB、NOINHERIT，与 `merchant_app`/`merchant_ops` 双向无成员关系；迁移凭据须有已批准的 ownership 转换权限。迁移前还须停用/排空仍可写 `deleted` 的旧 worker，核对 API/worker 版本兼容性，并确认运行账号不能直接 INSERT 事件表、而 task trigger 能原子地产生单条事件。DB owner 必须绑定批准人、执行者、窗口、备份标识、预检结果、迁移 checksum 和恢复点；缺少任一项即 STOP。本段是门禁要求，不是迁移执行指令。
 6. 必需的候选业务验收和发布证据在切流前准备齐。缺一项就列出具体缺口及修复动作，退出准备阶段，不循环重建无关镜像。
 
 ### Demo 商家 UI 混合组件身份适配
@@ -60,7 +64,7 @@ sh infra/scripts/build-ecs-release-images.sh
 输入 `schema_version=demo-component-update-input/1` 包含：
 
 - `compose_project` 与 `candidate={release_id,git_sha,source_sha256}`，来自 owner 校验的冻结归档；此适配器不替代归档提交、摘要校验。
-- `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及 DB owner 已核实的 live 完整迁移行 `{version,name,checksum}`。既有归档声称版本 1–270，但本轮 host probe 未读取数据库迁移链，不能把它当作已核实 live baseline。`target_migrations` 必须与核实后的 live 基线逐行一致；源码候选目前包含新增 271–273，本适配器不接受新增迁移链，也不执行 DDL。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
+- `baseline` 的原始 `compose_text`、`manifest_text` 字节、四个大写 `RELEASE_*` 字段组成的 `identity`/`public_identity`，以及 DB owner 已核实的 live 完整迁移行 `{version,name,checksum}`。既有归档声称版本 1–270，但本轮 host probe 未读取数据库迁移链，不能把它当作已核实 live baseline。`target_migrations` 必须与核实后的 live 基线逐行一致；源码候选目前包含新增 271–275，迁移 275 尚未在真实 PostgreSQL/Demo 验证或部署；本适配器不接受新增迁移链，也不执行 DDL。旧 manifest 使用现有 `demo-runtime-service-set/1` 格式，文件 SHA、镜像集与去掉发布四字段的配置 SHA 必须一致。
 - `baseline.runtime_services` 为当前实际 15 服务的安全投影。每项严格包含 `container_id,reference,image_id,git_sha,source_sha256,running,health,restarts,oom_killed,compose_service_sha256`；后者是 owner 已对照实际容器配置后封存的该 Compose service 的 canonical JSON SHA。Git/source 来自不可变镜像 OCI 标签，上游镜像无标签时为 `null`。不传完整 inspect、Env、Cmd 或密钥。
 - `component_images` 的精确组件键集合与 `imported_components` 的精确镜像 inspect 投影集合必须相同；每项投影包含 `reference,image_id,repo_digests,labels,os,architecture`，并绑定同一不可变引用、候选标签与 `linux/amd64`。只更新 `merchant-ui` 时也兼容旧输入字段 `imported_ui`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
 - 旧 Compose 的 API `DEMO_RUNTIME_MODE` 可缺省或为 `true`；显式设置成其他值会被拒绝。候选始终为 `api` 和 `api-replica` 设置 `DEMO_RUNTIME_MODE=true`，确保本轮更新后唯一 Demo 被健康接口识别为 Demo。原始基线 Compose 和回滚字节保持不变。
@@ -69,7 +73,7 @@ sh infra/scripts/build-ecs-release-images.sh
 
 现有宿主自有 `pilot-gateway` 可使用精确 Docker config ID 引用，但仅当 `reference === image_id` 且值为合法 `sha256:<64hex>`；其他自有服务仍必须使用 `repository@sha256`。旧 manifest 未记录 `source_sha256` 或记录 null 时，owner 仍须从当前容器所绑定的实际镜像 ID 的 `com.storenova.release.source_sha256` 标签采集该字段，同时从同一镜像采集 Git 标签；不得从候选源码、全局发布 SHA 或其他组件推断。pilot/payment 的实际镜像标签均存在合法 source SHA，应填入并输出真实 digest。所有自有镜像（含 pilot）缺少合法 Git/source 标签将被拒绝；旧 manifest 已记录非 null source 时还须逐项相等。上游 Postgres/Redis/ClamAV 无标签时仍允许显式 `null`，并绑定其原 config ID。
 
-迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，checksum 必须完整 SHA256。既有 270 行基线的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已归档摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，不能证明 live 数据库当前仍为该版本。当前源码候选链尾为 273，含 271–273 新迁移；只有 DB owner 提供的 live 完整链与候选目标逐行一致，才可以评估无迁移组件更新。
+迁移行使用数据库/`loadMigrations()` 的逻辑 `Migration.name`，例如 `operation_alert_notifications`，不是 `100_operation_alert_notifications.sql` 文件名；名称限定 `[a-z0-9_]+`，checksum 必须完整 SHA256。既有 270 行基线的 `migrationChecksum` 按既有 Python `sort_keys=True,separators=(',',':'),ensure_ascii=True` 契约序列化后，严格重现已归档摘要 `35ce499eddb68b7a6233f7a86970d2b412ac540d04675b7fc84b79cf36bc38bf`；这是本地源码/既有摘要一致性检查，不能证明 live 数据库当前仍为该版本。当前源码候选链尾为 275，含 271–275 新迁移；迁移 275 尚未在真实 PostgreSQL/Demo 验证或部署。只有 DB owner 提供的 live 完整链与候选目标逐行一致，才可以评估无迁移组件更新。
 
 API `/releasez` 读取启动环境，不读取 manifest 文件；因此任何组件候选都必须将 `api api-replica` 纳入明确更新/回滚服务，以刷新 API 双副本的发布身份。仅 UI 或 worker 更新时保留 API 镜像不变，只刷新其发布身份环境；API 更新才替换 API 镜像。四组件候选服务列表为 `api api-replica ops-ui ui worker-automation worker-generation worker-publish worker-reconcile worker-scan worker-sync`。不能只重启 UI 或 `docker restart` API。Payment/gateway 不在当前适配器和快速更新 runbook 的可执行范围内；遇到这两类变更应停止当前快速更新。适配器输出始终 `configuration_only=true`、`deploy_authorized=false`，不是切流许可。
 

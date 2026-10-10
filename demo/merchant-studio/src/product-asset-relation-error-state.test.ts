@@ -38,4 +38,10 @@ describe('product asset relation dialog separates read failures from write failu
     expect(dialog).toContain('generationBlockers.length > 0')
     expect(dialog).toContain('data-testid="product-asset-generation-blocked"')
   })
+
+  it('uses the generation policy for each bound asset badge', () => {
+    expect(dialog).toContain('productAssetGenerationSourceStatus(asset ?? null, relation.platform)')
+    expect(dialog).toContain('tone={generationStatus.tone}')
+    expect(dialog).toContain('{generationStatus.label}')
+  })
 })

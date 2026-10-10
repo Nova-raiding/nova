@@ -103,7 +103,7 @@ describe("assisted purchase stops at the verified pending-payment order", () => 
       await page.getByText("合计 ¥2500.00；开通费不包含首期费用", { exact: false }).waitFor({ state: "visible" });
       await page.getByText("成长版", { exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "确认开通费加首期联合代购" }).click();
-      const dialog = page.getByRole("dialog");
+      const dialog = page.locator(".ant-modal").filter({ has: page.getByText("确认指定客户代购", { exact: true }) });
       await dialog.waitFor({ state: "visible" });
       await expect.poll(async () => dialog.innerText()).toContain("客户、企业与冻结商品");
       await expect.poll(async () => dialog.innerText()).toContain("李女士 / ws_commercial_browser / 开通费及首期两行 / ¥2500.00");

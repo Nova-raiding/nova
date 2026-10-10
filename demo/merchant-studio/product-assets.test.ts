@@ -8,7 +8,8 @@ const product = (sourceAssetIds?: string[]) => ({
 } satisfies Product)
 
 const asset = (id: string) => ({
-  id, name: `${id}.png`, mimeType: 'image/png', sizeBytes: 100, rightsStatus: 'approved', scanStatus: 'clean', parseStatus: 'succeeded',
+  id, name: `${id}.png`, mimeType: 'image/png', sizeBytes: 100, rightsStatus: 'approved', rightsScope: 'commercial_authorized', usageScopes: ['commercial', 'ai_generation'], aiModificationAllowed: true, scanStatus: 'clean', parseStatus: 'succeeded',
+  workspaceId: 'workspace-1', storageKey: `clean/workspace-1/${id}.png`, scanReceiptId: `receipt-${id}`, scanReceiptDigest: 'a'.repeat(64), scanVerdict: 'clean',
   contentTrust: { classification: 'untrusted', mode: 'data_only', canOverrideInstructions: false, canTriggerTools: false, requiresMerchantConfirmation: true }, references: [], revision: 1, createdAt: '2026-08-29T00:00:00.000Z',
 } satisfies AssetMetadata)
 

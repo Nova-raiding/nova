@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFile } from 'node:fs/promises'
-import { IncidentRequestGate, incidentNextStatus, mergeIncidentPage, mergeTimelinePage, type IncidentTimelineEntry, type OpsIncident } from './useIncidents.js'
+import { IncidentRequestGate, incidentErrorTargetsSelection, incidentNextStatus, mergeIncidentPage, mergeTimelinePage, type IncidentTimelineEntry, type OpsIncident } from './useIncidents.js'
 
 const incident = (id: string, updatedAt: string): OpsIncident => ({ id, workspaceId: 'ws_1', title: id, summary: 'summary', severity: 'sev2', status: 'investigating', affectedComponents: [], affectedWorkspaceIds: [], revision: 1, createdBy: 'ops_1', createdAt: updatedAt, updatedAt })
 
@@ -11,6 +11,13 @@ describe('incident hook helpers', () => {
 
   it('exposes the strict lifecycle to the UI', () => {
     expect(incidentNextStatus).toEqual({ investigating: 'identified', identified: 'monitoring', monitoring: 'resolved', resolved: undefined })
+  })
+
+  it('allows detail recovery only when the selected incident matches the failed mutation target', () => {
+    expect(incidentErrorTargetsSelection('incident-a', 'incident-a')).toBe(true)
+    expect(incidentErrorTargetsSelection('incident-a', 'incident-b')).toBe(false)
+    expect(incidentErrorTargetsSelection('incident-a', undefined)).toBe(false)
+    expect(incidentErrorTargetsSelection(undefined, 'incident-a')).toBe(false)
   })
 
   it('merges replayed timeline events once in chronological order', () => {
@@ -35,7 +42,14 @@ describe('incident hook helpers', () => {
     expect(source).toContain('const [detailResult, timelineResult] = await Promise.allSettled([')
     expect(source).toContain('setDetailError(errorMessage(detailResult.reason))')
     expect(source).toContain('setTimelineError(errorMessage(timelineResult.reason))')
-    expect(source).toContain("if (!detailVerified || !selected) throw new Error('事故详情尚未验证，无法执行操作。')")
+    expect(source).toContain("if (!detailVerified || !selected || persistedUncertainWrite) throw new Error('事故详情尚未验证或存在待核对操作，无法执行操作。')")
+    expect(source).toContain('if (reconcilingUncertainMutation && detailMatchesTarget && timelineMatchesTarget)')
+    expect(source).toContain('setUncertainMutationIncidentId(incidentId)')
+    expect(source).toContain('setUncertainMutationTarget(incidentSnapshot)')
+    expect(source).toContain("if (context === 'create-mutation' && persistedUncertainWrite)")
+    expect(source).toContain("window.sessionStorage.setItem(recoveryStorageKey, JSON.stringify(record))")
+    expect(source).toContain('acknowledgeCreateReconciliation')
+    expect(source).toContain('请先核对失败目标后再创建事故。')
   })
 
   it('keeps late mutation results in the list without replacing a different selection', async () => {

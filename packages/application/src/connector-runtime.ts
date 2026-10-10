@@ -229,7 +229,35 @@ export class ConnectorRuntime {
     this.assertWriteAllowed(input.platform)
     let uploaded: MediaUploadReceipt[] = []
     const uploadStarted = new Set<string>()
+    const cleanupStarted = new Set<string>()
     let writeStarted = false
+    const recordOrphanAndAttemptCleanup = async (media: MediaUploadInput, mediaReceipt: MediaUploadReceipt, reason: string) => {
+      if (!input.mediaLifecycle) return
+      // The durable ledger records an orphan before any external delete call.
+      // A connector's boolean is an adapter claim, not independent proof that
+      // the platform removed the object, so it must never advance to `deleted`.
+      await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason })
+      if (typeof connector.discardMedia !== 'function') return
+      cleanupStarted.add(media.idempotencyKey)
+      let deletedClaimed = false
+      let discardFailed = false
+      try {
+        const result = await connector.discardMedia(input.context, mediaReceipt, reason, media.idempotencyKey)
+        deletedClaimed = result.deleted === true
+      } catch {
+        discardFailed = true
+      }
+      await input.mediaLifecycle.transition({
+        media,
+        state: 'orphaned',
+        receipt: mediaReceipt,
+        reason: deletedClaimed
+          ? 'adapter_delete_claim_unverified_manual_recovery_required'
+          : discardFailed
+            ? 'discard_adapter_failed_manual_recovery_required'
+            : 'platform_delete_not_confirmed_manual_recovery_required',
+      })
+    }
     try {
     if (input.media?.length) {
       if (!input.mediaLifecycle) throw new Error('selected product visuals require durable publish media lifecycle recording')
@@ -278,19 +306,7 @@ export class ConnectorRuntime {
       for (const mediaReceipt of uploaded) {
         const media = input.media?.find(item => item.visualRef === mediaReceipt.visualRef)
         if (!media || !input.mediaLifecycle) continue
-        await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'platform_rejected_cleanup_pending_manual_recovery_required' })
-        let deleted = false
-        let discardFailed = false
-        if (typeof connector.discardMedia === 'function') {
-          try {
-            const result = await connector.discardMedia(input.context, mediaReceipt, 'publish_rejected', media.idempotencyKey)
-            deleted = result.deleted
-          } catch {
-            discardFailed = true
-          }
-        }
-        if (deleted) await input.mediaLifecycle.transition({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
-        else if (discardFailed) await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'discard_adapter_failed_manual_recovery_required' })
+        await recordOrphanAndAttemptCleanup(media, mediaReceipt, 'publish_rejected_cleanup_pending_manual_recovery_required')
       }
     } else {
       for (const media of input.media ?? []) await input.mediaLifecycle?.transition({ media, state: remoteStatus.found && remoteStatus.state !== 'unknown' ? 'retained' : 'unknown', ...(remoteStatus.found && remoteStatus.state !== 'unknown' ? { reason: 'platform_write_confirmed' } : { reason: 'platform_write_status_unknown' }) })
@@ -310,24 +326,13 @@ export class ConnectorRuntime {
           await input.mediaLifecycle.transition({ media, state: 'unknown', receipt: mediaReceipt, reason: 'platform_write_may_have_committed' })
           continue
         }
+        // The cleanup path may itself have failed while writing its final
+        // orphan detail. Do not replay a potentially destructive delete call.
+        if (cleanupStarted.has(media.idempotencyKey)) continue
         // Fail closed before attempting remote deletion. If the connector
         // deletes the media but the follow-up lifecycle write fails, retries
         // must still see an orphaned receipt rather than a reusable upload.
-        await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'prewrite_cleanup_pending_manual_recovery_required' })
-        let deleted = false
-        let discardFailed = false
-        if (typeof connector.discardMedia === 'function') {
-          try {
-            const result = await connector.discardMedia(input.context, mediaReceipt, 'publish_preflight_or_validation_rejected', media.idempotencyKey)
-            deleted = result.deleted
-          } catch {
-            // A failed cleanup call cannot prove deletion. Persist an orphan
-            // record so retries do not reuse the uploaded receipt as healthy.
-            discardFailed = true
-          }
-        }
-        if (deleted) await input.mediaLifecycle.transition({ media, state: 'deleted', receipt: mediaReceipt, reason: 'discard_adapter_confirmed_delete' })
-        else if (discardFailed) await input.mediaLifecycle.transition({ media, state: 'orphaned', receipt: mediaReceipt, reason: 'discard_adapter_failed_manual_recovery_required' })
+        await recordOrphanAndAttemptCleanup(media, mediaReceipt, 'prewrite_cleanup_pending_manual_recovery_required')
       }
       throw error
     }

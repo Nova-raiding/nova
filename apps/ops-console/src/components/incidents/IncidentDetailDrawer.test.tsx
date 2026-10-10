@@ -10,6 +10,7 @@ describe('IncidentDetailDrawer', () => {
 
   it('blocks detail mutations until the selected incident is verified', () => {
     expect(incidentDetailCapabilities(true, false)).toEqual({ canRead: true, canComment: false, canTransition: false, canAssignCommander: false, canUpdateScope: false })
+    expect(incidentDetailCapabilities(true, true, true)).toEqual({ canRead: true, canComment: false, canTransition: false, canAssignCommander: false, canUpdateScope: false })
   })
 
   it('announces detail loading and preserves a busy landmark for assistive technology', () => {

@@ -325,7 +325,7 @@ import { resolveDataConsistency } from './data-consistency.js'
 import { canApproveReviewedContent, contentApprovalBlockerMessage } from './content-approval-readiness.js'
 import { imageJobForRoute, isImageJobRequestCurrent, updateVisualRefsForRoute, visualRefsForRoute } from './image-generation-job-route-state.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
-import { productAssetGenerationBlockers, resolveProductAssetRelation, type ProductAssetRelation } from './product-assets.js'
+import { productAssetGenerationBlockers, productAssetGenerationBlockersForAsset, productAssetGenerationSourceStatus, productAssetHasTrustedCleanScanEvidence, resolveProductAssetRelation, type ProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
 import { resolveDetailSopSteps } from './detail-sop.js'
@@ -5063,7 +5063,9 @@ function ProductAssetRelationDialog({
   const generationBlockers = productAssetGenerationBlockers(relation)
   const selectableAssets = assets.filter(
     (asset) =>
-      !relation.boundIds.includes(asset.id) && asset.scanStatus === 'clean',
+      !relation.boundIds.includes(asset.id) &&
+      asset.mimeType.toLowerCase().startsWith('image/') &&
+      productAssetHasTrustedCleanScanEvidence(asset),
   )
   const reload = () => {
     setLoading(true)
@@ -5108,7 +5110,12 @@ function ProductAssetRelationDialog({
       },
       mode,
     )
-      .then(reload)
+      .then(() => {
+        // Keep the pending choice if the server refuses the write. Clearing it
+        // only after success makes the conflict recovery path a short retry.
+        if (mode === 'bind') setSelectedAssetId((current) => current === assetId ? '' : current)
+        reload()
+      })
       .catch((cause) => setSaveError(describeApiError(cause)))
       .finally(() => setSaving(false))
   }
@@ -5212,6 +5219,7 @@ function ProductAssetRelationDialog({
             <div className="relation-list" aria-label="商品已绑定素材列表">
               {relation.boundIds.map((assetId) => {
                 const asset = assets.find((item) => item.id === assetId)
+                const generationStatus = productAssetGenerationSourceStatus(asset ?? null, relation.platform)
                 return (
                   <div className="relation-row" key={assetId}>
                     <div>
@@ -5224,21 +5232,9 @@ function ProductAssetRelationDialog({
                     </div>
                     <div className="relation-row-actions">
                       <StatusChip
-                        tone={
-                          asset
-                            ? asset.rightsStatus === 'approved' &&
-                              asset.scanStatus === 'clean'
-                              ? 'green'
-                              : 'amber'
-                            : 'amber'
-                        }
+                        tone={generationStatus.tone}
                       >
-                        {asset
-                          ? asset.rightsStatus === 'approved' &&
-                            asset.scanStatus === 'clean'
-                            ? '可作为生成来源'
-                            : '需完成扫描/权益'
-                          : '素材未找到'}
+                        {generationStatus.label}
                       </StatusChip>
                       <button
                         className="text-button"
@@ -5257,6 +5253,7 @@ function ProductAssetRelationDialog({
             <select
               aria-label="选择素材"
               value={selectedAssetId}
+              disabled={saving}
               onChange={(event) => setSelectedAssetId(event.target.value)}
             >
               <option value="">选择素材后绑定</option>
@@ -5274,17 +5271,14 @@ function ProductAssetRelationDialog({
             <button
               className="secondary"
               disabled={!selectedAssetId || saving}
-              onClick={() => {
-                mutateBinding(selectedAssetId, 'bind')
-                setSelectedAssetId('')
-              }}
+              onClick={() => mutateBinding(selectedAssetId, 'bind')}
             >
               绑定素材
             </button>
           </div>
           {!selectableAssets.length && (
             <small className="asset-error">
-              当前素材均未通过安全扫描；扫描完成后点击“刷新状态”，再回来绑定。
+              当前素材均未通过可信安全扫描；扫描完成后点击“刷新状态”，再回来绑定。
             </small>
           )}
           {saveError && (
@@ -5481,7 +5475,7 @@ export function UnboundDraftCatalog({ baseUrl, products, readNote, selectedProdu
   </div>
 }
 
-function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, onCatalogQueryChange, onCatalogStoreOpen, onCatalogStoreSelection, onCatalogProductOpen, onCatalogProductList, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; onCatalogQueryChange: (query: string) => void; onCatalogStoreOpen: (store: { platform: MerchantPlatformId; accountId: string }) => void; onCatalogStoreSelection: () => void; onCatalogProductOpen: (product: { platform: MerchantPlatformId; accountId: string; productId: string }) => void; onCatalogProductList: () => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
+function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, modelStatusRead, onRefreshModelStatus, onOpenKnowledge, onOpenSupport, onCatalogQueryChange, onCatalogStoreOpen, onCatalogStoreSelection, onCatalogProductOpen, onCatalogProductList, onSelectTarget, initialQuery = '', initialCatalogContext }: { baseUrl?: string; apiMode?: string | null; canWrite: boolean; modelStatus: PlatformModelStatus | null; modelStatusRead: boolean; onRefreshModelStatus: () => void; onOpenKnowledge: () => void; onOpenSupport: () => void; onCatalogQueryChange: (query: string) => void; onCatalogStoreOpen: (store: { platform: MerchantPlatformId; accountId: string }) => void; onCatalogStoreSelection: () => void; onCatalogProductOpen: (product: { platform: MerchantPlatformId; accountId: string; productId: string }) => void; onCatalogProductList: () => void; onSelectTarget: (target: Target) => void; initialQuery?: string; initialCatalogContext?: MerchantCatalogContext }) {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(initialCatalogContext?.platform ?? null)
   const [showUnboundDrafts, setShowUnboundDrafts] = useState(false)
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(initialCatalogContext?.accountId ?? null)
@@ -5508,6 +5502,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
   const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
   const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
+  const [relationProductId, setRelationProductId] = useState('')
   // This page owns no catalogue data of its own. Stores come from
   // `/v1/platform-accounts` and products from `/v1/products`; `null` means the
   // read has not answered and must be reported as unread rather than as an empty
@@ -5827,6 +5822,16 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             <div className="catalog-detail-actions">
               <button
                 type="button"
+                className="secondary"
+                data-testid="catalog-manage-product-assets"
+                disabled={!baseUrl || !selectedApiProduct}
+                title={!baseUrl ? '尚未连接商家 API' : !selectedApiProduct ? '正在读取商品事实；读取完成后可管理素材关系' : undefined}
+                onClick={() => selectedApiProduct && setRelationProductId(selectedApiProduct.id)}
+              >
+                <Link2 size={16} />管理商品素材
+              </button>
+              <button
+                type="button"
                 className="primary"
                 data-testid="catalog-generate-image"
                 disabled={!baseUrl || !selectedApiProduct?.factsConfirmed || !imageModelReady}
@@ -5876,6 +5881,17 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
               {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <a href={`#catalog-image-generation-${imageGenerationErrorField}`}>跳转到需要修正的字段</a>}</div>}
             </div>
           </DialogFrame>
+        )}
+        {relationProductId && baseUrl && (
+          <ProductAssetRelationDialog
+            baseUrl={baseUrl}
+            productId={relationProductId}
+            onClose={() => setRelationProductId('')}
+            onContinue={(product) => {
+              setRelationProductId('')
+              onSelectTarget(projectProductTarget(product))
+            }}
+          />
         )}
       </div>
     )
@@ -7879,6 +7895,7 @@ export function Products({
     stock: '0',
   })
   const [importAssets, setImportAssets] = useState<AssetMetadata[]>([])
+  const [importAssetsError, setImportAssetsError] = useState('')
   const [selectedImportAssetIds, setSelectedImportAssetIds] = useState<
     string[]
   >([])
@@ -8194,6 +8211,22 @@ export function Products({
       setSyncing(false)
     }
   }
+  const loadImportAssets = () => {
+    if (!baseUrl) return
+    // Never offer a previous read as current after opening or retrying the picker.
+    setImportAssets([])
+    setSelectedImportAssetIds([])
+    setImportAssetsError('')
+    setImportAssetsLoading(true)
+    fetchAssets(baseUrl)
+      .then(setImportAssets)
+      .catch((cause) => {
+        setImportAssets([])
+        setSelectedImportAssetIds([])
+        setImportAssetsError(`读取素材失败：${describeApiError(cause)}`)
+      })
+      .finally(() => setImportAssetsLoading(false))
+  }
   const openImport = () => {
     setImportDraft({
       title: '',
@@ -8207,15 +8240,7 @@ export function Products({
     setImportError('')
     setImportErrorField(null)
     setImportOpen(true)
-    if (baseUrl) {
-      setImportAssetsLoading(true)
-      fetchAssets(baseUrl)
-        .then(setImportAssets)
-        .catch((cause) =>
-          setImportError(`读取素材失败：${describeApiError(cause)}`),
-        )
-        .finally(() => setImportAssetsLoading(false))
-    }
+    loadImportAssets()
   }
   const importLocalProduct = async () => {
     if (!baseUrl || importing) return
@@ -9017,13 +9042,14 @@ export function Products({
               <select
                 id="import-product-platform"
                 value={importDraft.platform}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setSelectedImportAssetIds([])
                   setImportDraft((current) => ({
                     ...current,
                     platform: event.target.value as PlatformId,
                     accountId: '',
                   }))
-                }
+                }}
               >
                 {Object.entries(platformNames).map(([id, label]) => (
                   <option value={id} key={id}>
@@ -9110,15 +9136,24 @@ export function Products({
             </div>
             <fieldset className="import-asset-picker">
               <legend>默认商品素材（可选）</legend>
-              {importAssetsLoading ? (
+              {importAssetsError ? (
+                <div className="error-notice" role="alert">
+                  <span>{importAssetsError}</span>
+                  <button type="button" className="secondary" onClick={loadImportAssets} disabled={importAssetsLoading}>
+                    重新读取素材
+                  </button>
+                </div>
+              ) : importAssetsLoading ? (
                 <LoadingState label="正在读取可用素材…" />
               ) : importAssets.length ? (
                 <div className="import-asset-options">
-                  {importAssets.map((asset) => (
-                    <label key={asset.id}>
+                  {importAssets.map((asset) => {
+                    const assetBlockers = productAssetGenerationBlockersForAsset(asset, importDraft.platform)
+                    return <label key={asset.id} title={assetBlockers.length ? assetBlockers.join(' ') : undefined}>
                       <input
                         type="checkbox"
                         checked={selectedImportAssetIds.includes(asset.id)}
+                        disabled={assetBlockers.length > 0}
                         onChange={() =>
                           setSelectedImportAssetIds((current) =>
                             current.includes(asset.id)
@@ -9129,15 +9164,10 @@ export function Products({
                       />
                       <span>
                         <b>{asset.name}</b>
-                        <small>
-                          {asset.scanStatus === 'clean' &&
-                          asset.rightsStatus === 'approved'
-                            ? '可用于后续生成'
-                            : '需先完成扫描与权益确认'}
-                        </small>
+                        <small>{assetBlockers.length ? `暂不能用于后续生成：${assetBlockers.join(' ')}` : '可用于后续生成'}</small>
                       </span>
                     </label>
-                  ))}
+                  })}
                 </div>
               ) : (
                 <small className="muted-help">
@@ -10093,6 +10123,10 @@ function TaskWorkspace({
   const [selectedCandidateId, setSelectedCandidateId] = useState('')
   const [taskList, setTaskList] = useState<Task[] | null>(null)
   const [taskTotal, setTaskTotal] = useState(0)
+  const [taskListSnapshotContext, setTaskListSnapshotContext] = useState<{
+    page: number
+    query: string
+  } | null>(null)
   const [taskProducts, setTaskProducts] = useState<ApiProduct[]>([])
   const [taskPage, setTaskPage] = useState(0)
   const [taskSearchDraft, setTaskSearchDraft] = useState('')
@@ -10465,6 +10499,10 @@ function TaskWorkspace({
         if (requestId === taskListRequestId.current) {
           setTaskList(result.items)
           setTaskTotal(result.total)
+          setTaskListSnapshotContext({
+            page: Math.floor(result.offset / MERCHANT_TASK_PAGE_SIZE),
+            query: taskSearchQuery,
+          })
           setTaskPage((page) => clampTaskPage(page, result.total, MERCHANT_TASK_PAGE_SIZE))
         }
       })
@@ -11213,7 +11251,12 @@ function TaskWorkspace({
         {taskListLoading && <LoadingState label="正在读取营销任务…" />}
         {taskListLoading && Boolean(taskList?.length) && (
           <div className="info-notice" role="status">
-            正在读取新结果；当前列表为上次成功读取的任务。
+            正在读取新结果；当前列表保留的是第{' '}
+            {(taskListSnapshotContext?.page ?? taskPage) + 1} 页、
+            {taskListSnapshotContext?.query
+              ? `搜索“${taskListSnapshotContext.query}”`
+              : '全部任务'}
+            的上次成功结果。
           </div>
         )}
         {taskListError && !taskListLoading && (
@@ -11221,7 +11264,12 @@ function TaskWorkspace({
         )}
         {taskListError && !taskListLoading && Boolean(taskList?.length) && (
           <div className="info-notice" role="status">
-            显示上次成功读取的任务；刷新失败，不会把旧结果当作最新状态。
+            显示第{' '}
+            {(taskListSnapshotContext?.page ?? taskPage) + 1} 页、
+            {taskListSnapshotContext?.query
+              ? `搜索“${taskListSnapshotContext.query}”`
+              : '全部任务'}
+            的上次成功结果；当前读取失败，数据可能已变化。
           </div>
         )}
         {taskList !== null && taskProductsLoading && (
@@ -11242,7 +11290,7 @@ function TaskWorkspace({
             配置 API 后可读取真实任务列表。
           </div>
         )}
-        (!taskListError || Boolean(taskList?.length)) && Boolean(taskList?.length) && (
+        {(!taskListError || Boolean(taskList?.length)) && Boolean(taskList?.length) && (
           <section className="panel task-list-panel">
             {visibleTasks.map(({ task: item, groupLabel, actionLabel }) => {
               const itemProduct = taskProducts.find(
@@ -11321,7 +11369,13 @@ function TaskWorkspace({
             })}
             <div className="task-list-pagination">
               <span>
-                第 {taskPage + 1} / {taskPageCount} 页
+                {taskListSnapshotContext && taskListSnapshotContext.page !== taskPage
+                  ? taskListError
+                    ? `显示第 ${taskListSnapshotContext.page + 1} 页（第 ${taskPage + 1} 页读取失败）`
+                    : taskListLoading
+                      ? `显示第 ${taskListSnapshotContext.page + 1} 页（正在读取第 ${taskPage + 1} 页）`
+                      : `结果总数变化，页码已调整为第 ${taskPage + 1} 页`
+                  : `第 ${taskPage + 1} / ${taskPageCount} 页`}
               </span>
               <div>
                 <button
@@ -14406,6 +14460,7 @@ export default function App() {
                         } : undefined)
                         window.history.replaceState(null, '', urlForMerchantCatalogProductList(window.location))
                       }}
+                      onSelectTarget={(next) => navigateTo('task', { target: next, clearContext: true })}
                       initialQuery={globalSearch}
                       initialCatalogContext={catalogContext}
                     />

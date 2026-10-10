@@ -225,6 +225,7 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
   if (snapshot.contextId.startsWith('brand:task:')) throw snapshotError('legacy candidate brand context is invalid')
   const brandScopedContext = /^brand:[^\s\u0000-\u001f\u007f]+$/u.test(snapshot.contextId)
     && ((operation === 'publish.execute' && event.eventType === 'publish.requested')
+      || (operation === 'publish.reconcile' && event.eventType === 'publish.reconcile_requested')
       || (operation === 'generation.execute' && event.eventType === 'generation.requested')
       || (operation === 'image_generation.execute' && event.eventType === 'image.generation.requested'))
   if (snapshot.contextId !== `workspace:${event.workspaceId}` && !brandScopedContext && !taskScopedContext) throw snapshotError('authorization snapshot context binding mismatch')

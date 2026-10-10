@@ -24,7 +24,7 @@ const report = index => ({
   evidenceBoundary: 'manual_unverified', recordedAt: '2026-09-29T09:00:00.000Z',
 })
 
-async function openMock({ empty = false, failFirst = false, failOnAttempt = 0, failFocusedRefresh = false, shrinkOnRefresh = false, focusJobId = '', delayJobs = 0, dynamicService = false } = {}) {
+async function openMock({ empty = false, failFirst = false, failOnAttempt = 0, failJobOffsets = [], failManualOffsets = [], failFocusedRefresh = false, shrinkOnRefresh = false, focusJobId = '', delayJobs = 0, dynamicService = false } = {}) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const page = await context.newPage()
@@ -55,7 +55,7 @@ async function openMock({ empty = false, failFirst = false, failOnAttempt = 0, f
       observations.jobOffsets.push(offset)
       observations.jobAttempts++
       if (delayJobs > 0) await new Promise(resolve => setTimeout(resolve, delayJobs))
-      if ((failFirst && observations.jobAttempts === 1) || (failOnAttempt > 0 && observations.jobAttempts === failOnAttempt)) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
+      if ((failFirst && observations.jobAttempts === 1) || (failOnAttempt > 0 && observations.jobAttempts === failOnAttempt) || failJobOffsets.includes(offset)) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
       data = empty ? { items: [], total: 0, limit: 20, offset } : {
         items: offset === 0
           ? Array.from({ length: 20 }, (_, i) => job(i + 1, i === 0 ? { state: 'rejected', remoteState: 'rejected', rejection: { rawCode: 'PLATFORM_422', message: '标题不合规', fields: [{ path: 'title', rawCode: 'TITLE_42', message: '含违禁词' }] } } : {}))
@@ -68,6 +68,7 @@ async function openMock({ empty = false, failFirst = false, failOnAttempt = 0, f
         const offset = Number(body.params.offset ?? 0)
         observations.manualOffsets.push(offset)
         observations.manualAttempts++
+        if (failManualOffsets.includes(offset)) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'PUBLISH_READ_UNAVAILABLE', message: '发布记录暂不可读取' })) })
         if (shrinkOnRefresh && observations.manualAttempts > 6) {
           data = { result: { items: offset === 20 ? [report(21), report(22), report(23), report(24), report(25)] : [], total: 25, limit: 20, offset } }
         } else data = { result: empty ? { items: [], total: 0, limit: 20, offset } : {
@@ -175,13 +176,42 @@ test('发布记录读取错误显示原始错误并可重试恢复', async () =>
     await panel.getByRole('button', { name: '刷新记录' }).click()
     await expect(panel.getByText('正在刷新；当前保留上次成功读取的发布记录。')).toBeVisible()
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
-    await expect(panel.getByRole('alert')).toContainText('读取发布记录失败：服务暂不可用')
+    await expect(panel.getByRole('alert')).toContainText('读取发布记录失败：发布记录暂时无法读取，请检查 API 连接后重试。')
+    await expect(panel.getByRole('alert')).not.toContainText('操作未确认')
+    await expect(panel.getByRole('alert')).not.toContainText('模型中转')
     await expect(panel.getByText('显示上次成功读取的发布记录；刷新失败，当前状态可能已变化。')).toBeVisible()
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     await screenshot(page, '05-读取错误.png')
     await panel.getByRole('button', { name: '重试' }).click()
     await expect(panel).toContainText('平台原始拒绝码：PLATFORM_422')
     expect(observations.jobAttempts).toBe(3)
+    expect(pageErrors).toEqual([])
+  } finally { await context.close(); await browser.close() }
+})
+
+test('切换分页读取失败时明确标注仍显示的旧页记录', async () => {
+  const { browser, context, page, observations, pageErrors } = await openMock({ failJobOffsets: [20], failManualOffsets: [20] })
+  try {
+    const panel = page.getByRole('region', { name: '发布记录' })
+    await expect(panel).toContainText('任务 task-1')
+    await panel.getByRole('button', { name: '下一页' }).click()
+    await expect(panel.getByRole('alert')).toContainText('读取发布记录失败：发布记录暂时无法读取，请检查 API 连接后重试。')
+    await expect(panel.getByText('显示第 1 页的上次成功数据；第 2 页读取失败。')).toBeVisible()
+    await expect(panel).toContainText('显示第 1 页（第 2 页读取失败），共 21 条')
+    await expect(panel).toContainText('任务 task-1')
+    await expect(panel).not.toContainText('任务 task-21')
+
+    await panel.getByRole('tab', { name: '人工发布报告' }).click()
+    await expect(panel).toContainText('任务 task-1')
+    await panel.getByRole('button', { name: '下一页' }).click()
+    await expect(panel.getByRole('alert')).toContainText('读取发布记录失败：发布记录暂时无法读取，请检查 API 连接后重试。')
+    await expect(panel.getByText('显示第 1 页的上次成功数据；第 2 页读取失败。')).toBeVisible()
+    await expect(panel).toContainText('显示第 1 页（第 2 页读取失败），共 101 条')
+    await expect(panel).toContainText('任务 task-1')
+    await expect(panel).not.toContainText('任务 task-21')
+    expect(observations.jobOffsets).toEqual([0, 20])
+    expect(observations.manualOffsets).toEqual([0, 20])
+    expect(observations.unexpectedWrites).toEqual([])
     expect(pageErrors).toEqual([])
   } finally { await context.close(); await browser.close() }
 })
@@ -210,6 +240,8 @@ test('刷新后总数缩小时自动回到最后有效页', async () => {
     await panel.getByRole('button', { name: '刷新记录' }).click()
     await expect(panel).toContainText('第 2 / 2 页，共 25 条')
     await expect(panel).toContainText('任务 task-25')
+    await expect(panel).not.toContainText('读取失败）')
+    await expect(panel.getByRole('alert')).toHaveCount(0)
     await expect(panel.getByRole('button', { name: '下一页' })).toBeDisabled()
     expect(observations.manualOffsets.slice(-2)).toEqual([100, 20])
   } finally { await context.close(); await browser.close() }

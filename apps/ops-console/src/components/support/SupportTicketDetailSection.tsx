@@ -12,6 +12,10 @@ const eventLabels: Record<SupportTicketEventContract["eventType"], string> = {
 const slaStateLabels = { on_track: "SLA 正常", at_risk: "SLA 临近", breached: "SLA 已超时", met: "SLA 已达成" } as const;
 const slaStateColors = { on_track: "green", at_risk: "orange", breached: "red", met: "blue" } as const;
 
+export function supportActionFeedbackOnOpen(_previousError: string, _previouslyDismissed: boolean) {
+  return { error: "", dismissed: false };
+}
+
 export function SupportTicketDetailSection({ model, canMutate = false }: { model: SupportDomainModel; canMutate?: boolean }) {
   const [assignOpen, setAssignOpen] = useState(false);
   const [transitionOpen, setTransitionOpen] = useState(false);
@@ -67,6 +71,21 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
   if (!model.selected) return <Card className="ops-support-detail" title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
   const { ticket, events } = model.selected;
   const sla = ticket.sla;
+  const actionDialogOpen = assignOpen || transitionOpen || commentOpen;
+  const dialogError = actionDialogOpen ? (actionError || model.error) : "";
+  const openActionDialog = (setOpen: (open: boolean) => void) => {
+    const feedback = supportActionFeedbackOnOpen(actionError, actionErrorDismissed);
+    setActionError(feedback.error);
+    setActionErrorDismissed(feedback.dismissed);
+    setOpen(true);
+  };
+  const renderActionError = (dialogOpen: boolean) => dialogOpen && dialogError ? (
+    <div ref={actionErrorRef} tabIndex={-1} role="alert" aria-labelledby="support-detail-dialog-error-title" style={{ marginBottom: 16 }}>
+      <Alert type="error" showIcon title={<span id="support-detail-dialog-error-title">工单操作失败</span>}
+        description={dialogError}
+        action={<Button style={{ minHeight: 44 }} onClick={() => { setActionError(""); setActionErrorDismissed(true); }}>关闭提示</Button>} />
+    </div>
+  ) : null;
 
   return (
     <Card
@@ -75,7 +94,7 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
       extra={<Button onClick={model.clearSelection}>关闭详情</Button>}
       aria-busy={model.mutating || undefined}
     >
-      {(model.error || actionError) && !actionErrorDismissed ? <div ref={actionErrorRef} tabIndex={-1} role="alert" aria-labelledby="support-detail-error-title">
+      {(model.error || actionError) && !actionDialogOpen && !actionErrorDismissed ? <div ref={actionErrorRef} tabIndex={-1} role="alert" aria-labelledby="support-detail-error-title">
         <Alert type="error" showIcon title={<span id="support-detail-error-title">工单操作失败</span>}
           description={actionError || model.error}
           action={<Button style={{ minHeight: 44 }} onClick={() => { setActionError(""); setActionErrorDismissed(true); }}>关闭提示</Button>} />
@@ -120,9 +139,9 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
         </Space>
       </Card>
       <Space wrap style={{ marginBottom: 24 }}>
-        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setAssignOpen(true)}>分配负责人</Button>
-        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => { setStatus(transitionOptionsFor(ticket.status)[0]?.value ?? ticket.status); setReason(""); setTransitionOpen(true); }}>变更状态</Button>
-        <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => setCommentOpen(true)}>添加备注</Button>
+        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => openActionDialog(setAssignOpen)}>分配负责人</Button>
+        <Button disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => { setStatus(transitionOptionsFor(ticket.status)[0]?.value ?? ticket.status); setReason(""); openActionDialog(setTransitionOpen); }}>变更状态</Button>
+        <Button type="primary" disabled={!canMutate || model.mutating} title={!canMutate ? "当前会话没有工单变更权限" : undefined} onClick={() => openActionDialog(setCommentOpen)}>添加备注</Button>
       </Space>
       <Typography.Title level={5}>不可变事件历史</Typography.Title>
       {events.length === 0 ? <Alert type="warning" showIcon title="事件历史为空" description="工单投影存在但事件缺失，请停止修改并检查事件存储。" /> : (
@@ -136,16 +155,19 @@ export function SupportTicketDetailSection({ model, canMutate = false }: { model
       )}
 
       <Modal title="分配工单" open={assignOpen} confirmLoading={model.mutating} okText="确认分配" okButtonProps={{ disabled: !assignee.trim() }} onCancel={() => setAssignOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.assign(assignee).then(() => { setAssignee(""); setAssignOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "分配工单失败，请重试。")); }}>
+        {renderActionError(assignOpen)}
         <label htmlFor="support-assignee">负责人 ID</label>
         <Input id="support-assignee" value={assignee} maxLength={256} onChange={event => setAssignee(event.target.value)} autoFocus />
       </Modal>
       <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okText="确认变更" okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "变更工单状态失败，请重试。")); }}>
+        {renderActionError(transitionOpen)}
         <Form layout="vertical">
           <Form.Item label="目标状态" required><Select aria-label="目标状态" value={status} options={transitionOptionsFor(ticket.status)} onChange={setStatus} /></Form.Item>
           <Form.Item label="变更原因" required><Input.TextArea aria-label="变更原因" value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
         </Form>
       </Modal>
       <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okText="添加备注" okButtonProps={{ disabled: !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); setActionErrorDismissed(false); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>
+        {renderActionError(commentOpen)}
         <Form layout="vertical">
           <Form.Item label="可见范围" required><Select value={visibility} onChange={setVisibility} options={[{ value: "internal", label: "仅内部" }, { value: "customer", label: "客户可见" }]} /></Form.Item>
           <Form.Item label="备注内容" required><Input.TextArea value={comment} rows={5} maxLength={10000} showCount onChange={event => setComment(event.target.value)} /></Form.Item>

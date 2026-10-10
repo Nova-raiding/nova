@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { alertingSelfMetricLines, connectorUserFacingMessage, jobQueueMetricLines, marketingVideoProviderJobMatchesState, marketingVideoProviderJobsFromEvents } from './server.js'
+import { alertingSelfMetricLines, connectorUserFacingMessage, imageMcpRuntime, jobQueueMetricLines, marketingVideoProviderJobMatchesState, marketingVideoProviderJobsFromEvents } from './server.js'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, platformRuleDataRecoveryActions, prioritizeQueueAssets, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, satisfiedAuthorizationObligations, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { merchantEntryBillingReadAllowed } from './server.js'
@@ -13,7 +13,7 @@ import { AUTHZ_POLICY_VERSION, getMcpMethodPolicy } from '../../../packages/cont
 import { getHttpOperationPolicy } from '../../../packages/contracts/src/http-authz.js'
 import type { AuthorizationDecision, PermissionAtom } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
-import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
+import { AuthorizationRepositoryError, MemoryCreativePointRepository } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
 import { ConnectorFailure } from '../../../packages/connectors/src/fake-connector.js'
 
@@ -70,6 +70,36 @@ describe('marketing video provider queue projection', () => {
     expect(marketingVideoProviderJobMatchesState(job!, 'unknown')).toBe(true)
     expect(marketingVideoProviderJobMatchesState(job!, 'completed')).toBe(false)
     expect(marketingVideoProviderJobMatchesState(job!, 'queued')).toBe(true)
+  })
+})
+
+describe('no-charge commercial snapshots', () => {
+  it('admits publish reconciliation with a known zero balance while preserving the publish admission gate', async () => {
+    const runtime = imageMcpRuntime()
+    const previous = runtime.persistence.creativePoints
+    const points = new MemoryCreativePointRepository()
+    const workspaceId = 'ws_publish_reconcile_zero_points'
+    runtime.persistence.creativePoints = points
+    try {
+      await points.grant({
+        workspaceId, points: 1, sourceType: 'test_fixture', sourceId: 'expired',
+        idempotencyKey: 'publish-reconcile-expired-points', expiresAt: '2020-01-01T00:00:00.000Z',
+      })
+      await expect(points.getBalance(workspaceId)).resolves.toMatchObject({ availablePoints: 0 })
+
+      const reconcile = await runtime.withCommercialWorkerSnapshot(workspaceId, 'publish.reconcile_requested', {})
+      expect(reconcile.commercial_access_snapshot).toMatchObject({
+        operation: 'publish.reconcile', access_mode: 'POINT_REQUIRED_NO_CHARGE',
+        balance_state: 'known', quoted_points: 0, rate_version: null,
+      })
+      expect(reconcile.commercial_access_snapshot).not.toHaveProperty('reservation_id')
+
+      await expect(runtime.withCommercialWorkerSnapshot(workspaceId, 'publish.requested', {})).rejects.toMatchObject({
+        code: 'CREATIVE_POINTS_EXHAUSTED',
+      })
+    } finally {
+      runtime.persistence.creativePoints = previous
+    }
   })
 })
 
@@ -1358,6 +1388,34 @@ describe('uploaded image candidate admission', () => {
     expect(asset.rightsStatus).toBe('pending')
     expect(asset.aiModificationAllowed).toBeUndefined()
     expect(() => requireApprovedAssetForImageGeneration(asset.workspaceId, { platform: 'jd' }, [asset.id])).toThrow()
+  })
+  it('requires image media and explicit commercial plus AI generation rights for bound sources', () => {
+    const approved = source()
+    Object.assign(approved, {
+      rightsStatus: 'approved',
+      rightsScope: 'commercial_authorized',
+      usageScopes: ['commercial', 'ai_generation'],
+      aiModificationAllowed: true,
+    })
+    expect(() => requireApprovedAssetForImageGeneration(approved.workspaceId, { platform: 'jd' }, [approved.id])).not.toThrow()
+
+    for (const patch of [
+      { mimeType: 'video/mp4' },
+      { rightsScope: 'limited_use' },
+      { usageScopes: ['commercial'] },
+      { usageScopes: ['ai_generation'] },
+      { usageScopes: [] },
+    ]) {
+      const blocked = source()
+      Object.assign(blocked, {
+        rightsStatus: 'approved',
+        rightsScope: 'commercial_authorized',
+        usageScopes: ['commercial', 'ai_generation'],
+        aiModificationAllowed: true,
+        ...patch,
+      })
+      expect(() => requireApprovedAssetForImageGeneration(blocked.workspaceId, { platform: 'jd' }, [blocked.id])).toThrow()
+    }
   })
   it.each([
     { scanStatus: 'quarantined' }, { scanReceiptDigest: undefined },

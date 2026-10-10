@@ -7,19 +7,38 @@ const productRoutes = readFileSync(new URL('../../../apps/api/src/http-product-w
 
 describe('merchant material-to-product asset journey contract', () => {
   it('loads persisted workspace assets when the product import form opens and renders their eligibility', () => {
-    const openImport = app.slice(app.indexOf('const openImport = () =>'), app.indexOf('const importLocalProduct = async () =>'))
+    const openImport = app.slice(app.indexOf('const loadImportAssets = () =>'), app.indexOf('const importLocalProduct = async () =>'))
     const picker = app.slice(app.indexOf('<fieldset className="import-asset-picker">'), app.indexOf('</fieldset>', app.indexOf('<fieldset className="import-asset-picker">')))
 
     expect(openImport).toContain('fetchAssets(baseUrl)')
     expect(openImport).toContain('.then(setImportAssets)')
     expect(openImport).toContain('setImportAssetsLoading(true)')
     expect(openImport).toContain('.finally(() => setImportAssetsLoading(false))')
-    expect(picker).toContain('{importAssets.map((asset) => (')
+    expect(picker).toContain('{importAssets.map((asset) => {')
     expect(picker).toContain('checked={selectedImportAssetIds.includes(asset.id)}')
-    expect(picker).toContain("asset.scanStatus === 'clean'")
-    expect(picker).toContain("asset.rightsStatus === 'approved'")
-    expect(picker).toContain('需先完成扫描与权益确认')
+    expect(picker).toContain('productAssetGenerationBlockersForAsset(asset, importDraft.platform)')
+    expect(picker).toContain('disabled={assetBlockers.length > 0}')
+    expect(picker).toContain('可用于后续生成')
+    expect(picker).toContain('暂不能用于后续生成：${assetBlockers.join(\' \')}')
     expect(picker).toContain('绑定会随商品导入请求提交到服务端；取消导入不会产生绑定。')
+  })
+
+  it('clears stale picker data on a failed read and provides a retry action', () => {
+    const loader = app.slice(app.indexOf('const loadImportAssets = () =>'), app.indexOf('const openImport = () =>'))
+    const picker = app.slice(app.indexOf('<fieldset className="import-asset-picker">'), app.indexOf('</fieldset>', app.indexOf('<fieldset className="import-asset-picker">')))
+
+    expect(loader).toContain('setImportAssets([])')
+    expect(loader).toContain('setSelectedImportAssetIds([])')
+    expect(loader).toContain('setImportAssetsError(`读取素材失败：${describeApiError(cause)}`)')
+    expect(picker).toContain('{importAssetsError ? (')
+    expect(picker).toContain('onClick={loadImportAssets}')
+    expect(picker).toContain('重新读取素材')
+  })
+
+  it('clears prior asset choices when the target platform changes', () => {
+    const platformPicker = app.slice(app.indexOf('id="import-product-platform"'), app.indexOf('</select>', app.indexOf('id="import-product-platform"')))
+    expect(platformPicker).toContain('setSelectedImportAssetIds([])')
+    expect(platformPicker).toContain('platform: event.target.value as PlatformId')
   })
 
   it('submits only the selected asset IDs through the shared API client and preserves them at the HTTP boundary', () => {

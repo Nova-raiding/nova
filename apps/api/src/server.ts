@@ -1358,6 +1358,11 @@ export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
   return snapshot
 }
 
+export function revokeContinuousFeatureEntitlementForTests(workspaceId: string) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('CONTINUOUS_FEATURE_ENTITLEMENT_REVOKE_TEST_ONLY')
+  memoryContinuousFeatureEntitlements.delete(workspaceId)
+}
+
 async function memoryDeliveryAccount(workspaceId: string, accountId: string) {
   const account = (await memoryPasswordAuth.listAccounts()).find(candidate => candidate.id === accountId)
   if (!account) return null
@@ -4137,8 +4142,13 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
       checkedAt: new Date().toISOString(),
     }
   }
-  const allowed = balance.availablePoints > 0 && accessMatches && entitlementMatches
+  // Reconciliation only reads/repairs the remote publish outcome; it does not
+  // consume points. Keep entitlement and revision snapshots authoritative, but
+  // do not block this no-charge operation solely because the wallet is empty.
+  const balanceAllowsOperation = snapshot.operation === 'publish.reconcile' || balance.availablePoints > 0
+  const allowed = balanceAllowsOperation && accessMatches && entitlementMatches
   const denialCode: WorkerCommercialAccessRecheck['denialCode'] = balance.availablePoints <= 0
+    && snapshot.operation !== 'publish.reconcile'
     ? 'COMMERCIAL_EXECUTION_BALANCE_BLOCKED'
     : !accessMatches
       ? 'COMMERCIAL_EXECUTION_REVISION_STALE'
@@ -4291,7 +4301,7 @@ async function withCommercialWorkerSnapshot(workspaceId: string, eventType: stri
   if (!persistence.creativePoints) throw new DomainError('COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', '创意点事实仓储未配置，已拒绝入队', 503)
   const balance = await persistence.creativePoints.getBalance(workspaceId)
   if (balance.availablePoints === null) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, '创意点余额未知，已拒绝入队', 503, { balance_state: 'unknown', available_points: null })
-  if (balance.availablePoints === 0) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, '创意点已用尽，已拒绝入队', 402, { balance_state: 'known', available_points: 0, access_revision: String(balance.revision) })
+  if (balance.availablePoints === 0 && eventType !== 'publish.reconcile_requested') throw new DomainError(ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, '创意点已用尽，已拒绝入队', 402, { balance_state: 'known', available_points: 0, access_revision: String(balance.revision) })
   const entitlementFact = currentPointAccessExecutionFact(workspaceId, balance)
   return {
     ...payload,
@@ -8739,13 +8749,18 @@ export function requireApprovedAssetForImageGeneration(workspaceId: string, prod
       const valid = asset.mimeType.toLowerCase().startsWith('image/')
         && isUsableAssetWithoutScan(asset, demoUnscannedAssetsEnabled())
         // A requested unbound draft is not a commercial-rights attestation.
-        // Preserve unknown rights; only explicit restrictions block drafts.
+        // Preserve unknown rights for drafts, while bound commercial generation
+        // requires an explicit commercial scope and both use permissions.
         && (unboundCandidate ? asset.rightsStatus !== 'rejected' : asset.rightsStatus === 'approved')
-        && asset.rightsScope !== 'unusable'
+        && (unboundCandidate
+          ? asset.rightsScope !== 'unusable'
+          : ['owned', 'commercial_authorized'].includes(asset.rightsScope ?? ''))
         && (!unboundCandidate || !['internal_only', 'limited_use'].includes(asset.rightsScope ?? ''))
         && (unboundCandidate ? asset.aiModificationAllowed !== false : asset.aiModificationAllowed === true)
         && (!asset.applicablePlatforms?.length || asset.applicablePlatforms.includes(platform))
-        && (!asset.usageScopes?.length || asset.usageScopes.includes('commercial') || asset.usageScopes.includes('ai_generation'))
+        && (unboundCandidate
+          ? (!asset.usageScopes?.length || asset.usageScopes.includes('commercial') || asset.usageScopes.includes('ai_generation'))
+          : Boolean(asset.usageScopes?.includes('commercial') && asset.usageScopes.includes('ai_generation')))
         && (!asset.validFrom || Date.parse(asset.validFrom) <= Date.now())
         && (!asset.validTo || Date.parse(asset.validTo) >= Date.now())
       if (!valid) invalid.push({ asset_id: assetId, scan_status: asset.scanStatus, rights_status: asset.rightsStatus, applicable_platforms: asset.applicablePlatforms ?? [], usage_scopes: asset.usageScopes ?? [] })
@@ -9425,6 +9440,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
   if (method === 'GET') {
     if (/^\/v1\/sync-jobs\/[^/]+\/execution-context$/u.test(path)) return ['sync']
     if (/^\/v1\/generation-jobs\/[^/]+$/u.test(path)) return ['generation']
+    if (/^\/v1\/publish-jobs\/[^/]+\/media\/lifecycle$/u.test(path)) return ['publish', 'reconcile']
     if (/^\/v1\/publish-jobs\/[^/]+\/(?:execution-check|media)$/u.test(path)) return ['publish', 'reconcile']
     if (/^\/v1\/worker-events\/[^/]+\/execution-check$/u.test(path)) return ['sync', 'generation', 'publish', 'reconcile', 'scan']
   }
@@ -9434,6 +9450,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
     if (path === '/v1/internal/billing/reconciliation') return ['reconcile']
     if (path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
+    if (/^\/v1\/publish-jobs\/[^/]+\/media\/lifecycle$/u.test(path)) return ['publish', 'reconcile']
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
     if (path === '/v1/internal/automation/tick') return ['automation']
     if (path === '/v1/internal/model-usage') return ['generation', 'publish', 'automation']

@@ -814,6 +814,7 @@ export interface SyncJob {
 
 export interface AssetMetadata {
   id: string
+  workspaceId?: string
   name: string
   mimeType: string
   materialCategory?: '品牌资料' | '商品主图' | '详情页图' | 'SKU 图' | '商品视频' | '未分类'
@@ -829,6 +830,11 @@ export interface AssetMetadata {
   validTo?: string
   aiModificationAllowed?: boolean
   scanStatus: 'quarantined' | 'clean' | 'rejected' | string
+  /** Scanner evidence used to distinguish a trusted clean result from legacy status text. */
+  scanReceiptId?: string
+  scanReceiptDigest?: string
+  scanVerdict?: 'clean' | 'malicious' | 'suspicious' | 'unsupported'
+  storageKey?: string
   parseStatus: 'pending' | 'processing' | 'succeeded' | 'failed' | string
   parseError?: string
   extractedFacts?: Record<string, unknown>

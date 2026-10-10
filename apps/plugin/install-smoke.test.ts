@@ -273,8 +273,13 @@ describe('Codex plugin installation package', () => {
   it('keeps the install package version aligned and inherits runtime MCP settings', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     const packageJson = readJson('package.json')
+    const releaseMetadata = readJson('../../release-metadata.json')
+    const marketplaceRoot = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
     const mcp = readJson('.mcp.json')
     expect(packageJson.version).toBe(manifest.version)
+    expect(readJson('.codex-plugin/plugin.json').version).toBe(JSON.parse(readFileSync(resolve(marketplaceRoot, '.codex-plugin/plugin.json'), 'utf8')).version)
+    expect(packageJson.version).toBe(JSON.parse(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8')).version)
+    expect(releaseMetadata.pluginVersion).toBe(manifest.version)
     expect(packageJson.engines).toEqual({ node: '>=18' })
     expect(packageJson.merchantRuntime).toMatchObject({
       desktopHost: 'ChatGPT.app',

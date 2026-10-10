@@ -813,6 +813,9 @@ export function workerRoleForRequest(method: string, requestTarget: string, body
   if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) {
     try { return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).source === 'reconcile' ? 'reconcile' : 'publish' } catch { return 'publish' }
   }
+  if (/^\/v1\/publish-jobs\/[^/]+\/media(?:\/lifecycle)?$/u.test(path)) {
+    return new URL(requestTarget, 'http://worker.internal').searchParams.get('worker_role') === 'reconcile' ? 'reconcile' : 'publish'
+  }
   // The publish execution gate is admission-checked for both the publish and
   // the reconcile worker (workerRouteRoles). The caller declares which
   // credential set it actually signs and authenticates with; declaring
@@ -1284,9 +1287,12 @@ export function createApiDeliveryScanAdmissionGuard(config: Pick<WorkerConfig, '
   })
 }
 
-export async function fetchPublishMedia(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+export async function fetchPublishMedia(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; role?: 'publish' | 'reconcile'; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const path = `/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/media`
-  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+  const query = new URLSearchParams({ event_id: input.event.id })
+  if (input.role === 'reconcile') query.set('worker_role', 'reconcile')
+  const url = `${input.apiBaseUrl.replace(/\/$/u, '')}${path}?${query.toString()}`
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, url, {
     headers: { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
     redirect: 'error',
     signal: input.signal,
@@ -1302,29 +1308,54 @@ export async function fetchPublishMedia(input: { apiBaseUrl: string; apiToken: s
   })
 }
 
-export function publishMediaLifecycleClient(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; platform: string; accountId: string; workerId?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+export function publishMediaLifecycleClient(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; platform: string; accountId: string; role?: 'publish' | 'reconcile'; workerId?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const base = input.apiBaseUrl.replace(/\/$/u, '')
   const path = `/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/media/lifecycle`
   const headers = { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret,input.workerId ?? resolveWorkerId()) : {}) }
   const assertOk = async (response: Response) => { if (!response.ok) throw new Error(`publish media lifecycle API returned ${response.status}`); return await parseWorkerApiJson(response) as { data?: { media_lifecycle?: Record<string, unknown> | null } } }
+  const lifecycleUrl = (query: string) => `${base}${path}?${query ? `${query}&` : ''}${input.role === 'reconcile' ? 'worker_role=reconcile' : ''}`.replace(/\?$/u, '')
+  const readRecord = async (media: MediaUploadInput) => {
+    const url = lifecycleUrl(`event_id=${encodeURIComponent(input.event.id)}&media_idempotency_key=${encodeURIComponent(media.idempotencyKey)}`)
+    const response = await fetchWorkerApi(input.fetcher ?? fetch, url, { headers, redirect: 'error', signal: input.signal })
+    const record = (await assertOk(response)).data?.media_lifecycle
+    if (!record) return undefined
+    if (record.workspaceId !== input.event.workspaceId || record.publishJobId !== input.event.aggregateId || record.mediaIdempotencyKey !== media.idempotencyKey || record.platform !== input.platform || record.accountId !== input.accountId || record.visualRef !== media.visualRef || record.role !== media.role || record.sha256 !== media.sha256 || typeof record.eventId !== 'string' || !record.eventId) throw new Error('persisted publish media lifecycle record is out of scope')
+    if (input.role !== 'reconcile' && record.eventId !== input.event.id) throw new Error('persisted publish media lifecycle record is out of scope')
+    return record
+  }
+  const validateReceipt = (media: MediaUploadInput, record: Record<string, unknown>): MediaUploadReceipt => {
+    const receipt = record.receipt
+    if (!isObject(receipt) || receipt.platform !== input.platform || receipt.visualRef !== media.visualRef || receipt.role !== media.role || receipt.sha256 !== media.sha256 || typeof receipt.mediaId !== 'string' || !receipt.mediaId.trim() || (receipt.url !== undefined && (typeof receipt.url !== 'string' || !receipt.url.trim())) || typeof receipt.simulated !== 'boolean' || (process.env.NODE_ENV === 'production' && receipt.simulated)) throw new Error('persisted publish media receipt is malformed or out of scope')
+    return receipt as unknown as MediaUploadReceipt
+  }
   return {
+    getRecord: readRecord,
     getReceipt: async (media: MediaUploadInput): Promise<MediaUploadReceipt | undefined> => {
-      const url = `${base}${path}?event_id=${encodeURIComponent(input.event.id)}&media_idempotency_key=${encodeURIComponent(media.idempotencyKey)}`
-      const response = await fetchWorkerApi(input.fetcher ?? fetch, url, { headers, redirect: 'error', signal: input.signal })
-      const record = (await assertOk(response)).data?.media_lifecycle
+      const record = await readRecord(media)
       if (!record) return undefined
       if (record.state === 'intent' || record.state === 'unknown') throw new Error('publish media upload outcome is unknown; manual recovery is required before retry')
       if (record.state === 'orphaned' || record.state === 'deleted') throw new Error(`publish media is ${String(record.state)} and cannot be silently reused`)
       if (record.state !== 'uploaded' && record.state !== 'retained') return undefined
-      if (record.workspaceId !== input.event.workspaceId || record.publishJobId !== input.event.aggregateId || record.eventId !== input.event.id || record.mediaIdempotencyKey !== media.idempotencyKey || record.platform !== input.platform || record.accountId !== input.accountId || record.visualRef !== media.visualRef || record.role !== media.role || record.sha256 !== media.sha256) throw new Error('persisted publish media lifecycle record is out of scope')
-      const receipt = record.receipt
-      if (!isObject(receipt) || receipt.platform !== input.platform || receipt.visualRef !== media.visualRef || receipt.role !== media.role || receipt.sha256 !== media.sha256 || typeof receipt.mediaId !== 'string' || !receipt.mediaId.trim() || (receipt.url !== undefined && (typeof receipt.url !== 'string' || !receipt.url.trim())) || typeof receipt.simulated !== 'boolean' || (process.env.NODE_ENV === 'production' && receipt.simulated)) throw new Error('persisted publish media receipt is malformed or out of scope')
-      return receipt as unknown as MediaUploadReceipt
+      return validateReceipt(media, record)
     },
     transition: async (value: { media: MediaUploadInput; state: 'intent' | 'uploaded' | 'orphaned' | 'retained' | 'unknown' | 'deleted'; receipt?: MediaUploadReceipt; reason?: string }) => {
-      const response = await fetchWorkerApi(input.fetcher ?? fetch, `${base}${path}`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ event_id: input.event.id, media_idempotency_key: value.media.idempotencyKey, platform: input.platform, account_id: input.accountId, visual_ref: value.media.visualRef, role: value.media.role, sha256: value.media.sha256, state: value.state, ...(value.receipt ? { receipt: value.receipt } : {}), ...(value.reason ? { reason: value.reason } : {}) }), redirect: 'error', signal: input.signal })
+      const response = await fetchWorkerApi(input.fetcher ?? fetch, lifecycleUrl(''), { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ event_id: input.event.id, media_idempotency_key: value.media.idempotencyKey, platform: input.platform, account_id: input.accountId, visual_ref: value.media.visualRef, role: value.media.role, sha256: value.media.sha256, state: value.state, ...(value.receipt ? { receipt: value.receipt } : {}), ...(value.reason ? { reason: value.reason } : {}) }), redirect: 'error', signal: input.signal })
       await assertOk(response)
     },
+  }
+}
+
+export async function applyReconciledPublishMediaLifecycle(input: {
+  remoteStatus: { found: boolean; state: 'submitted' | 'published' | 'rejected' | 'unknown' }
+  media: MediaUploadInput[]
+  lifecycle: ReturnType<typeof publishMediaLifecycleClient>
+}): Promise<void> {
+  if (!input.remoteStatus.found || (input.remoteStatus.state !== 'published' && input.remoteStatus.state !== 'rejected')) return
+  const state = input.remoteStatus.state === 'published' ? 'retained' : 'orphaned'
+  for (const media of input.media) {
+    const record = await input.lifecycle.getRecord(media)
+    if (!record || (record.state !== 'unknown' && record.state !== 'uploaded')) continue
+    await input.lifecycle.transition({ media, state, reason: input.remoteStatus.state === 'published' ? 'publish_reconcile_confirmed_published' : 'publish_reconcile_confirmed_rejected_cleanup_required' })
   }
 }
 
@@ -2729,14 +2760,27 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     // meant to observe.
     const lockKey = publishLockKey({ workspaceId: event.workspaceId, platform: String(platform), accountId, remoteId, aggregateId: event.aggregateId })
     try {
-      return await quotaConnection.lock.run(lockKey, () => {
+      return await quotaConnection.lock.run(lockKey, async () => {
         signal?.throwIfAborted()
-        return runtime.executeReconcile({
+        const result = await runtime.executeReconcile({
         platform: platform as 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin',
         context: { workspaceId: event.workspaceId, accountId, ...(execution ? { credentialRef: execution.credentialRef } : {}), ...workerTraceContext(event), signal },
         ...(remoteId ? { remoteId } : {}),
         idempotencyKey: publishIdempotencyKey(event),
-      }) })
+        })
+        if (execution?.mediaRequired && config.apiBaseUrl && config.apiToken && result.remoteStatus.found && (result.remoteStatus.state === 'published' || result.remoteStatus.state === 'rejected')) {
+          // Reconciliation is read-only with respect to the product write. It
+          // can settle the media ledger only after the platform returns a
+          // terminal result; rejected uploads remain recoverable orphans and
+          // are never deleted here.
+          const media = await fetchPublishMedia({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, role: 'reconcile', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+          if (media.length) {
+            const lifecycle = publishMediaLifecycleClient({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, platform: String(platform), accountId, role: 'reconcile', ...(config.workerId ? { workerId: config.workerId } : {}), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+            await applyReconciledPublishMediaLifecycle({ remoteStatus: result.remoteStatus, media, lifecycle })
+          }
+        }
+        return result
+      })
     } catch (error) {
       if (error instanceof DistributedLockBusyError) throw { normalized: { code: error.code, message: error.message, retryable: true, unknown: false } }
       throw error

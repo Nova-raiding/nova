@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchManualPublishRecordPage, type ManualPublishRecord, type PublishJob } from './api'
-import { ManualPublishRecordRow, PublishJobRecord } from './PublishHistoryPanel'
+import { describePublishHistoryReadError, ManualPublishRecordRow, PublishJobRecord } from './PublishHistoryPanel'
 
 const envelope = (data: unknown) => new Response(JSON.stringify({
   request_id: 'manual-page-test', trace_id: 'manual-page-test', workspace_id: 'ws_demo',
@@ -12,6 +12,15 @@ const envelope = (data: unknown) => new Response(JSON.stringify({
 afterEach(() => vi.unstubAllGlobals())
 
 describe('商家发布记录', () => {
+  it('发布记录读取错误只给出读取恢复指引，不误报写入结果或模型故障', () => {
+    const error = Object.assign(new Error('service unavailable'), { code: 'PUBLISH_READ_UNAVAILABLE', status: 503 })
+    const message = describePublishHistoryReadError(error)
+    expect(message).toBe('发布记录暂时无法读取，请检查 API 连接后重试。')
+    expect(message).not.toContain('操作未确认')
+    expect(message).not.toContain('模型中转')
+    expect(message).not.toContain('插件连接')
+  })
+
   it('从服务端读取第 101 条之后的人工记录，保留分页总数和任务筛选', async () => {
     vi.stubGlobal('window', globalThis)
     const item = { id: 'manual-101', taskId: 'task-1', contentVersionId: 'content-1', platform: 'taobao', accountId: 'store-1', state: 'manual_publish_reported', recordedAt: '2026-09-29T00:00:00.000Z' }

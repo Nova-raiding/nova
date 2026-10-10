@@ -3191,7 +3191,7 @@ function allowsWriteTools() {
   return configuredEnv('MERCHANT_MCP_WRITE_ENABLED').toLowerCase() === 'true' || interactiveWriteUntil > Date.now()
 }
 
-async function confirmInteractiveWrites(args) {
+async function confirmInteractiveWrites(args, signal) {
   if (args.confirmation !== 'I_CONFIRM_INTERACTIVE_WRITES') {
     const error = new Error('必须在当前交互会话明确确认写操作')
     error.code = 'INTERACTIVE_CONFIRMATION_REQUIRED'
@@ -3204,7 +3204,7 @@ async function confirmInteractiveWrites(args) {
   // destructive tool for the full TTL even though the merchant never completed
   // confirmation. The local no-token path performs no remote call at all and
   // must still open the window, so the assignment stays outside the branch.
-  const remoteConfirmation = remoteTicketRequired ? await callRemote('workspace.interactive.confirm', args) : undefined
+  const remoteConfirmation = remoteTicketRequired ? await callRemote('workspace.interactive.confirm', args, signal) : undefined
   interactiveWriteUntil = Date.now() + INTERACTIVE_WRITE_TTL_MS
   return {
     enabled: true,
@@ -3278,8 +3278,21 @@ function prepareToolArguments(method, params) {
   return prepared
 }
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+function wait(ms, signal) {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+  if (signal.aborted) return Promise.reject(signal.reason ?? new DOMException('MCP request cancelled', 'AbortError'))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    const abort = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+      reject(signal.reason ?? new DOMException('MCP request cancelled', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+  })
 }
 
 function imageTrace(event, fields = {}) {
@@ -3288,13 +3301,14 @@ function imageTrace(event, fields = {}) {
 }
 
 function mcpErrorTrace(method, error) {
-  if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
+  const operationStatus = error && typeof error === 'object' && error.details?.operation_status === 'unknown' ? 'unknown' : undefined
+  if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true' && !operationStatus) return
   const candidate = error && typeof error === 'object' && typeof error.code === 'string' ? error.code.trim() : ''
   const errorCode = /^[A-Z][A-Z0-9_]{0,127}$/u.test(candidate) ? candidate : 'MCP_GATEWAY_ERROR'
   // Tool inputs and provider/API error messages may contain merchant content or
   // credentials. Keep the diagnostic useful for routing without serializing
   // the original error or any request fields.
-  try { console.error(JSON.stringify({ event: 'merchant.mcp.error', ts: new Date().toISOString(), method, error_code: errorCode })) } catch { /* diagnostics must never break MCP */ }
+  try { console.error(JSON.stringify({ event: 'merchant.mcp.error', ts: new Date().toISOString(), method, error_code: errorCode, ...(operationStatus ? { operation_status: operationStatus } : {}) })) } catch { /* diagnostics must never break MCP */ }
 }
 
 function imageExecutionStillPending(result) {
@@ -3320,7 +3334,7 @@ function imagePollingMustStop(result) {
     || states.includes('unknown') || result?.candidate_state?.state === 'unknown'
 }
 
-async function resolveGeneratedImagePreview(method, initialResult) {
+async function resolveGeneratedImagePreview(method, initialResult, signal) {
   if (!['catalog.image.generate', 'asset.upload'].includes(method) || !initialResult || typeof initialResult !== 'object' || Array.isArray(initialResult)) return initialResult
   if (imagePollingMustStop(initialResult)) return initialResult
   if (Array.isArray(initialResult.images) && initialResult.images.length) return initialResult
@@ -3339,8 +3353,8 @@ async function resolveGeneratedImagePreview(method, initialResult) {
   // long enough to return the actual image attachment instead of making the
   // merchant type a fake “query results” follow-up.
   for (const delay of [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]) {
-    await wait(delay)
-    const polled = await callRemote('catalog.image.get', { job_id: jobId })
+    await wait(delay, signal)
+    const polled = await callRemote('catalog.image.get', { job_id: jobId }, signal)
     if (!polled || typeof polled !== 'object' || Array.isArray(polled)) continue
     latest = { ...latest, ...polled }
     if (imagePollingMustStop(polled)) return latest
@@ -3352,8 +3366,10 @@ async function resolveGeneratedImagePreview(method, initialResult) {
   return latest
 }
 
-async function callRemote(method, params) {
+async function callRemote(method, params, signal) {
+  if (signal?.aborted) throw signal.reason ?? new DOMException('MCP request cancelled', 'AbortError')
   await ensureManagedCredential()
+  if (signal?.aborted) throw signal.reason ?? new DOMException('MCP request cancelled', 'AbortError')
   // Workspace IDs are assigned by the platform administrator. Never create
   // one from the merchant plugin; missing bindings fail closed below.
   assertTransportConfiguration()
@@ -3429,6 +3445,9 @@ async function callRemote(method, params) {
       const remainingMs = deadline - Date.now()
       if (remainingMs <= 0) throw new Error('MCP gateway request timed out while waiting for the local API')
       const controller = new AbortController()
+      const abortFromCaller = () => controller.abort(signal?.reason ?? new DOMException('MCP request cancelled', 'AbortError'))
+      if (signal?.aborted) abortFromCaller()
+      else signal?.addEventListener('abort', abortFromCaller, { once: true })
       // Start the per-request timeout at the fetch boundary. `deadline` also
       // includes the bounded startup grace for very small test timeouts; using
       // the remaining budget here would let startup/queueing time consume the
@@ -3511,7 +3530,7 @@ async function callRemote(method, params) {
             : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
-          await wait(Math.min(backoffMs, Math.max(50, deadline - Date.now())))
+          await wait(Math.min(backoffMs, Math.max(50, deadline - Date.now())), signal)
           continue
         }
         // The current API intentionally wraps its JSON-RPC result in the common
@@ -3534,6 +3553,15 @@ async function callRemote(method, params) {
         }
         return result
       } catch (error) {
+        if (signal?.aborted) {
+          if (!READ_ONLY_METHODS.has(method) && error instanceof Error && error.name === 'AbortError') {
+            throw Object.assign(new Error('MCP gateway request was cancelled before the write outcome was confirmed'), {
+              code: 'API_UNAVAILABLE',
+              details: { operation_status: 'unknown', retryable: false, cancelled: true },
+            })
+          }
+          throw signal.reason ?? error
+        }
         const retryableNetworkError = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
         const timedOutWrite = error instanceof Error && error.name === 'AbortError' && !READ_ONLY_METHODS.has(method)
         if (timedOutWrite) {
@@ -3551,9 +3579,10 @@ async function callRemote(method, params) {
           }
           throw error
         }
-        await wait(Math.min(retryDelayMs * (2 ** (attempt - 1)), Math.max(50, deadline - Date.now())))
+        await wait(Math.min(retryDelayMs * (2 ** (attempt - 1)), Math.max(50, deadline - Date.now())), signal)
       } finally {
         clearTimeout(timer)
+        signal?.removeEventListener('abort', abortFromCaller)
       }
     }
   } finally {
@@ -4008,7 +4037,7 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
   }
 }
 
-async function waitForAssetScan(uploadResult) {
+async function waitForAssetScan(uploadResult, signal) {
   const assetId = typeof uploadResult?.id === 'string'
     ? uploadResult.id
     : typeof uploadResult?.asset_id === 'string' ? uploadResult.asset_id : ''
@@ -4019,12 +4048,14 @@ async function waitForAssetScan(uploadResult) {
   let latestAsset
   let latestAction
   do {
-    await wait(Math.min(ASSET_SCAN_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())))
+    await wait(Math.min(ASSET_SCAN_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())), signal)
+    if (signal?.aborted) throw signal.reason ?? new DOMException('MCP request cancelled', 'AbortError')
     if (Date.now() > deadline) break
     let listing
     try {
-      listing = await callRemote('asset.list', {})
+      listing = await callRemote('asset.list', {}, signal)
     } catch {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('MCP request cancelled', 'AbortError')
       return assetScanResult(uploadResult, latestAsset, latestAction, true)
     }
     latestAsset = Array.isArray(listing?.assets) ? listing.assets.find(asset => asset?.id === assetId) : undefined
@@ -4036,7 +4067,7 @@ async function waitForAssetScan(uploadResult) {
   return assetScanResult(uploadResult, latestAsset, latestAction, true)
 }
 
-async function handle(request) {
+async function handle(request, signal) {
   // JSON-RPC distinguishes malformed JSON (-32700) from a valid JSON value
   // that is not a Request object (-32600).  Keep protocol-shape failures at
   // this boundary instead of letting null/arrays fall through to the generic
@@ -4148,7 +4179,7 @@ async function handle(request) {
     }
     if (name === 'workspace.interactive.confirm') {
       try {
-        const result = await confirmInteractiveWrites(args)
+        const result = await confirmInteractiveWrites(args, signal)
         return jsonRpc(id, { content: toolContent(name, result), structuredContent: result, isError: false })
       } catch (error) {
         const message = error instanceof Error ? merchantVisibleText(error.message, '本次确认未完成。') : '本次确认未完成。'
@@ -4180,10 +4211,10 @@ async function handle(request) {
         const reason = error instanceof Error ? error.message : '本地文件无法读取'
         return toolArgumentError(id, `工具 asset.upload 参数无效：${reason}`, `上传文件无效：${reason}。请确认文件存在、非空且不超过 50MB 后重试。`)
       }
-      const remoteResult = await callRemote(name, preparedArguments)
+      const remoteResult = await callRemote(name, preparedArguments, signal)
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })
-      const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
-      const rawResult = await resolveGeneratedImagePreview(name, scannedResult)
+      const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult, signal) : remoteResult
+      const rawResult = await resolveGeneratedImagePreview(name, scannedResult, signal)
       rememberCommercialAccessResult(name, rawResult)
       const exposedResult = merchantBillingProjection(name, rawResult)
       const assetResult = merchantAssetStructuredContent(name, exposedResult)
@@ -4300,12 +4331,33 @@ async function handle(request) {
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
 let requestQueue = Promise.resolve()
+const activeRequests = new Map()
 input.on('line', line => {
   if (!line.trim()) return
   let request
   try { request = JSON.parse(line) } catch { write(jsonRpcError(null, -32700, '请求内容解析失败')); return }
+  // Cancellation notifications must bypass the serialized request queue: the
+  // active request is waiting inside that queue until its remote fetch settles.
+  // Keeping cancellation here lets JSON-RPC request ids stop the matching
+  // outbound HTTP request while preserving ordered execution for normal calls.
+  if (request?.jsonrpc === '2.0' && request?.method === 'notifications/cancelled' && !Object.prototype.hasOwnProperty.call(request, 'id')) {
+    const requestId = request?.params?.requestId
+    if (typeof requestId === 'string' || (typeof requestId === 'number' && Number.isSafeInteger(requestId))) {
+      activeRequests.get(requestId)?.abort(new DOMException('MCP request cancelled', 'AbortError'))
+    }
+    return
+  }
+  const requestId = request && Object.prototype.hasOwnProperty.call(request, 'id')
+    && (typeof request.id === 'string' || (typeof request.id === 'number' && Number.isSafeInteger(request.id)))
+    ? request.id
+    : undefined
+  const controller = requestId === undefined ? undefined : new AbortController()
+  if (requestId !== undefined && controller) activeRequests.set(requestId, controller)
   requestQueue = requestQueue
-    .then(() => handle(request))
-    .then(response => { if (response) write(response) })
-    .catch(() => write(jsonRpcError(request?.id ?? null, -32603, '插件处理请求时发生错误；请稍后重试。')))
+    .then(() => controller?.signal.aborted ? null : handle(request, controller?.signal))
+    .then(response => { if (response && !controller?.signal.aborted) write(response) })
+    .catch(() => { if (!controller?.signal.aborted) write(jsonRpcError(request?.id ?? null, -32603, '插件处理请求时发生错误；请稍后重试。')) })
+    .finally(() => {
+      if (requestId !== undefined && activeRequests.get(requestId) === controller) activeRequests.delete(requestId)
+    })
 })

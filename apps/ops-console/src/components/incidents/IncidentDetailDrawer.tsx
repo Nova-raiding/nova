@@ -18,6 +18,10 @@ interface IncidentDetailDrawerProps {
   onRetryTimeline: () => void
   mutating: boolean
   error?: string
+  errorDescription?: string
+  errorAction?: { label: string; onClick(): void }
+  mutationUncertain?: boolean
+  mutationUncertainTarget?: { id: string; title: string }
   canMutate: boolean
   onClose: () => void
   onLoadMoreTimeline: () => Promise<unknown>
@@ -27,8 +31,9 @@ interface IncidentDetailDrawerProps {
   onUpdateScope: (components: string[], workspaceIds: string[], note: string) => Promise<unknown>
 }
 
-export function incidentDetailCapabilities(canMutate: boolean, detailVerified = true) {
-  return { canRead: true, canComment: detailVerified, canTransition: canMutate && detailVerified, canAssignCommander: canMutate && detailVerified, canUpdateScope: canMutate && detailVerified }
+export function incidentDetailCapabilities(canMutate: boolean, detailVerified = true, mutationUncertain = false) {
+  const canWrite = detailVerified && !mutationUncertain
+  return { canRead: true, canComment: canWrite, canTransition: canMutate && canWrite, canAssignCommander: canMutate && canWrite, canUpdateScope: canMutate && canWrite }
 }
 
 export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
@@ -58,7 +63,7 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
   // unchanged, and after accepted mutations advance the incident revision.
   }, [incident?.id, incident?.revision, incident?.commanderId, incident?.affectedComponents, incident?.affectedWorkspaceIds, props.detailVerified])
   if (!incident) return null
-  const capabilities = incidentDetailCapabilities(props.canMutate, props.detailVerified)
+  const capabilities = incidentDetailCapabilities(props.canMutate, props.detailVerified, props.mutationUncertain)
   const nextStatus = incidentNextStatus[incident.status]
   const settle = async (operation: () => Promise<unknown>, clear: () => void) => {
     try { await operation(); clear() } catch { /* The page-level role=alert owns error presentation. */ }
@@ -70,10 +75,10 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
     }}>
       <section aria-label="事故详情内容" aria-busy={props.loading}>
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-          {props.loading ? '正在加载事故详情和时间线。' : props.detailVerified ? '事故详情已验证。' : props.detailError ? '事故详情加载失败。' : '事故详情尚未验证。'}
+          {props.loading ? '正在加载事故详情和时间线。' : props.mutationUncertain ? `事故操作结果仍待核对：${props.mutationUncertainTarget ? `“${props.mutationUncertainTarget.title}”（${props.mutationUncertainTarget.id}）` : '目标事故'}。完成目标事故详情和时间线核对前，所有事故详情写操作保持锁定。` : props.detailVerified ? '事故详情已验证。' : props.detailError ? '事故详情加载失败。' : '事故详情尚未验证。'}
         </div>
         <Spin spinning={props.loading}>
-        {props.error ? <div ref={errorRef} tabIndex={-1} aria-label="事故详情错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={props.error} style={{ marginBottom: 16 }} /></div> : null}
+        {props.error ? <div ref={errorRef} tabIndex={-1} aria-label="事故详情错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={props.errorDescription ?? props.error} action={props.errorAction ? <Button htmlType="button" onClick={props.errorAction.onClick} style={{ minHeight: 44 }}>{props.errorAction.label}</Button> : undefined} style={{ marginBottom: 16 }} /></div> : null}
         {!props.detailVerified ? <Alert
           type={props.detailError ? 'error' : 'info'}
           showIcon

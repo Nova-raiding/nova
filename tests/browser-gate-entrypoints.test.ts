@@ -16,7 +16,7 @@
  *      specs. `test:browser:ops`, its template and product-import sub-suites,
  *      and `test:browser:ops:jit` name their specs
  *      (or delegate to a fallback) in the script / runner, and
- *      `test:browser:merchant` delegates to a runner that names six specs.
+ *      `test:browser:merchant` delegates to a runner that names twelve specs.
  *      Those sets are pinned below.
  *   3. The entrypoint ledger's browser half is satisfied by
  *      `dogfood/chatgpt-all-functions/playwright.config.mjs`, whose
@@ -24,8 +24,8 @@
  *      runners invoke Playwright with explicit paths and without `--config`,
  *      so Playwright's config auto-discovery looks only in the process working
  *      directory (the repository root), where no `playwright.config.*`
- *      exists. The task-queue fixture is the exception: its dedicated package
- *      script explicitly loads the dogfood config. The config-only specs are
+ *      exists. Task queue fixtures explicitly load the dogfood config, which
+ *      owns their local Vite server. The config-only specs are
  *      the matched set minus every spec named by an actual browser entrypoint,
  *      pinned in `CONFIG_ONLY_BROWSER_SPECS`.
  *
@@ -78,6 +78,8 @@ function playwrightInvocation(source: string): string {
 const MERCHANT_SPECS = [
   'demo/merchant-studio/image-visual-qa.spec.js',
   'demo/merchant-studio/catalog-search-filters.browser.spec.js',
+  'demo/merchant-studio/catalog-product-assets.browser.spec.js',
+  'demo/merchant-studio/task-queue-read-recovery.browser.spec.js',
   'demo/merchant-studio/merchant-risk-destination.browser.spec.js',
   'demo/merchant-studio/overview-finance.browser.spec.js',
   'demo/merchant-studio/upload-rules-journey.browser.spec.js',
@@ -102,6 +104,7 @@ const OPS_BENEFIT_BUNDLE_SPECS = [spec('ops-commercial-benefit-bundles-isolated.
 const OPS_REFUND_SPECS = [spec('ops-refund-isolated.spec.js')]
 const LOCAL_MOCKED_STATE_SPECS = [spec('canonical-product-desktop.spec.js')]
 const MERCHANT_TASK_QUEUE_SPECS = [spec('task-queue-split-flow.spec.js')]
+const MERCHANT_TASK_QUEUE_READ_RECOVERY_SPECS = ['demo/merchant-studio/task-queue-read-recovery.browser.spec.js']
 const MERCHANT_IMAGE_GENERATION_SPECS = [spec('image-generation-desktop.spec.js')]
 const MERCHANT_WORKSPACE_SWITCH_SPECS = ['demo/merchant-studio/merchant-workspace-switch.browser.spec.js']
 const MERCHANT_CATALOG_READ_RETRY_SPECS = ['demo/merchant-studio/catalog-read-retry.browser.spec.js']
@@ -235,6 +238,28 @@ describe('browser gate entrypoints', () => {
     expect(browserRunnerPaths.filter(path => path === file)).toHaveLength(1)
   })
 
+  it('runs every Chromium-backed Ops browser/e2e test in the dedicated serial runner', () => {
+    const opsSource = resolve(root, 'apps/ops-console/src')
+    const chromiumFiles = filesOnDisk(opsSource, name => /(?:browser.*|e2e)\.test\.(?:tsx?|jsx?)$/u.test(name))
+      .map(file => `src/${file}`)
+      .sort()
+    const opsPackage = JSON.parse(readFileSync(resolve(root, 'apps/ops-console/package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    const [unitCommand, browserCommand] = opsPackage.scripts.test!.split(' && ')
+    expect(unitCommand).toContain("--exclude='src/**/*browser*.test.tsx'")
+    expect(unitCommand).toContain("--exclude='src/**/*.e2e.test.ts'")
+    expect(browserCommand).toBe('npm run test:browser')
+
+    const browserRunner = readFileSync(resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs'), 'utf8')
+    const runnerFiles = [...browserRunner.matchAll(/^\s+"(src\/[^\"]+)"/gm)].map(([, file]) => file).sort()
+    for (const file of chromiumFiles) {
+      expect(runnerFiles, `${file} must run in the Chromium gate`).toContain(file)
+      expect(readFileSync(resolve(root, 'apps/ops-console', file), 'utf8')).toMatch(/from ['"]playwright['"]/u)
+    }
+    expect(chromiumFiles.length, 'the scan must find the Ops Chromium-backed tests').toBeGreaterThan(0)
+  })
+
   it('runs the commercial Ops Console specs through their dedicated entrypoint', () => {
     const command = script('test:browser:ops:commercial')
     expect(command).toContain('scripts/run-ops-password-e2e.ts')
@@ -273,6 +298,33 @@ describe('browser gate entrypoints', () => {
     expect(specPathsIn(command)).toEqual(MERCHANT_TASK_QUEUE_SPECS)
     expect(command).toContain('--workers=1')
     expect(command).toContain('TASK_QUEUE_BROWSER_FIXTURE=1')
+  })
+
+  it('runs task-queue read recovery with an explicit local Merchant Studio URL and dogfood config', () => {
+    const command = script('test:browser:merchant:task-queue-read-recovery')
+    expect(specPathsIn(command)).toEqual(MERCHANT_TASK_QUEUE_READ_RECOVERY_SPECS)
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(command).toContain('MERCHANT_CATALOG_BROWSER_FIXTURE=1')
+    expect(command).toContain('MERCHANT_STUDIO_URL=http://127.0.0.1:4188')
+    expect(command).toContain('--workers=1')
+    const config = readFileSync(resolve(root, 'dogfood/chatgpt-all-functions/playwright.config.mjs'), 'utf8')
+    expect(config).toContain("process.env.MERCHANT_CATALOG_BROWSER_FIXTURE === '1' ? '4188'")
+    expect(config).toContain('npm --prefix demo/merchant-studio run dev')
+    expect(config).toContain('url: `http://127.0.0.1:${merchantFixturePort}/`')
+  })
+
+  it('runs product-asset relation through its explicit local Vite fixture entrypoint', () => {
+    const command = script('test:browser:merchant:product-assets')
+    expect(specPathsIn(command)).toEqual(['demo/merchant-studio/catalog-product-assets.browser.spec.js'])
+    expect(command).toContain('--config=dogfood/chatgpt-all-functions')
+    expect(command).toContain('MERCHANT_BROWSER_SPEC_DIR=repo')
+    expect(command).toContain('--workers=1')
+    const browserSpec = readFileSync(resolve(root, 'demo/merchant-studio/catalog-product-assets.browser.spec.js'), 'utf8')
+    expect(browserSpec).toContain("import { createServer } from 'vite'")
+    expect(browserSpec).toContain('configFile: false')
+    expect(browserSpec).toContain('port: 0')
+    expect(browserSpec).toContain('strictPort: true')
+    expect(browserSpec).toContain('await vite.close()')
   })
 
   it('runs global merchant workspace switching through a dedicated dual-workspace isolated fixture', () => {
@@ -534,10 +586,15 @@ describe('browser gate entrypoints', () => {
 
   it('composes test:browser:all from merchant, desktop creative, and every dedicated Ops acceptance suite', () => {
     const all = script('test:browser:all')
-    const requiredBrowserScripts = Object.keys(packageJson.scripts).filter(name => name.startsWith('test:browser:') && name !== 'test:browser:all' && name !== 'test:browser:ops:jit')
+    const alreadyInMerchantCandidate = new Set(['test:browser:merchant:product-assets', 'test:browser:merchant:task-queue-read-recovery'])
+    const requiredBrowserScripts = Object.keys(packageJson.scripts).filter(name => name.startsWith('test:browser:') && name !== 'test:browser:all' && name !== 'test:browser:ops:jit' && !alreadyInMerchantCandidate.has(name))
     for (const name of requiredBrowserScripts) expect(all).toContain(`npm run ${name}`)
     expect(all).toContain('npm run test:browser:merchant:overview-journeys')
+    expect(all).not.toContain('npm run test:browser:merchant:product-assets')
+    expect(all).not.toContain('npm run test:browser:merchant:task-queue-read-recovery')
     expect(all).not.toContain('test:browser:ops:jit')
+    expect(MERCHANT_SPECS).toContain('demo/merchant-studio/catalog-product-assets.browser.spec.js')
+    expect(MERCHANT_SPECS).toContain('demo/merchant-studio/task-queue-read-recovery.browser.spec.js')
 
     const overview = script('test:browser:merchant:overview-journeys')
     expect(overview).toContain('MERCHANT_OVERVIEW_BROWSER_FIXTURE=1')
@@ -570,6 +627,18 @@ describe('browser gate entrypoints', () => {
     expect(runner).not.toContain('https://yxsona.com')
   })
 
+  it('runs the material asset journey through its existing dedicated local runner exactly once', () => {
+    expect(script('test:browser:material-asset-journey')).toBe('node scripts/run-material-asset-journey-browser.mjs')
+    const runner = readFileSync(resolve(root, 'scripts/run-material-asset-journey-browser.mjs'), 'utf8')
+    expect(runner).toContain("const spec = 'demo/merchant-studio/material-asset-journey.browser.spec.js'")
+    expect(runner).toContain("'--config=demo/merchant-studio'")
+    expect(runner).toContain("'--workers=1'")
+    expect(script('test:browser:all')).toContain('npm run test:browser:material-asset-journey')
+    expect(MERCHANT_SPECS).not.toContain('demo/merchant-studio/material-asset-journey.browser.spec.js')
+    const candidateRunner = readFileSync(resolve(root, 'scripts/merchant-browser-candidate.ts'), 'utf8')
+    expect(candidateRunner).not.toContain('material-asset-journey.browser.spec.js')
+  })
+
   it('leaves the declared browser entrypoints unchained from check, and says so', () => {
     const check = script('check')
     // Deliberate gap: `check` stays hermetic, so it names no browser entrypoint.
@@ -596,7 +665,7 @@ describe('browser gate entrypoints', () => {
     expect(configMatched.size, 'the config matched nothing, so the ledger credit is vacuous').toBeGreaterThan(0)
     expect([...configMatched].filter(file => !file.startsWith(`${DOGFOOD_DIR}/`))).toEqual([])
 
-    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...MERCHANT_CATALOG_READ_RETRY_SPECS, ...MERCHANT_RECYCLE_BIN_SPECS, ...MERCHANT_COMMERCIAL_PURCHASE_SPECS, ...MERCHANT_STORE_REGISTRATION_SPECS, ...MERCHANT_URL_ROUTE_MATRIX_SPECS, ...MERCHANT_OVERVIEW_JOURNEY_SPECS, ...MERCHANT_READ_RECOVERY_SPECS, ...MERCHANT_LOGIN_ONBOARDING_SPECS, ...MERCHANT_RULES_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_TASK_QUEUE_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, ...OPS_DELIVERY_READONLY_SPECS, ...OPS_MANUAL_IMPORT_SPECS, ...OPS_MCP_REQUEST_MATRIX_SPECS, ...OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS, ...OPS_DELIVERY_CONTRACT_LINK_SPECS, ...OPS_DELIVERY_ACCOUNT_ACCESS_SPECS, ...OPS_MERCHANT_PROVISION_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
+    const runByBrowserScripts = new Set([...MERCHANT_SPECS, ...MERCHANT_CATALOG_READ_RETRY_SPECS, ...MERCHANT_RECYCLE_BIN_SPECS, ...MERCHANT_COMMERCIAL_PURCHASE_SPECS, ...MERCHANT_STORE_REGISTRATION_SPECS, ...MERCHANT_URL_ROUTE_MATRIX_SPECS, ...MERCHANT_OVERVIEW_JOURNEY_SPECS, ...MERCHANT_READ_RECOVERY_SPECS, ...MERCHANT_LOGIN_ONBOARDING_SPECS, ...MERCHANT_RULES_SPECS, ...OPS_SPECS, ...OPS_COMMERCIAL_SPECS, ...OPS_BENEFIT_BUNDLE_SPECS, ...OPS_REFUND_SPECS, ...LOCAL_MOCKED_STATE_SPECS, ...MERCHANT_TASK_QUEUE_SPECS, ...MERCHANT_TASK_QUEUE_READ_RECOVERY_SPECS, ...MERCHANT_IMAGE_GENERATION_SPECS, ...MERCHANT_WORKSPACE_SWITCH_SPECS, ...OPS_MATRIX_SPECS, ...OPS_DESKTOP_STATE_SPECS, ...OPS_ACCOUNT_LABEL_SPECS, ...OPS_ACCOUNT_OWNERSHIP_SPECS, ...OPS_TEMPLATE_SPECS, ...OPS_RULE_UPLOAD_SPECS, ...OPS_PUBLIC_RULE_UPLOAD_SPECS, ...OPS_PRODUCT_IMPORT_SPECS, ...OPS_UNMATCHED_READONLY_SPECS, ...OPS_DELIVERY_READONLY_SPECS, ...OPS_MANUAL_IMPORT_SPECS, ...OPS_MCP_REQUEST_MATRIX_SPECS, ...OPS_MERCHANT_MATRIX_BOOTSTRAP_SPECS, ...OPS_DELIVERY_CONTRACT_LINK_SPECS, ...OPS_DELIVERY_ACCOUNT_ACCESS_SPECS, ...OPS_MERCHANT_PROVISION_SPECS, spec('ops-jit-isolated.spec.js'), spec('ops-members-global-isolated.spec.js')])
     const configOnly = [...configMatched].filter(file => !runByBrowserScripts.has(file)).sort()
     expect(configOnly.length, 'an empty claim list would make this assertion vacuous').toBeGreaterThan(0)
     expect(configOnly).toEqual(CONFIG_ONLY_BROWSER_SPECS)
