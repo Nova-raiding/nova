@@ -18,6 +18,9 @@ COPY packages/application/src/spreadsheet-batch.ts /packages/application/src/spr
 # contracts source tree because those modules have local type imports (for
 # example commercial-feature-definitions -> commercial-access -> errors).
 COPY packages/contracts/src /packages/contracts/src
+# Merchant UI task recovery grouping reuses the shared task transition graph.
+COPY packages/domain/src/task.ts /packages/domain/src/task.ts
+COPY packages/domain/src/result.ts /packages/domain/src/result.ts
 RUN ln -s /app/node_modules /packages/node_modules
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
