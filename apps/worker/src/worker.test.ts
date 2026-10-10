@@ -1558,9 +1558,17 @@ describe('worker production entry', () => {
     const validHash = 'a'.repeat(64)
     const accepted = await assertPublishExecution({
       apiBaseUrl: 'http://api.test', apiToken: 'token', event,
-      fetcher: async () => new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_a/jd', payload_hash: validHash } }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      fetcher: async () => new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_a/jd', payload_hash: validHash, media_required: false } }), { status: 200, headers: { 'content-type': 'application/json' } }),
     })
     expect(accepted).toEqual({ credentialRef: 'vault://merchant/ws_a/jd', payloadHash: validHash, mediaRequired: false })
+
+    for (const mediaRequired of [undefined, null, 'true']) {
+      const data = { credential_ref: 'vault://merchant/ws_a/jd', payload_hash: validHash, ...(mediaRequired === undefined ? {} : { media_required: mediaRequired }) }
+      await expect(assertPublishExecution({
+        apiBaseUrl: 'http://api.test', apiToken: 'token', event,
+        fetcher: async () => new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      })).rejects.toThrow('did not return a media requirement')
+    }
 
     await expect(assertPublishExecution({
       apiBaseUrl: 'http://api.test', apiToken: 'token', event,

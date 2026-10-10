@@ -9,7 +9,7 @@ const bindingEvent: DurableOutboxEvent = {
 }
 
 function executionGateResponse() {
-  return new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_publish_binding/jd', payload_hash: 'a'.repeat(64) } }), { status: 200 })
+  return new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_publish_binding/jd', payload_hash: 'a'.repeat(64), media_required: false } }), { status: 200 })
 }
 
 function capturedRequest(captured: { url?: string; headers?: Headers }) {
@@ -83,7 +83,7 @@ describe('publish execution authorization binding', () => {
       apiBaseUrl: 'https://api.example', apiToken: 'worker-token', event,
       fetcher: async (input) => {
         requestedUrl = String(input)
-        return new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_publish_binding/jd', payload_hash: 'a'.repeat(64) } }), { status: 200 })
+        return new Response(JSON.stringify({ data: { credential_ref: 'vault://merchant/ws_publish_binding/jd', payload_hash: 'a'.repeat(64), media_required: false } }), { status: 200 })
       },
     })
     expect(new URL(requestedUrl).searchParams.get('event_id')).toBe(event.id)

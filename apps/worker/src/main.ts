@@ -1120,11 +1120,12 @@ export async function assertPublishExecution(input: {
   const envelope = await parseWorkerApiJson(response) as { data?: { credential_ref?: string; payload_hash?: string; media_required?: boolean; authorization_snapshot?: unknown } }
   if (typeof envelope.data?.credential_ref !== 'string' || !envelope.data.credential_ref) throw new Error('publish execution gate did not return a credential locator')
   if (typeof envelope.data.payload_hash !== 'string' || !/^[a-f0-9]{64}$/u.test(envelope.data.payload_hash)) throw new Error('publish execution gate did not return a payload hash')
+  if (typeof envelope.data.media_required !== 'boolean') throw new Error('publish execution gate did not return a media requirement')
   const snapshot = envelope.data.authorization_snapshot
   const eventSnapshot = input.event.payload.authorization_snapshot
   if (input.production && (!snapshot || !eventSnapshot || JSON.stringify(snapshot) !== JSON.stringify(eventSnapshot))) throw new Error('publish execution gate authorization snapshot is missing or does not match the durable event')
   if (snapshot !== null && snapshot !== undefined && (!eventSnapshot || JSON.stringify(snapshot) !== JSON.stringify(eventSnapshot))) throw new Error('publish execution gate authorization snapshot mismatch')
-  return { credentialRef: envelope.data.credential_ref, payloadHash: envelope.data.payload_hash, mediaRequired: envelope.data.media_required === true, ...(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? { authorizationSnapshot: snapshot as Record<string, unknown> } : {}) }
+  return { credentialRef: envelope.data.credential_ref, payloadHash: envelope.data.payload_hash, mediaRequired: envelope.data.media_required, ...(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? { authorizationSnapshot: snapshot as Record<string, unknown> } : {}) }
 }
 
 export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'> & Partial<Pick<WorkerConfig, 'workerId'>>, fetcher: typeof fetch = fetch) {
