@@ -43,11 +43,11 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
       const offset = Number(url.searchParams.get('offset') ?? 0)
       if (failSearch && query === 'missing' && !allowRetry) {
         await new Promise(resolve => setTimeout(resolve, 300))
-        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'TASK_READ_UNAVAILABLE', message: '任务暂时无法读取' })) })
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'CANONICAL_TASK_READ_UNAVAILABLE', message: '标准商品事实不可用，已阻断任务读取' })) })
       }
       if (offset === 50 && !allowPageTwoRetry) {
         await new Promise(resolve => setTimeout(resolve, 300))
-        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'TASK_READ_UNAVAILABLE', message: '任务暂时无法读取' })) })
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'CANONICAL_TASK_READ_UNAVAILABLE', message: '标准商品事实不可用，已阻断任务读取' })) })
       }
       const rows = offset === 50
         ? [task('task-page-two', 'product-page-two')]
@@ -72,7 +72,7 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
     await page.getByRole('search', { name: '搜索任务队列' }).getByRole('button', { name: '搜索', exact: true }).click()
     await expect(page.getByText('正在读取新结果；当前列表保留的是第 1 页、全部任务的上次成功结果。')).toBeVisible()
     await expect(page.getByText('上次成功任务商品')).toBeVisible()
-    await expect(page.getByRole('alert')).toContainText('任务暂时无法读取')
+    await expect(page.getByRole('alert')).toContainText('标准商品事实不可用，已阻断任务读取')
     await expect(page.getByText('显示第 1 页、全部任务的上次成功结果；当前读取失败，数据可能已变化。')).toBeVisible()
     await expect(page.getByText('上次成功任务商品')).toBeVisible()
     await expect(page.getByText('没有匹配的营销任务')).toHaveCount(0)
@@ -88,7 +88,7 @@ test('任务搜索读取失败时保留上次成功结果，并可重试加载�
     await page.getByRole('button', { name: '下一页' }).click()
     await expect(page.getByText('正在读取新结果；当前列表保留的是第 1 页、搜索“missing”的上次成功结果。')).toBeVisible()
     await expect(page.getByText('显示第 1 页（第 2 页读取失败）')).toHaveCount(0)
-    await expect(page.getByRole('alert')).toContainText('任务暂时无法读取')
+    await expect(page.getByRole('alert')).toContainText('标准商品事实不可用，已阻断任务读取')
     await expect(page.getByText('显示第 1 页、搜索“missing”的上次成功结果；当前读取失败，数据可能已变化。')).toBeVisible()
     await expect(page.getByText('显示第 1 页（第 2 页读取失败）')).toBeVisible()
     await expect(page.getByText('重试后任务商品')).toBeVisible()

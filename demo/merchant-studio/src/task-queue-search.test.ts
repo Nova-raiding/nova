@@ -23,7 +23,7 @@ describe('task queue search wiring', () => {
 
   it('keeps the last successful task rows visible after a failed refresh or search', () => {
     expect(app).not.toContain('setTaskList(null)')
-    expect(app).toContain("readError?.code === 'TASK_READ_UNAVAILABLE'")
+    expect(app).toContain("readError?.code === 'CANONICAL_TASK_READ_UNAVAILABLE'")
     expect(app).toContain("readError.message || '任务暂时无法读取'")
     expect(app).toContain(': describeApiError(cause)')
     expect(app).toMatch(/当前列表保留的是第\s*\{\s*['"]\s*['"]\s*\}\s*\{\s*\(taskListSnapshotContext\?\.page \?\? taskPage\) \+ 1\}\s*页/u)
