@@ -70,9 +70,9 @@ describe("OperationalGovernanceSection read state", () => {
         publish: [
           { id: "p-1", platform: "jd", taskId: "t-1", state: "queued", revision: 1, createdAt: "2026-09-20T00:00:00Z" },
         ],
-        visuals: [{ visualRef: "visual-1" }],
+        visuals: [{ visualRef: "visual-1", skuIds: [], ordinal: 1, reviewStatus: "pending", updatedAt: "2026-09-20T00:00:00Z" }],
         imageExecutions: [{ jobId: "image-1" }],
-        uploadedAssetRisks: [{ id: "asset-1" }],
+        uploadedAssetRisks: [{ id: "asset-1", name: "upload.pdf", mimeType: "application/pdf", scanStatus: "clean", parseStatus: "complete", rightsStatus: "approved", readiness: { status: "ready", reasons: [] }, revision: 1, createdAt: "2026-09-20T00:00:00Z" }],
       } as unknown as OpsConsoleModel["marketingQueue"],
       loadedAt: new Date("2026-09-20T00:00:00Z"),
     });
