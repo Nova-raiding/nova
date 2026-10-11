@@ -108,7 +108,7 @@ const candidateServices = ['api', 'ui', 'ops-ui', 'postgres', 'redis', 'migrate'
 // reserve another reviewed browser-only pool before running browser QA.
 export const CANDIDATE_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 export const CANDIDATE_REDIS_IMAGE = 'redis:7-alpine@sha256:ca0acbb137c1dc3339c8b147a58fd6f42775d4599327b50e7b116c23de501af2'
-const toolingEnvironmentKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'CI', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'MERCHANT_E2E_LOGIN', 'MERCHANT_E2E_PASSWORD'] as const
+const toolingEnvironmentKeys = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TERM', 'CI', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'BUILDX_BUILDER', 'MERCHANT_E2E_LOGIN', 'MERCHANT_E2E_PASSWORD'] as const
 
 export function isolatedCandidateEnvironment(source: Environment): Environment {
   if (source.BROWSER_ENV_FILE) throw new Error('candidate mode refuses BROWSER_ENV_FILE and business environment files')

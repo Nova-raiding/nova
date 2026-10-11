@@ -27,6 +27,11 @@ describe('browser candidate isolation', () => {
     })
     expect(candidateConfiguration({}, sha, ports, '1123456789ab').project).not.toBe(value.project)
   })
+  it('keeps an explicitly selected local Buildx builder for isolated Compose builds', () => {
+    const value = candidateConfiguration({ BUILDX_BUILDER: 'merchant-browser-proxy', DOCKER_HOST: 'unix:///tmp/qa-docker.sock' }, sha, ports, '0123456789ab')
+    expect(value.env).toMatchObject({ BUILDX_BUILDER: 'merchant-browser-proxy', DOCKER_HOST: 'unix:///tmp/qa-docker.sock' })
+    expect(candidateConfiguration({}, sha, ports, '0123456789ab').env.BUILDX_BUILDER).toBeUndefined()
+  })
   it('allocates a non-overlapping subnet in the isolated browser-only pool', () => {
     expect(chooseCandidateNetworkSubnet('10.253.1.0/24', ['172.17.0.0/16', '10.253.1.0/24', '10.253.2.0/23'])).toBe('10.253.4.0/24')
     expect(() => chooseCandidateNetworkSubnet('192.168.1.0/24', [])).toThrow(/10.253/)
