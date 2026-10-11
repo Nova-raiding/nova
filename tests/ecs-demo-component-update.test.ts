@@ -274,7 +274,7 @@ describe('Demo UI mixed-component publication identity', () => {
     reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
     expect(() => prepare(input)).toThrow(/source digest differs/)
   })
-  it('preserves the archived 270-row baseline and rejects the current 278-row source chain', async () => {
+  it('accepts complete unchanged 270-row or 278-row chains and rejects incomplete or divergent chains', async () => {
     const sourceRows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
     const rows = sourceRows.slice(0, 270)
     expect(sourceRows).toHaveLength(278)
@@ -294,7 +294,42 @@ describe('Demo UI mixed-component publication identity', () => {
     expect(JSON.parse(prepare(input).manifest_text).migration_chain_sha256).toBe(chain)
 
     input.target_migrations = sourceRows
-    expect(() => prepare(input)).toThrow(/complete 270-row chain/)
+    expect(() => prepare(input)).toThrow(/complete 278-row chain/)
+
+    const current = fixture()
+    current.baseline.migrations = structuredClone(sourceRows)
+    current.target_migrations = structuredClone(sourceRows)
+    const currentChain = hash(canonicalJson(sourceRows))
+    reseal(current, (_compose, manifest) => {
+      manifest.migration_version = sourceRows.length
+      manifest.migration_chain_sha256 = currentChain
+    })
+    const result = prepare(current)
+    expect(JSON.parse(result.manifest_text)).toMatchObject({ migration_source_version: 278, migration_version: 278, migration_change_required: false, migration_chain_sha256: currentChain })
+    expect(result.review).toMatchObject({ migration_version: 278, migration_chain_sha256: currentChain })
+    expect(JSON.parse(result.manifest_text).rollback_policy).toContain('same-278')
+
+    for (const field of ['name', 'checksum'] as const) {
+      const divergent = fixture()
+      const baselineRows = structuredClone(sourceRows)
+      if (field === 'name') baselineRows[100]!.name = 'different_valid_migration_name'
+      else baselineRows[100]!.checksum = hash('different valid checksum')
+      divergent.baseline.migrations = baselineRows
+      divergent.target_migrations = structuredClone(sourceRows)
+      reseal(divergent, (_compose, manifest) => {
+        manifest.migration_version = baselineRows.length
+        manifest.migration_chain_sha256 = hash(canonicalJson(baselineRows))
+      })
+      expect(() => prepare(divergent)).toThrow(/migration chain drift/)
+    }
+
+    const discontinuous = structuredClone(current)
+    discontinuous.target_migrations[100]!.version = 102
+    expect(() => prepare(discontinuous)).toThrow(/target source has an invalid migration version\/name\/checksum/)
+
+    const manifestVersionDrift = structuredClone(current)
+    reseal(manifestVersionDrift, (_compose, manifest) => { manifest.migration_version = 277 })
+    expect(() => prepare(manifestVersionDrift)).toThrow(/migration chain drift/)
   })
   it.each(['100_operation_alert_notifications.sql', '../operation_alert_notifications', 'operation-alert-notifications'])('rejects invalid logical migration name %s', name => {
     const input = fixture()

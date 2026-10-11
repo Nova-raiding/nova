@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createImageStatusQuerierFromEnv } from '../../../packages/ai/src/image-generator.js'
 import { reconcileImageGenerationWorkspace, summarizeImageGenerationReconciliation } from './main.js'
 const input={apiBaseUrl:'https://fixture.test',apiToken:'fixture',workspaceId:'workspace'}
 const candidate={job_id:'job',event_id:'event',intent_hash:'a'.repeat(64),execution_attempt:1,query_attempt:1,execution_state:'outcome_unknown',provider_request_id:'provider'}
 describe('image reconciliation truthfulness without provider query capability',()=>{
+  it('keeps unknown provider work blocked when relay credentials lack an explicit status contract',async()=>{
+    const querier=createImageStatusQuerierFromEnv({MODEL_RELAY_BASE_URL:'https://relay.example',MODEL_RELAY_API_KEY:'fixture-key',IMAGE_MODEL:'fixture-image'})
+    expect(querier).toBeUndefined()
+    const sweep=await reconcileImageGenerationWorkspace({...input,...(querier?{queryStatus:querier.queryStatus}:{}),fetcher:async()=>Response.json({data:{attention:[candidate],acknowledged_event_ids:['local-event'],next_cursor:null}})})
+    expect(sweep).toMatchObject({scanCompleted:true,providerQueryConfigured:false,providerQueriesAttempted:0,providerQueriesBlocked:1,providerEvidenceSubmitted:0})
+  })
   it('reports blocked provider attention while retaining a successful local ACK scan',async()=>{
     const calls:string[]=[]
     const sweep=await reconcileImageGenerationWorkspace({...input,fetcher:async url=>{calls.push(String(url));return Response.json({data:{attention:[candidate],acknowledged_event_ids:['local-event'],next_cursor:null,next_completion_ack_cursor:null}})}})

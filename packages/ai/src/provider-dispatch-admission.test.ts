@@ -132,7 +132,7 @@ describe('trusted provider dispatch admission', () => {
     })
     const imageFetch = vi.fn<typeof fetch>(async () => Response.json({ id: 'image-job', status: 'processing' }))
     const videoFetch = vi.fn<typeof fetch>(async () => Response.json({ id: 'video-job', status: 'queued' }))
-    await expect(new OpenAICompatibleImageGenerator({ ...common, fetch: imageFetch, beforeRequest }).queryStatus('image-job')).resolves.toMatchObject({ state: 'processing' })
+    await expect(new OpenAICompatibleImageGenerator({ ...common, statusPath: '/images/status', fetch: imageFetch, beforeRequest }).queryStatus('image-job')).resolves.toMatchObject({ state: 'processing' })
     await expect(new OpenAICompatibleVideoGenerator({ ...common, fetch: videoFetch, beforeRequest }).getStatus('video-job')).resolves.toMatchObject({ status: 'queued' })
     expect(beforeRequest.mock.calls.map(([context]) => context.operation)).toEqual(['image_query', 'video_query'])
     expect(imageFetch).toHaveBeenCalledOnce()
@@ -143,7 +143,7 @@ describe('trusted provider dispatch admission', () => {
     const denial = new TypeError('local query denied')
     const fetchMock = vi.fn<typeof fetch>()
     const beforeRequest: ProviderBeforeRequest = () => { throw denial }
-    await expect(new OpenAICompatibleImageGenerator({ ...common, fetch: fetchMock, beforeRequest }).queryStatus('image-job')).rejects.toBe(denial)
+    await expect(new OpenAICompatibleImageGenerator({ ...common, statusPath: '/images/status', fetch: fetchMock, beforeRequest }).queryStatus('image-job')).rejects.toBe(denial)
     await expect(new OpenAICompatibleVideoGenerator({ ...common, fetch: fetchMock, beforeRequest }).getStatus('video-job')).rejects.toBe(denial)
     expect(fetchMock).not.toHaveBeenCalled()
   })

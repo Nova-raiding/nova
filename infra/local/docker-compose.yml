@@ -432,6 +432,12 @@ services:
       PAYMENT_RECONCILIATION_BATCH_SIZE: ${PAYMENT_RECONCILIATION_BATCH_SIZE:-10}
       WORKER_API_TOKEN: ${WORKER_RECONCILE_API_TOKEN:-reconcile-local-token}
       WORKER_API_SIGNING_SECRET: ${WORKER_RECONCILE_API_SIGNING_SECRET:-reconcile-local-signing-secret}
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
+      MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
+      MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
+      IMAGE_MODEL: ${IMAGE_MODEL:-qwen-image-2.0}
+      IMAGE_STATUS_PATH: ${IMAGE_STATUS_PATH:-}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-120000}
       WORKER_READY_FILE: /tmp/merchant-worker-reconcile-ready
       OTEL_SERVICE_NAME: merchant-worker-reconcile
 

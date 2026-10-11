@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { deflateSync } from 'node:zlib'
-import { OpenAICompatibleImageGenerator, createImageGeneratorFromEnv } from './image-generator.js'
+import { OpenAICompatibleImageGenerator, createImageGeneratorFromEnv, createImageStatusQuerierFromEnv } from './image-generator.js'
 import { OpenAICompatibleImageEditGenerator, createImageEditGeneratorFromEnv } from './image-editor.js'
 import type { RelayUsageRecord } from './relay-usage.js'
 
@@ -53,7 +53,7 @@ describe('image generator', () => {
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => { method = String(init?.method); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'completed', data: [{ url: 'https://cdn.example/one.png' }] } }), { status: 200 }) },
     })
     await expect(generator.queryStatus!('provider-1')).resolves.toMatchObject({ state: 'succeeded', providerRequestId: 'provider-1', images: ['https://cdn.example/one.png'], evidence: { source: 'provider_status', providerStatus: 'completed' } })
@@ -61,16 +61,72 @@ describe('image generator', () => {
   })
 
   it('does not convert an unrecognized provider status into processing', async () => {
-    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
   })
 
   it('rejects a mismatched provider request id even when the provider reports failure', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-other', status: 'failed' } }), { status: 200 }),
     })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+  })
+
+  it('fails closed before authorization or fetch when status path is not configured', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    const beforeRequest = vi.fn()
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', fetch: fetcher, beforeRequest })
+    await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED', message: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED' })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(beforeRequest).not.toHaveBeenCalled()
+  })
+
+  it('uses explicitly configured status paths as GET templates or POST endpoints', async () => {
+    const calls: Array<{ url: string; method: string; body?: string }> = []
+    const fetcher: typeof fetch = async (url, init) => {
+      calls.push({ url: String(url), method: String(init?.method), ...(typeof init?.body === 'string' ? { body: init.body } : {}) })
+      const requestId = String(init?.method) === 'GET' ? 'provider/1' : 'provider-2'
+      return new Response(JSON.stringify({ data: { id: requestId, status: 'processing' } }), { status: 200 })
+    }
+    const get = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/v1/tasks/{request_id}', fetch: fetcher })
+    const post = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/v1/tasks/status', fetch: fetcher })
+    await get.queryStatus('provider/1')
+    await post.queryStatus('provider-2')
+    expect(calls).toEqual([
+      { url: 'https://relay.example/v1/tasks/provider%2F1', method: 'GET' },
+      { url: 'https://relay.example/v1/tasks/status', method: 'POST', body: JSON.stringify({ request_id: 'provider-2' }) },
+    ])
+  })
+
+  it('rejects dot-segment request ids before a status request', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/tasks/{request_id}', fetch: fetcher })
+    for (const id of ['.', '..']) await expect(generator.queryStatus(id)).rejects.toThrow('request id is invalid')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('creates only a query capability from explicit relay and status configuration', () => {
+    expect(createImageStatusQuerierFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-key' })).toBeUndefined()
+    const querier = createImageStatusQuerierFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-key', IMAGE_STATUS_PATH: '/v1/tasks/{request_id}' })
+    expect(querier).toBeDefined()
+    expect(Object.keys(querier!)).toEqual(['queryStatus'])
+    expect('generate' in querier!).toBe(false)
+  })
+
+  it('rejects unsafe explicit status paths before constructing a query capability', () => {
+    const beforeRequest = vi.fn()
+    for (const statusPath of [
+      '/v1/tasks/{request_id}/extra{unexpected}',
+      '/v1/tasks/{request_id',
+      '/v1/tasks/%2e%2e/admin',
+      '/v1/tasks/%252e%252e/admin',
+      `/${'a'.repeat(2048)}`,
+    ]) {
+      expect(createImageStatusQuerierFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-key', IMAGE_STATUS_PATH: statusPath }, beforeRequest)).toBeUndefined()
+    }
+    expect(beforeRequest).not.toHaveBeenCalled()
+    expect(() => new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/v1/tasks/%2e%2e/admin' })).toThrow('safe relative path')
   })
 
   it('maps URL and base64 provider results into safe image references', async () => {

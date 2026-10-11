@@ -148,6 +148,33 @@ function validateImageRelayPath(value: string | undefined) {
   return value
 }
 
+function validateImageStatusPath(value: string | undefined) {
+  if (!value) return undefined
+  const withoutRequestId = value.replace(/\{request_id\}/gu, '')
+  let decoded = value
+  try {
+    for (let pass = 0; pass < 3; pass += 1) {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    }
+  } catch {
+    throw new Error('image status path must be a safe relative path')
+  }
+  const decodedWithoutRequestId = decoded.replace(/\{request_id\}/gu, '')
+  if (value.length > 2048 || !value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /[?#{}\u0000-\u001f\u007f]/u.test(withoutRequestId) || /[?#{}\\\u0000-\u001f\u007f]/u.test(decodedWithoutRequestId) || /(?:^|\/)\.{1,2}(?:\/|$)/u.test(decodedWithoutRequestId)) throw new Error('image status path must be a safe relative path')
+  return value
+}
+
+export interface ImageStatusQuerier {
+  queryStatus(providerRequestId: string, options?: { signal?: AbortSignal }): Promise<ImageGenerationStatus>
+}
+
+class ImageStatusQueryNotConfiguredError extends Error {
+  readonly code = 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED'
+  constructor() { super('IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED'); this.name = 'ImageStatusQueryNotConfiguredError' }
+}
+
 function boundedList(values: string[] | undefined, maxItems: number, maxLength: number) {
   return (values ?? []).map(value => value.trim()).filter(Boolean).slice(0, maxItems).map(value => value.slice(0, maxLength))
 }
@@ -207,7 +234,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
     assertRelayBaseUrl(options.baseUrl)
     validateImageRelayPath(options.editPath)
     validateImageRelayPath(options.path)
-    validateImageRelayPath(options.statusPath)
+    validateImageStatusPath(options.statusPath)
     this.fetchImpl = options.fetch ?? fetch
   }
 
@@ -462,15 +489,16 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
   }
 
   async queryStatus(providerRequestId: string, options: { signal?: AbortSignal } = {}): Promise<ImageGenerationStatus> {
+    if (!this.options.statusPath) throw new ImageStatusQueryNotConfiguredError()
     const requestId = providerRequestId.trim()
-    if (!requestId || requestId.length > 256 || /[\u0000-\u001f\u007f]/u.test(requestId)) throw new Error('image provider request id is invalid')
+    if (!requestId || requestId === '.' || requestId === '..' || requestId.length > 256 || /[\u0000-\u001f\u007f]/u.test(requestId)) throw new Error('image provider request id is invalid')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000)
     const abort = () => controller.abort()
     if (options.signal?.aborted) controller.abort()
     else options.signal?.addEventListener('abort', abort, { once: true })
     try {
-      const template = this.options.statusPath ?? '/images/generations/{request_id}'
+      const template = this.options.statusPath
       const path = template.replace(/\{request_id\}/gu, encodeURIComponent(requestId))
       const usesPathParameter = template.includes('{request_id}')
       if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
@@ -541,4 +569,28 @@ export function createImageGeneratorFromEnv(source: Record<string, string | unde
     ...(usageSink ? { usageSink } : {}),
     ...(beforeRequest ? { beforeRequest } : {}),
   })
+}
+
+export function createImageStatusQuerierFromEnv(source: Record<string, string | undefined> = process.env, beforeRequest?: ProviderBeforeRequest): ImageStatusQuerier | undefined {
+  const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
+  const apiKey = source.MODEL_RELAY_API_KEY?.trim()
+  const statusPath = source.IMAGE_STATUS_PATH?.trim()
+  if (!relayUrl || !apiKey || !statusPath || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey)) return undefined
+  const relaySecurity = relaySecurityFromEnv(source)
+  if (!relaySecurity) return undefined
+  try {
+    validateImageStatusPath(statusPath)
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: relayUrl,
+      apiKey,
+      model: 'status-query-only',
+      statusPath,
+      relaySecurity,
+      timeoutMs: resolveProviderTimeoutMs(source.IMAGE_TIMEOUT_MS, 300_000, 'IMAGE_TIMEOUT_MS'),
+      ...(beforeRequest ? { beforeRequest } : {}),
+    })
+    return { queryStatus: (providerRequestId, options) => generator.queryStatus(providerRequestId, options) }
+  } catch {
+    return undefined
+  }
 }

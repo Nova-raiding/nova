@@ -1,6 +1,6 @@
 # ECS demo 直接部署与上线验收
 
-适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**只有本 runbook 所有前置门禁均通过后，才可提交待审查候选、从精确提交构建并部署到该唯一 Demo，再验证变更；任一门禁未通过即 STOP/NO-GO。当前仍有容器未分类，当前必须 STOP，不得提交为可部署候选或执行部署。**
+适用范围：`101` 上唯一的 Store Nova Demo `merchant-demo-85575f9c`，承载本地 ChatGPT stdio 插件、API/MCP、worker 和桌面后台。公网域名是该 Demo 的入口，不代表另有生产环境。此 runbook 只描述这一个 Compose 项目；禁止创建、选择或部署第二套环境。**只有本 runbook 所有前置门禁均通过后，才可提交待审查候选、从精确提交构建并部署到该唯一 Demo，再验证变更；任一门禁未通过即 STOP/NO-GO。每轮以新鲜 inventory 和绑定候选的 owner 审查记录判断容器分类，不将历史未分类状态当作当前状态。**
 
 本流程只要求与本次变更相称的类型检查、单元/API 测试、桌面浏览器验收和唯一 Demo 容器健康检查；不把其他环境的发布门禁作为 Demo 验收。真实模型中转鉴权、请求、用量和成本仍须保留证据；配置或凭据缺失时 fail closed，并明确阻断对应模型能力。
 
@@ -28,6 +28,8 @@ Migration 274/275 的维护窗口还必须满足具体数据库前置条件：27
 ## 3. 部署后验收与判定
 
 先确认新容器已经启动并承载公网，再进行下列与本次改动相关的最小回归；已通过且未改动的功能不重复测试。记录请求时间、目标域名、容器 ID、组件 digest、响应码和可脱敏的业务 ID。
+
+API 与 Ops 健康响应使用统一 envelope：检查 HTTP 200 和 `data.status=ok`、数据库/Redis readiness、`data.setup.mode=demo`，不得读取顶层 `status` 误判。容器健康不替代 worker 业务 readiness：扫描器的 `recoveryCapable=true` 允许恢复处理，但未有新鲜的真实接受回调时 `ready=false`；不得伪造时间戳。图片对账需要显式的中转状态查询路径和配置；`IMAGE_STATUS_PATH` 为空时不猜 endpoint、不发送 provider 查询，保留本地 ACK 扫描，并将未知 provider 结果明确标为阻断。配置缺失、套餐权限拒绝和真实回调未验证必须逐项记录，不能归入完整业务验收通过。
 
 1. `https://yxsona.com/releasez`：`ready=true`，manifest SHA 和 image-set digest 对应实际运行容器；`https://yxsona.com/api/healthz` 与 `https://ops.yxsona.com/healthz` 返回 200。仅健康探针通过不代表业务上线。
 2. 从桌面浏览器真实登录运营后台和商家工作区 `ws_guirenniaoniao`，验证租户、角色和目标操作。Ops 前端用 `/ops/build-meta.json` 对照镜像提交。

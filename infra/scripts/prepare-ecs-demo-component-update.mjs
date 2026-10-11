@@ -48,10 +48,11 @@ function parseDocument(text, label) {
   assert(typeof text === 'string' && text.length > 0, `${label} bytes missing`)
   try { return JSON.parse(text) } catch { fail(`${label} is not JSON`) }
 }
-function migrations(rows) {
-  assert(Array.isArray(rows) && rows.length === 270, 'no-migration route requires the complete 270-row chain')
+function migrations(rows, expectedVersion, label) {
+  assert(Number.isSafeInteger(expectedVersion) && expectedVersion > 0, `${label} expected migration version is invalid`)
+  assert(Array.isArray(rows) && rows.length === expectedVersion, `${label} does not contain the complete ${expectedVersion}-row chain`)
   for (const [index, row] of rows.entries()) {
-    assert(row && row.version === index + 1 && typeof row.name === 'string' && /^[a-z0-9_]+$/u.test(row.name) && /^[a-f0-9]{64}$/u.test(row.checksum ?? ''), 'invalid migration version/name/checksum')
+    assert(row && row.version === index + 1 && typeof row.name === 'string' && /^[a-z0-9_]+$/u.test(row.name) && /^[a-f0-9]{64}$/u.test(row.checksum ?? ''), `${label} has an invalid migration version/name/checksum`)
   }
 }
 
@@ -74,9 +75,10 @@ export function prepareDemoComponentUpdate(input) {
   exactNames(baseline.runtime_services, runtimeServices, 'actual runtime')
   assert(imageSetDigest(prior.services) === prior.image_set_digest, 'baseline image set differs')
   assert(sha(canonicalJson(stripIdentity(original))) === prior.configuration_contract_sha256, 'baseline configuration contract differs')
-  migrations(baseline.migrations)
-  migrations(input.target_migrations)
-  assert(same(baseline.migrations, input.target_migrations) && prior.migration_version === 270 && prior.migration_chain_sha256 === sha(canonicalJson(baseline.migrations)), 'migration chain drift; no DDL/restore is permitted')
+  const migrationVersion = Array.isArray(input.target_migrations) ? input.target_migrations.length : 0
+  migrations(input.target_migrations, migrationVersion, 'target source')
+  migrations(baseline.migrations, migrationVersion, 'baseline')
+  assert(same(baseline.migrations, input.target_migrations) && prior.migration_version === migrationVersion && prior.migration_chain_sha256 === sha(canonicalJson(baseline.migrations)), 'migration chain drift; no DDL/restore is permitted')
   const baselineIds = {}
   for (const name of runtimeServices) {
     const current = baseline.runtime_services[name], record = prior.services[name], service = original.services[name]
@@ -151,11 +153,12 @@ export function prepareDemoComponentUpdate(input) {
     identity_semantics: 'candidate_git_sha identifies this publication bundle; services.*.git_sha identifies each immutable image',
     services: records, image_set_digest: setDigest,
     configuration_contract_sha256: sha(canonicalJson(stripIdentity(candidate))),
-    migration_version: 270, migration_chain_sha256: prior.migration_chain_sha256,
+    migration_source_version: migrationVersion, migration_version: migrationVersion,
+    migration_change_required: false, migration_chain_sha256: prior.migration_chain_sha256,
     updated_services: recreated, image_updated_services: imageUpdatedServices, metadata_recreated_services: identityServices,
     preserved_services: runtimeServices.filter(name => !recreated.includes(name)),
     compatibility_only_declared_service: 'migrate (never started; explicit up --no-deps)',
-    rollback_policy: `same-270 exact prior Compose/identity; same explicit services ${recreated.join(', ')}; never restore or delete live data`,
+    rollback_policy: `same-${migrationVersion} exact prior Compose/identity; same explicit services ${recreated.join(', ')}; never restore or delete live data`,
     prior_manifest_sha256: priorIdentity.RELEASE_MANIFEST_SHA256,
   }
   const manifestText = document(manifest)
@@ -178,7 +181,7 @@ export function prepareDemoComponentUpdate(input) {
   }
   assert(same(restored, original), 'unapproved Compose mutation')
   const composeText = document(candidate)
-  const summary = { configuration_only: true, runtime_mutated: false, deploy_authorized: false, ...nextIdentity, updated_services: recreated, image_updated_services: imageUpdatedServices, preserved_services: manifest.preserved_services, baseline_container_ids: baselineIds, candidate_compose_sha256: sha(composeText), rollback_compose_sha256: sha(baseline.compose_text), rollback_manifest_sha256: sha(baseline.manifest_text), migration_version: 270, migration_chain_sha256: prior.migration_chain_sha256, required_next_checks: ['hold existing deployment lock', 'reinspect exact baseline CIDs, config, mounts, networks and public identity', 'verify each selected source archive, imported image labels and digest', 'protected Compose render and no-interpolate review', 'same-explicit-service rollback review', `explicit ${recreated.join(' ')} update only`, '15 healthy, preserved CIDs, image IDs and full release tuple', 'desktop navigation and local stdio read verification'] }
+  const summary = { configuration_only: true, runtime_mutated: false, deploy_authorized: false, ...nextIdentity, updated_services: recreated, image_updated_services: imageUpdatedServices, preserved_services: manifest.preserved_services, baseline_container_ids: baselineIds, candidate_compose_sha256: sha(composeText), rollback_compose_sha256: sha(baseline.compose_text), rollback_manifest_sha256: sha(baseline.manifest_text), migration_version: migrationVersion, migration_chain_sha256: prior.migration_chain_sha256, required_next_checks: ['hold existing deployment lock', 'reinspect exact baseline CIDs, config, mounts, networks and public identity', 'verify each selected source archive, imported image labels and digest', 'protected Compose render and no-interpolate review', 'same-explicit-service rollback review', `explicit ${recreated.join(' ')} update only`, '15 healthy, preserved CIDs, image IDs and full release tuple', 'desktop navigation and local stdio read verification'] }
   return { candidate_compose_text: composeText, manifest_text: manifestText, identity: nextIdentity, rollback_compose_text: baseline.compose_text, rollback_manifest_text: baseline.manifest_text, rollback_identity: structuredClone(priorIdentity), review: summary }
 }
 

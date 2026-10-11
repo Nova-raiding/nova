@@ -20,7 +20,7 @@ import { readBoundedResponseText } from '../../../packages/connectors/src/bounde
 import type { PublishHandlerResult } from '../../../packages/workers/src/publish-adapter.js'
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
-import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
+import { createImageGeneratorFromEnv, createImageStatusQuerierFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
 import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
 import { evaluatePlatformModelGate, startPlatformRelayTokenQuotaMonitor, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { createEmbeddingClientFromEnv } from '../../../packages/ai/src/embedding.js'
@@ -2703,6 +2703,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     if (execution) await creativePointSettlement.recordSucceeded(execution.event, enriched, 'image_generation.execute')
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   }, async input => { requireWorkerModelQuota('image'); await providerDispatchAdmission.beforeModelRequest(input) })
+  // Reconciliation only receives query capability. Missing provider status
+  // configuration keeps unknown outcomes blocked without guessing an endpoint.
+  const imageStatusQuerier = config.role === 'reconcile'
+    ? createImageStatusQuerierFromEnv(process.env)
+    : undefined
   const requireImageProviderRequestId = (actionId: string) => {
     const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
     if (!providerRequestId) throw Object.assign(new Error('image provider response did not expose a real provider request id'), { code: 'IMAGE_PROVIDER_REQUEST_ID_MISSING', retryable: false, unknown: true })
@@ -3409,7 +3414,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
         if (config.role === 'reconcile' && startedAt >= nextImageGenerationReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image generation reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, async workspaceId => {
-            const sweep = await reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...imageReconciliationProgress.get(workspaceId), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
+            const sweep = await reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...imageReconciliationProgress.get(workspaceId), ...(imageStatusQuerier ? { queryStatus: imageStatusQuerier.queryStatus } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
             if (sweep.scanCompleted) imageReconciliationProgress.delete(workspaceId)
             else imageReconciliationProgress.set(workspaceId, sweep.continuation)
             if (sweep.providerQueriesBlocked > 0) log({ level: 'error', message: 'image provider reconciliation blocked: status query is not configured; local ACK scan remains available', workspaceId, code: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED', providerQueriesBlocked: sweep.providerQueriesBlocked, scanCompleted: sweep.scanCompleted })
