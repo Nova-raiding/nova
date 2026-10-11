@@ -340,7 +340,21 @@ export async function ensureBrowserCandidate(candidate: BrowserCandidate, onStar
   assertCandidateComposeRender(rendered, candidate)
   signal?.throwIfAborted()
   onStartup?.()
-  await command('docker', [...args, 'up', '-d', '--build', '--force-recreate', '--wait', '--wait-timeout', String(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS), 'api', 'ui', 'ops-ui'], candidate.env)
+  try {
+    await command('docker', [...args, 'up', '-d', '--build', '--force-recreate', '--wait', '--wait-timeout', String(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS), 'api', 'ui', 'ops-ui'], candidate.env)
+  } catch (error) {
+    // Compose reports only that the migration service exited non-zero. Capture
+    // its bounded logs while the exact candidate containers still exist so a
+    // startup failure can be diagnosed before the ownership-checked cleanup.
+    try {
+      const logs = execFileSync('docker', [...args, 'logs', '--no-color', '--tail=200', 'migrate'], { env: candidate.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      if (logs.trim()) console.error(`Candidate ${candidate.project} migration logs:\n${logs}`)
+    } catch (diagnosticError) {
+      const detail = diagnosticError && typeof diagnosticError === 'object' && 'stderr' in diagnosticError ? String(diagnosticError.stderr ?? '') : ''
+      if (detail.trim()) console.error(`Could not read candidate migration logs: ${detail}`)
+    }
+    throw error
+  }
   for (const service of ['api', 'ui', 'ops-ui', 'postgres', 'redis']) {
     const id = execFileSync('docker', [...args, 'ps', '-q', service], { env: candidate.env, encoding: 'utf8' }).trim()
     if (!id || id.includes('\n')) throw new Error(`candidate service ${service} must resolve to exactly one container`)
