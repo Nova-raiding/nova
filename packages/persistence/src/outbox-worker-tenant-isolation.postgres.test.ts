@@ -26,7 +26,7 @@ describe('worker outbox claim tenant boundary (isolated PostgreSQL)', () => {
       const workspaceA = `ws_outbox_a_${randomUUID()}`
       const workspaceB = `ws_outbox_b_${randomUUID()}`
       await database.query('INSERT INTO workspaces (id,status) VALUES ($1,$3),($2,$3)', [workspaceA, workspaceB, 'active'])
-      const outbox = new PostgresOutboxRepository(database as unknown as SqlPool)
+      const outbox = new PostgresOutboxRepository(database as unknown as SqlPool, { executionOwnerColumnAvailable: true })
       const [eventA, eventB] = await Promise.all([
         outbox.append({ workspaceId: workspaceA, aggregateId: 'task-a', eventType: 'task.created', sequence: 1, payload: { id: 'task-a', workspaceId: workspaceA } }),
         outbox.append({ workspaceId: workspaceB, aggregateId: 'task-b', eventType: 'task.created', sequence: 1, payload: { id: 'task-b', workspaceId: workspaceB } }),

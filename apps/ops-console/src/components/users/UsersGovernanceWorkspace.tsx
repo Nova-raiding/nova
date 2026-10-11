@@ -178,6 +178,8 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader, 
 export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
   const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization, model.opsSession?.account_login), [model.authorization, model.opsSession?.account_login]);
   const unavailableRef = useRef<HTMLDivElement>(null);
+  const governanceNavigationRef = useRef<HTMLButtonElement>(null);
+  const restoreGovernanceNavigationFocus = useRef(false);
   const [activeSection, setActiveSection] = useState<string>(sectionKeys[0] ?? "directory");
 
   useEffect(() => {
@@ -187,6 +189,12 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   useEffect(() => {
     if (sectionKeys.length && !sectionKeys.includes(activeSection as UsersGovernanceSectionKey)) setActiveSection(sectionKeys[0]);
   }, [activeSection, sectionKeys]);
+
+  useEffect(() => {
+    if (!restoreGovernanceNavigationFocus.current) return;
+    restoreGovernanceNavigationFocus.current = false;
+    window.requestAnimationFrame(() => governanceNavigationRef.current?.focus({ preventScroll: true }));
+  }, [activeSection]);
 
   if (!sectionKeys.length) {
     return <div
@@ -217,7 +225,13 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
 
   const currentSection = tabs.find((tab) => tab.key === activeSection) ?? tabs[0]!;
   const otherSections = tabs.filter((tab) => tab.key !== activeSection);
-  const selectSection = (key: string) => setActiveSection(key);
+  const selectSection = (key: string) => {
+    if (key === activeSection) return;
+    // Switching away from the directory unmounts its menu trigger. Move focus
+    // to the equivalent section switcher after the next section is committed.
+    restoreGovernanceNavigationFocus.current = true;
+    setActiveSection(key);
+  };
   if (currentSection.key === "directory") {
     const directory = <section id="user-directory" className="ops-users-section" aria-labelledby="user-directory-heading">
       <OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} />
@@ -231,7 +245,7 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
     <div className="ops-users-workspace" aria-label="用户治理工作区">
       <div className="ops-users-secondary-navigation">
         {menuItems.length > 0 ? <Dropdown menu={{ items: menuItems, onClick: ({ key }) => selectSection(key) }}>
-          <Button aria-label={`切换用户治理页面；当前为${currentSection.label}；其他页面：${otherSections.map(({ label }) => label).join("、")}`}>更多治理</Button>
+          <Button ref={governanceNavigationRef} aria-label={`切换用户治理页面；当前为${currentSection.label}；其他页面：${otherSections.map(({ label }) => label).join("、")}`}>更多治理</Button>
         </Dropdown> : <Typography.Text strong>{currentSection.label}</Typography.Text>}
       </div>
       {currentSection.children}

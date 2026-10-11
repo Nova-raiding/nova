@@ -168,7 +168,7 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('placeholder="搜索商品或平台"')
     expect(app).toContain('onSearchQuery={setGlobalSearch}')
     expect(app).toContain('onSearch={searchProducts}')
-    expect(app).toContain("navigateTo('products', { searchQuery: query, clearContext: true })")
+    expect(app).toContain("navigateTo('products', { entry: 'products', searchQuery: query, clearContext: true })")
     expect(app).not.toContain('搜索商品、任务或版本')
   })
 
@@ -181,7 +181,7 @@ describe('Merchant Studio production UI contract', () => {
 
   it('routes package purchase and order status through server-owned commercial facts', () => {
     expect(app).toContain("import { CommercialPurchaseCenter } from './CommercialPurchaseCenter'")
-    expect(app).toContain('<CommercialPurchaseCenter baseUrl={baseUrl}')
+    expect(app).toContain('<CommercialPurchaseCenter key=')
     expect(purchaseCenter).toContain('createCommercialPurchaseOrder(baseUrl')
     expect(purchaseCenter).toContain('fetchCommercialPurchaseOrder(baseUrl')
     expect(purchaseCenter).toContain('生成订单明细，暂不付款')

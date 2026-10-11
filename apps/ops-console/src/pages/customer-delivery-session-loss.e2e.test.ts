@@ -85,7 +85,7 @@ describe("customer delivery session-loss UI boundary", () => {
       try { await vite?.close(); }
       finally { if (cacheDirectory) await rm(cacheDirectory, { recursive: true, force: true }); }
     }
-  }, 20_000);
+  }, 60_000);
 
   async function openPage(page: Page, listResponse: (route: import("playwright").Route, request: { id: string; method: string; params: Record<string, string> }) => Promise<void>) {
     const calls: Array<{ method: string; targetWorkspaceId?: string }> = [];

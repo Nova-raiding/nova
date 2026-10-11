@@ -477,15 +477,14 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
         await retry.click({ timeout: 8_000 });
         await failedRead;
       });
-      await stage("button disabled", () => expect.poll(() => submit.isDisabled(), { timeout: 5_000 }).toBe(true), 5_000);
+      await stage("button disabled", () => expect.poll(() => page.locator('form[aria-label="分配平台角色"] button[type="submit"]').evaluate(element => (element as HTMLButtonElement).disabled), { timeout: 5_000 }).toBe(true), 5_000);
       await stage("error retained", async () => {
         expect(await page.locator(".ops-page-error").count()).toBeGreaterThan(0);
         expect(requests.find(request => request.method === "ops.authorization.role.assign")?.params.expected_authorization_revision).toBe("23");
       }, 5_000);
       await stage("form.requestSubmit", async () => {
-        await form.evaluate(element => (element as HTMLFormElement).requestSubmit());
-        await new Promise(resolve => setTimeout(resolve, 200));
-        expect(await submit.isDisabled()).toBe(true);
+        await form.evaluate(element => element.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+        expect(await page.locator('form[aria-label="分配平台角色"] button[type="submit"]').evaluate(element => (element as HTMLButtonElement).disabled)).toBe(true);
         expect(await page.locator(".ops-page-error").count()).toBeGreaterThan(0);
       }, 5_000);
       await stage("assignment count", async () => {

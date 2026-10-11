@@ -83,6 +83,13 @@ const MERCHANT_SPECS = [
   'demo/merchant-studio/merchant-risk-destination.browser.spec.js',
   'demo/merchant-studio/overview-finance.browser.spec.js',
   'demo/merchant-studio/upload-rules-journey.browser.spec.js',
+  'demo/merchant-studio/account-password-dialog-escape-focus.browser.spec.js',
+  'demo/merchant-studio/commercial-purchase-payment-unknown-recovery.browser.spec.js',
+  'demo/merchant-studio/member-invite-reason-validation.browser.spec.js',
+  'demo/merchant-studio/merchant-login-empty-validation.browser.spec.js',
+  'demo/merchant-studio/merchant-navigation-drawer.browser.spec.js',
+  'demo/merchant-studio/merchant-support-minimum-length.browser.spec.js',
+  'demo/merchant-studio/task-feedback-unknown-submit.browser.spec.js',
   spec('merchant-all.spec.js'),
   spec('merchant-brand-scopes.spec.js'),
   spec('merchant-data-safety.spec.js'),
@@ -203,6 +210,7 @@ describe('browser gate entrypoints', () => {
   })
 
   it.each([
+    ['Knowledge controller route recovery', 'src/pages/KnowledgePage.controller-route-recovery.browser.test.tsx'],
     ['Ops overview page', 'src/pages/OverviewPage.browser.test.tsx'],
     ['Ops navigation', 'src/navigation/OpsNavigation.browser.test.tsx'],
     ['Ops permission recovery', 'src/components/OpsPageError.browser.test.tsx'],
@@ -457,7 +465,8 @@ describe('browser gate entrypoints', () => {
     expect(command).toContain('scripts/merchant-browser-candidate.ts')
     expect(command).not.toContain('--config')
     const runner = readFileSync(resolve(root, 'scripts/merchant-browser-candidate.ts'), 'utf8')
-    expect(specPathsIn(runner)).toEqual(MERCHANT_SPECS)
+    expect(specPathsIn(runner)).toEqual(expect.arrayContaining(MERCHANT_SPECS))
+    expect(playwrightInvocation(runner)).toContain('...MERCHANT_UI_REGRESSION_SPECS')
     expect(playwrightInvocation(runner)).not.toContain('--config')
   })
 
@@ -598,8 +607,8 @@ describe('browser gate entrypoints', () => {
     const requiredBrowserScripts = Object.keys(packageJson.scripts).filter(name => name.startsWith('test:browser:') && name !== 'test:browser:all' && name !== 'test:browser:ops:jit' && !alreadyInMerchantCandidate.has(name))
     for (const name of requiredBrowserScripts) expect(all).toContain(`npm run ${name}`)
     expect(all).toContain('npm run test:browser:merchant:overview-journeys')
-    expect(all).not.toContain('npm run test:browser:merchant:product-assets')
-    expect(all).not.toContain('npm run test:browser:merchant:task-queue-read-recovery')
+    expect(all).toContain('npm run test:browser:merchant:product-assets')
+    expect(all).toContain('npm run test:browser:merchant:task-queue-read-recovery')
     expect(all).not.toContain('test:browser:ops:jit')
     expect(MERCHANT_SPECS).toContain('demo/merchant-studio/catalog-product-assets.browser.spec.js')
     expect(MERCHANT_SPECS).toContain('demo/merchant-studio/task-queue-read-recovery.browser.spec.js')

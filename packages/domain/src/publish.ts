@@ -62,9 +62,6 @@ export const confirmPublish = (
   existingByToken: ReadonlyMap<string, PublishJob>,
 ): Result<PublishJob> => {
   if (!token.value) return err('PUBLISH_CONFIRMATION_REQUIRED', 'a one-time confirmation token is required')
-  if (token.workspaceId !== input.workspaceId || token.taskId !== input.taskId || token.contentVersionId !== input.contentVersionId || token.confirmationHash !== input.confirmationHash || token.remoteSnapshotHash !== input.remoteSnapshotHash) {
-    return err('PUBLISH_CONFIRMATION_STALE', 'confirmation token does not match the current content or remote snapshot')
-  }
   const existing = existingByIdempotency.get(input.idempotencyKey)
   if (existing) {
     // Idempotency maps are normally workspace-scoped by their repository, but
@@ -73,7 +70,14 @@ export const confirmPublish = (
     const sameIntent = existing.workspaceId === input.workspaceId && existing.platform === token.platform
       && existing.taskId === input.taskId && existing.contentVersionId === input.contentVersionId
       && existing.confirmationHash === input.confirmationHash && existing.remoteSnapshotHash === input.remoteSnapshotHash
-    return sameIntent ? ok(existing) : err('PUBLISH_IDEMPOTENCY_CONFLICT', 'idempotency key is already bound to another publish intent')
+    if (!sameIntent) return err('PUBLISH_IDEMPOTENCY_CONFLICT', 'idempotency key is already bound to another publish intent')
+    if (token.workspaceId !== input.workspaceId || token.taskId !== input.taskId || token.contentVersionId !== input.contentVersionId || token.confirmationHash !== input.confirmationHash || token.remoteSnapshotHash !== input.remoteSnapshotHash) {
+      return err('PUBLISH_CONFIRMATION_STALE', 'confirmation token does not match the current content or remote snapshot')
+    }
+    return ok(existing)
+  }
+  if (token.workspaceId !== input.workspaceId || token.taskId !== input.taskId || token.contentVersionId !== input.contentVersionId || token.confirmationHash !== input.confirmationHash || token.remoteSnapshotHash !== input.remoteSnapshotHash) {
+    return err('PUBLISH_CONFIRMATION_STALE', 'confirmation token does not match the current content or remote snapshot')
   }
   if (existingByToken.has(token.value)) return err('PUBLISH_CONFIRMATION_REPLAYED', 'confirmation token has already been consumed')
   if (!input.workspaceId || !input.idempotencyKey.trim()) return err('PUBLISH_CONFIRMATION_REQUIRED', 'workspace and idempotency key are required')

@@ -85,6 +85,7 @@ test('task composer preserves multiline input and locks the request while analys
     const analyze = page.locator('.understanding-form button[type="submit"]')
     await expect(requestInput).toHaveValue('为「任务输入验证商品」准备商品详情页营销内容')
     await expect(requestInput).toBeEditable()
+    await requestInput.fill('')
     await expect(analyze).toBeDisabled()
 
     await requestInput.fill('制作一版淘宝详情页内容')
@@ -98,7 +99,7 @@ test('task composer preserves multiline input and locks the request while analys
     await requestInput.press('Enter')
     await understandingObserved
     expect(understandingRequests).toEqual([{ request_text: submittedText }])
-    await expect(requestInput).toBeReadOnly()
+    await expect(requestInput).toHaveAttribute('readonly', '')
     await expect(analyze).toBeDisabled()
     await expect(analyze).toHaveText('分析中…')
     await expect(page.getByTestId('task-conversation').getByRole('status')).toContainText('分析任务需求中…')

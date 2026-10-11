@@ -33,8 +33,11 @@ describe('finance trend range applies only on query', () => {
   })
 
   it('wires the query button to apply and derives chart ranges from applied state', () => {
-    expect(app).toContain("onSubmit={(event) => { event.preventDefault(); dispatchUsageRange({ type: 'apply' }) }}")
-    expect(app).toContain("onClick={resetUsage}")
+    const formStart = app.indexOf('<form className="finance-range-search"')
+    const formEnd = app.indexOf('</form>', formStart)
+    const form = app.slice(formStart, formEnd)
+    expect(form).toContain('onSubmit={(event) => { event.preventDefault(); if (financeUsageRangeError(draftUsageRange)) return; dispatchUsageRange({ type: \'apply\' }) }}')
+    expect(form).toContain('onClick={resetUsage}')
     expect(app).toContain("type: 'reset'")
     expect(app).toContain('const { draft: draftUsageRange, applied: appliedUsageRange } = usageRange')
     expect(app).toContain('const source = appliedUsageRange.mode === \'day\' ? dailyUsage : monthlyUsage')

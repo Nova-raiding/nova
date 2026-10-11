@@ -61,7 +61,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('A terminal read must clear the busy state too')
     expect(app).toContain('aria-busy={loading}')
     expect(app).toContain('const currentJobId = job?.jobId ?? jobId')
-    expect(app).toContain('fetchImageGenerationJob(baseUrl, currentJobId)')
+    expect(app).toContain('fetchImageGenerationJob(baseUrl, requestedFetchJobId)')
     expect(app).toContain('count: String(count)')
     expect(api).toContain("mode: 'create' | 'optimize'; size?: ProductImageSize; count: string")
   })

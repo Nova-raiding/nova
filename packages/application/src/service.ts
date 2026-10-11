@@ -2883,7 +2883,7 @@ export class MerchantService {
     return asset
   }
   getTask(taskId: string) { return this.mustTask(taskId) }
-  submitFeedback(input: { workspaceId: string; taskId: string; contentVersionId?: string; rating: FeedbackRating; reason?: string; comment?: string; actorId: string }) {
+  prepareFeedback(input: { workspaceId: string; taskId: string; contentVersionId?: string; rating: FeedbackRating; reason?: string; comment?: string; actorId: string }, feedbackId = id('feedback')) {
     const task = this.mustTask(input.taskId)
     if (task.workspaceId !== input.workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权访问该任务', 403)
     if (!['liked', 'neutral', 'needs_improvement'].includes(input.rating)) throw new DomainError('FEEDBACK_RATING_INVALID', '反馈评级无效', 400)
@@ -2895,11 +2895,15 @@ export class MerchantService {
     const comment = input.comment?.trim()
     if (comment && comment.length > 2000) throw new DomainError('FEEDBACK_COMMENT_TOO_LONG', '反馈说明不能超过 2000 个字符', 400)
     const feedback: TaskFeedback = {
-      id: id('feedback'), workspaceId: input.workspaceId, taskId: task.id,
+      id: feedbackId, workspaceId: input.workspaceId, taskId: task.id,
       ...(input.contentVersionId ? { contentVersionId: input.contentVersionId } : {}),
       rating: input.rating, ...(reason ? { reason } : {}), ...(comment ? { comment } : {}),
       actorId: input.actorId.trim() || 'system', createdAt: now(), revision: 1,
     }
+    return feedback
+  }
+  submitFeedback(input: { workspaceId: string; taskId: string; contentVersionId?: string; rating: FeedbackRating; reason?: string; comment?: string; actorId: string }) {
+    const feedback = this.prepareFeedback(input)
     this.feedback.set(feedback.id, feedback)
     return feedback
   }

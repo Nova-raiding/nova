@@ -50,11 +50,11 @@ class LeaseStore implements DurableOutboxStore {
     if (row.publishedAt || row.unknownAt || row.leaseToken !== leaseToken || !row.leaseUntil || Date.parse(row.leaseUntil) <= Date.parse(now)) throw staleLeaseError()
     return { ...row }
   }
-  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<boolean> {
+  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<string | null> {
     const row = this.rows.get(id)
-    if (!row || row.leaseToken !== leaseToken || this.executionOwners.has(id)) return false
+    if (!row || row.leaseToken !== leaseToken || this.executionOwners.has(id)) return null
     this.executionOwners.add(id)
-    return true
+    return leaseToken
   }
   async renewLease(_workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<DurableOutboxEvent> {
     const row = await this.validateLease(_workspaceId, id, leaseToken, now)

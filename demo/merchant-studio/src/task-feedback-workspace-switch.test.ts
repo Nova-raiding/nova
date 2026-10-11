@@ -40,12 +40,13 @@ describe('task feedback workspace ownership', () => {
       content_version_id: 'content-alpha-v6',
       rating: 'needs_improvement',
       reason: 'Product facts need clarification.',
-    })
+    }, 'feedback-workspace-alpha-001')
     expect(fetch).toHaveBeenCalledOnce()
     const [url, init] = fetch.mock.calls[0]!
     expect(String(url)).toBe('/api/v1/tasks/task-alpha/feedback')
     expect(init?.method).toBe('POST')
     expect(new Headers(init?.headers).get('x-workspace-id')).toBe('ws_alpha')
+    expect(new Headers(init?.headers).get('idempotency-key')).toBe('feedback-workspace-alpha-001')
     expect(JSON.parse(String(init?.body))).toEqual({
       content_version_id: 'content-alpha-v6',
       rating: 'needs_improvement',

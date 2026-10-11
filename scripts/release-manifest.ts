@@ -66,7 +66,7 @@ export function buildReleaseManifest(input: {
   const releaseMetadata = readJson(releaseMetadataPath)
   const repositoryVersion = readFileSync(resolve(root, 'VERSION'), 'utf8').trim()
   const pluginVersion = String(pluginManifest.version ?? '')
-  if (!/^0\.1\.0\+codex\.[0-9]{14}$/.test(pluginVersion)) throw new Error('plugin manifest version is not a release version')
+  if (!/^0\.1\.\d+\+codex\.[0-9]{14}$/.test(pluginVersion)) throw new Error('plugin manifest version is not a release version')
   if (packageJson.version !== pluginVersion) throw new Error('plugin package version does not match plugin manifest')
   if (releaseMetadata.repositoryVersion !== repositoryVersion) throw new Error('release metadata repository version does not match VERSION')
   if (releaseMetadata.pluginVersion !== pluginVersion) throw new Error('release metadata plugin version does not match plugin manifest')

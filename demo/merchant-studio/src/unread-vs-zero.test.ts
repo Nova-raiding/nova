@@ -7,6 +7,7 @@ import { fetchCreativePointStatement } from './api'
 import capture from './fixtures/creative-point-statement.capture.json'
 
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+const financeAccount = { id: 'finance-reader', login: 'finance@example.invalid', accountType: 'merchant', status: 'active', roles: ['merchant_owner'], workspaceIds: ['finance-workspace'] } as never
 
 const overview = (baseUrl?: string) => renderToStaticMarkup(createElement(Overview, {
   goTask: () => undefined,
@@ -20,6 +21,8 @@ const overview = (baseUrl?: string) => renderToStaticMarkup(createElement(Overvi
 const finance = () => renderToStaticMarkup(createElement(FinanceOverview, {
   baseUrl: 'http://127.0.0.1:9',
   billing: null,
+  account: financeAccount,
+  activeWorkspaceId: 'finance-workspace',
   onOpenSupport: () => undefined,
 }))
 
@@ -73,7 +76,7 @@ describe('unread reads are never rendered as measured values', () => {
   it('does not draw an empty storage track when no quota was read', () => {
     const html = finance()
     expect(html).not.toContain('finance-storage-track')
-    expect(html).toContain('服务端未返回储存配额，当前不显示用量。')
+    expect(html).toContain('正在读取储存配额…')
   })
 
   it('keeps ledger summaries and renders the new commercial read as pending instead of fabricated contract dates', () => {
@@ -97,6 +100,8 @@ describe('unread reads are never rendered as measured values', () => {
     const html = renderToStaticMarkup(createElement(FinanceOverview, {
       baseUrl: 'http://127.0.0.1:9',
       billing: { available_points: 2480, balance_cny: '123.45' } as never,
+      account: financeAccount,
+      activeWorkspaceId: 'finance-workspace',
       onOpenSupport: () => undefined,
     }))
     expect(html).toContain('当前剩余创意点')

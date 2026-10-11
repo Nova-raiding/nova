@@ -37,7 +37,14 @@ describe('visual generation permission preflight through local stdio MCP', () =>
       let body = ''
       for await (const chunk of req) body += chunk.toString()
       if (req.url === '/provider/image' || req.url === '/provider/video') providerRequests += 1
-      const payload = JSON.parse(body) as { method?: string }
+      const payload = JSON.parse(body) as { method?: string; params?: Record<string, unknown> }
+      if (payload.method === 'workspace.interactive.confirm') {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: { result: {
+          enabled: true,
+          ticket: { nonce_hash: 'd'.repeat(64), intent_hash: payload.params?.intent_hash, expires_at: '2099-01-01T00:00:00.000Z' },
+        } }, error: null }))
+        return
+      }
       deniedMethods.push(String(payload.method))
       res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({
         error: {
@@ -88,12 +95,20 @@ describe('visual generation permission preflight through local stdio MCP', () =>
         ['multimodal.video.request', { prompt: 'fixture request', output: 'rendering', context_json: JSON.stringify({ product: { id: 'unreviewed-product', version: '1' }, brand: null, rules: [] }), idempotency_key: 'denied-video-1' }],
       ] as const
       for (const [method, args] of deniedRequests) {
+        if (method === 'multimodal.video.request') {
+          const videoConfirmation = await call('workspace.interactive.confirm', {
+            confirmation: 'I_CONFIRM_INTERACTIVE_WRITES',
+            video_prompt: args.prompt,
+            video_context_json: args.context_json,
+          })
+          expect(videoConfirmation.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+        }
         const response = await call(method, args)
         expect(response.result, method).toMatchObject({
           isError: true,
           structuredContent: { code: 'PERMISSION_DENIED', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH' } },
         })
-        expect(response.result.content[0].text).toContain('没有执行这一步的权限')
+        expect(response.result.content[0].text).toContain('没有这项操作的权限')
         expect(response.result).not.toHaveProperty('execution')
       }
 

@@ -20,7 +20,7 @@ describe('product asset relation dialog separates read failures from write failu
     expect(mutate).toContain('setSaveError(describeApiError(cause))')
     expect(mutate).not.toContain('setError(')
     // The read path still owns `error`.
-    expect(dialog).toContain('if (active) setError(describeApiError(cause))')
+    expect(dialog).toContain("if (active) setError(describeApiError(cause, { operation: 'read' }))")
   })
 
   it('keeps the last successfully read relation visible after a write refusal', () => {

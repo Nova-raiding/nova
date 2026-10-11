@@ -196,7 +196,7 @@ describe("IncidentsPage list recovery and filters", () => {
       await detail.getByRole("textbox", { name: "事故评论" }).fill("Worker 队列确认评论");
       expect(await detail.getByRole("button", { name: "追加评论" }).isDisabled()).toBe(true);
       expect(await page.evaluate(() => window.__incidentMutationCalls)).toBe(1);
-      const commentForm = detail.locator("form").filter({ has: detail.getByRole("textbox", { name: "事故评论" }) });
+      const commentForm = detail.getByRole("textbox", { name: "事故评论" }).locator("xpath=ancestor::form");
       expect(await commentForm.count()).toBe(1);
       await commentForm.evaluate((form) => form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true })));
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));

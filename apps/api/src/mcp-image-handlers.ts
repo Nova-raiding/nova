@@ -52,6 +52,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       // from the merchant-confirmed title and asset IDs. It is intentionally
       // never publishable; store binding remains required by publish/sync.
       let unboundCandidate = false
+      let productProtection: ReturnType<typeof protectedProductConclusion> | undefined
       let productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : ''
       const standaloneImageInputs = typeof params.asset_ids_json === 'string' && params.asset_ids_json.trim().length > 0
         && !(typeof params.task_id === 'string' && params.task_id.trim())
@@ -81,6 +82,10 @@ export async function handleImageMcpMethod(method: string, params: Record<string
           assetIds = [...new Set(parsed.map(value => value.trim()))]
         } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'asset_ids_json 必须是非空的素材 ID 字符串数组 JSON', 400) }
         for (const assetId of assetIds) await enforceAssetAccess(req, workspaceId, assetId, 'viewer')
+        // Reject unsafe directions before materializing an unbound candidate.
+        // Candidate creation writes a product snapshot and event, so a request
+        // that cannot proceed must not leave a durable shell behind.
+        productProtection = protectedProductConclusion(requireProtectedProductIntent(typeof params.direction === 'string' ? params.direction : ''))
         const requestedPlatform = typeof params.platform === 'string' && SUPPORTED_PLATFORMS.includes(params.platform as Platform) ? params.platform as Platform : undefined
         // Standalone generation must not silently default to Taobao when the
         // uploaded material already carries a single confirmed platform
@@ -109,8 +114,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       // publishes/synchronizes the product.
       if (!unboundCandidate && (await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
       if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '请先确认商品、SKU、价格和图片事实，再生成主图', 409)
-      const protectedProductValidation = requireProtectedProductIntent(typeof params.direction === 'string' ? params.direction : '')
-      const productProtection = protectedProductConclusion(protectedProductValidation)
+      productProtection ??= protectedProductConclusion(requireProtectedProductIntent(typeof params.direction === 'string' ? params.direction : ''))
       const requestedPlatform = typeof params.platform === 'string' && params.platform.trim() ? params.platform.trim() as Platform : undefined
       const requestedAccountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
       if (requestedPlatform && requestedPlatform !== product.platform) throw new DomainError('IMAGE_PLATFORM_SCOPE_MISMATCH', '图片生成的平台必须与当前商品平台一致', 409, { product_platform: product.platform, requested_platform: requestedPlatform })

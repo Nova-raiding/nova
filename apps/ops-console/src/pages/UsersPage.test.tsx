@@ -72,8 +72,8 @@ describe("UsersPage capability state", () => {
     const markup = renderToStaticMarkup(<UsersPage model={model([], { error: "" })} />);
 
     expect(markup).toContain("当前角色没有用户治理视图");
-    expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain('role="alert"');
+    expect(markup).toContain('aria-labelledby="users-governance-unavailable-title"');
     expect(markup).toContain("不会把未授权结果显示为空数据");
     expect(markup).not.toContain("角色 platform_admin");
     expect(markup).toContain("刷新权限");

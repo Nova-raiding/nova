@@ -7,7 +7,7 @@ describe('Merchant Studio navigation', () => {
     ['products', 'products'],
     ['tasks', 'task'],
     ['publish', 'products'],
-    ['rules', 'products'],
+    ['rules', 'rules'],
   ] as const)('initializes /merchant/%s as %s', (path, page) => {
     expect(merchantRouteFromLocation({ pathname: `/merchant/${path}`, search: '', hash: '' }).page).toBe(page)
     expect(merchantRouteFromLocation({ pathname: `/console/merchant/${path}/`, search: '', hash: '' }).page).toBe(page)

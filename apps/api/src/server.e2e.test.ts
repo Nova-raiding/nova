@@ -2671,9 +2671,15 @@ describe('API HTTP vertical slice', () => {
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }
     const taskResponse = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: 'prod_fixture_1', platform: 'taobao' }) }).then(json)
     const taskId = (taskResponse.data as { id: string }).id
-    const submitted = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { method: 'POST', headers: { ...headers, 'x-actor-id': 'actor_feedback' }, body: JSON.stringify({ rating: 'liked', reason: '事实准确', comment: '可以继续使用' }) }).then(json)
+    const feedbackHeaders = { ...headers, 'x-actor-id': 'actor_feedback', 'idempotency-key': 'feedback-http-e2e-key-001' }
+    const feedbackBody = { rating: 'liked', reason: '事实准确', comment: '可以继续使用' }
+    const submitted = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { method: 'POST', headers: feedbackHeaders, body: JSON.stringify(feedbackBody) }).then(json)
     expect(submitted.error).toBeNull()
     expect(submitted.data).toMatchObject({ taskId, rating: 'liked', actorId: 'actor_feedback' })
+    const replayed = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { method: 'POST', headers: feedbackHeaders, body: JSON.stringify(feedbackBody) }).then(json)
+    expect(replayed.data.id).toBe(submitted.data.id)
+    const changed = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { method: 'POST', headers: feedbackHeaders, body: JSON.stringify({ ...feedbackBody, rating: 'neutral' }) }).then(json)
+    expect(changed.error?.code).toBe('IDEMPOTENCY_KEY_REUSED')
     const listed = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { headers }).then(json)
     expect((listed.data as Array<{ id: string }>).map(item => item.id)).toContain((submitted.data as { id: string }).id)
     const denied = await fetch(`${base}/v1/tasks/${taskId}/feedback`, { headers: { 'x-workspace-id': 'ws_other' } }).then(json)
@@ -2882,8 +2888,12 @@ describe('API HTTP vertical slice', () => {
     expect((exported.data as { result: { fileName: string } }).result.fileName).toBe('manifest-v1.json')
     const approved = await call(8, 'content.approve', { task_id: taskId, content_version_id: versionId })
     expect((approved.data as { result: { task: { state: string } } }).result.task.state).toBe('approved')
-    const submittedFeedback = await call(9, 'feedback.submit', { task_id: taskId, content_version_id: versionId, rating: 'neutral', reason: '需要观察转化' })
+    const submittedFeedback = await call(9, 'feedback.submit', { task_id: taskId, content_version_id: versionId, rating: 'neutral', reason: '需要观察转化', idempotency_key: 'feedback-e2e-submit-001' })
     expect((submittedFeedback.data as { result: { rating: string; taskId: string } }).result).toMatchObject({ rating: 'neutral', taskId })
+    const replayedFeedback = await call(9.1, 'feedback.submit', { task_id: taskId, content_version_id: versionId, rating: 'neutral', reason: '需要观察转化', idempotency_key: 'feedback-e2e-submit-001' })
+    expect((replayedFeedback.data as { result: { id: string } }).result.id).toBe((submittedFeedback.data as { result: { id: string } }).result.id)
+    const changedFeedback = await call(9.2, 'feedback.submit', { task_id: taskId, content_version_id: versionId, rating: 'liked', idempotency_key: 'feedback-e2e-submit-001' })
+    expect(changedFeedback.error).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
     const listedFeedback = await call(10, 'feedback.list', { task_id: taskId })
     expect((listedFeedback.data as { result: unknown[] }).result).toHaveLength(1)
     const timeline = await call(10.5, 'task.timeline', { task_id: taskId })

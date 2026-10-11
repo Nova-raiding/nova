@@ -2,6 +2,7 @@ import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persist
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 import { evaluatePlatformModelGate, startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
+import { videoRenderingApprovalIntentHash } from './video-rendering-approval.js'
 
 const videoProvider = vi.hoisted(() => ({
   generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput) => { await input.beforeDispatch?.(); await input.onAccepted?.({ ...input.usageContext, model: 'video-test-model', providerJobId: 'video-provider-job-1', providerRequestId: 'video-test-request-1' }); return { status: 'queued' as const, providerJobId: 'video-provider-job-1', settlementStatus: 'pending_receipt' as const } }),
@@ -209,7 +210,16 @@ describe('video cost preflight over the real HTTP boundary', () => {
     // real pricing snapshot must release it to the provider. Before the fix
     // every request failed here with MODEL_VIDEO_COST_PREFLIGHT_FAILED.
     vi.stubEnv('VIDEO_DURATION_SECONDS', '3')
-    const allowed = await callMcp<any>(token, workspaceId, 'multimodal.video.request', requestParams('3', `video-cost-render-under-${suffix}`))
+    const allowedContext = JSON.parse(contextJson) as Record<string, unknown>
+    const approvalIntentHash = videoRenderingApprovalIntentHash({ workspaceId, prompt: '根据已确认商品事实生成通勤场景视频', context: allowedContext })
+    const approval = await callMcp(token, workspaceId, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', intent_hash: approvalIntentHash })
+    expect(approval.status).toBe(200)
+    const ticket = approval.body.data?.result as { ticket: { nonce_hash: string; intent_hash: string } }
+    const allowed = await callMcp<any>(token, workspaceId, 'multimodal.video.request', {
+      ...requestParams('3', `video-cost-render-under-${suffix}`),
+      confirmation_ticket_nonce_hash: ticket.ticket.nonce_hash,
+      confirmation_ticket_intent_hash: ticket.ticket.intent_hash,
+    })
     expect(allowed.status).toBe(200)
     expect(allowed.body.error).toBeNull()
     expect(allowed.body.data?.result).toMatchObject({ rendering: { status: 'queued', providerJobId: 'video-provider-job-1' } })

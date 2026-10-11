@@ -16,6 +16,9 @@ export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
   'packages/persistence/src/merchant-activation-invitation.release.postgres.test.ts',
   'packages/persistence/src/commercial-source-refund-blockers.release.postgres.test.ts',
   'packages/persistence/src/creative-point-reversal-concurrency.regression.postgres.test.ts',
+  'packages/persistence/src/task-feedback-idempotency.postgres.test.ts',
+  'packages/persistence/src/usage-consume-concurrency.postgres.test.ts',
+  'apps/api/src/task-group-persistence.postgres.test.ts',
 ].filter(file => (
   file.startsWith('packages/persistence/src/')
   || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts'
@@ -23,6 +26,7 @@ export const ISOLATED_POSTGRES_TEST_FILES = [...NON_HERMETIC_TEST_FILES,
   || file === 'apps/api/src/product-stock-provenance.postgres.test.ts'
   || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts'
   || file === 'apps/api/src/asset-download-authorization.postgres.test.ts'
+  || file === 'apps/api/src/task-group-persistence.postgres.test.ts'
   || file === 'packages/persistence/src/asset-lifecycle-release.postgres.test.ts'
   || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts'
   || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts'

@@ -63,7 +63,7 @@ describe('migration 250 knowledge generation claim boundary', () => {
       }
       app = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only', raceApplication), max: 6 })
       const knowledge = new PostgresKnowledgeRepository(app)
-      const outbox = new PostgresOutboxRepository(app)
+      const outbox = new PostgresOutboxRepository(app, { executionOwnerColumnAvailable: true })
       const bindGenerationRequest = async (suffix: string, targetProductId: string, selected: { id: string; title: string; extractedText: string; revision: number }) => {
         const taskId = `task_${suffix}`
         const jobId = `job_${suffix}`

@@ -3,6 +3,7 @@ import { DomainError, type MerchantService, type Platform, type Task, type TaskF
 import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import type { PostgresBusinessRepository } from '../../../packages/persistence/src/business-repository.js'
 import { normalizeCatalogDateRange } from './catalog-search-dates.js'
+import { submitTaskFeedbackIdempotently, type TaskFeedbackIdempotencyPort } from './task-feedback-idempotency.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -20,6 +21,8 @@ export interface McpTaskReadFeedbackDependencies {
   persistSnapshot: (workspaceId: string, entityType: 'feedback', entity: TaskFeedback, value: Record<string, unknown>) => Promise<void>
   persistEvent: (workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) => Promise<void>
   taskFeedbackEventPayload: (feedback: TaskFeedback) => Record<string, unknown>
+  feedbackIdempotency?: TaskFeedbackIdempotencyPort
+  production?: boolean
 }
 
 export async function handleMcpTaskReadFeedback(method: string, params: JsonObject, req: IncomingMessage, workspaceId: string, deps: McpTaskReadFeedbackDependencies): Promise<unknown> {
@@ -95,16 +98,19 @@ export async function handleMcpTaskReadFeedback(method: string, params: JsonObje
       const task = scopeTask(req, required(params, 'task_id'))
       const rating = required(params, 'rating')
       if (!['liked', 'neutral', 'needs_improvement'].includes(rating)) throw new DomainError('FEEDBACK_RATING_INVALID', '反馈评级无效', 400)
-      const feedback = service.submitFeedback({
-        workspaceId, taskId: task.id, rating: rating as 'liked' | 'neutral' | 'needs_improvement',
+      const result = await submitTaskFeedbackIdempotently({
+        service, repository: deps.feedbackIdempotency, workspaceId, taskId: task.id, rating: rating as 'liked' | 'neutral' | 'needs_improvement',
         ...(typeof params.content_version_id === 'string' ? { contentVersionId: params.content_version_id } : {}),
         ...(typeof params.reason === 'string' ? { reason: params.reason } : {}),
         ...(typeof params.comment === 'string' ? { comment: params.comment } : {}),
-        actorId: requestActor(req, 'actor_demo'),
+        actorId: requestActor(req, 'actor_demo'), idempotencyKey: typeof params.idempotency_key === 'string' ? params.idempotency_key : '', production: deps.production ?? false,
+        eventPayload: taskFeedbackEventPayload,
+        persistFallback: async feedback => {
+          await persistSnapshot(workspaceId, 'feedback', feedback, feedback as unknown as Record<string, unknown>)
+          await persistEvent(workspaceId, feedback.id, 'task_feedback_submitted', feedback.revision, taskFeedbackEventPayload(feedback))
+        },
       })
-      await persistSnapshot(workspaceId, 'feedback', feedback, feedback as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, feedback.id, 'task_feedback_submitted', feedback.revision, taskFeedbackEventPayload(feedback))
-      return (feedback)
+      return result.feedback
     }
     default: throw new DomainError(ERROR_CODES.INVALID_REQUEST, `未知任务读取或反馈 MCP 方法: ${method}`, 400)
   }

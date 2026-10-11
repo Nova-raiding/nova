@@ -271,7 +271,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       <div aria-live="polite" className="ops-visually-hidden">
         {model.userExporting ? "正在生成用户目录导出文件，请稍候" : model.userDirectoryLoading ? "正在加载用户目录，已有结果会保留" : ""}
       </div>
-      {model.userDirectoryError && <div ref={directoryErrorRef} tabIndex={-1} role="group" aria-label="用户目录错误摘要" aria-describedby="user-directory-error-description">
+      {model.userDirectoryError && <div ref={directoryErrorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="用户目录错误摘要" aria-describedby="user-directory-error-description">
         <Alert
           className="ops-inline-alert"
           showIcon

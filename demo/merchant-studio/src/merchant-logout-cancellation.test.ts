@@ -26,7 +26,7 @@ describe('merchant login waits for already dispatched cookie mutations', () => {
     const logout = api.logoutMerchantAccount('/api')
     const failed = transportFailure
       ? expect(logout).rejects.toThrow('fixture transport failure')
-      : expect(logout).rejects.toMatchObject({ code: 'MCP_SESSION_CHANGED' })
+      : expect(logout).rejects.toMatchObject({ code: 'API_WORKSPACE_CONTEXT_CHANGED' })
     await started.promise
     const login = api.loginMerchantAccount('/api', { login: 'current@example.invalid', password: 'fixture-only' })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -51,7 +51,7 @@ describe('merchant login waits for already dispatched cookie mutations', () => {
     }))
     const api = await import('./api.js')
     const first = api.logoutMerchantAccount('/api')
-    const firstCancelled = expect(first).rejects.toMatchObject({ code: 'MCP_SESSION_CHANGED' })
+    const firstCancelled = expect(first).rejects.toMatchObject({ code: 'API_WORKSPACE_CONTEXT_CHANGED' })
     await started.promise
     const second = api.logoutMerchantAccount('/api')
     const secondCancelled = expect(second).rejects.toMatchObject({ code: 'MCP_SESSION_CHANGED' })
@@ -59,8 +59,7 @@ describe('merchant login waits for already dispatched cookie mutations', () => {
     const login = api.loginMerchantAccount('/api', { login: 'current@example.invalid', password: 'fixture-only' })
     await new Promise(resolve => setTimeout(resolve, 0))
     try { expect(logoutCalls).toBe(1); expect(loginCalls).toBe(0) } finally { response.resolve(envelope({ logged_out: true })) }
-    await firstCancelled
-    await secondCancelled
+    await Promise.all([firstCancelled, secondCancelled])
     await expect(login).resolves.toMatchObject({ id: 'current' })
     expect(logoutCalls).toBe(1)
     expect(loginCalls).toBe(1)

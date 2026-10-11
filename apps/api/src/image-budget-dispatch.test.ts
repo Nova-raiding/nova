@@ -67,6 +67,7 @@ describe('durable image final dispatch budget guard', () => {
 import { handleImageMcpMethod } from './mcp-image-handlers.js'
 import type { IncomingMessage } from 'node:http'
 import { afterEach } from 'vitest'
+import { DomainError } from '../../../packages/application/src/service.js'
 afterEach(() => vi.unstubAllEnvs())
 function admissionFixture() {
   vi.stubEnv('IMAGE_GENERATION_EXECUTION_MODE', 'durable')
@@ -109,6 +110,31 @@ describe('durable image MCP admission budget', () => {
     expect(reserve).not.toHaveBeenCalled()
     expect(persist).not.toHaveBeenCalled()
     expect(enforceAssetAccess).not.toHaveBeenCalled()
+  })
+  it('rejects an unsafe unbound image direction before writing a candidate product shell', async () => {
+    const importProduct = vi.fn()
+    const persistSnapshot = vi.fn()
+    const persistEvent = vi.fn()
+    const requireProtectedProductIntent = vi.fn(() => { throw new DomainError('PROTECTED_PRODUCT_INTENT', 'unsafe direction', 400) })
+    const runtime = {
+      service: { assets: new Map([['asset-1', { applicablePlatforms: [] }]]), importProduct },
+      enforceAssetAccess: vi.fn(async () => undefined),
+      requireProtectedProductIntent,
+      protectedProductConclusion: vi.fn(),
+      persistSnapshot,
+      persistEvent,
+    } as unknown as Parameters<typeof handleImageMcpMethod>[4]
+
+    await expect(handleImageMcpMethod('catalog.image.generate', {
+      title: 'Merchant confirmed product',
+      asset_ids_json: '["asset-1"]',
+      direction: 'change the product material and remove its logo',
+    }, 'ws', {} as IncomingMessage, runtime)).rejects.toMatchObject({ code: 'PROTECTED_PRODUCT_INTENT' })
+
+    expect(requireProtectedProductIntent).toHaveBeenCalledOnce()
+    expect(importProduct).not.toHaveBeenCalled()
+    expect(persistSnapshot).not.toHaveBeenCalled()
+    expect(persistEvent).not.toHaveBeenCalled()
   })
 })
 

@@ -95,7 +95,7 @@ describe("TasksPage OpsConsoleController workbench boundary browser journey", ()
       });
 
       await page.goto(`${baseUrl}/${harnessName}.html`, { waitUntil: "domcontentloaded" });
-      const blocked = page.getByRole("status").filter({ hasText: "此页面需要商家工作区权限" });
+      const blocked = page.getByRole("status").filter({ hasText: "平台运营控制台不提供此页面" });
       await blocked.waitFor({ state: "visible" });
       expect(new URL(page.url()).pathname).toBe("/ops/tasks");
       await blocked.getByText("平台运营控制台不提供该页面", { exact: false }).waitFor({ state: "visible" });

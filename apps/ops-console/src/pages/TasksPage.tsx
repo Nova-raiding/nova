@@ -71,6 +71,13 @@ export function TasksPage({ model }: TasksPageProps) {
       );
       if (matchingStores.length === 1) storeFilters.accountId = requestedAccountId;
     }
+    // Platform and account were issued as one store deep link. If the
+    // authorized store directory is empty, discard the whole link. Otherwise
+    // keep the safe platform-only filter while dropping an unresolved account
+    // identifier; the directory itself is still available to scope the queue.
+    if (requestedAccountId && !storeFilters.accountId) {
+      if (model.storeDirectory.length === 0) storeFilters = {};
+    }
     const nextUrlFilters: QueueFilters = {
       ...storeFilters,
       ...(taskId ? { taskId } : {}),

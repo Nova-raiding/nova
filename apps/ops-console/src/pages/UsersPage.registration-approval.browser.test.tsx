@@ -135,6 +135,9 @@ describe("UsersPage platform registration review route journey", () => {
       await page.getByRole("button", { name: /更多用户治理操作/u }).click();
       await page.getByRole("menuitem", { name: "入驻申请", exact: true }).click();
       await page.getByText("入驻申请", { exact: true }).last().waitFor({ state: "visible" });
+      const governanceNavigation = page.getByRole("button", { name: /^切换用户治理页面；当前为入驻申请/u });
+      await governanceNavigation.waitFor({ state: "visible" });
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label")?.startsWith("切换用户治理页面；当前为入驻申请"));
       const applicationRow = page.getByRole("row").filter({ hasText: "owner@example.test" });
       await applicationRow.waitFor({ state: "visible" });
       expect(await applicationRow.innerText()).toContain("待审核");

@@ -46,11 +46,11 @@ class Store implements DurableOutboxStore {
     if (!current || current.leaseToken !== leaseToken || !current.leaseUntil || Date.parse(current.leaseUntil) <= Date.parse(now)) throw staleLeaseError()
     return { ...current }
   }
-  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<boolean> {
+  async acquireExecution(_workspaceId: string, id: string, leaseToken: string): Promise<string | null> {
     const current = this.events.get(id)
-    if (!current || current.leaseToken !== leaseToken || this.executionOwners.has(id)) return false
+    if (!current || current.leaseToken !== leaseToken || this.executionOwners.has(id)) return null
     this.executionOwners.add(id)
-    return true
+    return leaseToken
   }
   async renewLease(_workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<DurableOutboxEvent> {
     const current = await this.validateLease(_workspaceId, id, leaseToken, now)
@@ -359,7 +359,7 @@ describe('durable outbox dispatcher', () => {
     const validB = event({ id: 'evt_valid_b', workspaceId: 'ws_1', attempts: 1, leaseToken: 'lease_b' })
     const store: DurableOutboxStore = {
       claimPending: async () => [validA, foreign, validB],
-      acquireExecution: async () => true,
+      acquireExecution: async (_workspaceId, _id, leaseToken) => leaseToken,
       validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
       recordFailure: async () => event(), markUnknown: async () => event(),
       releaseClaim: vi.fn(async (_workspaceId: string, id: string, _leaseToken: string) => event({ id })),
@@ -385,7 +385,7 @@ describe('durable outbox dispatcher', () => {
     const claims: Array<{ eventTypes?: readonly string[] }> = []
     const store: DurableOutboxStore = {
       claimPending: async (_workspaceId, options = {}) => { claims.push(options); return [] },
-      acquireExecution: async () => true,
+      acquireExecution: async (_workspaceId, _id, leaseToken) => leaseToken,
       validateLease: async () => event(), renewLease: async () => event(), ack: async () => event(),
       recordFailure: async () => event(), markUnknown: async () => event(),
     }
@@ -493,7 +493,7 @@ describe('durable outbox dispatcher', () => {
     await queue.enqueue({ id: queued.id, value: queued })
     const store: DurableOutboxStore = {
       claimPending: async () => [],
-      acquireExecution: async () => true,
+      acquireExecution: async (_workspaceId, _id, leaseToken) => leaseToken,
       validateLease: async () => authoritative,
       renewLease: async () => authoritative,
       ack: async () => authoritative,

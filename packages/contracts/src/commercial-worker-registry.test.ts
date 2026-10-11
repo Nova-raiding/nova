@@ -48,4 +48,11 @@ describe('commercial worker execution registries', () => {
     expect(requiredCommercialFeatures(resolution.policy!)).toEqual([feature])
     expect(resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, { surface: 'WORKER', operation: `${operation}.extra` }).outcome).toBe('DENY_UNCLASSIFIED')
   })
+
+  it('keeps publish reconciliation subscription-qualified but uncharged', () => {
+    expect(WORKER_RUNTIME_OPERATIONS).toContain('publish.reconcile')
+    const resolution = resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, { surface: 'WORKER', operation: 'publish.reconcile' })
+    expect(resolution).toMatchObject({ outcome: 'REGISTERED', policy: { domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null } })
+    expect(requiredCommercialFeatures(resolution.policy!)).toEqual([])
+  })
 })

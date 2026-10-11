@@ -18,7 +18,14 @@ describe('demo unscanned image source gate', () => {
   it('admits only the matching workspace quarantine image with confirmed rights under explicit demo mode', () => {
     const workspaceId = 'ws_demo_image_source'
     const asset = service.registerAsset({ workspaceId, name: 'source.png', mimeType: 'image/png', sizeBytes: 12, sha256: 'a'.repeat(64), storageKey: `quarantine/${workspaceId}/source` })
-    Object.assign(asset, { scanStatus: 'unscanned', rightsStatus: 'approved', rightsScope: 'commercial', aiModificationAllowed: true })
+    Object.assign(asset, {
+      scanStatus: 'unscanned',
+      rightsStatus: 'approved',
+      rightsScope: 'commercial_authorized',
+      usageScopes: ['commercial', 'ai_generation'],
+      aiModificationAllowed: true,
+      applicablePlatforms: ['jd'],
+    })
     service.assets.set(asset.id, asset)
     expect(() => requireApprovedAssetForImageGeneration(workspaceId, { platform: 'jd' }, [asset.id])).toThrow()
     Object.assign(process.env, { DEPLOYMENT_PROFILE: 'ecs', ASSET_SCANNER_MODE: 'deferred', DEMO_UNSCANNED_ASSETS_ENABLED: 'true' })

@@ -77,7 +77,7 @@ describe("customer delivery authorization and workspace isolation", () => {
     const address = vite.httpServer?.address();
     if (!address || typeof address === "string") throw new Error("Customer delivery authz listener did not bind");
     baseUrl = `http://127.0.0.1:${address.port}`;
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ headless: true });
   }, 60_000);
 
   afterAll(async () => {

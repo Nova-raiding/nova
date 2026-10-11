@@ -102,6 +102,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
   const [busy, setBusy] = useState(false)
   const [writeError, setWriteError] = useState('')
   const [resultUnknown, setResultUnknown] = useState(false)
+  const [paymentRequestUnknown, setPaymentRequestUnknown] = useState(false)
   const [requestRef, setRequestRef] = useState('')
   const [traceRef, setTraceRef] = useState('')
   const [supportOpen, setSupportOpen] = useState(false)
@@ -133,7 +134,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     setLoadedScopeKey(savedKey)
     intent.current = null
     setTarget(null); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false)
-    setRecoveredCheckoutOpen(false); setResultUnknown(false); setWriteError('')
+    setRecoveredCheckoutOpen(false); setResultUnknown(false); setPaymentRequestUnknown(false); setWriteError('')
     setRequestRef(''); setTraceRef(''); setRecoverOrderId(''); setSupportOpen(false); setCopyNotice('')
     setLegacyRecoveryBlocked(false)
   }, [savedKey])
@@ -194,7 +195,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     if (legacyRecoveryBlocked) { setWriteError('旧版购买恢复记录尚未完成跨工作区核验；请联系运营核对原订单后再继续。'); return }
     if (intent.current?.target === item.sku_code && orders.length) { setTarget(item); return }
     if (resultUnknown || orders.some(order => order.state === 'pending')) { setWriteError('已有待确认或待付款意图，请先查询原订单；关闭弹窗不会取消订单。'); return }
-    setTarget(item); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false); setWriteError('')
+    setTarget(item); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false); setPaymentRequestUnknown(false); setWriteError('')
     if (intent.current?.target !== item.sku_code) intent.current = { target: item.sku_code, key: `merchant-${crypto.randomUUID()}`, checkoutId: crypto.randomUUID() }
   }
   const reportError = (cause: unknown) => {
@@ -269,7 +270,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     try {
       const next = await Promise.all(ids.map(id => fetchCommercialPurchaseOrder(baseUrl, id)))
       if (workspaceScopeRef.current !== scopeKey) return
-      setOrders(next); persist(next); setResultUnknown(false); setConfirmed(false); setAccepted(false)
+      setOrders(next); persist(next); setResultUnknown(false); setPaymentRequestUnknown(false); setConfirmed(false); setAccepted(false)
       if (next.every(order => order.state !== 'pending')) { intent.current = null; sessionStorage.removeItem(savedKey); setReload(value => value + 1) }
     } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
@@ -284,10 +285,16 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
       const changed = nextPayable.some((order, index) => order.id !== payableOrders[index].id || order.amount_fen !== payableOrders[index].amount_fen || order.sku_version_id !== payableOrders[index].sku_version_id || JSON.stringify(order.snapshot) !== JSON.stringify(payableOrders[index].snapshot))
       const replacements = new Map(nextPayable.map(order => [order.id, order]))
       const next = orders.map(order => replacements.get(order.id) ?? order)
-      setOrders(next); persist(next)
+      setOrders(next); persist(next); setPaymentRequestUnknown(false)
       if (changed) { setConfirmed(false); setAccepted(false); setWriteError('价格或权益已更新，请重新确认服务端明细；当前不会打开付款请求。') }
       else setConfirmed(true)
-    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
+    } catch (cause) {
+      if (workspaceScopeRef.current === scopeKey) {
+        reportError(cause)
+        const error = cause as ApiError
+        setPaymentRequestUnknown(error.code === 'API_REQUEST_TIMEOUT' || error.code === 'MCP_TRANSPORT_CLOSED' || error.status === 503 || !error.status)
+      }
+    } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
   if (!scopeCurrent) return <section className="commercial-center" aria-label="套餐与权益包"><p role="status">{workspaceId ? '正在切换套餐与订单工作区…' : '请先选择已授权工作区。'}</p></section>
   const total = orders.reduce((sum, order) => sum + order.amount_fen, 0)
@@ -321,7 +328,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
         { title: '操作', render: (_, item) => { const action = commercialPurchaseAction(portfolio, item); return <><Button disabled={!action.kind || resultUnknown || Boolean(readError)} onClick={() => choose(item)}>{action.label}</Button>{action.reason && <p className="commercial-action-reason">{action.reason}</p>}</> } },
       ]} />}
     </>}
-    {writeError && <Alert type="error" title={writeError} description={<>{requestRef && <><p>请求标识：{requestRef}</p><Button onClick={() => { const context = `请求标识：${requestRef}；商业契约：commercial.subscription.v1；步骤：${intent.current?.kind ?? '目录/已购查询'}`; if (!navigator.clipboard) { setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。'); return } void navigator.clipboard.writeText(context).then(() => setCopyNotice('排障标识已复制；尚未提交求助或建立工单。')).catch(() => setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。')) }}>复制脱敏排障标识</Button><p role="status">{copyNotice}</p></>}{resultUnknown && <p>结果待确认，请先查原订单或联系运营；不会重新建立付款意图。</p>}{resultUnknown && intent.current && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}<Button onClick={() => setSupportOpen(true)}>提交人工支持</Button></>} />}
+    {writeError && <Alert type="error" title={writeError} description={<>{requestRef && <><p>请求标识：{requestRef}</p><Button onClick={() => { const context = `请求标识：${requestRef}；商业契约：commercial.subscription.v1；步骤：${intent.current?.kind ?? '目录/已购查询'}`; if (!navigator.clipboard) { setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。'); return } void navigator.clipboard.writeText(context).then(() => setCopyNotice('排障标识已复制；尚未提交求助或建立工单。')).catch(() => setCopyNotice('无法自动复制，请手动复制上方请求标识给运营负责人。')) }}>复制脱敏排障标识</Button><p role="status">{copyNotice}</p></>}{resultUnknown && <p>{paymentRequestUnknown ? '付款请求结果尚未确认，请先读取原订单付款状态；继续操作会复用原付款请求标识。' : '结果待确认，请先查原订单或联系运营；不会重新建立付款意图。'}</p>}{resultUnknown && intent.current && !paymentRequestUnknown && !target && !recoveredCheckoutOpen && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}{paymentRequestUnknown && !target && !recoveredCheckoutOpen && <Button onClick={() => void queryOrders()} loading={busy}>读取原订单付款状态</Button>}<Button onClick={() => setSupportOpen(true)}>提交人工支持</Button></>} />}
     {orders.length > 0 && !target && <div><p>原订单查询结果：</p><Button disabled={busy} onClick={() => { setConfirmed(false); setAccepted(false); setRecoveredCheckoutOpen(true) }}>查看原冻结明细与付款</Button>{orders.map(order => <p key={order.id}>{order.id} · {commercialState(order.state)} · {commercialMoney(order.amount_fen)}</p>)}</div>}
     {!supportOpen && !readError && !writeError && <Button onClick={() => setSupportOpen(true)}>首单前需要人工支持</Button>}
     {supportOpen && <MerchantSupportRequestPanel baseUrl={baseUrl} workspaceKey={`${workspaceKey}:${workspaceId}`} handoff={portfolio?.support_handoff} requestId={requestRef || undefined} traceId={traceRef || undefined} step={intent.current?.kind ?? '目录及已购查询'} />}
@@ -339,7 +346,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
           {orders.map(order => <FrozenOnboardingGiftPolicy key={order.id} order={order} />)}
           {payableOrders.length > 0 && <>
             <Checkbox checked={accepted} disabled={payableOrders.length === 0} onChange={event => setAccepted(event.target.checked)}>我已核对当前待付款分项、企业、商品版本、周期、权益及金额 {commercialMoney(payableTotal)}，确认付款。</Checkbox>
-            {!confirmed && <Button type="primary" disabled={!accepted || payableOrders.length === 0} loading={busy} onClick={() => void confirmPayment()}>确认待付款分项 {commercialMoney(payableTotal)}</Button>}
+            {!confirmed && <Button type="primary" disabled={!accepted || payableOrders.length === 0 || paymentRequestUnknown} loading={busy} onClick={() => void confirmPayment()}>{paymentRequestUnknown ? '请先读取付款请求结果' : `确认待付款分项 ${commercialMoney(payableTotal)}`}</Button>}
           </>}
           {payableOrders.length === 0 && <p role="status">当前没有满足付款条件的待付款分项；请查询订单状态或联系运营核实。</p>}
           {confirmed && orders.filter(order => canConfirmCommercialOrder(order, clockNow)).map(order => <div className="commercial-payment" key={order.id}>
@@ -349,7 +356,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
           </div>)}
           <Button onClick={() => void queryOrders()} loading={busy}>查询原订单与权益状态</Button>
         </>}
-        {writeError && <p role="alert">{writeError}{requestRef ? ` · 请求 ${requestRef}` : ''}</p>}{resultUnknown && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}
+        {writeError && <p role="alert">{writeError}{requestRef ? ` · 请求 ${requestRef}` : ''}</p>}{resultUnknown && !paymentRequestUnknown && <Button onClick={() => void queryOriginalRequest()} loading={busy}>查询原提交结果</Button>}{paymentRequestUnknown && <Button onClick={() => void queryOrders()} loading={busy}>读取原订单付款状态</Button>}
         <Button onClick={() => { setTarget(null); setRecoveredCheckoutOpen(false); setSupportOpen(true) }}>需要运营协助</Button>
       </>}
     </Modal>

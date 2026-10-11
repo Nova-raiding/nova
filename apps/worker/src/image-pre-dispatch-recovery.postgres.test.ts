@@ -145,7 +145,7 @@ it('keeps holds frozen for existing provider receipt, usage, and failed-without-
   await repo.markOutcomeUnknown({workspaceId:unknown.workspaceId,jobId:unknown.jobId,ownerToken:unknown.execution.ownerToken,errorCode:'UNKNOWN',errorMessage:'transport outcome unknown'})
   await repo.reconcileFailed({workspaceId:unknown.workspaceId,jobId:unknown.jobId,errorCode:'MODEL_TASK_COST_LIMIT_EXCEEDED',errorMessage:'historical ambiguous projection'})
   const outboxPool=new Pool({connectionString:f.appUrl,max:1})
-  try { await new PostgresOutboxRepository(outboxPool).deadLetter(unknown.workspaceId,unknown.event.id,{code:'MODEL_TASK_COST_LIMIT_EXCEEDED',message:'synthetic ambiguous history',retryable:false,unknown:false}) } finally {await outboxPool.end()}
+  try { await new PostgresOutboxRepository(outboxPool, { executionOwnerColumnAvailable: true }).deadLetter(unknown.workspaceId,unknown.event.id,{code:'MODEL_TASK_COST_LIMIT_EXCEEDED',message:'synthetic ambiguous history',retryable:false,unknown:false}) } finally {await outboxPool.end()}
   await f.persistence.modelUsage!.releaseDailyBudget({workspaceId:unknown.workspaceId,reservationKey:unknown.action})
   expect(await repo.hasPreProviderFailureProof!({workspaceId:unknown.workspaceId,jobId:unknown.jobId,eventId:unknown.event.id})).toBe(false)
   await sweep(unknown);expect(await facts(unknown)).toMatchObject({point:'active',job:'queued',releases:0})

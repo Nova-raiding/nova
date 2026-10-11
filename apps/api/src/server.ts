@@ -1,6 +1,7 @@
 import { MCP_PLATFORM_SUPPORT_METHODS, handleMcpPlatformSupport } from './mcp-platform-support-handler.js'
 import { recoverKnownPlatformAccountAdmissionRollback, requireKnownEffectiveStorageSnapshot } from './platform-account-persistence-recovery.js'
 import { BusinessSnapshotNotFoundError } from '../../../packages/persistence/src/business-repository.js'
+import { TaskFeedbackIdempotencyRepository } from '../../../packages/persistence/src/task-feedback-idempotency-repository.js'
 import { loadCommercialRuntimePolicy, commercialRuntimeEvidenceConfig, assertCommercialRuntimeOperation, CommercialRuntimePolicyError, type CommercialExistingIntentEvidence } from './commercial-runtime-policy.js'
 import { classifyCommercialRuntimeMethod, commercialOrderObligationEvidence, commercialApprovedRefundEvidence, commercialApprovedReturnEvidence } from './commercial-runtime-methods.js'
 import { createCommercialFileFleetObserver } from './commercial-fleet-observer.js'
@@ -11,6 +12,7 @@ import { authenticateRequest } from './http-authentication-runtime.js'
 import { merchantFirstValuePreview as createMerchantFirstValuePreview } from './mcp-first-value-preview.js'
 import { createRequestObservation } from './http-request-observation.js'
 import { countVerifiedCompletedTasks } from './workspace-completed-task-metrics.js'
+import { consumeVideoRenderingApprovalTicket as consumeVideoRenderingApprovalTicketProof } from './video-rendering-approval.js'
 import { createRelayUsageRuntime } from './model-relay-usage-runtime.js'
 import { beginHttpMetric, observeHttpMetric, httpMetricLines } from './http-metrics.js'
 import { handleHttpWorkerExecutionRoute } from './http-worker-execution-routes.js'
@@ -818,6 +820,7 @@ export interface ApiPersistence {
   canonicalBackfillConflicts?: CanonicalBackfillConflictRepository
   canonicalBackfillRemediation?: PostgresCanonicalBackfillRemediationRepository
   interactiveConfirmationTickets?: InteractiveConfirmationTicketRepository
+  taskFeedbackIdempotency?: TaskFeedbackIdempotencyRepository
   persistSnapshotAndEvent?: (input: { workspaceId: string; entityType: BusinessEntityType; entityId: string; entityVersion: number; payload: Record<string, unknown>; eventType: string; eventPayload: Record<string, unknown> }) => Promise<void>
   persistChargedGenerationEnqueue?: (input: { workspaceId: string; job: import('../../../packages/application/src/service.js').GenerationJob; eventPayload: Record<string, unknown>; claim: LeasedCreativeAction; reservationId: string }) => Promise<void>
   persistSnapshotsAndEvent?: (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown> }) => Promise<void>
@@ -3296,8 +3299,9 @@ async function initializePersistence(): Promise<ApiPersistence> {
       // active on both prefixes so trashed assets never become visible during
       // the bridge rollout. Mutations remain disabled below for bridge mode.
       || bridgeSchemaMode === 'prefix_256_or_257' && (bridgeSchemaVersion === 256 || bridgeSchemaVersion === 257)
-    const outbox = new PostgresOutboxRepository(sqlPool)
+    const outbox = new PostgresOutboxRepository(sqlPool, { executionOwnerColumnAvailable: (bridgeSchemaVersion ?? expectedMigrationVersion) >= 276 })
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true, commercialEntitlement: isProduction() })
+    const taskFeedbackIdempotency = new TaskFeedbackIdempotencyRepository(sqlPool, business, outbox)
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event), fixturePaymentAllowed())
     const commercial = new PostgresCommercialRepository(sqlPool)
     const creativePoints = new PostgresCreativePointRepository(sqlPool)
@@ -3575,7 +3579,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', catalogBatchImportIdempotency, creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, publishMediaOrphans, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistTaskGroup, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', catalogBatchImportIdempotency, taskFeedbackIdempotency, creativePoints, creativeActionClaims, chargedTextNoDelivery, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, commercialPointOrigins, commercialReceipts, commercialBenefitBundles, commercialNotifications, commercialNotificationFanout, commercialRuntimeSchemaDigest, demoEvaluationEntitlements, privateTrialConversion, commercialRefunds, serviceFulfillment, customerDeliveries, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, scopedBrandSettings, ...(bridgeSchemaVersion !== undefined ? { bridgeSchemaVersion } : {}), objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, workspaceContentSetup, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, publishMediaOrphans, ...(assetLifecycleRead ? { assetLifecycleRead } : {}), ...(assetLifecycle ? { assetLifecycle } : {}), imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistChargedGenerationEnqueue, persistSnapshotsAndEvent, persistTaskGroup, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, jobQueueMetrics, listWorkspaceSummaries: query => opsData.listWorkspaceSummaries(query), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -4510,7 +4514,7 @@ export async function assertVideoProviderJobScope(workspaceId: string, providerJ
   return { ...context, settlementVerified } as unknown as VideoBillingContext
 }
 
-export async function withOwnedVideoAction<T>(workspaceId: string, actionId: string, intent: unknown, execute: (beforeDispatch: () => Promise<void>) => Promise<T>, replay: (providerJobId: string) => T): Promise<T> {
+export async function withOwnedVideoAction<T>(workspaceId: string, actionId: string, intent: unknown, execute: (beforeDispatch: () => Promise<void>) => Promise<T>, replay: (providerJobId: string) => T, authorize?: () => Promise<void>): Promise<T> {
   await persistenceReady
   if (isProduction() && !persistence.outbox) throw new DomainError('VIDEO_BILLING_STORE_UNAVAILABLE', '视频计费上下文持久化未配置', 503)
   const intentHash = createHash('sha256').update(canonicalJson(intent)).digest('hex')
@@ -4522,6 +4526,9 @@ export async function withOwnedVideoAction<T>(workspaceId: string, actionId: str
   const accepted = previous.find(event => event.eventType === 'multimodal.video.accepted')
   if (accepted) return replay(String(recordValue(accepted.payload.billing_context)!.providerJobId))
   if (previous.some(event => event.eventType === 'multimodal.video.preflight_rejected')) throw new DomainError('VIDEO_PREFLIGHT_REJECTED', '原视频请求在提交模型前被阻断，请修复配置后使用新的幂等键发起', 409, { provider_dispatched: false, retryable: false, requires_new_idempotency_key: true })
+  // A confirmed, accepted replay is returned above without requiring a second ticket.
+  // New render intents consume their one-time storyboard approval before any reservation.
+  if (authorize) await authorize()
   const busy = () => new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '视频请求正在准备或已提交核对，请查询原任务，不要重复提交', 409, { reconciliation_required: true, retryable: false })
   if (previousPreparation) throw busy()
   const nonce = randomUUID()
@@ -11098,6 +11105,10 @@ function multimodalMcpRuntime(req: IncomingMessage, workspaceId: string, result:
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
     assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
     publicImageJob, contentExecutionEvidence,
+    consumeVideoRenderingApprovalTicket: async (input: { prompt: string; context: unknown; nonce: unknown; intentHash: unknown }) => {
+      const { actorId, sessionId } = interactiveTicketScope(req)
+      return consumeVideoRenderingApprovalTicketProof({ ...input, workspaceId, actorId, sessionId, repository: persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets })
+    },
     nextEventSequence,
   }
 }
@@ -13955,6 +13966,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistSnapshot,
         persistEvent,
         taskFeedbackEventPayload,
+        feedbackIdempotency: persistence.taskFeedbackIdempotency,
+        production: isProduction(),
       }))
     case 'task.clone':
       return result(await handleMcpTaskContinuation(method, params, req, workspaceId, {
@@ -13989,6 +14002,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         persistSnapshot,
         persistEvent,
         taskFeedbackEventPayload,
+        feedbackIdempotency: persistence.taskFeedbackIdempotency,
+        production: isProduction(),
       }))
     case 'platform.revoke': {
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
@@ -15352,7 +15367,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
     persistSnapshot, persistEvent, persistTaskGroup, enforceTaskRequestCandidates, taskUnderstandingProductIds,
     requireProductionRequestStores, scopeTask, taskCreationBrand, enforceProductBrandAccess,
     resolveCanonicalTaskScope, persistTaskAnswerFactConfirmation, paginationRequest, taskTimeline,
-    requestActor, taskFeedbackEventPayload, projectCanonicalTaskForRead,
+    requestActor, taskFeedbackEventPayload, feedbackIdempotency: persistence.taskFeedbackIdempotency, projectCanonicalTaskForRead,
     assertCanonicalTaskScopeForAction, recordOperationAudit,
   })) return
   async function runFixtureGenerationJob(workspaceId: string, jobId: string) {

@@ -1,15 +1,17 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { ConfigProvider } from 'antd'
+import zhCN from 'antd/locale/zh_CN'
 import { describe, expect, it } from 'vitest'
 import { MerchantLoginPage } from './MerchantLoginPage'
 
-const render = (error?: string, onRetry?: () => void, loading = false) => renderToStaticMarkup(createElement(MerchantLoginPage, {
+const render = (error?: string, onRetry?: () => void, loading = false) => renderToStaticMarkup(createElement(ConfigProvider, { locale: zhCN }, createElement(MerchantLoginPage, {
   apiBaseUrl: 'http://127.0.0.1:9',
   loading,
   ...(error === undefined ? {} : { error }),
   onAuthenticated: () => undefined,
   ...(onRetry ? { onRetry } : {}),
-}))
+})))
 
 describe('merchant login page shows why the session ended', () => {
   // Regression: the page destructured the parent's `error` as `_error` and never
@@ -52,5 +54,11 @@ describe('merchant login page shows why the session ended', () => {
   it('renders the retry action only when session recovery is available', () => {
     expect(render('无法验证登录状态：API 请求超时', () => undefined)).toContain('重新检查登录状态')
     expect(render('无法验证登录状态：API 请求超时')).not.toContain('重新检查登录状态')
+  })
+
+  it('localizes Ant Design password visibility controls with the Chinese merchant interface', () => {
+    const html = render()
+    expect(html).toContain('aria-label="显示"')
+    expect(html).not.toContain('aria-label="Show"')
   })
 })

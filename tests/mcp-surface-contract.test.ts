@@ -41,6 +41,7 @@ const safeWithoutInteractiveWrite = new Set<string>([
   ...literalSetFromBridge(bridgeSource, 'SAFE_WITHOUT_INTERACTIVE_WRITE'),
 ])
 const destructiveWriteMethods = literalSetFromBridge(bridgeSource, 'DESTRUCTIVE_WRITE_METHODS')
+const alwaysInteractiveWriteMethods = literalSetFromBridge(bridgeSource, 'ALWAYS_INTERACTIVE_WRITE_METHODS')
 const commercialRecoveryMethods = literalSetFromBridge(bridgeSource, 'COMMERCIAL_RECOVERY_METHODS')
 
 const declaredMerchantToolSurface = new Set(
@@ -182,21 +183,23 @@ describe('MCP surface coverage', () => {
     // that subclass; this test closes it.
     const tools = await runtimeTools(new URL('../apps/plugin/', import.meta.url))
     expect(tools.length).toBeGreaterThan(0)
-    // asset.upload.file_path is the single bridge-local argument: the bridge
-    // itself reads the merchant-attached file and drops the key in
-    // prepareToolArguments, so the server contract must NOT accept it. Pinning
-    // it here keeps the exception explicit: any other undeclared argument fails.
+    // file_path and the two video confirmation fields are bridge-local. The
+    // bridge reads file_path into bytes, and consumes video fields to mint the
+    // intent hash before forwarding only the standard confirmation ticket.
     const bridgeLocalArguments: Readonly<Record<string, readonly string[]>> = {
       'asset.upload': ['file_path'],
+      'workspace.interactive.confirm': ['video_prompt', 'video_context_json'],
     }
     for (const [method, locals] of Object.entries(bridgeLocalArguments)) {
       const tool = tools.find(candidate => candidate.name === method)
       expect(tool, `${method} must stay on the merchant surface`).toBeDefined()
       for (const local of locals) {
         expect(tool?.inputSchema.properties, `${method}.${local} must stay declared`).toHaveProperty(local)
-        // A declared-but-forwarded local argument is exactly the drift that
-        // produces the API 400, so the stripping step must still exist.
-        expect(bridgeSource, `${method}.${local} is no longer stripped by the bridge`).toContain(`delete prepared.${local}`)
+        if (method === 'asset.upload') {
+          expect(bridgeSource, `${method}.${local} is no longer stripped by the bridge`).toContain(`delete prepared.${local}`)
+        } else {
+          expect(bridgeSource, `${method}.${local} must be consumed as local video approval context`).toContain('videoApprovalContextFromConfirmation(args)')
+        }
       }
     }
     const contractSchemas = MCP_METHOD_SCHEMAS as Readonly<Record<string, { properties?: Record<string, unknown> }>>
@@ -221,7 +224,8 @@ describe('MCP surface coverage', () => {
     expect(destructiveWriteMethods.has('workspace.data.delete.request')).toBe(true)
     expect(destructiveWriteMethods.has('workspace.deactivate')).toBe(true)
     expect(destructiveWriteMethods.has('catalog.product.disable')).toBe(true)
-    expect(safeWithoutInteractiveWrite.has('workspace.data.export.request')).toBe(true)
+    expect(safeWithoutInteractiveWrite.has('workspace.data.export.request')).toBe(false)
+    expect(alwaysInteractiveWriteMethods.has('workspace.data.export.request')).toBe(true)
   })
 
   it('keeps the bridge zero-point recovery allowlist equal to the shared commercial registry', () => {

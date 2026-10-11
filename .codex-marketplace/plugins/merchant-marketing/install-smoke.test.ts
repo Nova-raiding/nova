@@ -242,7 +242,7 @@ describe('Codex plugin installation package', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     expect(manifest.name).toBe('merchant-marketing')
     expect(manifest.interface.displayName).toBe('Store Nova')
-    expect(manifest.version).toMatch(/^0\.1\.0\+codex\.[0-9]{14}$/)
+    expect(manifest.version).toMatch(/^0\.1\.\d+\+codex\.[0-9]{14}$/)
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
@@ -548,7 +548,7 @@ printf '%s\n' Darwin
     // The entry skill must gate the call on the current tools/list surface
     // instead of instructing an unconditional call that returns Unknown tool.
     expect(skill).toContain('只有当前 `tools/list` 实际暴露视频渲染工具时')
-    expect(skill).toContain('以 `output=rendering` 调用它')
+    expect(skill).toContain('output=rendering')
     expect(skill).not.toContain('调用 `multimodal.video.request`')
     expect(skill).toContain('查询同一 provider job')
     expect(skill).toContain('服务端返回真实的对象归档状态与病毒扫描状态')

@@ -94,6 +94,7 @@ export const mutations: InvariantFragment['mutations'] = [
         'packages/connectors/src/platform-adapters/pinduoduo.ts',
         'packages/connectors/src/http-connector.ts',
         'packages/connectors/src/types.ts',
+        'packages/connectors/src/types.d.ts',
       ],
       noSecondImplementation: [
         {

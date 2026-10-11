@@ -268,7 +268,10 @@ describe('manual operations store records', () => {
   })
 
   it('lets a paid manual-mode customer import a product and create a task against the registered store', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
+    // This e2e uses the in-memory API persistence. Keep the task transaction
+    // on its supported test-runtime path; production requires the Postgres
+    // persistTaskGroup implementation and is covered by persistence tests.
+    vi.stubEnv('NODE_ENV', 'test')
     vi.stubEnv('PLATFORM_OPERATIONS_MODE', 'manual')
     const workspaceId = 'ws_manual_customer_flow'
     const platform = 'taobao'

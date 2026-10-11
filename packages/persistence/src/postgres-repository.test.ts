@@ -5,6 +5,8 @@ import { OutboxEventNotFoundError, PostgresOutboxRepository, SqlClient, SqlPool,
 
 type Row = Record<string, unknown>
 
+const outboxRepository = (pool: SqlPool) => new PostgresOutboxRepository(pool, { executionOwnerColumnAvailable: true })
+
 class RecordingClient implements SqlClient {
   readonly calls: Array<{ text: string; values?: readonly unknown[] }> = []
   private readonly responses: Array<{ rows: Row[] }> = []
@@ -41,7 +43,7 @@ describe('PostgresOutboxRepository', () => {
   it('rejects missing workspace before acquiring a pooled connection', async () => {
     const client = new RecordingClient()
     const pool = new RecordingPool(client)
-    await expect(new PostgresOutboxRepository(pool).pending('  ')).rejects.toBeInstanceOf(TenantScopeError)
+    await expect(outboxRepository(pool).pending('  ')).rejects.toBeInstanceOf(TenantScopeError)
     expect(client.calls).toHaveLength(0)
   })
 
@@ -51,7 +53,7 @@ describe('PostgresOutboxRepository', () => {
     client.enqueue() // set_config
     client.enqueue(row()) // insert
     client.enqueue() // COMMIT
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     const result = await repository.append({ workspaceId: 'ws_1', aggregateId: 'task_1', eventType: 'task.created', sequence: 1, payload: { a: 1 } })
     expect(result.id).toBe('evt_1')
     expect(client.calls[1]).toEqual({ text: `SELECT set_config('app.workspace_id', $1, true)`, values: ['ws_1'] })
@@ -65,7 +67,7 @@ describe('PostgresOutboxRepository', () => {
     client.enqueue(); client.enqueue(); client.enqueue() // begin, scope, insert no rows
     client.enqueue(row({ id: 'evt_existing', published_at: '2026-08-22T01:00:00.000Z' }))
     client.enqueue() // commit
-    const result = await new PostgresOutboxRepository(new RecordingPool(client)).append({ workspaceId: 'ws_1', aggregateId: 'task_1', eventType: 'task.created', sequence: 1, payload: { a: 1 } })
+    const result = await outboxRepository(new RecordingPool(client)).append({ workspaceId: 'ws_1', aggregateId: 'task_1', eventType: 'task.created', sequence: 1, payload: { a: 1 } })
     expect(result.id).toBe('evt_existing')
     const lookup = client.calls.find(call => call.text.includes('SELECT id, workspace_id'))
     expect(lookup?.values).toEqual(['ws_1', 'task_1', 'task.created', 1])
@@ -75,7 +77,7 @@ describe('PostgresOutboxRepository', () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_2' })); client.enqueue() // pending tx
     client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_2' })); client.enqueue(row({ id: 'evt_2', published_at: '2026-08-22T02:00:00.000Z' })); client.enqueue() // mark tx: lock, update
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     expect(await repository.pending('ws_1', 25)).toHaveLength(1)
     const marked = await repository.markPublished('ws_1', 'evt_2', '2026-08-22T02:00:00.000Z')
     expect(marked.publishedAt).toBe('2026-08-22T02:00:00.000Z')
@@ -93,7 +95,7 @@ describe('PostgresOutboxRepository', () => {
       row({ id: 'evt_created', event_type: 'task.created' }),
       row({ id: 'evt_unknown', event_type: 'publish.observation', sequence: 2, unknown_at: '2026-08-22T02:00:00.000Z', published_at: null }),
     ); client.enqueue()
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     const events = await repository.listAggregateEvents('ws_1', 'task_1', 25)
     expect(events.map(event => event.eventType)).toEqual(['task.created', 'publish.observation'])
     expect(events[1]?.unknownAt).toBe('2026-08-22T02:00:00.000Z')
@@ -104,7 +106,7 @@ describe('PostgresOutboxRepository', () => {
   it('does not expose cross-workspace events as markable', async () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue() // begin, scope, update no rows, rollback
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     await expect(repository.markPublished('ws_other', 'evt_1', '2026-08-22T02:00:00.000Z')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
   })
@@ -113,7 +115,7 @@ describe('PostgresOutboxRepository', () => {
     const client = new RecordingClient()
     client.enqueue({ workspace_id: 'ws_a' }, { workspace_id: 'ws_b' })
     const module = await loadCurrentRepositoryModule()
-    const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
+    const repository = new module.PostgresOutboxRepository(new RecordingPool(client), { executionOwnerColumnAvailable: true })
 
     await expect(repository.listActiveWorkspaceIds()).resolves.toEqual(['ws_a', 'ws_b'])
     expect(client.calls).toEqual([{
@@ -127,7 +129,7 @@ describe('PostgresOutboxRepository', () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_1' })); client.enqueue(row({ published_at: null, attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false, terminal: true } })); client.enqueue()
     const module = await loadCurrentRepositoryModule()
-    const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
+    const repository = new module.PostgresOutboxRepository(new RecordingPool(client), { executionOwnerColumnAvailable: true })
     const failure = { code: 'GENERATION_JOB_TERMINAL', message: 'already failed', retryable: false, unknown: false }
     const event = await repository.deadLetter('ws_1', 'evt_1', failure, 'lease_1')
     expect(event.publishedAt).toBeUndefined()
@@ -159,9 +161,9 @@ describe('PostgresOutboxRepository', () => {
 
   it('reserves a current lease for only one handler invocation', async () => {
     const client = new RecordingClient()
-    client.enqueue(); client.enqueue(); client.enqueue(row()); client.enqueue({ id: 'evt_1' }); client.enqueue()
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
-    await expect(repository.acquireExecution('ws_1', 'evt_1', 'lease_1', 'invoke_1', '2026-08-29T00:00:00.000Z')).resolves.toBe(true)
+    client.enqueue(); client.enqueue(); client.enqueue(row()); client.enqueue({ lease_token: 'lease_1' }); client.enqueue()
+    const repository = outboxRepository(new RecordingPool(client))
+    await expect(repository.acquireExecution('ws_1', 'evt_1', 'lease_1', 'invoke_1', '2026-08-29T00:00:00.000Z')).resolves.toBe('lease_1')
     const update = client.calls.find(call => call.text.includes('SET execution_owner'))
     expect(update?.values).toEqual(['ws_1', 'evt_1', 'lease_1', 'invoke_1', '2026-08-29T00:00:00.000Z'])
     expect(update?.text).toContain('execution_owner IS NULL')
@@ -175,7 +177,7 @@ describe('PostgresOutboxRepository', () => {
     // crash-looping event reach `maxAttempts` instead of being reclaimed
     // forever (failures alone are never recorded for a process that died).
     client.enqueue(); client.enqueue(); client.enqueue(row({ attempts: 1, lease_token: 'lease_claim', lease_until: '2026-08-29T00:00:30.000Z' })); client.enqueue()
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     const claimed = await repository.claimPending('ws_1', { now: '2026-08-29T00:00:00.000Z', leaseMs: 30_000 })
     expect(claimed[0]?.attempts).toBe(1)
     const claim = client.calls.find(call => call.text.includes('WITH candidates AS'))
@@ -188,19 +190,19 @@ describe('PostgresOutboxRepository', () => {
     const failure = { code: 'RATE_LIMITED', message: 'retry after backoff', retryable: true }
     const recorded = new RecordingClient()
     recorded.enqueue(); recorded.enqueue(); recorded.enqueue(row({ id: 'evt_1' })); recorded.enqueue(row({ attempts: 3 })); recorded.enqueue()
-    await new PostgresOutboxRepository(new RecordingPool(recorded)).recordFailure('ws_1', 'evt_1', failure, '2026-08-29T00:01:00.000Z', 'lease_1')
+    await outboxRepository(new RecordingPool(recorded)).recordFailure('ws_1', 'evt_1', failure, '2026-08-29T00:01:00.000Z', 'lease_1')
     const retry = recorded.calls.find(call => call.text.includes('next_attempt_at = $4'))
     expect(retry?.text).not.toContain('attempts = attempts + 1')
 
     const dead = new RecordingClient()
     dead.enqueue(); dead.enqueue(); dead.enqueue(row({ id: 'evt_1' })); dead.enqueue(row({ attempts: 3 })); dead.enqueue()
-    await new PostgresOutboxRepository(new RecordingPool(dead)).deadLetter('ws_1', 'evt_1', failure, 'lease_1')
+    await outboxRepository(new RecordingPool(dead)).deadLetter('ws_1', 'evt_1', failure, 'lease_1')
     const terminal = dead.calls.find(call => call.text.includes('last_error = COALESCE'))
     expect(terminal?.text).not.toContain('attempts = attempts + 1')
 
     const unknown = new RecordingClient()
     unknown.enqueue(); unknown.enqueue(); unknown.enqueue(row({ id: 'evt_1' })); unknown.enqueue(row({ attempts: 3 })); unknown.enqueue()
-    await new PostgresOutboxRepository(new RecordingPool(unknown)).markUnknown('ws_1', 'evt_1', { ...failure, unknown: true }, 'lease_1')
+    await outboxRepository(new RecordingPool(unknown)).markUnknown('ws_1', 'evt_1', { ...failure, unknown: true }, 'lease_1')
     const reconciliation = unknown.calls.find(call => call.text.includes('unknown_at = COALESCE'))
     expect(reconciliation?.text).not.toContain('attempts = attempts + 1')
   })
@@ -217,7 +219,7 @@ describe('PostgresOutboxRepository', () => {
     for (const invoke of calls) {
       const client = new RecordingClient()
       client.enqueue(); client.enqueue(); client.enqueue(row({ id: 'evt_1' })); client.enqueue(row()); client.enqueue()
-      await invoke(new PostgresOutboxRepository(new RecordingPool(client)))
+      await invoke(outboxRepository(new RecordingPool(client)))
       const update = client.calls.find(call => call.text.includes('UPDATE outbox_events'))
       expect(client.calls.find(call => call.text.includes('FOR UPDATE'))?.values).toEqual(['ws_1', 'evt_1'])
       expect(update?.text).toContain('$3::text IS NULL AND lease_token IS NULL AND lease_until IS NULL')
@@ -230,7 +232,7 @@ describe('PostgresOutboxRepository', () => {
   it('gives a claim back only for the current lease token and only when an attempt was counted', async () => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue(row({ attempts: 1 })); client.enqueue()
-    const repository = new PostgresOutboxRepository(new RecordingPool(client))
+    const repository = outboxRepository(new RecordingPool(client))
     const released = await repository.releaseClaim('ws_1', 'evt_1', 'lease_1')
     expect(released.id).toBe('evt_1')
     const update = client.calls.find(call => call.text.includes('UPDATE outbox_events'))
@@ -253,16 +255,16 @@ describe('PostgresOutboxRepository', () => {
 
   it('refuses to release without a lease token, another tenant scope, or a row that no longer matches', async () => {
     const missingToken = new RecordingClient()
-    await expect(new PostgresOutboxRepository(new RecordingPool(missingToken)).releaseClaim('ws_1', 'evt_1', '')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
+    await expect(outboxRepository(new RecordingPool(missingToken)).releaseClaim('ws_1', 'evt_1', '')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
     expect(missingToken.calls).toHaveLength(0)
     const otherTenant = new RecordingClient()
-    await expect(new PostgresOutboxRepository(new RecordingPool(otherTenant)).releaseClaim('  ', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(TenantScopeError)
+    await expect(outboxRepository(new RecordingPool(otherTenant)).releaseClaim('  ', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(TenantScopeError)
     expect(otherTenant.calls).toHaveLength(0)
     // The UPDATE matched nothing: the lease was already rotated, acknowledged
     // or exhausted, so the caller must not report a successful give-back.
     const noMatch = new RecordingClient()
     noMatch.enqueue(); noMatch.enqueue(); noMatch.enqueue(); noMatch.enqueue()
-    await expect(new PostgresOutboxRepository(new RecordingPool(noMatch)).releaseClaim('ws_1', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
+    await expect(outboxRepository(new RecordingPool(noMatch)).releaseClaim('ws_1', 'evt_1', 'lease_1')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
     expect(noMatch.calls.at(-1)?.text).toBe('ROLLBACK')
   })
 

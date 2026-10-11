@@ -5,6 +5,7 @@ import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/
 import type { ProviderBeforeRequest } from '../../../packages/ai/src/provider-request.js'
 import type { VideoGenerationInput } from '../../../packages/ai/src/video-generator.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
+import { videoRenderingApprovalIntentHash } from './video-rendering-approval.js'
 
 const controlledTransport = vi.hoisted(() => ({
   entered: undefined as (() => void) | undefined,
@@ -119,11 +120,24 @@ describe('inline API dispatch rechecks the current membership capability', () =>
     controlledTransport.entered = entered.resolve
     controlledTransport.waiting = waiting.promise
     controlledTransport.provider.mockClear()
+    const prompt = '根据确认的商品事实生成展示视频'
+    const renderingContext = { brand: { id: 'controlled-brand', version: '1' }, product: { id: product.id, version: String(product.version) }, rules: [{ id: 'controlled-rule', version: '1' }] }
+    const approval = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${suffix}-approval`, method: 'workspace.interactive.confirm', params: {
+        confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', intent_hash: videoRenderingApprovalIntentHash({ workspaceId, prompt, context: renderingContext }),
+      } }),
+    }).then(async result => ({ status: result.status, body: await result.json() as { data?: { result?: { ticket?: { nonce_hash: string; intent_hash: string } } }; error?: { code: string } | null } }))
+    expect(approval.status, JSON.stringify(approval.body)).toBe(200)
+    const ticket = approval.body.data?.result?.ticket
+    expect(ticket).toBeDefined()
     const response = fetch(`${base}/mcp`, {
       method: 'POST', headers: { authorization: `Bearer ${tokens.access_token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-test-commercial-fixture': 'server-e2e' },
       body: JSON.stringify({ jsonrpc: '2.0', id: suffix, method: 'multimodal.video.request', params: {
-        workspace_id: workspaceId, prompt: '根据确认的商品事实生成展示视频', output: 'rendering', idempotency_key: `dispatch-${suffix}`,
-        context_json: JSON.stringify({ brand: { id: 'controlled-brand', version: '1' }, product: { id: product.id, version: String(product.version) }, rules: [{ id: 'controlled-rule', version: '1' }] }),
+        workspace_id: workspaceId, prompt, output: 'rendering', idempotency_key: `dispatch-${suffix}`,
+        context_json: JSON.stringify(renderingContext),
+        confirmation_ticket_nonce_hash: ticket!.nonce_hash,
+        confirmation_ticket_intent_hash: ticket!.intent_hash,
       } }),
     }).then(async result => ({ status: result.status, body: await result.json() as Envelope }))
     try {

@@ -21,7 +21,9 @@ describe('merchant product asset relation UI', () => {
   })
 
   it('does not infer a binding from unrelated workspace assets', () => {
-    expect(resolveProductAssetRelation(product(), [asset('asset-unrelated')])).toEqual({ boundIds: [], matchedAssets: [], missingAssetIds: [] })
+    expect(resolveProductAssetRelation(product(), [asset('asset-unrelated')])).toEqual({
+      platform: 'taobao', boundIds: [], matchedAssets: [], missingAssetIds: [],
+    })
   })
 
   it('blocks task continuation when an active source binding is missing or not generation-ready', () => {

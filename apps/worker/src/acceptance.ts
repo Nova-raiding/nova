@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
-import { pollOnce, readWorkerConfig } from './main.js'
+import { loadMigrations } from '../../../packages/persistence/src/migration.js'
+import { assertWorkerReadinessDependencies, pollOnce, readWorkerConfig } from './main.js'
 
 /**
  * Real PostgreSQL acceptance: the second poll uses a fresh dispatcher map,
@@ -13,7 +14,9 @@ import { pollOnce, readWorkerConfig } from './main.js'
 const config = readWorkerConfig({ ...process.env, WORKER_ONCE: 'true' })
 const workspaceId = config.workspaces[0]!
 const pool = new Pool({ connectionString: config.databaseUrl, max: 2 })
-const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
+const verifiedMigrations = await loadMigrations()
+const readiness = await assertWorkerReadinessDependencies({ database: pool, expectedMigrations: verifiedMigrations })
+const repository = new PostgresOutboxRepository(pool as unknown as SqlPool, { executionOwnerColumnAvailable: readiness.migrationVersion >= 276 })
 const suffix = randomUUID()
 
 try {

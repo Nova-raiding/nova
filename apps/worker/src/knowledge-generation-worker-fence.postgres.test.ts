@@ -48,7 +48,7 @@ describe('PostgreSQL queued knowledge revocation before worker provider dispatch
       await database.query(`INSERT INTO platform_accounts (id,workspace_id,platform,remote_account_id,credential_ref,token_state) VALUES ($1,$2,'taobao','remote-worker-knowledge','fixture-ref','active')`, [accountId, workspaceId])
       app = new Pool({ connectionString: connection(base, databaseName, 'merchant_app', 'merchant_app_local_only'), max: 3 })
       const knowledge = new PostgresKnowledgeRepository(app)
-      const outbox = new PostgresOutboxRepository(app)
+      const outbox = new PostgresOutboxRepository(app, { executionOwnerColumnAvailable: true })
       const provider = vi.fn()
       const queueClaimEvent = async (productId: string, suffix: string, documents: Array<{ id: string; title: string; content: string; revision: number }>) => {
         const taskId = `task_knowledge_claim_${suffix}`

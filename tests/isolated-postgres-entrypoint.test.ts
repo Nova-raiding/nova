@@ -31,24 +31,33 @@ describe('isolated PostgreSQL entrypoint', () => {
   })
 
   it('selects exactly the audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(59)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(59)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(62)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(62)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/commercial-receipt-read-rls.regression.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/creative-point-reversal-concurrency.regression.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/customer-delivery-tenant-rls.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/publish-media-orphan-repository.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/task-feedback-idempotency.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/usage-consume-concurrency.postgres.test.ts')
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('apps/api/src/task-group-persistence.postgres.test.ts')
     await expect(selectIsolatedPostgresTests([])).resolves.toEqual(ISOLATED_POSTGRES_TEST_FILES)
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/migration-218-release.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/bridge-242-254-forward-migrations.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('apps/api/src/content-generation-action-owner.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('apps/api/src/catalog-positive-isolated.postgres.test.ts')
-    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts' || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts' || file === 'apps/api/src/product-stock-provenance.postgres.test.ts' || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts' || file === 'apps/api/src/asset-download-authorization.postgres.test.ts' || file === 'apps/worker/src/image-worker-signed-boundary.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts' || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
+    expect(ISOLATED_POSTGRES_TEST_FILES.every(file => (file.startsWith('packages/persistence/src/') || file === 'apps/api/src/content-generation-action-owner.postgres.test.ts' || file === 'apps/api/src/catalog-positive-isolated.postgres.test.ts' || file === 'apps/api/src/product-stock-provenance.postgres.test.ts' || file === 'apps/api/src/image-dispatch-scope-http.postgres.test.ts' || file === 'apps/api/src/asset-download-authorization.postgres.test.ts' || file === 'apps/api/src/task-group-persistence.postgres.test.ts' || file === 'apps/worker/src/image-worker-signed-boundary.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-budget-recovery.postgres.test.ts' || file === 'apps/worker/src/image-pre-dispatch-recovery.postgres.test.ts' || file === 'tests/mcp-oauth-commercial-payment.postgres.test.ts' || file === 'tests/postgres-rls-attack-matrix.postgres.test.ts') && file.endsWith('.postgres.test.ts'))).toBe(true)
   })
   it('accepts exact known file selections and normalizes a relative prefix', async () => {
     await expect(selectIsolatedPostgresTests([`./${ISOLATED_POSTGRES_TEST_FILES[0]}`])).resolves.toEqual([ISOLATED_POSTGRES_TEST_FILES[0]])
     await expect(selectIsolatedPostgresTests(['packages/persistence/src/authorization-rls-boundary.postgres.test.ts'])).resolves.toEqual(['packages/persistence/src/authorization-rls-boundary.postgres.test.ts'])
+    const newlyRegisteredFiles = [
+      'packages/persistence/src/task-feedback-idempotency.postgres.test.ts',
+      'packages/persistence/src/usage-consume-concurrency.postgres.test.ts',
+      'apps/api/src/task-group-persistence.postgres.test.ts',
+    ]
+    await expect(selectIsolatedPostgresTests(newlyRegisteredFiles)).resolves.toEqual(newlyRegisteredFiles)
   })
   it('discovers the RLS attack matrix in all-mode as an executable PostgreSQL test', async () => {
     await expect(selectIsolatedPostgresTests(['--all'])).resolves.toContain('tests/postgres-rls-attack-matrix.postgres.test.ts')

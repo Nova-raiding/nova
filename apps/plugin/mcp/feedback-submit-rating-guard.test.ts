@@ -60,7 +60,7 @@ describe('feedback.submit rating argument guard', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
         name: 'feedback.submit',
-        arguments: { task_id: 'task_feedback_local', rating: 'excellent', reason: 'clear product benefits' },
+        arguments: { task_id: 'task_feedback_local', rating: 'excellent', reason: 'clear product benefits', idempotency_key: 'feedback-rating-guard-001' },
       } })}\n`);
       const result = await nextLine(child.stdout);
       expect(result.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } });

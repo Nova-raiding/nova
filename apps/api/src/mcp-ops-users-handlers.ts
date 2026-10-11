@@ -63,7 +63,11 @@ export async function handleMcpOpsUsersMethod(method: string, params: Record<str
       // Local Postgres fixtures may be created after the API process starts.
       // The durable repository is authoritative for its workspace inventory;
       // merge process-local IDs only for adapters without that inventory.
-      const scopedWorkspaceIds = targetWorkspaceId ? allWorkspaceIds.filter(id => id === targetWorkspaceId) : allWorkspaceIds
+      // An explicitly selected target workspace can be newer than the cached
+      // platform inventory (for example, just-created workspace records). The
+      // platform read role is checked above; preserve the requested scope so
+      // the authoritative member repository can resolve it directly.
+      const scopedWorkspaceIds = targetWorkspaceId ? [targetWorkspaceId] : allWorkspaceIds
       const memberRepository = persistence.members ?? memoryMembers
       const platformAccounts = accountType === 'merchant' ? [] : await passwordAuthRepository.listAccounts()
       const accountRows = platformAccounts

@@ -29,7 +29,7 @@ export interface DurableOutboxEvent {
 export interface DurableOutboxStore<E extends DurableOutboxEvent = DurableOutboxEvent> {
   claimPending(workspaceId: string, options?: OutboxClaimOptions): Promise<E[]>
   validateLease(workspaceId: string, id: string, leaseToken: string, now?: string): Promise<E>
-  acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now?: string): Promise<boolean>
+  acquireExecution(workspaceId: string, id: string, leaseToken: string, invocationId: string, now?: string): Promise<string | null>
   renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string): Promise<E>
   ack(workspaceId: string, id: string, leaseToken?: string): Promise<E>
   recordFailure(workspaceId: string, id: string, failure: WorkerError, nextAttemptAt: string, leaseToken?: string): Promise<E>
@@ -668,20 +668,23 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       // Lease validation proves a claim is current, but duplicated queue
       // envelopes can share that same token across processes. The durable
       // reservation is the cross-process right to execute its side effect.
-      const reserved = await this.store.acquireExecution(
+      const executionLeaseToken = await this.store.acquireExecution(
         event.workspaceId,
         event.id,
         leaseToken,
         randomUUID(),
         new Date(this.now()).toISOString(),
       )
-      if (!reserved) {
+      if (!executionLeaseToken) {
         // Do not ack: Redis represents identical envelopes by the same raw
         // processing member, so acking a losing duplicate could remove the
         // winning invocation's liveness hint. Its winner will ack it, or lease
         // expiry will let restore() discard it safely.
         return { state: 'queued', event }
       }
+      // On legacy schemas the invocation reservation rotates the durable
+      // lease token. Every renewal and terminal outcome must use that token.
+      event = { ...event, leaseToken: executionLeaseToken }
     } catch (leaseError) {
       return this.handleLeaseError(event, message, leaseError, false)
     }
@@ -705,7 +708,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     const heartbeat = async (): Promise<void> => {
       if (stopped) return
       try {
-        await this.store.renewLease(event.workspaceId, event.id, leaseToken, this.leaseMs, new Date(this.now()).toISOString())
+        await this.store.renewLease(event.workspaceId, event.id, event.leaseToken!, this.leaseMs, new Date(this.now()).toISOString())
       } catch (cause) {
         // The database lease is the only proof this worker owns the event:
         // without it the outcome write is rejected, so stop the handler.

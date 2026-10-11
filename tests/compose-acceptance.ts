@@ -129,9 +129,9 @@ async function bootstrapWorkspace(index: number) {
   return workspaceId
 }
 
-async function postgres() {
+async function postgres(verifiedMigrationVersion: number) {
   const pool = new Pool({ connectionString: process.env.COMPOSE_DATABASE_URL ?? 'postgres://merchant:merchant_local_only@127.0.0.1:54329/merchant' })
-  return { pool, outbox: new PostgresOutboxRepository(pool) }
+  return { pool, outbox: new PostgresOutboxRepository(pool, { executionOwnerColumnAvailable: verifiedMigrationVersion >= 276 }) }
 }
 
 export async function runComposeAcceptance() {
@@ -163,7 +163,7 @@ export async function runComposeAcceptance() {
   dockerRaw(['restart', '--time=5', apiContainer])
   await waitForHealth()
 
-  const { pool, outbox } = await postgres()
+  const { pool, outbox } = await postgres(expectedMigrationVersions.at(-1) ?? 0)
   try {
     const migrationRows = await pool.query<{ version: number }>('SELECT version FROM schema_migrations ORDER BY version')
     assert.deepEqual(migrationRows.rows.map(row => Number(row.version)), expectedMigrationVersions)

@@ -5,6 +5,7 @@ import { ERROR_CODES } from '../../../packages/contracts/src/index.js'
 import { contextEnvelopeHash, type OperationAudit } from '../../../packages/persistence/src/index.js'
 import { validateExpectedTaskRequestScopes } from './task-request-scopes.js'
 import { persistTaskGroupOrRollback } from './task-group-persistence.js'
+import { submitTaskFeedbackIdempotently, type TaskFeedbackIdempotencyPort } from './task-feedback-idempotency.js'
 
 type JsonObject = Record<string, unknown>
 type Page = { limit: number; offset: number }
@@ -43,6 +44,7 @@ export interface HttpTaskRouteDependencies {
   taskTimeline: (workspaceId: string, taskId: string, limit: number) => Promise<unknown>
   requestActor: (request: IncomingMessage, fallback?: string) => string
   taskFeedbackEventPayload: (feedback: TaskFeedback) => Record<string, unknown>
+  feedbackIdempotency?: TaskFeedbackIdempotencyPort
   projectCanonicalTaskForRead: (task: Task) => Promise<unknown>
   assertCanonicalTaskScopeForAction: (task: Task) => Promise<unknown>
   recordOperationAudit: (input: Omit<OperationAudit, 'id' | 'createdAt'>) => Promise<unknown>
@@ -214,16 +216,19 @@ export async function handleHttpTaskRoutes(req: IncomingMessage, res: ServerResp
     const input = await body(req)
     const rating = required(input, 'rating')
     if (!['liked', 'neutral', 'needs_improvement'].includes(rating)) throw new DomainError('FEEDBACK_RATING_INVALID', '反馈评级无效', 400)
-    const feedback = service.submitFeedback({
-      workspaceId: task.workspaceId, taskId: task.id, rating: rating as 'liked' | 'neutral' | 'needs_improvement',
+    const result = await submitTaskFeedbackIdempotently({
+      service, repository: dependencies.feedbackIdempotency, workspaceId: task.workspaceId, taskId: task.id, rating: rating as 'liked' | 'neutral' | 'needs_improvement',
       ...(typeof input.content_version_id === 'string' ? { contentVersionId: input.content_version_id } : {}),
       ...(typeof input.reason === 'string' ? { reason: input.reason } : {}),
       ...(typeof input.comment === 'string' ? { comment: input.comment } : {}),
-      actorId: requestActor(req, 'actor_demo'),
+      actorId: requestActor(req, 'actor_demo'), idempotencyKey: header(req, 'idempotency-key') ?? '', production: isProduction(),
+      eventPayload: taskFeedbackEventPayload,
+      persistFallback: async feedback => {
+        await persistSnapshot(task.workspaceId, 'feedback', feedback, feedback as unknown as Record<string, unknown>)
+        await persistEvent(task.workspaceId, feedback.id, 'task_feedback_submitted', feedback.revision, taskFeedbackEventPayload(feedback))
+      },
     })
-    await persistSnapshot(task.workspaceId, 'feedback', feedback, feedback as unknown as Record<string, unknown>)
-    await persistEvent(task.workspaceId, feedback.id, 'task_feedback_submitted', feedback.revision, taskFeedbackEventPayload(feedback))
-    return send(res, 201, task.workspaceId, feedback, null, req)
+    return send(res, result.replayed ? 200 : 201, task.workspaceId, result.feedback, null, req)
   }
   const taskGetMatch = path.match(/^\/v1\/tasks\/([^/]+)$/)
   if (req.method === 'GET' && taskGetMatch) {

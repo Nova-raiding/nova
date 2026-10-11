@@ -163,7 +163,8 @@ describe("UsersPage platform identity governance route journey", () => {
       await page.getByText("商户用户详情", { exact: true }).waitFor({ state: "visible" });
       await page.getByText("identity-alice", { exact: true }).waitFor({ state: "visible" });
       expect(rpcCalls.some(call => call.method === "ops.user.detail" && call.params.identity_id === "identity-alice")).toBe(true);
-      await page.keyboard.press("Escape");
+      const detailDrawerClose = page.locator(".ops-user-detail-drawer .ant-drawer-close");
+      await detailDrawerClose.click();
       await page.getByText("商户用户详情", { exact: true }).waitFor({ state: "hidden" });
 
       await page.getByRole("button", { name: "停用 Alice Example 的访问" }).click();

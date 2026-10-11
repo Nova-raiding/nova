@@ -122,7 +122,7 @@ function outboxRepository(event: DurableOutboxEvent, recorded: Array<{ id: strin
         .filter(candidate => candidate.workspaceId === workspaceId && !candidate.publishedAt)
         .slice(0, options.limit ?? 100)
         .map(candidate => Object.assign(candidate, { leaseToken: `lease_${candidate.id}`, leaseUntil: new Date(Date.now() + (options.leaseMs ?? 30_000)).toISOString() })),
-    acquireExecution: async () => true,
+    acquireExecution: async (_workspaceId: string, _id: string, leaseToken: string) => leaseToken,
     validateLease: async (workspaceId: string, id: string, leaseToken: string) => {
       const match = pending.find(candidate => candidate.workspaceId === workspaceId && candidate.id === id && candidate.leaseToken === leaseToken)
       if (!match) throw Object.assign(new Error('outbox event not found'), { code: 'OUTBOX_EVENT_NOT_FOUND' })

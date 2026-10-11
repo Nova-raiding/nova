@@ -1432,8 +1432,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'feedback.submit',
-    description: 'Record a task-scoped content feedback rating and optional reason.',
-    params: params({ task_id: { type: 'string' }, content_version_id: { type: 'string' }, rating: { type: 'string', enum: ['liked', 'neutral', 'needs_improvement'] }, reason: { type: 'string' }, comment: { type: 'string' } }, ['task_id', 'rating']),
+    description: 'Record a task-scoped content feedback rating and optional reason. Retry with the same idempotency key.',
+    params: params({ task_id: { type: 'string' }, content_version_id: { type: 'string' }, rating: { type: 'string', enum: ['liked', 'neutral', 'needs_improvement'] }, reason: { type: 'string' }, comment: { type: 'string' }, idempotency_key: idempotencyKeyProperty }, ['task_id', 'rating', 'idempotency_key']),
   },
   {
     method: 'platform.revoke',
@@ -1773,12 +1773,12 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'multimodal.generate',
     description: '用一句话发起文案、图片或视频脚本/分镜候选请求；生成前必须提供品牌、商品和规则快照，返回值会明确标识是否已由 provider 执行。',
-    params: params({ modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' } }, ['modality', 'prompt', 'context_json']),
+    params: params({ modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, ['modality', 'prompt', 'context_json']),
   },
   {
     method: 'multimodal.video.request',
     description: 'Create a one-sentence video script/storyboard request or render a video through the platform-owned relay; the response distinguishes a planned request from provider execution.',
-    params: params({ prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' } }, ['prompt', 'output', 'context_json']),
+    params: params({ prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, ['prompt', 'output', 'context_json']),
   },
   {
     method: 'multimodal.video.get',

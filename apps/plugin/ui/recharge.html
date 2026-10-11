@@ -422,7 +422,7 @@
         </div>
       </header>
       <div class="toolbar">
-        <div class="scope" aria-label="账务查看范围">
+        <div class="scope" role="group" aria-label="账务查看范围">
           <button data-scope="mine" aria-pressed="true">我的</button
           ><button data-scope="workspace" aria-pressed="false" hidden>
             整个工作区
@@ -645,8 +645,17 @@
         $("recoveryActions").innerHTML = actions.length
           ? actions.map((action) => `<div class="item"><div class="item-title">${esc(action)}</div><div class="item-detail">恢复入口仍会执行身份、租户、RLS 和自身幂等校验。</div></div>`).join("")
           : empty("没有服务端授权的恢复动作");
-        document.querySelector("[data-scope=workspace]").hidden =
-          !d.viewer?.available_scopes?.includes("workspace");
+        const workspaceScope = document.querySelector("[data-scope=workspace]");
+        const canViewWorkspace = d.viewer?.available_scopes?.includes("workspace") === true;
+        workspaceScope.hidden = !canViewWorkspace;
+        if (!canViewWorkspace && S.scope === "workspace") {
+          S.scope = "mine";
+          document.querySelectorAll("[data-scope]").forEach((button) =>
+            button.setAttribute("aria-pressed", button.dataset.scope === "mine" ? "true" : "false"),
+          );
+          $("scopeNote").textContent = "仅显示可归属到你的记录";
+          $("ordersTitle").textContent = "我的订单";
+        }
       }
       async function loadStatus() {
         const requestId = ++requestIds.status;
@@ -806,6 +815,7 @@
       document.querySelectorAll("[data-scope]").forEach(
         (b) =>
           (b.onclick = () => {
+            if (b.dataset.scope === "workspace" && b.hidden) return;
             S.scope = b.dataset.scope;
             document
               .querySelectorAll("[data-scope]")

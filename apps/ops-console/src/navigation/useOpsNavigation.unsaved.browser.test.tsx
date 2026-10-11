@@ -40,6 +40,7 @@ describe("Ops navigation unsaved changes guard", () => {
           React.createElement(OpsSidebar, { activeDomain: navigation.activeDomain, visibleDomains: ['overview', 'finance'], onNavigate: navigation.navigate }),
           React.createElement('button', { onClick: () => setDirty(true) }, '编辑任务草稿'),
           React.createElement('button', { onClick: () => navigation.navigateWithQuery('finance', { accountId: 'acct-42' }) }, '打开指定账户'),
+          React.createElement('output', { id: 'unsaved-labels' }, state.labels.join('、')),
           React.createElement('main', { id: 'ops-main-content', tabIndex: -1 }, navigation.activeDomain),
           React.createElement(Modal, { open: Boolean(state.pendingTransition), title: '放弃未保存内容并离开？', okText: '放弃并继续', cancelText: '继续编辑', onOk: state.confirmTransition, onCancel: state.cancelTransition }, state.pendingTransition?.labels.join('、'))
         );
@@ -51,7 +52,7 @@ describe("Ops navigation unsaved changes guard", () => {
     const address = vite.httpServer?.address();
     if (!address || typeof address === "string") throw new Error("Ops unsaved navigation listener did not bind");
     baseUrl = `http://127.0.0.1:${address.port}`;
-    browser = await chromium.launch({ channel: "chrome", headless: true });
+    browser = await chromium.launch({ headless: true });
   }, 120_000);
 
   afterAll(async () => {
@@ -108,6 +109,7 @@ describe("Ops navigation unsaved changes guard", () => {
       await page.goBack();
       await expectDomain(page, "overview");
       await page.getByRole("button", { name: "编辑任务草稿" }).click();
+      await expect.poll(() => page.locator("#unsaved-labels").textContent()).toContain("任务编辑表单");
       await page.goForward();
       await expect.poll(() => page.getByRole("dialog").innerText()).toContain("任务编辑表单");
       await page.getByRole("button", { name: "继续编辑" }).click();

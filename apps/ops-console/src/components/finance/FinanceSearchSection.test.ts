@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
-import { FinanceSearchSection, financeStatusTagColor, parseFinanceWorkspaceIdFilter } from "./FinanceSearchSection.js";
+import { FinanceSearchSection, financeStatusTagColor, parseFinanceWorkspaceIdFilter, validateFinanceWorkspaceIdFilter } from "./FinanceSearchSection.js";
 import { financeDetailAttributeLabel, financeDetailAttributeValue, financeRecordCostEvidence } from "./FinanceDetailDrawer.js";
 
 function controller(overrides: Partial<FinanceSearchController> = {}): FinanceSearchController {
@@ -32,6 +32,13 @@ describe("FinanceSearchSection", () => {
       "ws_one", "ws_two", "ws_three", "ws_four",
     ]);
     expect(parseFinanceWorkspaceIdFilter(undefined)).toBeUndefined();
+  });
+
+  it("validates Workspace ID filters against the API limits before submission", () => {
+    expect(validateFinanceWorkspaceIdFilter(Array.from({ length: 250 }, (_, index) => `ws_${index}`).join(","))).toBeUndefined();
+    expect(validateFinanceWorkspaceIdFilter(Array.from({ length: 251 }, (_, index) => `ws_${index}`).join(","))).toBe("最多可筛选 250 个 Workspace ID");
+    expect(validateFinanceWorkspaceIdFilter(`ws_${"x".repeat(125)}`)).toBeUndefined();
+    expect(validateFinanceWorkspaceIdFilter(`ws_${"x".repeat(126)}`)).toBe("每个 Workspace ID 最多 128 个字符");
   });
 
   it("explains the paid cash subscription without hiding audit values", () => {

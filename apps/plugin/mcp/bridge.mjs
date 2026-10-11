@@ -220,6 +220,7 @@ let sessionArtifactDirectory
 let sessionArtifactBytes = 0
 let sessionArtifactFiles = 0
 let interactiveWriteUntil = 0
+const videoApprovalTickets = new Map()
 let bootstrappedWorkspaceId = ''
 let commercialRecoveryOnlySnapshot
 const READ_ONLY_METHODS = new Set([
@@ -551,7 +552,7 @@ const METHODS = {
   },
   'workspace.interactive.confirm': {
     description: '商家明确要求生成、编辑、审核或发布后，开启当前 Codex 交互会话的短时写权限；Automation 不得调用。',
-    inputSchema: { type: 'object', properties: { confirmation: { type: 'string', enum: ['I_CONFIRM_INTERACTIVE_WRITES'] }, intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$', description: '可选；把本次确认票据绑定到调用方给定的 64 位小写 SHA-256 意图，省略时由服务端按当前会话派生。' } }, required: ['confirmation'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { confirmation: { type: 'string', enum: ['I_CONFIRM_INTERACTIVE_WRITES'] }, intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$', description: '可选；把本次确认票据绑定到调用方给定的 64 位小写 SHA-256 意图，省略时由服务端按当前会话派生。' }, video_prompt: { type: 'string', description: '确认指定分镜后渲染时填写与后续渲染请求相同的 prompt。' }, video_context_json: jsonObject('确认指定分镜后渲染时填写与后续请求完全相同的 context_json。') }, required: ['confirmation'], additionalProperties: false },
   },
   'workspace.metrics': {
     description: '查看当前工作区的运营指标和任务漏斗。只读。',
@@ -995,8 +996,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
   },
   'feedback.submit': {
-    description: '提交当前任务内容的评价和可选原因；反馈只作用于当前任务分析。',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, content_version_id: { type: 'string' }, rating: { type: 'string', enum: ['liked', 'neutral', 'needs_improvement'] }, reason: { type: 'string' }, comment: { type: 'string' } }, required: ['task_id', 'rating'], additionalProperties: false },
+    description: '提交当前任务内容的评价和可选原因；不确定结果重试时保持同一幂等键。',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, content_version_id: { type: 'string' }, rating: { type: 'string', enum: ['liked', 'neutral', 'needs_improvement'] }, reason: { type: 'string' }, comment: { type: 'string' }, idempotency_key: idempotencyKeyProperty }, required: ['task_id', 'rating', 'idempotency_key'], additionalProperties: false },
   },
   'platform.revoke': {
     description: '撤销指定平台账号授权；立即停止同步和发布，并保留商品快照与审计记录。',
@@ -1260,11 +1261,11 @@ const METHODS = {
   },
   'multimodal.generate': {
     description: '用一句话发起文案、图片或视频脚本/分镜候选请求，返回结果会明确标识是否已由 provider 执行。',
-    inputSchema: { type: 'object', properties: { modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' } }, required: ['modality', 'prompt', 'context_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['modality', 'prompt', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.request': {
     description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。每个新渲染意图生成新的随机 idempotency_key；同一请求重试必须复用原 key，修改请求意图必须换新 key。',
-    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' } }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
@@ -1987,6 +1988,7 @@ function userFacingErrorText(code, details) {
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
     return '这一步需要你的明确确认。确认后可以继续，未执行任何写操作。'
   }
+  if (code === 'PERMISSION_DENIED' || code === 'FORBIDDEN') return '当前账号没有这项操作的权限，任务和已有内容已保留。请联系工作区管理员核对你的成员角色及操作权限；权限调整后再重试。'
   if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完，本次请求已阻断，未执行业务写入。请登录 Store Nova 商家桌面，在“财务与资源”查看当前工作区余额及服务端授权的创意点恢复入口；只有页面显示可购买套餐和正式支付入口时才下单，支付后须等待服务端确认创意点到账。'
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认当前工作区的创意点余额，本次操作已停止；如果正在上传文件，不能将这次请求视为上传成功。请在 Store Nova 商家桌面的“财务与资源”核对套餐权益、订单与创意点到账状态；如页面仍显示未读取，请联系平台运营核对。待确认余额不会按 0 处理，也不能按套餐标称额度视为已到账。'
@@ -2000,7 +2002,7 @@ function userFacingErrorText(code, details) {
   if (code === 'ASSET_PARSE_FAILED' || code === 'ASSET_PARSE_EMPTY' || code === 'ASSET_PARSE_ATTEMPTS_EXHAUSTED') {
     return '图片已保存并通过自动安全检查，但没有读出可靠的商品信息。请先告诉我商品名称；我会继续使用当前图片记录你的确认，无需重新连接工作区或重复上传。'
   }
-  if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
+  if (code === 'PERMISSION_DENIED' || code === 'FORBIDDEN') return '当前账号没有这项操作的权限，任务和已有内容已保留。请联系工作区管理员核对你的成员角色及操作权限；权限调整后再重试。'
   if (code === 'COMMERCIAL_ORDER_NOT_FOUND') return '未找到这笔购买订单，或订单不属于当前工作区。请核对订单编号。'
   if (code === 'BILLING_ORDER_NOT_FOUND') return '未找到这笔充值订单，或订单不属于当前工作区。请核对订单编号。'
   if (code === 'WORKSPACE_DATA_EXPORT_NOT_FOUND') return '未找到这份数据导出申请，或申请不属于当前工作区。请核对申请编号。'
@@ -2032,6 +2034,9 @@ function userFacingErrorText(code, details) {
 }
 
 function toolErrorPresentation(method, args, code, details) {
+  if (code === 'PERMISSION_DENIED' || code === 'FORBIDDEN') {
+    return { text: userFacingErrorText(code, details) }
+  }
   if (code === 'KNOWLEDGE_REVIEW_REQUIRED') {
     return { text: '商品知识尚未通过审批或权益确认，请先完成知识资产审核，再生成内容。' }
   }
@@ -2369,7 +2374,7 @@ function requireRelayEvidence(method, result) {
 function safeStructuredErrorMessage(error, code, details) {
   if (code === 'FACTS_CONFIRMATION_REQUIRED') return '请先确认商品事实'
   if (code === 'KNOWLEDGE_REVIEW_REQUIRED') return '商品知识尚未通过审批或权益确认，请先完成知识资产审核，再生成内容。'
-  if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
+  if (code === 'PERMISSION_DENIED') return '当前账号没有这项操作的权限，任务和已有内容已保留。请联系工作区管理员核对你的成员角色及操作权限；权限调整后再重试。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return userFacingErrorText(code, details)
   const raw = error instanceof Error ? error.message : ''
   if (/^MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u.test(raw)) return '插件连接配置不完整，本次操作未完成。请检查服务地址和工作区绑定。'
@@ -3219,27 +3224,96 @@ function allowsWriteTools() {
   return configuredEnv('MERCHANT_MCP_WRITE_ENABLED').toLowerCase() === 'true' || interactiveWriteUntil > Date.now()
 }
 
+function canonicalVideoIntentJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalVideoIntentJson).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort((a, b) => a.localeCompare(b)).map(key => `${JSON.stringify(key)}:${canonicalVideoIntentJson(value[key])}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
+}
+
+function videoRenderingApprovalIntentHash(workspace, prompt, context) {
+  return createHash('sha256').update(canonicalVideoIntentJson({ version: 'video-render-approval.v1', workspaceId: workspace, prompt: String(prompt).trim(), context })).digest('hex')
+}
+
+function videoApprovalContextFromConfirmation(args) {
+  const hasPrompt = typeof args.video_prompt === 'string'
+  const hasContext = typeof args.video_context_json === 'string'
+  if (hasPrompt !== hasContext) throw Object.assign(new Error('视频确认必须同时提供渲染 prompt 和完整 context_json'), { code: 'VIDEO_CONFIRMATION_CONTEXT_INVALID' })
+  if (!hasPrompt) return undefined
+  let context
+  try { context = JSON.parse(args.video_context_json) } catch { throw Object.assign(new Error('视频确认的 context_json 必须是合法 JSON'), { code: 'VIDEO_CONFIRMATION_CONTEXT_INVALID' }) }
+  if (!context || typeof context !== 'object' || Array.isArray(context)) throw Object.assign(new Error('视频确认的 context_json 必须是对象'), { code: 'VIDEO_CONFIRMATION_CONTEXT_INVALID' })
+  return { prompt: args.video_prompt, context, intentHash: videoRenderingApprovalIntentHash(workspaceId(), args.video_prompt, context) }
+}
+
+const MAX_VIDEO_APPROVAL_TICKETS = 64
+
+function pruneVideoApprovalTickets(now = Date.now()) {
+  for (const [intentHash, ticket] of videoApprovalTickets) {
+    const expiresAt = Date.parse(ticket.expires_at)
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) videoApprovalTickets.delete(intentHash)
+  }
+}
+
+function attachVideoApprovalTicket(method, args) {
+  const isVideoRender = (method === 'multimodal.video.request' && args.output === 'rendering')
+    || (method === 'multimodal.generate' && args.modality === 'video' && args.output === 'rendering')
+  if (!isVideoRender) return args
+  let context
+  try { context = JSON.parse(args.context_json) } catch { throw Object.assign(new Error('视频渲染的 context_json 必须是合法 JSON'), { code: 'VIDEO_CONFIRMATION_CONTEXT_INVALID' }) }
+  const intentHash = videoRenderingApprovalIntentHash(workspaceId(), args.prompt, context)
+  pruneVideoApprovalTickets()
+  const ticket = videoApprovalTickets.get(intentHash)
+  if (!ticket
+    || ticket.intent_hash !== intentHash
+    || !/^[a-f0-9]{64}$/u.test(ticket.nonce_hash)
+    || !Number.isFinite(Date.parse(ticket.expires_at))
+    || Date.parse(ticket.expires_at) <= Date.now()) {
+    videoApprovalTickets.delete(intentHash)
+    throw Object.assign(new Error('请先确认当前商品、素材与分镜，再提交视频渲染'), { code: 'VIDEO_RENDERING_CONFIRMATION_REQUIRED' })
+  }
+  return { ...args, confirmation_ticket_nonce_hash: ticket.nonce_hash, confirmation_ticket_intent_hash: ticket.intent_hash }
+}
+
 async function confirmInteractiveWrites(args, signal) {
   if (args.confirmation !== 'I_CONFIRM_INTERACTIVE_WRITES') {
     const error = new Error('必须在当前交互会话明确确认写操作')
     error.code = 'INTERACTIVE_CONFIRMATION_REQUIRED'
     throw error
   }
-  const remoteTicketRequired = ['production', 'staging', 'preview'].includes(deploymentEnvironment()) || Boolean(configuredEnv('MERCHANT_MCP_TOKEN'))
+  const videoApproval = videoApprovalContextFromConfirmation(args)
+  const remoteTicketRequired = ['production', 'staging', 'preview'].includes(deploymentEnvironment()) || Boolean(configuredEnv('MERCHANT_MCP_TOKEN')) || Boolean(videoApproval)
   // The local window opens only after the server-side confirmation succeeds.
   // `await callRemote` can reject (403/5xx/connection loss) and the caller then
   // reports an error result: opening the window first would unlock every
   // destructive tool for the full TTL even though the merchant never completed
   // confirmation. The local no-token path performs no remote call at all and
   // must still open the window, so the assignment stays outside the branch.
-  const remoteConfirmation = remoteTicketRequired ? await callRemote('workspace.interactive.confirm', args, signal) : undefined
+  const confirmationArgs = videoApproval
+    ? { confirmation: args.confirmation, intent_hash: videoApproval.intentHash }
+    : args
+  const remoteConfirmation = remoteTicketRequired ? await callRemote('workspace.interactive.confirm', confirmationArgs, signal) : undefined
+  if (videoApproval) {
+    const ticket = remoteConfirmation?.ticket
+    const expiresAt = Date.parse(ticket?.expires_at)
+    pruneVideoApprovalTickets()
+    if (!ticket || ticket.intent_hash !== videoApproval.intentHash || !/^[a-f0-9]{64}$/u.test(String(ticket.nonce_hash ?? '')) || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      throw Object.assign(new Error('服务端未返回与当前视频分镜绑定的有效一次性确认票据'), { code: 'VIDEO_CONFIRMATION_TICKET_INVALID' })
+    }
+    if (videoApprovalTickets.size >= MAX_VIDEO_APPROVAL_TICKETS && !videoApprovalTickets.has(videoApproval.intentHash)) {
+      throw Object.assign(new Error('视频确认票据暂存已满，请稍后重试'), { code: 'VIDEO_CONFIRMATION_CACHE_FULL' })
+    }
+    videoApprovalTickets.set(videoApproval.intentHash, { nonce_hash: ticket.nonce_hash, intent_hash: ticket.intent_hash, expires_at: ticket.expires_at })
+  }
   interactiveWriteUntil = Date.now() + INTERACTIVE_WRITE_TTL_MS
+  const publicTicket = videoApproval && remoteConfirmation?.ticket
+    ? { intent_hash: remoteConfirmation.ticket.intent_hash, expires_at: remoteConfirmation.ticket.expires_at }
+    : remoteConfirmation?.ticket
   return {
     enabled: true,
     expires_at: remoteConfirmation?.ticket?.expires_at ?? new Date(interactiveWriteUntil).toISOString(),
     scope: remoteConfirmation?.scope ?? 'current_plugin_process',
     automation: 'read_only',
-    ...(remoteConfirmation?.ticket ? { ticket: remoteConfirmation.ticket } : {}),
+    ...(publicTicket ? { ticket: publicTicket } : {}),
   }
 }
 
@@ -4246,6 +4320,13 @@ async function handle(request, signal) {
     // This is a pure in-memory check: malformed requests need no user approval
     // and must fail before any transport work.
     if (name === 'catalog.import' || name === 'catalog.import.batch') {
+      if (name === 'catalog.import.batch') {
+        const hasProducts = Object.prototype.hasOwnProperty.call(args, 'products_json')
+        const hasSourceAsset = Object.prototype.hasOwnProperty.call(args, 'source_asset_id')
+        if (hasProducts === hasSourceAsset) {
+          return toolArgumentError(id, '必须且只能选择一个输入模式：products_json 或 source_asset_id。', '请选择一种商品导入输入方式后重试。')
+        }
+      }
       if (args.draft_only !== 'true') {
         return toolArgumentError(id, '商品导入必须显式选择未绑定草稿模式（draft_only="true"）；插件不支持绑定店铺、同步或发布。', '商品资料只能导入为未绑定草稿；请确认后重试。')
       }
@@ -4285,7 +4366,7 @@ async function handle(request, signal) {
         const reason = error instanceof Error ? error.message : '本地文件无法读取'
         return toolArgumentError(id, `工具 asset.upload 参数无效：${reason}`, `上传文件无效：${reason}。请确认文件存在、非空且不超过 50MB 后重试。`)
       }
-      const remoteResult = await callRemote(name, preparedArguments, signal)
+      const remoteResult = await callRemote(name, attachVideoApprovalTicket(name, preparedArguments), signal)
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })
       const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult, signal) : remoteResult
       const rawResult = await resolveGeneratedImagePreview(name, scannedResult, signal)

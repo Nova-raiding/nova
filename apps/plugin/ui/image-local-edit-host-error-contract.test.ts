@@ -54,5 +54,8 @@ describe('图片局部编辑 MCP Host 错误契约', () => {
     } finally {
       await browser.close();
     }
-  }, 20_000);
+  // This launches a real Chromium instance. Keep its harness deadline above
+  // the widget's 20s MCP Host timeout so shard-level browser contention cannot
+  // kill the test before the UI reaches its own bounded timeout behavior.
+  }, 45_000);
 });

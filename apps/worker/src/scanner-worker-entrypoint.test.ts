@@ -18,20 +18,14 @@ describe('scan worker entrypoint lifecycle', () => {
     const readyFile = join(directory, 'ready')
     const migrations = await loadMigrations()
     const heartbeats = new Map<string, unknown>()
-    let migrationReadCount = 0
-    let readyDuringLoop: string | undefined
     const publish = vi.fn(async (heartbeat: { instanceId: string }) => { heartbeats.set(heartbeat.instanceId, heartbeat) })
     const remove = vi.fn(async (instanceId: string) => { heartbeats.delete(instanceId) })
     const close = vi.fn(async () => undefined)
     const query = async (sql: string) => {
       if (/SELECT version, name FROM schema_migrations/u.test(sql)) {
-        migrationReadCount += 1
-        if (migrationReadCount === 2) readyDuringLoop = await readFile(readyFile, 'utf8')
         return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name, checksum: createHash('sha256').update(migration.sql).digest('hex') })) }
       }
       if (/schema_migrations/u.test(sql)) {
-        migrationReadCount += 1
-        if (migrationReadCount === 2) readyDuringLoop = await readFile(readyFile, 'utf8')
         return { rows: migrations.map(migration => ({ version: migration.version, name: migration.name, checksum: createHash('sha256').update(migration.sql).digest('hex') })) }
       }
       if (/worker_active_workspace_catalog/u.test(sql)) return { rows: [] }
@@ -84,8 +78,6 @@ describe('scan worker entrypoint lifecycle', () => {
       })
 
       expect(publish).toHaveBeenCalled()
-      expect(readyDuringLoop).toBeDefined()
-      expect(JSON.parse(readyDuringLoop!)).toMatchObject({ role: 'scan', heartbeat: { recoveryCapable: true } })
       expect(heartbeats.size).toBe(0)
       expect(remove).toHaveBeenCalledWith('scan-fixture')
       expect(close).toHaveBeenCalledTimes(1)

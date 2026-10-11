@@ -156,6 +156,25 @@ test('未知图片生成结果锁定创意参数；原请求重放恢复既有�
     expect(generationRequests[0]?.params).toMatchObject({ product_id: productId, account_id: accountId, mode: 'optimize', count: '2', direction: '保留商品本体并生成简洁春日主图' })
     expect(generationRequests[0]?.params.idempotency_key).toBe(generationRequests[1]?.params.idempotency_key)
     expect(unexpectedRequests).toEqual([])
+
+    // A later, separately confirmed intent with the same product and parameters
+    // must create a fresh idempotency key. The first two requests above are one
+    // ambiguous intent and must continue to share their original key.
+    await page.goto(`${studioUrl}/merchant/products?section=products`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: /^淘宝/u }).click()
+    await page.locator('.catalog-store-card').filter({ hasText: '图片任务回读验收店' }).getByRole('button', { name: /进入商品库/u }).click()
+    await page.getByRole('button', { name: `打开${product.title}商品详情` }).click()
+    await page.getByTestId('catalog-generate-image').click()
+    const nextDialog = page.getByTestId('catalog-image-generation-dialog')
+    await nextDialog.getByLabel('生成方向').fill('保留商品本体并生成简洁春日主图')
+    await nextDialog.getByLabel('候选数量').fill('2')
+    await nextDialog.getByRole('button', { name: '确认生成' }).click()
+    await expect(page).toHaveURL(new RegExp(`/merchant/tasks\\?image_job=${jobId}`))
+    expect(generationRequests).toHaveLength(3)
+    const { idempotency_key: recoveredIntentKey, ...recoveredIntentParams } = generationRequests[1].params
+    expect(generationRequests[2]?.params).toMatchObject(recoveredIntentParams)
+    expect(generationRequests[2]?.params.idempotency_key).not.toBe(recoveredIntentKey)
+    expect(unexpectedRequests).toEqual([])
   } finally {
     await context.close()
     await browser.close()

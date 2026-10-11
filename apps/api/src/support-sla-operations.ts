@@ -16,6 +16,12 @@ export interface SupportSlaOperationsDependencies {
   notifyAlert: (alert: OperationalAlert) => Promise<void>
 }
 
+function assertWorkspaceTickets(workspaceId: string, tickets: readonly { workspaceId: string }[]) {
+  if (tickets.some(ticket => ticket.workspaceId !== workspaceId)) {
+    throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '客服工单读取结果超出请求工作区，已阻止 SLA 处理', 403)
+  }
+}
+
 export async function runSupportSlaScan(workspaceId: string, limit: number, deps: SupportSlaOperationsDependencies) {
   const repository = deps.support
   if (!repository) throw new DomainError('SUPPORT_REPOSITORY_UNAVAILABLE', '客服工单仓储未配置，SLA 扫描已阻断', 503)
@@ -23,6 +29,7 @@ export async function runSupportSlaScan(workspaceId: string, limit: number, deps
   let cursor: SupportTicketPageCursor | undefined
   do {
     const page = await repository.list({ workspaceId, limit: Math.min(100, limit), ...(cursor ? { cursor } : {}) })
+    assertWorkspaceTickets(workspaceId, page.items)
     tickets.push(...page.items)
     cursor = page.nextCursor
   } while (cursor && tickets.length < limit)
@@ -58,12 +65,16 @@ export async function buildWorkspaceSupportSlaMonthlyReport(input: SupportSlaRep
   let cursor: SupportTicketPageCursor | undefined
   do {
     const page = await support.list({ workspaceId: input.workspaceId, limit: 100, ...(cursor ? { cursor } : {}) })
+    assertWorkspaceTickets(input.workspaceId, page.items)
     tickets.push(...page.items)
     cursor = page.nextCursor
   } while (cursor)
   const reportTickets: SupportSlaReportTicket[] = []
   for (const ticket of tickets) {
     const events = await support.listEvents(input.workspaceId, ticket.id)
+    if (events.some(event => event.workspaceId !== input.workspaceId || event.ticketId !== ticket.id)) {
+      throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '客服工单事件读取结果超出请求范围，已阻止 SLA 月报', 403)
+    }
     reportTickets.push({ workspaceId: input.workspaceId, ticketId: ticket.id, sla: ticket.sla, events })
   }
   try {

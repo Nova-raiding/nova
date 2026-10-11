@@ -272,17 +272,17 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
   })
 
-  it('keeps registry-enabled video tools visible on the production endpoint', () => {
+  it('hides ticket-gated video writes from native HTTP MCP without a trusted interactive session', () => {
     try {
       vi.stubEnv('MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES', 'true')
       vi.stubEnv('NODE_ENV', 'development')
       vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
       vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
       vi.stubEnv('MERCHANT_MCP_BASE_URL', 'http://127.0.0.1:8787/mcp')
-      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(true)
+      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(false)
       expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(true)
       vi.stubEnv('MERCHANT_MCP_BASE_URL', 'https://yxsona.com/mcp')
-      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(true)
+      expect(isNativeMcpToolEnabled('multimodal.video.request')).toBe(false)
       expect(isNativeMcpToolEnabled('multimodal.video.get')).toBe(true)
     } finally {
       vi.unstubAllEnvs()

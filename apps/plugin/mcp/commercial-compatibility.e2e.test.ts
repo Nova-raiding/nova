@@ -21,7 +21,7 @@ let legacyBridge = ''
 async function stdio(bridge: string, name: string, args: Record<string, unknown> = {}) {
   const child = spawn(process.execPath, [bridge], {
     env: { ...process.env, NODE_ENV: 'test', DEPLOY_ENV: 'test', MERCHANT_MCP_BASE_URL: base, MERCHANT_WORKSPACE_ID: workspace,
-      MERCHANT_MCP_TOKEN: token, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '0',
+      MERCHANT_MCP_TOKEN: token, MERCHANT_MCP_TOKEN_SOURCE: 'environment', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '1',
       MERCHANT_ARTIFACT_DIR: join(temporary, 'artifacts') },
     stdio: ['pipe', 'pipe', 'pipe'],
   })

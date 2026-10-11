@@ -636,7 +636,7 @@ const workerRegistry = defineCommercialOperationRegistry([
     classification: 'POINT_REQUIRED_NO_CHARGE' as const,
     rate_action: null,
   })),
-  { surface: 'WORKER' as const, operation: 'publish.reconcile', domain: 'COMMERCIAL' as const, enabled: true, classification: 'RECOVERY_CONTROL' as const, rate_action: null },
+  { surface: 'WORKER' as const, operation: 'publish.reconcile', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE' as const, rate_action: null },
 ])
 
 

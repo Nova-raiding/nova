@@ -26,7 +26,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     const migrations = await loadMigrations()
     expect(migrations.some(migration => migration.version === 109)).toBe(true)
     expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(migration => migration.version))
-    repository = new PostgresOutboxRepository(database)
+    repository = new PostgresOutboxRepository(database, { executionOwnerColumnAvailable: true })
   }, 240_000)
 
   afterAll(async () => {
@@ -68,7 +68,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     expect(await initialQueue.contains(event.id)).toBe(false)
 
     const retryQueue = new InMemoryQueue<DurableOutboxEvent>(() => now)
-    const restored = new DurableOutboxDispatcher(new PostgresOutboxRepository(database!), retryQueue, handler, options)
+    const restored = new DurableOutboxDispatcher(new PostgresOutboxRepository(database!, { executionOwnerColumnAvailable: true }), retryQueue, handler, options)
     now = Date.parse(queued.event!.nextAttemptAt!) - 1
     expect(await restored.restore(scope)).toBe(0)
     now += 1
@@ -179,7 +179,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     const other = await append(otherScope, 'other', 'audit.retry.concurrent')
     const due = new Date(Date.now() + 1_000).toISOString()
     await repository.recordFailure(scope, event.id, { code: 'RATE_LIMITED', message: 'retry', retryable: true, unknown: false }, due)
-    const peer = new PostgresOutboxRepository(database!)
+    const peer = new PostgresOutboxRepository(database!, { executionOwnerColumnAvailable: true })
     expect(await repository.claimPending(scope, { now: due, eventTypes: ['publish.requested'] })).toEqual([])
     const [left, right] = await Promise.all([
       repository.claimPending(scope, { now: due, leaseMs: 60_000, eventTypes: ['audit.retry.concurrent'] }),
@@ -216,7 +216,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     }
     const options = { leaseMs: 60_000 }
     const left = new DurableOutboxDispatcher(repository, leftQueue, handler, options).dispatchOnce()
-    const right = new DurableOutboxDispatcher(new PostgresOutboxRepository(database!), rightQueue, handler, options).dispatchOnce()
+    const right = new DurableOutboxDispatcher(new PostgresOutboxRepository(database!, { executionOwnerColumnAvailable: true }), rightQueue, handler, options).dispatchOnce()
     const firstCompleted = await Promise.race([
       left.then(result => ({ side: 'left', result })),
       right.then(result => ({ side: 'right', result })),
@@ -235,15 +235,15 @@ describe.skipIf(!databaseUrl)('PostgreSQL durable outbox retry recovery', () => 
     const event = await append(scope, 'execution_reclaim', 'audit.retry.execution-reclaim')
     const firstNow = new Date(Date.now() + 1_000).toISOString()
     const [first] = await repository.claimPending(scope, { now: firstNow, leaseMs: 100, eventTypes: ['audit.retry.execution-reclaim'] })
-    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'invocation_before_expiry', firstNow)).toBe(true)
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'invocation_before_expiry', firstNow)).toBe(first!.leaseToken)
     await expect(repository.releaseClaim(scope, event.id, first!.leaseToken!)).rejects.toMatchObject({ code: 'OUTBOX_EVENT_NOT_FOUND' })
-    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'duplicate_before_expiry', firstNow)).toBe(false)
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'duplicate_before_expiry', firstNow)).toBeNull()
 
     const reclaimedAt = new Date(Date.parse(firstNow) + 1_000).toISOString()
     const [reclaimed] = await repository.claimPending(scope, { now: reclaimedAt, leaseMs: 60_000, eventTypes: ['audit.retry.execution-reclaim'] })
     expect(reclaimed?.leaseToken).not.toBe(first?.leaseToken)
-    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'stale_invocation', reclaimedAt)).toBe(false)
-    expect(await repository.acquireExecution(scope, event.id, reclaimed!.leaseToken!, 'invocation_after_reclaim', reclaimedAt)).toBe(true)
+    expect(await repository.acquireExecution(scope, event.id, first!.leaseToken!, 'stale_invocation', reclaimedAt)).toBeNull()
+    expect(await repository.acquireExecution(scope, event.id, reclaimed!.leaseToken!, 'invocation_after_reclaim', reclaimedAt)).toBe(reclaimed!.leaseToken)
   })
 
   it('does not let legacy markPublished clear an active durable lease', async () => {

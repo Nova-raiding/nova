@@ -2817,7 +2817,8 @@ describe('Codex stdio MCP bridge', () => {
       received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       res.setHeader('content-type', 'application/json')
       if (received.at(-1).method === 'workspace.interactive.confirm') {
-        res.end(JSON.stringify({ data: { result: { confirmed: true } }, error: null }))
+        const intentHash = received.at(-1).params?.intent_hash
+        res.end(JSON.stringify({ data: { result: { confirmed: true, ticket: { nonce_hash: 'a'.repeat(64), intent_hash: intentHash, expires_at: '2099-01-01T00:00:00.000Z' } } }, error: null }))
         return
       }
       if (received.at(-1).method === 'multimodal.video.request') {
@@ -2843,7 +2844,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', video_prompt: '商品展示视频', video_context_json: '{}' } } })}\n`)
       expect((await nextLine(child.stdout)).result.isError).not.toBe(true)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
       const syncResponse = await nextLine(child.stdout)
@@ -2855,10 +2856,10 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: false, structuredContent: { provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived' } })
       expect(response.result.content[0].text).toBe('视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。')
-      expect(received[0].method).toBe('multimodal.video.request')
-      expect(received[0].params).toMatchObject({ prompt: '商品展示视频', output: 'rendering', context_json: '{}', workspace_id: 'ws_test' })
-      expect(received[1].method).toBe('multimodal.video.get')
-      expect(received[1].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
+      expect(received.map(request => request.method)).toEqual(['workspace.interactive.confirm', 'multimodal.video.request', 'multimodal.video.get'])
+      expect(received[0].params).toMatchObject({ intent_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), workspace_id: 'ws_test' })
+      expect(received[1].params).toMatchObject({ prompt: '商品展示视频', output: 'rendering', context_json: '{}', workspace_id: 'ws_test', confirmation_ticket_nonce_hash: 'a'.repeat(64) })
+      expect(received[2].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-demo' } } })}\n`)
       const demoResponse = await nextLine(child.stdout)
@@ -2869,14 +2870,30 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('records video validation failures as redacted MCP diagnostics', async () => {
+  it('records failed video render transport as redacted MCP diagnostics after approval', async () => {
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const call = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      if (call.method === 'workspace.interactive.confirm') {
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ data: { result: { enabled: true, ticket: { nonce_hash: 'b'.repeat(64), intent_hash: call.params.intent_hash, expires_at: '2099-01-01T00:00:00.000Z' } } }, error: null }))
+        return
+      }
+      // Confirm the approval round trip first, then simulate a lost gateway
+      // response for the render request so diagnostics still cover an unknown
+      // provider outcome without bypassing the new approval gate.
+      req.socket.destroy()
+    })
+    const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
       env: {
         ...TEST_PROCESS_ENV,
-        MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:1',
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
         MERCHANT_WORKSPACE_ID: 'ws_test',
         MERCHANT_MCP_WRITE_ENABLED: 'true',
+        MERCHANT_MCP_RETRY_ATTEMPTS: '1',
         MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -2885,7 +2902,7 @@ describe('Codex stdio MCP bridge', () => {
     child.stderr.on('data', chunk => { stderr += chunk.toString() })
     const sensitivePrompt = '内部新品代号 SECRET-VIDEO-CLAIM'
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', video_prompt: sensitivePrompt, video_context_json: JSON.stringify({ brand: { id: 'brand_1', version: '1' }, product: { id: 'product_1', version: '1' }, rules: [] }) } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: {
         prompt: sensitivePrompt,
@@ -2902,6 +2919,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(stderr).not.toContain('merchant.image.error')
     } finally {
       child.kill()
+      await close(server)
     }
   })
 
@@ -3070,6 +3088,9 @@ describe('Codex stdio MCP bridge', () => {
       // send a field its handler reads.
       const withheldArguments: Readonly<Record<string, readonly string[]>> = {
         'billing.recharge.get': ['confirm_test_payment'],
+        // The shared server contract supports these values, but this merchant
+        // plugin intentionally narrows import to unbound drafts.
+        'catalog.import': ['account_id', 'brand_id'],
       }
       const missing: string[] = []
       const enumDrift: string[] = []
@@ -3088,12 +3109,22 @@ describe('Codex stdio MCP bridge', () => {
         }
       }
       expect(missing, `the bridge must declare every contract argument the handlers read: ${missing.join(', ')}`).toEqual([])
+      expect(tools.find(tool => tool.name === 'catalog.import')?.inputSchema.properties).not.toHaveProperty('account_id')
+      expect(tools.find(tool => tool.name === 'catalog.import')?.inputSchema.properties).not.toHaveProperty('brand_id')
       expect(enumDrift, enumDrift.join(', ')).toEqual([])
+      // The merchant bridge requires draft_only on both import methods even
+      // though that mode selector is a bridge-only narrowing over the server
+      // contract. Keep the narrower requirement explicit.
+      for (const name of ['catalog.import', 'catalog.import.batch']) {
+        expect(tools.find(tool => tool.name === name)?.inputSchema.required).toContain('draft_only')
+      }
+      const requiredNarrowings = new Set(['catalog.import', 'catalog.import.batch'])
       // asset.upload declares its two input modes with oneOf
       // (file_path | content_base64) instead of the contract's flat required
       // list, so it is the only method whose required array may differ.
       const requiredDrift = tools
         .filter(tool => tool.name !== 'asset.upload')
+        .filter(tool => !requiredNarrowings.has(tool.name))
         .filter(tool => JSON.stringify(contractSchemas[tool.name]?.required ?? []) !== JSON.stringify(tool.inputSchema.required ?? []))
         .map(tool => `${tool.name}: contract=${JSON.stringify(contractSchemas[tool.name]?.required ?? [])} bridge=${JSON.stringify(tool.inputSchema.required ?? [])}`)
       expect(requiredDrift, requiredDrift.join(', ')).toEqual([])
@@ -4901,6 +4932,9 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'FORBIDDEN', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2' } } })
       expect(response.result.structuredContent.details).not.toHaveProperty('authorization')
       expect(response.result.structuredContent.details).not.toHaveProperty('internal_path')
+      expect(response.result.content[0].text).toContain('联系工作区管理员核对你的成员角色及操作权限')
+      expect(response.result.content[0].text).not.toContain('AUTHZ_SCOPE_MISMATCH')
+      expect(response.result.content[0].text).not.toContain('customer.content.read')
     } finally {
       child.kill(); await close(server)
     }
@@ -5454,7 +5488,7 @@ describe('Codex stdio MCP bridge', () => {
 
   it.each([
     [401, 'MCP_AUTH_REQUIRED', '当前插件没有可用的 Store Nova 工作区登录凭据，可能尚未登录或凭据已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。'],
-    [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
+    [403, 'PERMISSION_DENIED', '当前账号没有这项操作的权限，任务和已有内容已保留。请联系工作区管理员核对你的成员角色及操作权限；权限调整后再重试。'],
   ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
     const server = createServer((_req, res) => {
       res.writeHead(status, { 'content-type': 'application/json' })

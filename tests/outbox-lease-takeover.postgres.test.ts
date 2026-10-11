@@ -23,7 +23,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL outbox lease takeover', () => {
     database = new Pool({ connectionString: isolated.toString(), max: 4 })
     const migrations = await loadMigrations()
     await new MigrationRunner(database, migrations).run()
-    repository = new PostgresOutboxRepository(database)
+    repository = new PostgresOutboxRepository(database, { executionOwnerColumnAvailable: true })
   }, 240_000)
 
   afterAll(async () => {

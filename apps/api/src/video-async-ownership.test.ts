@@ -21,6 +21,19 @@ function install(store = new InMemoryOutbox()) {
   return store
 }
 describe('durable accepted video ownership', () => {
+  it('replays an accepted idempotent render before consuming another approval or dispatching again', async () => {
+    install()
+    const base = input('video:ticket-replay')
+    await ownedGenerate(base)
+    const authorize = vi.fn(async () => {})
+    const execute = vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'unexpected', settlementStatus: 'pending_receipt' as const }))
+    const replay = await withOwnedVideoAction('video-workspace', 'video:ticket-replay', base, execute, providerJobId => ({ status: 'queued' as const, providerJobId, settlementStatus: 'pending_receipt' as const }), authorize)
+    expect(replay).toMatchObject({ providerJobId: 'job-1', status: 'queued' })
+    expect(authorize).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(provider.posts).toBe(1)
+  })
+
   it.each(['multimodal.video.request', 'multimodal.generate'])('%s cleans its owned reservation when preparation fails before provider dispatch', async method => {
     const store = install(); const order: string[] = []; let observations = 0
     const context = { brand: { id: 'brand', version: '1' }, product: { id: 'product', version: '1' }, rules: [{ id: 'rule', version: '1' }] }
@@ -36,7 +49,7 @@ describe('durable accepted video ownership', () => {
       createVideoRenderingRequest: (value: object) => ({ ok: true, value: { ...value, output: 'rendering' } }), createOneSentenceGenerationRequest: (value: object) => ({ ok: true, value }), createHash,
       reserveCreativePointsForModel: async () => { order.push('reserve'); return reservation }, recordActionSettlement: async () => { throw prepareFailure }, requestActor: () => 'actor',
       releaseReservedModelPoints: async (_workspace: string, _action: string, _reason: string, owner: unknown) => { expect(owner).toBe(reservation); order.push('release') }, refundPluginWalletDebit: async () => { order.push('refund') }, providerSucceededButSettlementPending: (error: { reconciliationRequired?: boolean }) => error?.reconciliationRequired === true,
-      withOwnedVideoAction, generateOwnedVideo, videoGenerator: { generate: vi.fn() },
+      withOwnedVideoAction, generateOwnedVideo, videoGenerator: { generate: vi.fn() }, consumeVideoRenderingApprovalTicket: async () => {},
     } as unknown as MultimodalMcpRuntime
     await expect(handleMultimodalMcpMethod(method, { prompt: 'test', output: 'rendering', modality: 'video', context_json: JSON.stringify(context), idempotency_key: 'prepare-failure' }, dependencies)).rejects.toThrow('injected preparation failure')
     expect(order).toEqual(['reserve', 'release', 'refund', 'rejected'])
@@ -142,6 +155,7 @@ function candidateRuntime() {
     releaseReservedModelPoints: async () => {}, refundPluginWalletDebit: async () => {}, providerSucceededButSettlementPending: () => false,
     withOwnedVideoAction, generateOwnedVideo, assertVideoProviderJobScope, archiveCompletedVideo: archive, modelSettlementDomainError,
     videoGenerator: { generate: vi.fn(), getStatus: vi.fn(async () => ({ status: 'queued', settlementStatus: 'pending_receipt' })) },
+    consumeVideoRenderingApprovalTicket: vi.fn(async () => {}),
   } as unknown as MultimodalMcpRuntime
   return { runtime, archive }
 }
@@ -149,6 +163,19 @@ function candidateParams(evidence: unknown = candidateEvidence()) {
   return { prompt: '原创内部候选', output: 'rendering', modality: 'video', idempotency_key: 'internal-candidate', context_json: JSON.stringify({ candidateOnly: true, brand: null, product: { id: 'product', version: '1' }, rules: [], storyboardQuality: evidence }) }
 }
 describe('server-authorized internal candidate rendering', () => {
+  it.each(['multimodal.video.request', 'multimodal.generate'] as const)('%s rejects missing approval before point reservation or provider dispatch', async method => {
+    install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
+    const { runtime } = candidateRuntime()
+    runtime.evaluateStoryboardBeforeRendering = (() => ({ renderReady: true })) as never
+    const reservation = vi.fn(async () => null)
+    runtime.reserveCreativePointsForModel = reservation as never
+    vi.mocked(runtime.consumeVideoRenderingApprovalTicket).mockRejectedValue(new DomainError('INTERACTIVE_CONFIRMATION_TICKET_REQUIRED', 'ticket required', 400))
+    const params = method === 'multimodal.video.request' ? candidateParams() : { ...candidateParams(), modality: 'video' }
+    await expect(handleMultimodalMcpMethod(method, params, runtime)).rejects.toMatchObject({ code: 'INTERACTIVE_CONFIRMATION_TICKET_REQUIRED' })
+    expect(reservation).not.toHaveBeenCalled()
+    expect(provider.posts).toBe(0)
+  })
+
   it('rejects a formal video whose task or content-version binding does not match the product', async () => {
     install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')
     const { runtime } = candidateRuntime()

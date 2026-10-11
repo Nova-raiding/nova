@@ -26,7 +26,7 @@ describe('migration 109 PostgreSQL asset scan redrive acceptance', () => {
       await database.query(`INSERT INTO workspaces (id,status) VALUES ('ws_redrive_a','active'),('ws_redrive_b','active')`)
       const pool = database as unknown as SqlPool
       const business = new PostgresBusinessRepository(pool)
-      const outbox = new PostgresOutboxRepository(pool)
+      const outbox = new PostgresOutboxRepository(pool, { executionOwnerColumnAvailable: false })
       const repository = new PostgresAssetScanRedriveRepository(pool)
       const assetId = 'asset_redrive_109'
       const storageKey = `quarantine/ws_redrive_a/${assetId}/source.png`

@@ -71,6 +71,42 @@ describe('packaged MCP App UI regressions', () => {
     }
   }, 15000)
 
+  it('falls back to mine when the host revokes workspace order scope', async () => {
+    let statusReads = 0
+    const orderScopes: string[] = []
+    const page = await pageWithHost(rechargeHtml, async (name, args) => {
+      if (name === 'billing.status') {
+        statusReads += 1
+        return { structuredContent: { allowed: true, availability: 'available', viewer: { available_scopes: statusReads === 1 ? ['mine', 'workspace'] : ['mine'] } } }
+      }
+      if (name === 'billing.recharge.list') {
+        orderScopes.push(String(args.scope))
+        return { structuredContent: { orders: [] } }
+      }
+      if (name === 'subscription.orders.list') return { structuredContent: { orders: [] } }
+      throw new Error(`Unexpected tool: ${name}`)
+    })
+    try {
+      await page.locator('#tab-orders').click()
+      const workspaceButton = page.getByRole('button', { name: '整个工作区' })
+      await page.waitForFunction(() => !(document.querySelector('[data-scope="workspace"]') as HTMLButtonElement).hidden)
+      await workspaceButton.click()
+      expect(orderScopes.at(-1)).toBe('workspace')
+
+      await page.locator('#tab-overview').click()
+      await page.locator('#refreshStatus').click()
+      await page.waitForFunction(() => (document.querySelector('[data-scope="workspace"]') as HTMLButtonElement).hidden)
+      expect(await page.getByRole('button', { name: '我的' }).getAttribute('aria-pressed')).toBe('true')
+      expect(await page.locator('#scopeNote').textContent()).toContain('仅显示可归属到你的记录')
+
+      await page.locator('#tab-orders').click()
+      expect(orderScopes.at(-1)).toBe('mine')
+      expect(orderScopes.slice(2)).not.toContain('workspace')
+    } finally {
+      await page.close()
+    }
+  }, 15000)
+
   it('does not expose a merchant portal action unless a catalog item is approved, executable, and public', async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = []
     const page = await pageWithHost(rechargeHtml, async (name, args) => {

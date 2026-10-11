@@ -113,6 +113,16 @@ export function packageScriptTestFiles(root: string): Set<string> {
     const scripts = (JSON.parse(readFileSync(join(root, manifest), 'utf8')) as { scripts?: Record<string, string> }).scripts ?? {}
     for (const command of Object.values(scripts)) {
       for (const match of command.matchAll(TEST_PATH_IN_COMMAND)) {
+        // Exclusion/include globs are selectors, not literal files. Vitest's
+        // `list --filesOnly` already enumerates the files that those selectors
+        // leave in the actual run; treating `*.test.tsx` as a file creates a
+        // bogus stale manifest path such as `apps/ops-console/.test.tsx`.
+        const before = command.slice(0, match.index)
+        const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n'), before.lastIndexOf('\t')) + 1
+        const tokenTail = command.slice(match.index)
+        const whitespaceAfter = tokenTail.search(/\s/u)
+        const tokenEnd = whitespaceAfter < 0 ? command.length : match.index + whitespaceAfter
+        if (/[*?]/u.test(command.slice(tokenStart, tokenEnd))) continue
         files.add(join(packageDirectory, match[1]!).replaceAll('\\', '/').replace(/^(?:\.\/)+/u, ''))
       }
     }
@@ -145,12 +155,22 @@ export function manifestTestFiles(): Set<string> {
   ])
 }
 
+/** Test files enumerated by the Ops Console's serial Chromium/Vitest runner. */
+export function opsBrowserRunnerTestFiles(root: string): Set<string> {
+  const runner = resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs')
+  if (!existsSync(runner)) return new Set()
+  const source = readFileSync(runner, 'utf8')
+  return new Set([...source.matchAll(/['"](src\/[A-Za-z0-9_./-]+\.test\.(?:tsx?|jsx?))['"]/gu)]
+    .map(match => `apps/ops-console/${match[1]!}`))
+}
+
 /** Every test file this repository has an executing entrypoint for. */
 export function entrypointTestFiles(root: string): Set<string> {
   return new Set<string>([
     ...defaultSuiteTestFiles(root),
     ...packageScriptTestFiles(root),
     ...manifestTestFiles(),
+    ...opsBrowserRunnerTestFiles(root),
   ])
 }
 

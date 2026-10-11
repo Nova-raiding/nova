@@ -19,6 +19,13 @@ export function parseFinanceWorkspaceIdFilter(value?: string): string[] | undefi
   return value?.split(/[\s,，]+/).map(workspaceId => workspaceId.trim()).filter(Boolean);
 }
 
+export function validateFinanceWorkspaceIdFilter(value?: string): string | undefined {
+  const ids = parseFinanceWorkspaceIdFilter(value) ?? [];
+  if (ids.length > 250) return "最多可筛选 250 个 Workspace ID";
+  if (ids.some(id => id.length > 128)) return "每个 Workspace ID 最多 128 个字符";
+  return undefined;
+}
+
 const kindLabel: Record<FinanceRecordKind, string> = {
   recharge_order: "充值订单", wallet_transaction: "钱包流水", subscription_order: "订阅订单", usage_entry: "任务额度", model_usage: "模型用量",
 };
@@ -111,7 +118,10 @@ export function FinanceSearchSection({ controller, canExport = false, showProvid
       <Form form={form} layout="vertical" onFinish={values => void submit(values)} aria-label="财务检索筛选">
         <Row gutter={[16, 0]} align="bottom">
           <Col xs={24} md={9}><Form.Item name="text" label="关键词"><Input allowClear maxLength={200} placeholder="记录号、订单号、模型或状态" /></Form.Item></Col>
-          <Col xs={24} md={9}><Form.Item name="workspaceIds" label="Workspace ID"><Input allowClear placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔" /></Form.Item></Col>
+          <Col xs={24} md={9}><Form.Item name="workspaceIds" label="Workspace ID" rules={[{ validator: async (_, value?: string) => {
+            const message = validateFinanceWorkspaceIdFilter(value);
+            if (message) throw new Error(message);
+          } }]}><Input allowClear placeholder="输入一个或多个 Workspace ID，使用空格或逗号分隔" /></Form.Item></Col>
           <Col xs={24} md={6}><Form.Item label=" "><Space.Compact block><Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={controller.loading} block>检索</Button><Button type="default" aria-expanded={showAdvancedFilters} aria-controls="finance-advanced-filters" onClick={() => setShowAdvancedFilters(visible => !visible)}>{showAdvancedFilters ? "收起筛选" : "高级筛选"}{activeAdvancedFilterCount ? `（已选 ${activeAdvancedFilterCount} 项）` : ""}</Button></Space.Compact></Form.Item></Col>
         </Row>
         <Row id="finance-advanced-filters" style={{ display: showAdvancedFilters ? undefined : "none" }} gutter={[16, 0]} align="bottom">

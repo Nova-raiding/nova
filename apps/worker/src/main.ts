@@ -2591,7 +2591,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     const gate = evaluatePlatformModelGate(modelEnvironment, kind)
     if (!gate.ready) throw Object.assign(new Error(`model relay token or model configuration is unavailable: ${gate.reasons.join(', ')}`), { code: 'MODEL_RELAY_TOKEN_QUOTA_BLOCKED', retryable: true, providerOutcome: 'not_sent' })
   }
-  const repository = new PostgresOutboxRepository(pool as unknown as SqlPool)
+  let repository!: PostgresOutboxRepository
   const dispatchers = new Map<string, DurableOutboxDispatcher<DurableOutboxEvent>>()
   // `redisClientFactory` is the same seam the transports already accept, threaded
   // through so the loop's own evidence can drive it with a socket that never
@@ -3178,9 +3178,14 @@ export async function runWorker(config: WorkerConfig, pool: Pool, options: {
     }
     const expectedMigrations = await loadMigrations()
     const bridgeMode = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
-    const bridgeStartupVersion = bridgeMode
-      ? (await assertWorkerReadinessDependencies({ database: pool, expectedMigrations, bridgeMode, bridgeMigrations: expectedMigrations })).migrationVersion
-      : undefined
+    const startupSchemaState = await assertWorkerReadinessDependencies({
+      database: pool,
+      expectedMigrations,
+      ...(bridgeMode ? { bridgeMode, bridgeMigrations: expectedMigrations } : {}),
+    })
+    const bridgeStartupVersion = bridgeMode ? startupSchemaState.migrationVersion : undefined
+    const verifiedOutboxSchemaVersion = startupSchemaState.migrationVersion
+    repository = new PostgresOutboxRepository(pool as unknown as SqlPool, { executionOwnerColumnAvailable: verifiedOutboxSchemaVersion >= 276 })
     // Migration 257 adds the database-level snapshot reference guard. A
     // 256-to-257 bridge worker must stay quiet until that guard is installed;
     // the existing bridge version fence revokes readiness if the prefix moves.

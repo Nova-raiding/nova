@@ -9,7 +9,10 @@ describe("customer delivery contract source regression", () => {
   it("lists archived rows only by explicit workspace and restores with the current revision", () => {
     expect(pageSource).toContain('checked={archivedOnly}');
     expect(pageSource).toContain('archivedOnly: includeArchived');
-    expect(pageSource).toContain('patch: { archivedAt: null }, expectedRevision: record.revision as number');
+    expect(pageSource).toContain('recoverCustomerDeliveryRestoreConflict(latest, persist)');
+    const recoverySource = readFileSync(new URL("./customerDeliveryArchiveConflict.ts", import.meta.url), "utf8");
+    expect(recoverySource).toContain('if (latest.archivedAt === null) return latest;');
+    expect(recoverySource).toContain('return persist(latest);');
     expect(pageSource).toContain('onRestore={canUpdate && canRead ? restoreRecord : undefined}');
     expect(pageSource).toContain('客户交付记录缺少有效版本，请刷新后重试');
   });

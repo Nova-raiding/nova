@@ -152,6 +152,28 @@ describe("Finance advanced filters", () => {
       });
     } finally { await page.close(); }
   }, 60_000);
+
+  it("explains Workspace ID filter limits before issuing a rejected search", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(10_000);
+    try {
+      await page.goto(`${baseUrl}/__finance-advanced-filter`, { waitUntil: "commit", timeout: 60_000 });
+      await page.waitForFunction(() => window.__financeFilterCalls !== undefined && Boolean(document.querySelector("#root")?.firstElementChild));
+      const input = page.getByLabel("Workspace ID");
+      const submit = page.locator('form[aria-label="财务检索筛选"] button[type="submit"]');
+      const before = await page.evaluate(() => window.__financeFilterCalls?.length ?? 0);
+
+      await input.fill(Array.from({ length: 251 }, (_, index) => `ws-${index}`).join(","));
+      await submit.click();
+      await page.getByText("最多可筛选 250 个 Workspace ID", { exact: true }).waitFor();
+      expect(await page.evaluate(() => window.__financeFilterCalls?.length ?? 0)).toBe(before);
+
+      await input.fill(`ws-${"x".repeat(126)}`);
+      await submit.click();
+      await page.getByText("每个 Workspace ID 最多 128 个字符", { exact: true }).waitFor();
+      expect(await page.evaluate(() => window.__financeFilterCalls?.length ?? 0)).toBe(before);
+    } finally { await page.close(); }
+  }, 60_000);
 });
 
 function joinPath(...parts: string[]): string { return parts.join("/"); }

@@ -1088,7 +1088,7 @@ function Topbar({
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal')) return
+      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal, .ant-modal-root')) return
       setAccountMenuOpen(false)
       window.requestAnimationFrame(() => accountMenuTriggerRef.current?.focus())
     }
@@ -5577,6 +5577,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
   const [imageGenerationBusy, setImageGenerationBusy] = useState(false)
   const [imageGenerationError, setImageGenerationError] = useState('')
   const [imageGenerationOutcomeUnknown, setImageGenerationOutcomeUnknown] = useState(false)
+  const imageGenerationIntentKeyRef = useRef<string | null>(null)
   const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
   const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
   const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
@@ -5839,6 +5840,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
     setImageGenerationBusy(true)
     setImageGenerationError('')
     setImageGenerationErrorField(null)
+    const idempotencyKey = imageGenerationIntentKeyRef.current ??= `merchant-studio-image-${target.productId}-${crypto.randomUUID()}`
     try {
       const result = await generateProductImages(baseUrl, {
         product_id: target.productId,
@@ -5848,8 +5850,9 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
         mode: selectedApiProduct.sourceAssetIds?.length ? 'optimize' : 'create',
         size: imageGenerationSize,
         count: String(count),
-        idempotency_key: `merchant-studio-image-${target.productId}-${target.platform}-${target.accountId}-${imageGenerationSize}-${count}-${direction}`,
+        idempotency_key: idempotencyKey,
       })
+      imageGenerationIntentKeyRef.current = null
       setImageGenerationOpen(false)
       setImageGenerationOutcomeUnknown(false)
       window.location.href = `${window.location.pathname.replace(/\/merchant\/products\/?$/u, '/merchant/tasks')}?image_job=${encodeURIComponent(result.job_id)}`
@@ -5966,6 +5969,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 disabled={!baseUrl || !selectedApiProduct?.factsConfirmed || !imageModelReady}
                 title={!baseUrl ? '尚未连接商家 API' : !selectedApiProduct?.factsConfirmed ? '请先确认商品事实' : !imageModelReady ? imageModelBlocker : undefined}
                 onClick={() => {
+                  imageGenerationIntentKeyRef.current = null
                   setImageGenerationDirection('保留商品本体，生成适合电商首图的干净背景与克制光影')
                   setImageGenerationSize('1024x1024')
                   setImageGenerationCount('1')
@@ -5999,15 +6003,15 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                 </div>
               )}
               <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
-              <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
-              <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} disabled={imageGenerationOutcomeUnknown} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
+              <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { if (!imageGenerationOutcomeUnknown) imageGenerationIntentKeyRef.current = null; setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
+              <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} disabled={imageGenerationOutcomeUnknown} onChange={event => { if (!imageGenerationOutcomeUnknown) imageGenerationIntentKeyRef.current = null; setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize) }}>
                 <option value="1024x1024">主图 / 方图 · 1024×1024</option>
                 <option value="1024x1536">竖版内容图 · 1024×1536</option>
                 <option value="1536x1024">Banner / 横幅 · 1536×1024</option>
                 <option value="1024x3072">详情长图 · 1024×3072</option>
                 <option value="1024x4096">完整详情长图 · 1024×4096</option>
               </select></label>
-              <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
+              <label htmlFor="catalog-image-generation-count">候选数量<input id="catalog-image-generation-count" inputMode="numeric" value={imageGenerationCount} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} onChange={event => { if (!imageGenerationOutcomeUnknown) imageGenerationIntentKeyRef.current = null; setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
               {imageGenerationError && <div id="catalog-image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"><strong>无法提交图片生成</strong><span>{imageGenerationError}</span>{imageGenerationErrorField && <button type="button" className="text-button" onClick={() => focusImageGenerationField(`catalog-image-generation-${imageGenerationErrorField}`)}>跳转到需要修正的字段</button>}</div>}
             </div>
           </DialogFrame>
@@ -10361,10 +10365,12 @@ function TaskWorkspace({
   const [reviewError, setReviewError] = useState('')
   const [feedback, setFeedback] = useState<TaskFeedback[]>([])
   const [feedbackError, setFeedbackError] = useState('')
+  const [feedbackSubmitError, setFeedbackSubmitError] = useState('')
   const [feedbackReason, setFeedbackReason] = useState('')
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating | null>(
     null,
   )
+  const feedbackIdempotencyKeysRef = useRef(new Map<string, string>())
   const [timeline, setTimeline] = useState<TaskTimelineEvent[]>([])
   const [timelineError, setTimelineError] = useState('')
   const [timelineLoading, setTimelineLoading] = useState(false)
@@ -10971,14 +10977,27 @@ function TaskWorkspace({
     setFeedbackRating(rating)
     if (!baseUrl || !task) return
     setOperation('反馈提交中…')
-    setError('')
+    setFeedbackSubmitError('')
+    const keySlot = `merchant-feedback:${task.workspaceId}:${task.id}:${content?.id ?? 'latest'}:${rating}`
+    let idempotencyKey = feedbackIdempotencyKeysRef.current.get(keySlot) ?? ''
+    if (!idempotencyKey) {
+      try {
+        idempotencyKey = window.sessionStorage.getItem(keySlot) ?? ''
+      } catch { /* use the component cache when browser storage is unavailable */ }
+      if (!idempotencyKey) idempotencyKey = window.crypto.randomUUID()
+      feedbackIdempotencyKeysRef.current.set(keySlot, idempotencyKey)
+      try { window.sessionStorage.setItem(keySlot, idempotencyKey) } catch { /* in-memory retry remains stable */ }
+    }
     submitTaskFeedback(baseUrl, task.id, {
       rating,
       ...(content?.id ? { content_version_id: content.id } : {}),
       ...(feedbackReason.trim() ? { reason: feedbackReason.trim() } : {}),
-    })
+    }, idempotencyKey)
       .then((item) => {
-        setFeedback((current) => [item, ...current])
+        feedbackIdempotencyKeysRef.current.delete(keySlot)
+        try { window.sessionStorage.removeItem(keySlot) } catch { /* browser storage may be unavailable */ }
+        setFeedback((current) => [item, ...current.filter((saved) => saved.id !== item.id)])
+        setFeedbackSubmitError('')
         setFeedbackError('')
         fetchTaskTimeline(baseUrl, task.id)
           .then((value) => {
@@ -10992,7 +11011,15 @@ function TaskWorkspace({
           })
           .catch((cause) => setTimelineError(describeApiError(cause)))
       })
-      .catch((cause) => setError(describeApiError(cause)))
+      .catch((cause) => {
+        if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'IDEMPOTENCY_KEY_REUSED') {
+          feedbackIdempotencyKeysRef.current.delete(keySlot)
+          try { window.sessionStorage.removeItem(keySlot) } catch { /* browser storage may be unavailable */ }
+          setFeedbackSubmitError('反馈内容与上次未确认的提交不同。已重置提交状态，请确认内容后再点一次。')
+          return
+        }
+        setFeedbackSubmitError(describeApiError(cause))
+      })
       .finally(() => setOperation(''))
   }
   const reloadFeedback = () => {
@@ -13157,8 +13184,10 @@ function TaskWorkspace({
                     compact
                   />
                 )}
+                {feedbackSubmitError && <p className="error-notice" role="alert">{feedbackSubmitError}</p>}
                 <div className="feedback-actions">
                   <button
+                    type="button"
                     className={feedbackRating === 'liked' ? 'selected' : ''}
                     onClick={() => sendFeedback('liked')}
                     disabled={Boolean(operation) || !task || !content}
@@ -13166,6 +13195,7 @@ function TaskWorkspace({
                     满意
                   </button>
                   <button
+                    type="button"
                     className={feedbackRating === 'neutral' ? 'selected' : ''}
                     onClick={() => sendFeedback('neutral')}
                     disabled={Boolean(operation) || !task || !content}
@@ -13173,6 +13203,7 @@ function TaskWorkspace({
                     一般
                   </button>
                   <button
+                    type="button"
                     className={
                       feedbackRating === 'needs_improvement' ? 'selected' : ''
                     }

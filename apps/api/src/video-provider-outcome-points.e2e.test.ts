@@ -2,6 +2,7 @@ import { InMemoryOutbox, type OutboxRepository } from '../../../packages/persist
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { startPlatformRelayTokenQuotaMonitor } from '../../../packages/ai/src/platform-model-gate.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
+import { videoRenderingApprovalIntentHash } from './video-rendering-approval.js'
 
 const videoProvider = vi.hoisted(() => ({
   generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput): Promise<never> => { await input.beforeDispatch?.(); throw Object.assign(new Error('provider response outcome unknown'), { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown' }) }),
@@ -110,26 +111,34 @@ describe('video provider outcome point reservation over MCP', () => {
     stopRelayQuotaMonitor = startPlatformRelayTokenQuotaMonitor(process.env)
     await relayQuotaReady
     const reviewAt = new Date().toISOString()
-    const request = await callMcp(token, workspaceId, 'multimodal.video.request', {
-      prompt: '根据已确认商品事实生成通勤场景视频', output: 'rendering', idempotency_key: `video-unknown-${suffix}`,
-      context_json: JSON.stringify({
-        brand: { id: 'brand-video-unknown', version: '1' },
-        product: { id: product.id, version: String(product.version) },
-        rules: [{ id: 'rule-video-unknown', version: '1' }],
-        storyboardQuality: {
-          platform: 'taobao',
-          platformCapability: {
-            state: 'production_canary', evidenceRef: 'canary://fixture/taobao/video', verifiedAt: reviewAt,
-            specification: { durationsSeconds: [15], aspectRatios: ['9:16'], resolutions: [{ width: 1080, height: 1920 }], fps: [30], containers: ['mp4'], maxFileBytes: 20_000_000 },
-          },
-          reviewAt, durationSeconds: 15, aspectRatio: '9:16', resolution: { width: 1080, height: 1920 }, fps: 30,
-          scenes: [{ id: 'scene-1', startSeconds: 0, endSeconds: 15, visual: '展示已确认商品的通勤穿着与细节', productIds: [product.id], skuIds: ['fixture-sku'], claims: [] }],
-          cover: { assetId: 'cover-fixture', productIds: [product.id], skuIds: ['fixture-sku'], factSourceIds: ['fact://confirmed-product'], rights: { status: 'approved', evidenceRef: 'rights://fixture/approved', validUntil: '2027-01-01T00:00:00Z', platforms: ['taobao'] } },
-          output: { container: 'mp4', videoCodec: 'h264', fileBytes: 8_000_000 },
-          completionEvidence: { rendering: { state: 'real_render_passed', artifactRef: 'artifact://fixture/video', checksum: `sha256:${'a'.repeat(64)}`, rendererVersion: 'fixture-renderer' }, ocr: { state: 'passed', reportRef: 'ocr://fixture/video' }, humanReview: { state: 'approved', reviewRef: 'review://fixture/video', actorId: 'fixture-reviewer', reviewedAt: reviewAt } },
-          provenance: 'model_generated',
+    const prompt = '根据已确认商品事实生成通勤场景视频'
+    const renderingContext = {
+      brand: { id: 'brand-video-unknown', version: '1' },
+      product: { id: product.id, version: String(product.version) },
+      rules: [{ id: 'rule-video-unknown', version: '1' }],
+      storyboardQuality: {
+        platform: 'taobao',
+        platformCapability: {
+          state: 'production_canary', evidenceRef: 'canary://fixture/taobao/video', verifiedAt: reviewAt,
+          specification: { durationsSeconds: [15], aspectRatios: ['9:16'], resolutions: [{ width: 1080, height: 1920 }], fps: [30], containers: ['mp4'], maxFileBytes: 20_000_000 },
         },
-      }),
+        reviewAt, durationSeconds: 15, aspectRatio: '9:16', resolution: { width: 1080, height: 1920 }, fps: 30,
+        scenes: [{ id: 'scene-1', startSeconds: 0, endSeconds: 15, visual: '展示已确认商品的通勤穿着与细节', productIds: [product.id], skuIds: ['fixture-sku'], claims: [] }],
+        cover: { assetId: 'cover-fixture', productIds: [product.id], skuIds: ['fixture-sku'], factSourceIds: ['fact://confirmed-product'], rights: { status: 'approved', evidenceRef: 'rights://fixture/approved', validUntil: '2027-01-01T00:00:00Z', platforms: ['taobao'] } },
+        output: { container: 'mp4', videoCodec: 'h264', fileBytes: 8_000_000 },
+        completionEvidence: { rendering: { state: 'real_render_passed', artifactRef: 'artifact://fixture/video', checksum: `sha256:${'a'.repeat(64)}`, rendererVersion: 'fixture-renderer' }, ocr: { state: 'passed', reportRef: 'ocr://fixture/video' }, humanReview: { state: 'approved', reviewRef: 'review://fixture/video', actorId: 'fixture-reviewer', reviewedAt: reviewAt } },
+        provenance: 'model_generated',
+      },
+    }
+    const intentHash = videoRenderingApprovalIntentHash({ workspaceId, prompt, context: renderingContext })
+    const approval = await callMcp(token, workspaceId, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', intent_hash: intentHash })
+    expect(approval.status).toBe(200)
+    const ticket = approval.body.data?.result?.ticket as { nonce_hash: string; intent_hash: string }
+    const request = await callMcp(token, workspaceId, 'multimodal.video.request', {
+      prompt, output: 'rendering', idempotency_key: `video-unknown-${suffix}`,
+      context_json: JSON.stringify(renderingContext),
+      confirmation_ticket_nonce_hash: ticket.nonce_hash,
+      confirmation_ticket_intent_hash: ticket.intent_hash,
     })
     const after = await callMcp(token, workspaceId, 'creative-points.balance.get')
     expect(request.body.error?.code).toBe('MODEL_PROVIDER_OUTCOME_UNKNOWN')

@@ -10,7 +10,7 @@ describe('merchant material-to-product asset journey contract', () => {
     const start = app.indexOf('function ProductAssetRelationDialog(')
     const end = app.indexOf('\n/**\n * The material workspace', start)
     const dialog = app.slice(start, end)
-    expect(dialog).toContain(`.catch((cause) => {\n        if (active) setError(describeApiError(cause))`)
+    expect(dialog).toContain(`.catch((cause) => {\n        if (active) setError(describeApiError(cause, { operation: 'read' }))`)
     expect(dialog).toContain('message={`关系读取失败：${error}`}')
     expect(dialog).toContain('onRetry={reload}')
     expect(dialog).toContain('{!loading && !error && product && (')

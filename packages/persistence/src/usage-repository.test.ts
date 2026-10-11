@@ -21,6 +21,27 @@ class RecordingPool implements SqlPool {
 }
 
 describe('PostgresUsageRepository', () => {
+  it('locks the workspace quota row before looking up an idempotency key', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // workspace scope
+    client.enqueue() // ensure settings row
+    client.enqueue() // lock settings row
+    client.enqueue() // reset period
+    client.enqueue({ rows: [] }) // idempotency lookup
+    client.enqueue({ rowCount: 1 }) // increment quota
+    client.enqueue() // ledger insert
+    client.enqueue({ rows: [{ periodStart: '2026-08-01', includedTasks: 5, usedTasks: 1 }] })
+    client.enqueue() // COMMIT
+
+    await new PostgresUsageRepository(new RecordingPool(client)).consume({ workspaceId: 'ws_usage', taskId: 'task_1', idempotencyKey: 'charge_1', actorId: 'actor_1' })
+
+    const lockIndex = client.calls.findIndex(call => call.includes('workspace_commercial_settings') && call.includes('FOR UPDATE'))
+    const lookupIndex = client.calls.findIndex(call => call.includes('FROM workspace_usage_ledger'))
+    expect(lockIndex).toBeGreaterThan(-1)
+    expect(lookupIndex).toBeGreaterThan(lockIndex)
+  })
+
   it('resets a stale usage period before reporting the snapshot', async () => {
     const client = new RecordingClient()
     client.enqueue()

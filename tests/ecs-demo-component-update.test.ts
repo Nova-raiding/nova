@@ -274,11 +274,15 @@ describe('Demo UI mixed-component publication identity', () => {
     reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
     expect(() => prepare(input)).toThrow(/source digest differs/)
   })
-  it('preserves the archived 270-row baseline and rejects the current 276-row source chain', async () => {
+  it('preserves the archived 270-row baseline and rejects the current 278-row source chain', async () => {
     const sourceRows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
     const rows = sourceRows.slice(0, 270)
-    expect(sourceRows).toHaveLength(276)
-    expect(sourceRows.at(-1)).toMatchObject({ version: 276, name: 'outbox_execution_reservation' })
+    expect(sourceRows).toHaveLength(278)
+    expect(sourceRows.at(-1)).toMatchObject({ version: 278, name: 'task_feedback_idempotency' })
+    expect(sourceRows.slice(-2).map(({ version, name }) => ({ version, name }))).toEqual([
+      { version: 277, name: 'publish_media_event_noop_guard' },
+      { version: 278, name: 'task_feedback_idempotency' },
+    ])
     expect(rows).toHaveLength(270)
     expect(rows[99]?.name).toBe('operation_alert_notifications')
     const chain = hash(canonicalJson(rows))

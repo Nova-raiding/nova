@@ -57,9 +57,11 @@ const uiMethods = [...new Set(
 )].sort()
 
 function openapiMethods(): string[] {
-  const enumBody = openapiSource.match(/^    McpRequest:\s*$[\s\S]*?^          enum:\s*\[([^\]]+)\]\s*$/mu)?.[1]
+  const requestStart = openapiSource.indexOf('    McpRequest:\n')
+  const requestBlock = requestStart < 0 ? '' : openapiSource.slice(requestStart)
+  const enumBody = requestBlock.match(/^        method: \{ type: string, enum: \[([^\]]+)\] \}\s*$/mu)?.[1]
   expect(enumBody, 'OpenAPI McpRequest.method enum is missing').toBeDefined()
-  return enumBody!.split(',').map(value => value.trim())
+  return enumBody!.split(',').map(value => value.trim().replace(/^['"]|['"]$/gu, ''))
 }
 
 function hasServerHandler(method: string): boolean {

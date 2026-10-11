@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { videoRenderingApprovalIntentHash } from './video-rendering-approval.js'
 
 const videoRelay = vi.hoisted(() => ({
   generate: vi.fn(async (input: import('../../../packages/ai/src/video-generator.js').VideoGenerationInput) => {
@@ -69,6 +70,20 @@ function resultOf<T>(response: McpResponse<T>): T {
   expect(response.body.error).toBeNull()
   expect(response.body.data).not.toBeNull()
   return response.body.data!.result
+}
+
+async function withVideoRenderingApproval(token: string, workspaceId: string, params: Record<string, unknown>) {
+  const prompt = String(params.prompt ?? '')
+  const context = JSON.parse(String(params.context_json)) as unknown
+  const approval = resultOf<any>(await callMcp(token, workspaceId, 'workspace.interactive.confirm', {
+    confirmation: 'I_CONFIRM_INTERACTIVE_WRITES',
+    intent_hash: videoRenderingApprovalIntentHash({ workspaceId, prompt, context }),
+  }))
+  return {
+    ...params,
+    confirmation_ticket_nonce_hash: approval.ticket.nonce_hash,
+    confirmation_ticket_intent_hash: approval.ticket.intent_hash,
+  }
 }
 
 beforeAll(async () => {
@@ -334,15 +349,18 @@ describe('content and knowledge MCP methods over real HTTP', () => {
       balance_cny: '10.00',
       transactions: [expect.objectContaining({ type: 'recharge', orderId: recharge.id, amount_cny: '10.00' })],
     })
-    const videoRequest = await callMcp(tokens.rules, workspaceId, 'multimodal.video.request', {
-      prompt: '生成基于已确认商品事实的通勤场景短视频',
+    const videoPrompt = '生成基于已确认商品事实的通勤场景短视频'
+    const videoContext = {
+      brand: { id: 'brand-http-e2e', version: '1' },
+      product: { id: product.id, version: String(product.version) },
+      rules: [{ id: rule.id, version: rule.version }],
+    }
+    const videoRequest = await callMcp(tokens.rules, workspaceId, 'multimodal.video.request', await withVideoRenderingApproval(tokens.rules, workspaceId, {
+      prompt: videoPrompt,
       output: 'rendering',
-      context_json: JSON.stringify({
-        brand: { id: 'brand-http-e2e', version: '1' },
-        product: { id: product.id, version: String(product.version) },
-        rules: [{ id: rule.id, version: rule.version }],
-      }),
-    })
+      idempotency_key: `video-request-${suffix}`,
+      context_json: JSON.stringify(videoContext),
+    }))
     expect(videoRequest.status).toBe(200)
     expect(videoRequest.body.error).toBeNull()
     expect(videoRelay.generate).toHaveBeenCalled()
@@ -356,17 +374,13 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     // The generic multimodal surface shares the same video archive helper.
     // It must not regress by exposing the provider's short-lived URL while
     // the archived asset is still quarantined.
-    const genericVideo = await callMcp(tokens.rules, workspaceId, 'multimodal.generate', {
+    const genericVideo = await callMcp(tokens.rules, workspaceId, 'multimodal.generate', await withVideoRenderingApproval(tokens.rules, workspaceId, {
       modality: 'video',
-      prompt: '生成基于已确认商品事实的通勤场景短视频',
+      prompt: videoPrompt,
       output: 'rendering',
-      context_json: JSON.stringify({
-        brand: { id: 'brand-http-e2e', version: '1' },
-        product: { id: product.id, version: String(product.version) },
-        rules: [{ id: rule.id, version: rule.version }],
-      }),
-    })
-    expect(genericVideo.status).toBe(200)
+      context_json: JSON.stringify(videoContext),
+    }))
+    expect(genericVideo.status, JSON.stringify(genericVideo.body)).toBe(200)
     expect(genericVideo.body.error).toBeNull()
     expect((genericVideo.body.data?.result as any).rendering).toMatchObject({ providerJobId: 'generic-video-job-http-e2e' })
     expect((genericVideo.body.data?.result as any).rendering.videoUrl).toBeUndefined()

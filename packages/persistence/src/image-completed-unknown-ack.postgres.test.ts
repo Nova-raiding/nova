@@ -55,7 +55,7 @@ describe('completed image unknown PostgreSQL ACK', () => {
       await business.save({ workspaceId, entityType: 'product', entityId: productId, entityVersion: 1,
         payload: { id: productId, workspaceId, title: 'Isolated CAS fixture', platform: 'jd',
           source: 'fixture', remoteId: `fixture-${productId}`, storeName: 'Isolated execution tests', version: 1, skuCount: 1, stock: 0 } })
-      const outbox = new PostgresOutboxRepository(app)
+      const outbox = new PostgresOutboxRepository(app, { executionOwnerColumnAvailable: true })
       const jobId = `ack-${randomUUID()}`
       const payload = { id:jobId,workspaceId,productId,idempotencyKey:jobId,intentHash:'a'.repeat(64),sourceProductVersion:1,direction:'CAS only fixture',count:1,state:'succeeded',archiveState:'archived',revision:1,outputs:[{ sha256:'fixture-only' }] }
       await business.save({workspaceId,entityType:'image_generation_job',entityId:jobId,entityVersion:1,payload})

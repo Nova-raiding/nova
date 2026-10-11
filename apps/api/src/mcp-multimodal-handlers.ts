@@ -43,7 +43,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
     readArchivedGeneratedImages, createVideoRenderingRequest, createVideoGenerationRequest,
     videoGenerator, header, isExemptUnboundImageCandidateProduct, enforceAssetAccess,
     requireApprovedAssetForImageGeneration, recordActionSettlement, randomUUID,
-    assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError,
+    assertVideoProviderJobScope, withOwnedVideoAction, generateOwnedVideo, archiveCompletedVideo, modelSettlementDomainError, consumeVideoRenderingApprovalTicket,
     publicImageJob, contentExecutionEvidence, nextEventSequence,
   } = dependencies
   const archiveAcceptedVideo = async (rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>>, binding: { productId?: string; taskId?: string; contentVersionId?: string } = {}) => {
@@ -263,7 +263,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         return result({ ...request.value, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedText ? { content: generatedText } : {}), ...(imageJob ? { image_job_id: imageJob.id } : {}), ...(generatedImages ? { images: generatedImages } : {}), ...(rendering ? publicVideoRenderingResult(workspaceId, rendering, assetForWorkspace) : {}) })
       }
       return request.value.modality === 'video' && request.value.output === 'rendering'
-        ? withOwnedVideoAction(workspaceId, walletDebitKey, request.value, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
+        ? withOwnedVideoAction(workspaceId, walletDebitKey, request.value, executeVideoAction, providerJobId => result({ execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }), request.value.modality === 'video' && request.value.output === 'rendering' ? () => consumeVideoRenderingApprovalTicket({ prompt: request.value.prompt, context: request.value.context, nonce: params.confirmation_ticket_nonce_hash, intentHash: params.confirmation_ticket_intent_hash }) : undefined)
         : executeVideoAction()
     }
     case 'multimodal.video.request': {
@@ -392,7 +392,7 @@ export async function handleMultimodalMcpMethod(method: string, params: Record<s
         return result({ ...request.value, candidate_only: candidateOnly, ...candidateStatus, execution, rule_preflight: rulePreflight, ...(storyboardQuality ? { storyboard_quality: storyboardQuality } : {}), ...(generatedPlan ? { plan: generatedPlan } : {}), ...(rendering ? { ...publicVideoArtifactFields(workspaceId, rendering, assetForWorkspace), rendering: userFacingVideoRendering(rendering) } : {}) })
       }
       return request.value.output === 'rendering'
-        ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ ...candidateStatus, execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }))
+        ? withOwnedVideoAction(workspaceId, walletDebitKey, { ...request.value, sourceImageSha256: sourceImage ? createHash('sha256').update(sourceImage).digest('hex') : null }, executeVideoAction, providerJobId => result({ ...candidateStatus, execution: { status: 'queued', ...executionContract('video', true) }, rendering: { status: 'queued', providerJobId, settlementStatus: 'pending_receipt' } }), () => consumeVideoRenderingApprovalTicket({ prompt: request.value.prompt, context: request.value.context, nonce: params.confirmation_ticket_nonce_hash, intentHash: params.confirmation_ticket_intent_hash }))
         : executeVideoAction()
     }
     case 'multimodal.video.get': {

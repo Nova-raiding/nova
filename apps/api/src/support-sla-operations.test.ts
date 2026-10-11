@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runSupportSlaScan } from './support-sla-operations.js'
+import { buildWorkspaceSupportSlaMonthlyReport, runSupportSlaScan } from './support-sla-operations.js'
 
 const ticket = {
-  id: 'ticket-1', revision: 3, status: 'open' as const,
+  id: 'ticket-1', workspaceId: 'ws_scan', revision: 3, status: 'open' as const,
   sla: {
     policy: { version: 4, calendar: 'cn-2026' },
     firstResponseDueAt: '2026-08-31T10:00:00.000Z', firstResponseAt: undefined,
@@ -16,6 +16,7 @@ function repository() {
   return {
     events,
     list: vi.fn(async () => ({ items: [{ ...ticket }], nextCursor: undefined })),
+    listEvents: vi.fn(async () => []),
     recordSlaAction: vi.fn(async (input: any) => {
       const replay = events.find(event => event.idempotencyKey === input.idempotencyKey)
       if (replay) return { ticket, event: replay, replayed: true }
@@ -55,5 +56,36 @@ describe('support SLA scan operations', () => {
     expect(second.recorded).toEqual([{ ticketId: 'ticket-1', state: 'at_risk', replayed: true }])
     expect(support.recordSlaAction).toHaveBeenCalledTimes(2)
     expect(support.events).toHaveLength(1)
+  })
+
+  it('fails closed if a repository page contains a ticket from another workspace', async () => {
+    const support = repository()
+    support.list.mockResolvedValue({ items: [{ ...ticket, workspaceId: 'ws_other' }], nextCursor: undefined })
+    const dependencies = deps(support)
+
+    await expect(runSupportSlaScan('ws_scan', 100, dependencies))
+      .rejects.toMatchObject({ code: 'TENANT_SCOPE_DENIED', status: 403 })
+    expect(support.recordSlaAction).not.toHaveBeenCalled()
+    expect(dependencies.alerts.upsert).not.toHaveBeenCalled()
+  })
+
+  it('fails closed if report event reads escape the selected workspace or ticket', async () => {
+    const support = repository()
+    support.listEvents
+      .mockResolvedValueOnce([{ workspaceId: 'ws_scan', ticketId: 'ticket_other' }] as any)
+      .mockResolvedValueOnce([{ workspaceId: 'ws_other', ticketId: 'ticket-1' }] as any)
+    const dependencies = deps(support)
+    const createReport = vi.fn()
+    dependencies.reporting = { createReport } as any
+
+    const reportInput = {
+      workspaceId: 'ws_scan', reportId: 'r1', periodStart: '2026-08-01T00:00:00.000Z',
+      periodEnd: '2026-09-01T00:00:00.000Z', cutoffAt: '2026-09-04T00:00:00.000Z',
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(buildWorkspaceSupportSlaMonthlyReport(reportInput, dependencies))
+        .rejects.toMatchObject({ code: 'TENANT_SCOPE_DENIED', status: 403 })
+    }
+    expect(createReport).not.toHaveBeenCalled()
   })
 })

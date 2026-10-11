@@ -7,7 +7,7 @@ const html = readFileSync(resolve(process.cwd(), 'apps/plugin/ui/image-local-edi
 let browser: Browser
 
 beforeAll(async () => { browser = await chromium.launch({ headless: true }) })
-afterAll(async () => { await browser?.close() })
+afterAll(async () => { await browser?.close() }, 60_000)
 
 describe('image-local-edit canvas geometry and guardrails', () => {
   it('maps pointer coordinates through object-fit contain and fails closed without editable regions', async () => {

@@ -344,6 +344,11 @@ jobs:
           packages/persistence/src/support-repository-sla-filter.postgres.test.ts
           packages/persistence/src/workspace-content-setup-repository.release.postgres.test.ts
           packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts
+          apps/api/src/task-group-persistence.postgres.test.ts
+          packages/persistence/src/product-listing-cross-tenant-account-integrity.postgres.test.ts
+          packages/persistence/src/publish-media-orphan-repository.postgres.test.ts
+          packages/persistence/src/task-feedback-idempotency.postgres.test.ts
+          packages/persistence/src/usage-consume-concurrency.postgres.test.ts
           tests/image-delivery-commercial.postgres.test.ts
           tests/mcp-oauth-commercial-payment.postgres.test.ts
           tests/outbox-retry.postgres.test.ts

@@ -134,7 +134,7 @@ describe('knowledge.product.update revision argument guard', () => {
         isError: true,
         structuredContent: { code: 'PERMISSION_DENIED', details: { reason_code: 'KNOWLEDGE_GOVERNANCE_ROLE_REQUIRED' } },
       });
-      expect(result.result.content[0].text).toContain('没有执行这一步的权限');
+      expect(result.result.content[0].text).toContain('当前账号没有这项操作的权限');
       expect(requests).toHaveLength(1);
       expect(requests[0]?.body).toMatchObject({
         method: 'knowledge.product.update',

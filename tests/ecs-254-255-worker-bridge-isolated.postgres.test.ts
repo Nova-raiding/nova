@@ -7,6 +7,8 @@ import { Pool } from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 import { loadMigrations, MigrationRunner, verifyAppliedMigrations } from '../packages/persistence/src/migration.js'
 import { verifyWorkerRequestProof } from '../packages/security/src/worker-request-proof.js'
+import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../packages/workers/src/durable.js'
+import { PostgresOutboxRepository } from '../packages/persistence/src/repository.js'
 import { assertBridgeStartupMigrationVersion, assertWorkerReadinessDependencies } from '../apps/worker/src/main.js'
 import { createIsolatedOpsFixture } from './isolated-ops-fixture.js'
 
@@ -163,6 +165,61 @@ describe('254–257 worker bridge on an owned PostgreSQL 17 fixture', () => {
       expect(() => assertBridgeStartupMigrationVersion(ready255.migrationVersion, ready255.migrationVersion)).not.toThrow()
       await runWorkerOnce({ databaseUrl: appUrl.toString(), redisUrl: fixture.redisUrl,
         workspaceId: fixture.workspaceId, evidenceDir, expectedVersion: 255 })
+
+      // At prefix 255 execution_owner does not exist. The legacy claim is
+      // rotated to an invocation token under the row lock, and every outcome
+      // path must continue using that token.
+      const legacyOutbox = new PostgresOutboxRepository(app, { executionOwnerColumnAvailable: ready255.migrationVersion >= 276 })
+      const outboxWorkspaceId = `ws_legacy_outbox_${randomUUID()}`
+      await admin.query('INSERT INTO workspaces (id,status) VALUES ($1,$2)', [outboxWorkspaceId, 'active'])
+      const duplicateSource = await legacyOutbox.append({ workspaceId: outboxWorkspaceId, aggregateId: `legacy_duplicate_${randomUUID()}`, eventType: 'legacy.execution.duplicate', sequence: 1, payload: {} })
+      const [duplicateClaim] = await legacyOutbox.claimPending(outboxWorkspaceId, { eventTypes: ['legacy.execution.duplicate'], leaseMs: 5_000 })
+      expect(duplicateClaim?.id).toBe(duplicateSource.id)
+      const reservations = await Promise.all([
+        legacyOutbox.acquireExecution(outboxWorkspaceId, duplicateSource.id, duplicateClaim!.leaseToken!, 'duplicate_a'),
+        legacyOutbox.acquireExecution(outboxWorkspaceId, duplicateSource.id, duplicateClaim!.leaseToken!, 'duplicate_b'),
+      ])
+      expect(reservations.filter(Boolean)).toHaveLength(1)
+      const winningToken = reservations.find(Boolean)!
+      await legacyOutbox.ack(outboxWorkspaceId, duplicateSource.id, winningToken)
+
+      const expirySource = await legacyOutbox.append({ workspaceId: outboxWorkspaceId, aggregateId: `legacy_expiry_${randomUUID()}`, eventType: 'legacy.execution.expiry', sequence: 1, payload: {} })
+      const [expiredClaim] = await legacyOutbox.claimPending(outboxWorkspaceId, { eventTypes: ['legacy.execution.expiry'], leaseMs: 40 })
+      expect(expiredClaim?.id).toBe(expirySource.id)
+      await new Promise(resolve => setTimeout(resolve, 60))
+      const [reclaimed] = await legacyOutbox.claimPending(outboxWorkspaceId, { eventTypes: ['legacy.execution.expiry'], leaseMs: 5_000 })
+      expect(reclaimed?.id).toBe(expirySource.id)
+      await expect(legacyOutbox.acquireExecution(outboxWorkspaceId, expirySource.id, expiredClaim!.leaseToken!, 'expired_worker')).resolves.toBeNull()
+      const reclaimedExecutionToken = await legacyOutbox.acquireExecution(outboxWorkspaceId, expirySource.id, reclaimed!.leaseToken!, 'reclaimed_worker')
+      expect(reclaimedExecutionToken).toBeTruthy()
+      await legacyOutbox.ack(outboxWorkspaceId, expirySource.id, reclaimedExecutionToken!)
+
+      const lifecycle = async (kind: 'success' | 'retry' | 'unknown') => {
+        const eventType = `legacy.lifecycle.${kind}`
+        const event = await legacyOutbox.append({ workspaceId: outboxWorkspaceId, aggregateId: `legacy_${kind}_${randomUUID()}`, eventType, sequence: 1, payload: { kind } })
+        const [claim] = await legacyOutbox.claimPending(outboxWorkspaceId, { eventTypes: [eventType], leaseMs: 5_000 })
+        expect(claim?.id).toBe(event.id)
+        const queue = new InMemoryQueue<DurableOutboxEvent>()
+        await queue.enqueue({ id: claim!.id, value: claim! })
+        let calls = 0
+        const dispatcher = new DurableOutboxDispatcher(legacyOutbox, queue, async () => {
+          calls += 1
+          if (kind === 'retry' && calls === 1) throw Object.assign(new Error('retry'), { code: 'RETRY', retryable: true })
+          return kind === 'unknown' ? { state: 'unknown' as const } : undefined
+        }, { baseDelayMs: 1, maxDelayMs: 1, maxAttempts: 3 })
+        const first = await dispatcher.dispatchOnce()
+        expect(first?.state).toBe(kind === 'retry' ? 'queued' : kind === 'unknown' ? 'unknown' : 'succeeded')
+        if (kind === 'retry') {
+          const [reclaimed] = await legacyOutbox.claimPending(outboxWorkspaceId, { eventTypes: [eventType], now: new Date(Date.now() + 10).toISOString(), leaseMs: 5_000 })
+          expect(reclaimed?.id).toBe(event.id)
+          await queue.enqueue({ id: reclaimed!.id, value: reclaimed! })
+          expect((await dispatcher.dispatchOnce())?.state).toBe('succeeded')
+        }
+        return calls
+      }
+      await expect(lifecycle('success')).resolves.toBe(1)
+      await expect(lifecycle('retry')).resolves.toBe(2)
+      await expect(lifecycle('unknown')).resolves.toBe(1)
 
       const ready255OnNewBridge = await assertWorkerReadinessDependencies({
         database: app, expectedMigrations: migrations, bridgeMigrations: migrations, bridgeMode: 'prefix_255_or_256',
