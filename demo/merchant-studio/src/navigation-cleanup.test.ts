@@ -19,6 +19,12 @@ describe('merchant navigation cleanup contract', () => {
     expect(urlForMerchantRoute({ pathname: '/merchant/', search: '' }, { page: 'rules' })).toBe('/merchant/rules')
   })
 
+  it('normalizes duplicate route slashes before building merchant URLs', () => {
+    expect(urlForMerchantRoute({ pathname: '//merchant/products', search: '?section=products' }, {
+      page: 'products', entry: 'products', catalogContext: { platform: 'jd', accountId: 'jd-empty-store' },
+    })).toBe('/merchant/products?section=products&platform=jd&account_id=jd-empty-store')
+  })
+
   it('preserves a newly created publish job identity on the task queue deep link', () => {
     const href = urlForMerchantRoute({ pathname: '/merchant/products', search: '?q=old&publish_job_id=stale' }, { page: 'task', publishJobId: 'job-42' })
     expect(href).toBe('/merchant/tasks?publish_job_id=job-42')

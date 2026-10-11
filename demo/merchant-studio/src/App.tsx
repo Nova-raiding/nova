@@ -1082,12 +1082,15 @@ function Topbar({
     const closeOnOutside = (event: MouseEvent) => {
       // This account-menu child renders into a body portal. Its dialog clicks
       // must not unmount the child before confirmation or cancellation runs.
-      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal')) return
+      if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal, .ant-modal-root')) return
       if (!accountMenuRef.current?.contains(event.target as Node))
         setAccountMenuOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // Ant Design may dispatch Escape from document.body when the modal has
+      // not focused a field yet. Let the open password modal consume it.
+      if (passwordModalOpen) return
       if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal, .ant-modal-root')) return
       setAccountMenuOpen(false)
       window.requestAnimationFrame(() => accountMenuTriggerRef.current?.focus())
@@ -1098,7 +1101,7 @@ function Topbar({
       document.removeEventListener('mousedown', closeOnOutside)
       document.removeEventListener('keydown', closeOnEscape)
     }
-  }, [accountMenuOpen])
+  }, [accountMenuOpen, passwordModalOpen])
   useEffect(() => {
     // The read itself lives in `issue-read-state.ts`, where it can be driven
     // with a real response and a real rejection. What stays here is the binding:
@@ -7859,7 +7862,7 @@ export function MaterialLibraryWorkspace({
           </article>}
           {scopedBrandRead && stores.length === 0 && <BrandScopeUnavailableRow number="03" label="系列配置" description="覆盖店铺配置并应用到当前系列" status="当前没有可读取店铺，服务端未提供可加载的系列配置。" />}
           {scopedBrandRead && <article className="material-brand-row material-brand-single-row">
-            <a className="material-brand-single-banner" href={`${window.location.pathname}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), section: 'knowledge' }).toString()}`}><span>04</span><span className="material-brand-single-copy"><strong>单图配置请前往素材库进行配置</strong><small>优先级最高，只应用于指定图片</small></span><ArrowRight size={18} /></a>
+            <a className="material-brand-single-banner" href={urlForMerchantRoute(window.location, { page: 'products', entry: 'knowledge', catalogContext: merchantRouteFromLocation(window.location).catalogContext })}><span>04</span><span className="material-brand-single-copy"><strong>单图配置请前往素材库进行配置</strong><small>优先级最高，只应用于指定图片</small></span><ArrowRight size={18} /></a>
           </article>}
         </div>
         {!scopedBrandRead && <div className="material-brand-read-state" role={scopedBrandError ? 'alert' : 'status'}>{scopedBrandError || '正在读取服务端品牌配置…'}{scopedBrandError && <button type="button" disabled={scopedBrandLoading} onClick={() => setScopedBrandReadAttempt((attempt) => attempt + 1)}>{scopedBrandLoading ? '正在重试…' : '重试读取品牌配置'}</button>}</div>}

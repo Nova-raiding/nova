@@ -1201,7 +1201,7 @@ export function isNotConfigured(error: unknown) {
 
 export function describeApiError(error: unknown, options: { operation?: 'read' | 'write' } = {}) {
   const apiError = error as ApiError | undefined
-  const code = apiError?.code?.trim().toUpperCase() ?? ''
+  const code = typeof apiError?.code === 'string' ? apiError.code.trim().toUpperCase() : ''
   const message = error instanceof Error ? error.message : ''
   if (code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED') return '该账号尚未绑定可用商家工作区，请联系平台管理员完成审核和工作区授权。'
   if (code === 'GENERATION_JOB_NOT_FOUND' || code === 'IMAGE_GENERATION_JOB_NOT_FOUND') return '找不到这条图片任务，可能已过期或链接无效；请返回任务列表重新选择。'

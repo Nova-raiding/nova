@@ -25,6 +25,11 @@ describe('merchant API error classification', () => {
     expect(describeApiError(apiError('标准商品事实不可用，已阻断任务读取', 'CANONICAL_TASK_READ_UNAVAILABLE', 503))).toBe('标准商品事实不可用，已阻断任务读取')
   })
 
+  it('does not throw when an API error envelope contains a non-string code', () => {
+    const malformed = Object.assign(new Error('upstream failed'), { code: { nested: true }, status: 503 })
+    expect(describeApiError(malformed)).toContain('服务暂不可用')
+  })
+
   it('surfaces commercial entitlement gates instead of mislabeling them as outages', () => {
     const error = Object.assign(apiError('commercial access required', 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE', 503), {
       details: { classification: 'POINT_REQUIRED_NO_CHARGE' },

@@ -207,9 +207,12 @@ export function urlForMerchantRoute(
   location: Pick<Location, 'pathname' | 'search'>,
   route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string; publishJobId?: string; catalogContext?: MerchantCatalogContext; rulesPlatform?: MerchantPlatformId },
 ): string {
-  const basePath = merchantRoutePattern.test(location.pathname)
-    ? location.pathname.replace(merchantRoutePattern, '')
-    : location.pathname.replace(/\/$/u, '')
+  // Keep generated URLs root-relative even when a host entry point contains
+  // duplicate slashes. A path beginning with `//` is treated as another host.
+  const pathname = location.pathname.replace(/\/{2,}/gu, '/')
+  const basePath = merchantRoutePattern.test(pathname)
+    ? pathname.replace(merchantRoutePattern, '')
+    : pathname.replace(/\/$/u, '')
   const params = new URLSearchParams(location.search)
   // image_job is a transient deep-link consumed by the task workspace.  It
   // must not leak into later navigation (for example when opening the task
