@@ -45,6 +45,12 @@ function openApiOperation(source: string, path: string, method: string) {
 }
 
 describe('OpenAPI security contract', () => {
+  it('documents the existing Idempotency-Key parameter on feedback submission', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const operation = openApiOperation(source, '/v1/tasks/{taskId}/feedback', 'post')
+    expect(operation).toContain("{ $ref: '#/components/parameters/IdempotencyKey' }")
+  })
+
   it('documents task answer/confirmation routes and their optional concurrency versions', () => {
     const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
     const answers = source.slice(source.indexOf('  /v1/tasks/{taskId}/answers:'), source.indexOf('  /v1/tasks/{taskId}/directions:'))

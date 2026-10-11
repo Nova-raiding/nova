@@ -1603,7 +1603,7 @@ paths:
     post:
       tags: [Tasks]
       operationId: submitTaskFeedback
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
         required: true
         content:
