@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { assertContainerHealthy, candidateConfiguration, cleanupBrowserCandidate, type CleanupDocker } from '../scripts/merchant-browser-candidate.js'
+import { assertContainerHealthy, candidateConfiguration, cleanupBrowserCandidate, CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS, type CleanupDocker } from '../scripts/merchant-browser-candidate.js'
 
 // Regression: ISSUE-001 — inherited provider credentials and abandoned candidate containers escaped isolation.
 // Found by /qa on 2026-09-15
@@ -79,7 +79,8 @@ describe('candidate environment and lifecycle', () => {
     expect(source).toContain('} finally {\n    if (startupAttempted)')
     expect(source).toContain("process.on('SIGINT', onInt); process.on('SIGTERM', onTerm)")
     expect(source).toContain('process.kill(-child.pid, signal)')
-    expect(source).toContain("'--wait', '--wait-timeout', '180'")
+    expect(source).toContain("'--wait', '--wait-timeout', String(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS)")
+    expect(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS).toBeGreaterThanOrEqual(600)
     expect(source).toContain('/healthz')
     expect(source).not.toContain('down -v')
     expect(source).toContain("['network', 'rm', id]")
