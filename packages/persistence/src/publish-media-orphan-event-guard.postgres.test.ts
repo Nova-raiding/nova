@@ -19,6 +19,7 @@ describe('publish media orphan event insert guard', () => {
     const workspace = id('pmoeg_ws')
     let database: Pool | undefined
     let app: Pool | undefined
+    let ops: Pool | undefined
     let databaseCreated = false
     let primaryFailure: unknown
     try {
@@ -83,12 +84,89 @@ describe('publish media orphan event insert guard', () => {
           AND t.tgname='publish_media_orphan_task_event_append'
       `)
       expect(functionSecurityAfter277.rows).toEqual(functionSecurityBefore277.rows)
+
+      const assertLedgerAcl = async () => {
+        const privileges = await database!.query<{
+          app_select: boolean; app_insert: boolean; app_update: boolean; app_delete: boolean; app_truncate: boolean
+          app_references: boolean; app_trigger: boolean
+          ops_select: boolean; ops_insert: boolean; ops_update: boolean; ops_delete: boolean; ops_truncate: boolean
+          ops_references: boolean; ops_trigger: boolean
+          app_column_write: boolean; ops_column_write: boolean; public_acl: string[]; public_column_acl: string[]
+        }>(`
+          SELECT
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','SELECT') AS app_select,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','INSERT') AS app_insert,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','UPDATE') AS app_update,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','DELETE') AS app_delete,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','TRUNCATE') AS app_truncate,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','REFERENCES') AS app_references,
+            has_table_privilege('merchant_app','public.publish_media_orphan_events','TRIGGER') AS app_trigger,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','SELECT') AS ops_select,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','INSERT') AS ops_insert,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','UPDATE') AS ops_update,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','DELETE') AS ops_delete,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','TRUNCATE') AS ops_truncate,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','REFERENCES') AS ops_references,
+            has_table_privilege('merchant_ops','public.publish_media_orphan_events','TRIGGER') AS ops_trigger,
+            COALESCE((
+              SELECT bool_and(
+                NOT has_column_privilege('merchant_app',a.attrelid,a.attnum,'INSERT')
+                AND NOT has_column_privilege('merchant_app',a.attrelid,a.attnum,'UPDATE')
+                AND NOT has_column_privilege('merchant_app',a.attrelid,a.attnum,'REFERENCES')
+              )
+              FROM pg_catalog.pg_attribute a
+              WHERE a.attrelid='public.publish_media_orphan_events'::regclass
+                AND a.attnum > 0 AND NOT a.attisdropped
+            ), true) AS app_column_write,
+            COALESCE((
+              SELECT bool_and(
+                NOT has_column_privilege('merchant_ops',a.attrelid,a.attnum,'INSERT')
+                AND NOT has_column_privilege('merchant_ops',a.attrelid,a.attnum,'UPDATE')
+                AND NOT has_column_privilege('merchant_ops',a.attrelid,a.attnum,'REFERENCES')
+              )
+              FROM pg_catalog.pg_attribute a
+              WHERE a.attrelid='public.publish_media_orphan_events'::regclass
+                AND a.attnum > 0 AND NOT a.attisdropped
+            ), true) AS ops_column_write,
+            ARRAY(
+              SELECT DISTINCT a.privilege_type
+              FROM pg_catalog.pg_class c
+              CROSS JOIN LATERAL pg_catalog.aclexplode(
+                COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))
+              ) a
+              WHERE c.oid='public.publish_media_orphan_events'::regclass
+                AND a.grantee=0
+            ) AS public_acl
+            ,ARRAY(
+              SELECT DISTINCT format('%s:%s', a.attname, acl.privilege_type)
+              FROM pg_catalog.pg_attribute a
+              CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) acl
+              WHERE a.attrelid='public.publish_media_orphan_events'::regclass
+                AND a.attnum > 0 AND NOT a.attisdropped
+                AND acl.grantee=0
+            ) AS public_column_acl
+        `)
+        expect(privileges.rows).toEqual([{
+          app_select: true, app_insert: false, app_update: false, app_delete: false, app_truncate: false,
+          app_references: false, app_trigger: false,
+          ops_select: false, ops_insert: false, ops_update: false, ops_delete: false, ops_truncate: false,
+          ops_references: false, ops_trigger: false,
+          app_column_write: true, ops_column_write: true, public_acl: [], public_column_acl: [],
+        }])
+      }
+
+      // The migration itself must leave the ledger protected before the final
+      // compatibility bootstrap runs; bootstrap must preserve the same ACL.
+      await assertLedgerAcl()
       // Exercise the same post-migration bootstrap pass used by deployment:
       // broad compatibility grants must not reopen the append-only ledger.
       await database.query(roleBootstrap)
-      const ownerAndPrivileges = await database.query<{ event_owner: string; owner_login: boolean; owner_super: boolean; owner_bypass: boolean; owner_schema_usage: boolean; owner_schema_create: boolean; app_is_member: boolean; ops_is_member: boolean; owner_has_app: boolean; owner_has_ops: boolean; task_select: boolean; task_rls: boolean; task_force_rls: boolean; task_workspace_policy: boolean; app_insert: boolean; ops_insert: boolean; app_execute: boolean; ops_execute: boolean }>(`
+      await assertLedgerAcl()
+      const ownerAndPrivileges = await database.query<{ event_owner: string; owner_login: boolean; owner_super: boolean; owner_create_roles: boolean; owner_create_db: boolean; owner_inherit: boolean; owner_bypass: boolean; owner_schema_usage: boolean; owner_schema_create: boolean; app_is_member: boolean; ops_is_member: boolean; owner_has_app: boolean; owner_has_ops: boolean; task_select: boolean; task_rls: boolean; task_force_rls: boolean; task_workspace_policy: boolean; event_rls: boolean; event_force_rls: boolean; event_workspace_policy: boolean; app_insert: boolean; ops_insert: boolean; app_execute: boolean; ops_execute: boolean }>(`
         SELECT pg_catalog.pg_get_userbyid(c.relowner) AS event_owner,
-          r.rolcanlogin AS owner_login,r.rolsuper AS owner_super,r.rolbypassrls AS owner_bypass,
+          r.rolcanlogin AS owner_login,r.rolsuper AS owner_super,
+          r.rolcreaterole AS owner_create_roles,r.rolcreatedb AS owner_create_db,
+          r.rolinherit AS owner_inherit,r.rolbypassrls AS owner_bypass,
           has_schema_privilege('merchant_schema_owner','public','USAGE') AS owner_schema_usage,
           has_schema_privilege('merchant_schema_owner','public','CREATE') AS owner_schema_create,
           pg_catalog.pg_has_role('merchant_app',r.rolname,'MEMBER') AS app_is_member,
@@ -99,16 +177,22 @@ describe('publish media orphan event insert guard', () => {
           task.relrowsecurity AS task_rls,task.relforcerowsecurity AS task_force_rls,
           EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid=task.oid AND p.polname='publish_media_orphan_tasks_workspace_isolation'
             AND pg_catalog.pg_get_expr(p.polqual,p.polrelid) LIKE '%app.workspace_id%') AS task_workspace_policy,
+          ledger.relrowsecurity AS event_rls,ledger.relforcerowsecurity AS event_force_rls,
+          EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid=ledger.oid AND p.polname='publish_media_orphan_events_workspace_isolation'
+            AND pg_catalog.pg_get_expr(p.polqual,p.polrelid) LIKE '%app.workspace_id%'
+            AND pg_catalog.pg_get_expr(p.polwithcheck,p.polrelid) LIKE '%app.workspace_id%') AS event_workspace_policy,
           has_table_privilege('merchant_app','public.publish_media_orphan_events','INSERT') AS app_insert,
           has_table_privilege('merchant_ops','public.publish_media_orphan_events','INSERT') AS ops_insert,
           has_function_privilege('merchant_app','public.append_publish_media_orphan_event_from_task()','EXECUTE') AS app_execute,
           has_function_privilege('merchant_ops','public.append_publish_media_orphan_event_from_task()','EXECUTE') AS ops_execute
         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_roles r ON r.oid=c.relowner
         CROSS JOIN pg_catalog.pg_class task
+        CROSS JOIN pg_catalog.pg_class ledger
         WHERE c.oid='public.publish_media_orphan_events'::regclass
           AND task.oid='public.publish_media_orphan_tasks'::regclass
+          AND ledger.oid='public.publish_media_orphan_events'::regclass
       `)
-      expect(ownerAndPrivileges.rows).toEqual([{ event_owner: 'merchant_schema_owner', owner_login: false, owner_super: false, owner_bypass: false, owner_schema_usage: true, owner_schema_create: false, app_is_member: false, ops_is_member: false, owner_has_app: false, owner_has_ops: false, task_select: true, task_rls: true, task_force_rls: true, task_workspace_policy: true, app_insert: false, ops_insert: false, app_execute: false, ops_execute: false }])
+      expect(ownerAndPrivileges.rows).toEqual([{ event_owner: 'merchant_schema_owner', owner_login: false, owner_super: false, owner_create_roles: false, owner_create_db: false, owner_inherit: false, owner_bypass: false, owner_schema_usage: true, owner_schema_create: false, app_is_member: false, ops_is_member: false, owner_has_app: false, owner_has_ops: false, task_select: true, task_rls: true, task_force_rls: true, task_workspace_policy: true, event_rls: true, event_force_rls: true, event_workspace_policy: true, app_insert: false, ops_insert: false, app_execute: false, ops_execute: false }])
       await database.query('INSERT INTO workspaces(id,status) VALUES($1,$2)', [workspace, 'active'])
       const product=id('product'), task=id('task'), version=id('version'), job=id('job'), event=id('event')
       await database.query('INSERT INTO products(id,workspace_id,platform,remote_product_id,title,source) VALUES($1,$2,$3,$4,$5,$6)', [product,workspace,'taobao',id('remote'),'fixture','fixture'])
@@ -121,6 +205,38 @@ describe('publish media orphan event insert guard', () => {
       appUrl.username = process.env.PERSISTENCE_RELEASE_APP_DATABASE_USER ?? 'merchant_app'
       appUrl.password = process.env.PERSISTENCE_RELEASE_APP_DATABASE_PASSWORD ?? 'merchant_app_local_only'
       app = new Pool({ connectionString: appUrl.toString(), max: 2 })
+      const opsUrl = new URL(isolated)
+      opsUrl.username = process.env.PERSISTENCE_RELEASE_OPS_DATABASE_USER ?? 'merchant_ops'
+      opsUrl.password = process.env.PERSISTENCE_RELEASE_OPS_DATABASE_PASSWORD ?? 'merchant_ops_local_only'
+      ops = new Pool({ connectionString: opsUrl.toString(), max: 2 })
+
+      const outboxColumnPrivileges = await database.query<{ execution_owner_update: boolean; payload_update: boolean }>(`
+        SELECT has_column_privilege('merchant_app','public.outbox_events','execution_owner','UPDATE') AS execution_owner_update,
+          has_column_privilege('merchant_app','public.outbox_events','payload','UPDATE') AS payload_update
+      `)
+      expect(outboxColumnPrivileges.rows).toEqual([{ execution_owner_update: true, payload_update: false }])
+      const leaseWriter = await app.connect()
+      try {
+        await leaseWriter.query('BEGIN')
+        await leaseWriter.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
+        const reserved = await leaseWriter.query<{ execution_owner: string }>(
+          `UPDATE outbox_events SET execution_owner=$3
+            WHERE workspace_id=$1 AND id=$2 RETURNING execution_owner`,
+          [workspace,event,`test-invocation-${suffix}`],
+        )
+        expect(reserved.rows).toEqual([{ execution_owner: `test-invocation-${suffix}` }])
+        await expect(leaseWriter.query(
+          `UPDATE outbox_events SET payload='{"tampered":true}'::jsonb
+            WHERE workspace_id=$1 AND id=$2`,
+          [workspace,event],
+        )).rejects.toMatchObject({ code: '42501' })
+        await leaseWriter.query('ROLLBACK')
+      } finally { leaseWriter.release() }
+      const rolledBackReservation = await database.query<{ execution_owner: string | null; payload: Record<string, unknown> }>(
+        'SELECT execution_owner,payload FROM outbox_events WHERE workspace_id=$1 AND id=$2', [workspace,event],
+      )
+      expect(rolledBackReservation.rows).toEqual([{ execution_owner: null, payload: {} }])
+
       const repository = new PostgresPublishMediaOrphanRepository(app)
       const binding = { workspaceId:workspace,publishJobId:job,eventId:event,mediaIdempotencyKey:`${job}:media:main`,platform:'taobao',accountId:'acct',visualRef:'visual',role:'main' as const,sha256:'a'.repeat(64) }
       await repository.transition({...binding,state:'intent'})
@@ -220,6 +336,22 @@ describe('publish media orphan event insert guard', () => {
           await attacker.query('ROLLBACK')
         }
       } finally { attacker.release() }
+
+      for (const runtimePool of [app!, ops!]) {
+        const runtime = await runtimePool.connect()
+        try {
+          for (const statement of [
+            'UPDATE publish_media_orphan_events SET detail=detail WHERE false',
+            'DELETE FROM publish_media_orphan_events WHERE false',
+            'TRUNCATE TABLE publish_media_orphan_events',
+          ]) {
+            await runtime.query('BEGIN')
+            await runtime.query("SELECT set_config('app.workspace_id',$1,true)", [workspace])
+            await expect(runtime.query(statement)).rejects.toMatchObject({ code: '42501' })
+            await runtime.query('ROLLBACK')
+          }
+        } finally { runtime.release() }
+      }
       const finalCount = await database.query<{count:string}>(
         'SELECT count(*)::text AS count FROM publish_media_orphan_events WHERE workspace_id=$1', [workspace],
       )
@@ -232,7 +364,7 @@ describe('publish media orphan event insert guard', () => {
       if (databaseCreated) finalizers.push(() => dropDrainedPostgresFixture(admin, databaseName))
       finalizers.push(() => admin.end())
       await withPostgresFixtureCleanup(async () => {
-        const pools = [app, database].filter((pool): pool is Pool => pool !== undefined)
+        const pools = [app, ops, database].filter((pool): pool is Pool => pool !== undefined)
         const closeResults = await Promise.allSettled(pools.map(pool => pool.end()))
         const closeFailures = closeResults.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
         if (closeFailures.length > 0) throw new AggregateError(closeFailures.map(result => result.reason), 'Publish media event guard PostgreSQL pools failed to close')

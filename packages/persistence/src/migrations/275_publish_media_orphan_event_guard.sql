@@ -111,3 +111,19 @@ BEGIN
     REVOKE INSERT ON public.publish_media_orphan_events FROM merchant_ops;
   END IF;
 END $$;
+
+-- Protect the ledger immediately in this transaction, before the later role
+-- bootstrap runs. Table-level REVOKE alone leaves historical column grants.
+-- The dedicated schema owner keeps its implicit owner privileges for the
+-- SECURITY DEFINER writer; neither runtime credential owns this relation.
+REVOKE ALL ON TABLE public.publish_media_orphan_events FROM PUBLIC, merchant_app, merchant_ops;
+DO $publish_media_event_column_acl$
+DECLARE ledger_columns text;
+BEGIN
+  SELECT string_agg(quote_ident(attname), ',' ORDER BY attnum)
+    INTO ledger_columns FROM pg_catalog.pg_attribute
+   WHERE attrelid = 'public.publish_media_orphan_events'::regclass
+     AND attnum > 0 AND NOT attisdropped;
+  EXECUTE format('REVOKE ALL (%s) ON TABLE public.publish_media_orphan_events FROM PUBLIC, merchant_app, merchant_ops', ledger_columns);
+END $publish_media_event_column_acl$;
+GRANT SELECT ON TABLE public.publish_media_orphan_events TO merchant_app;

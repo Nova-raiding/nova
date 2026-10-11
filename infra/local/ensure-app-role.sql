@@ -133,6 +133,15 @@ BEGIN
   IF to_regclass('public.outbox_events') IS NOT NULL THEN
     EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE outbox_events FROM merchant_app';
     EXECUTE 'GRANT UPDATE (published_at,attempts,next_attempt_at,lease_token,lease_until,last_error,unknown_at) ON TABLE outbox_events TO merchant_app';
+    -- The pre-migration bootstrap also runs against 270, where this column
+    -- does not exist yet. Grant only the reservation column once 276 applies.
+    IF EXISTS (
+      SELECT 1 FROM pg_catalog.pg_attribute
+      WHERE attrelid = 'public.outbox_events'::regclass
+        AND attname = 'execution_owner' AND NOT attisdropped
+    ) THEN
+      EXECUTE 'GRANT UPDATE (execution_owner) ON TABLE outbox_events TO merchant_app';
+    END IF;
   END IF;
   IF to_regclass('public.interactive_confirmation_tickets') IS NOT NULL THEN
     EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE interactive_confirmation_tickets FROM merchant_app';
@@ -754,9 +763,18 @@ END $commercial_order_snapshot_runtime_acl$;
 -- The broad compatibility grant near the top must not re-expose the append-
 -- only event ledger when this bootstrap runs after migration 275.
 DO $publish_media_event_runtime_acl$
+DECLARE
+ ledger_columns text;
 BEGIN
  IF to_regclass('public.publish_media_orphan_events') IS NOT NULL THEN
-  REVOKE INSERT ON TABLE public.publish_media_orphan_events FROM merchant_app, merchant_ops;
+  REVOKE ALL ON TABLE public.publish_media_orphan_events FROM PUBLIC, merchant_app, merchant_ops;
+  -- Table-level REVOKE does not remove historical column-level grants.
+  SELECT string_agg(quote_ident(attname), ',' ORDER BY attnum)
+    INTO ledger_columns FROM pg_catalog.pg_attribute
+   WHERE attrelid = 'public.publish_media_orphan_events'::regclass
+     AND attnum > 0 AND NOT attisdropped;
+  EXECUTE format('REVOKE ALL (%s) ON TABLE public.publish_media_orphan_events FROM PUBLIC, merchant_app, merchant_ops', ledger_columns);
+  GRANT SELECT ON TABLE public.publish_media_orphan_events TO merchant_app;
  END IF;
 END $publish_media_event_runtime_acl$;
 COMMIT;
