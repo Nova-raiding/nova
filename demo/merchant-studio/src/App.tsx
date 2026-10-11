@@ -1091,6 +1091,9 @@ function Topbar({
       // Ant Design may dispatch Escape from document.body when the modal has
       // not focused a field yet. Let the open password modal consume it.
       if (passwordModalOpen) return
+      // Modal keyboard handlers may likewise see the event target as body when
+      // opening from a deep link. Keep the owning page mounted for that modal.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
       if (event.target instanceof Element && event.target.closest('.merchant-local-plugin-modal, .ant-modal-root')) return
       setAccountMenuOpen(false)
       window.requestAnimationFrame(() => accountMenuTriggerRef.current?.focus())

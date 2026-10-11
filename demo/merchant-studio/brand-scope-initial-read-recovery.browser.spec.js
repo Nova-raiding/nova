@@ -42,11 +42,11 @@ test('brand scope read failure shows a read-specific retry and recovers the serv
     const path = new URL(request.url()).pathname
     const method = request.method()
     const mcpMethod = path === '/api/mcp' && method === 'POST' ? request.postDataJSON()?.method : undefined
-    const allowedMcpReads = ['billing.transactions', 'creative-points.balance.get', 'platform.model.status', 'workspace.metrics']
+    const allowedMcpReads = ['billing.transactions', 'canonical.product.consistency', 'creative-points.balance.get', 'platform.model.status', 'workspace.metrics']
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && path !== '/api/v1/auth/mcp-token'
       && !(path === '/api/mcp' && allowedMcpReads.includes(mcpMethod))) {
       unexpectedWrites.push(`${method} ${path}${mcpMethod ? ` ${mcpMethod}` : ''}`)
-      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'UNEXPECTED_FIXTURE_WRITE', message: 'write blocked by local fixture' })) })
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'UNEXPECTED_FIXTURE_WRITE', message: `write blocked by local fixture: ${method} ${path}${mcpMethod ? ` ${mcpMethod}` : ''}` })) })
     }
     let data = { items: [], total: 0, limit: 50, offset: 0 }
     if (path === '/api/v1/auth/session') data = { account: { id: 'brand-read-user', login: 'brand-read@example.invalid', accountType: 'merchant', status: 'active', roles: ['merchant_owner'], workspaceIds: [workspaceId] } }
