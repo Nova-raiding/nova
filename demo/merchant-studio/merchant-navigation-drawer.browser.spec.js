@@ -84,7 +84,7 @@ test('desktop navigation keeps the knowledge group destinations and legacy publi
     await expect(page.getByRole('heading', { name: '平台&店铺&商品' })).toBeVisible({ timeout: 20_000 })
     await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '规则与类目' }).click()
     await expect(page).toHaveURL(/\/merchant\/rules$/u)
-    await expect.soft(page.locator('.topbar h1')).toHaveText('规则与检查', { timeout: 5_000 })
+    await expect(page.locator('.topbar h1')).toHaveText('规则与检查', { timeout: 5_000 })
 
     await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '财务概况' }).click()
     await expect(page).toHaveURL(/\/merchant\/finance$/u)

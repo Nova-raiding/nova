@@ -578,6 +578,42 @@ describe('MCP method contract', () => {
     ]))
   })
 
+  it('validates feedback idempotency and optional video confirmation ticket hashes', () => {
+    const feedback = (idempotency_key?: string) => validateMcpRequest({
+      jsonrpc: '2.0', id: 'feedback-submit', method: 'feedback.submit',
+      params: { task_id: 'task_1', rating: 'liked', ...(idempotency_key === undefined ? {} : { idempotency_key }) },
+    })
+    expect(MCP_METHOD_SCHEMAS['feedback.submit']).toMatchObject({
+      required: expect.arrayContaining(['task_id', 'rating', 'idempotency_key']),
+      properties: { idempotency_key: { type: 'string', minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' } },
+    })
+    expect(feedback('feedback:task-1:1')).toEqual({ valid: true, errors: [] })
+    expect(feedback()).toMatchObject({ valid: false, errors: expect.arrayContaining(['缺少必填参数 params.idempotency_key']) })
+    expect(feedback('short key')).toMatchObject({ valid: false, errors: expect.arrayContaining(['params.idempotency_key 格式无效']) })
+
+    for (const method of ['multimodal.generate', 'multimodal.video.request'] as const) {
+      const modality = method === 'multimodal.generate' ? { modality: 'video' } : {}
+      const request = (output: 'script' | 'rendering', ticket: { confirmation_ticket_nonce_hash?: string; confirmation_ticket_intent_hash?: string } = {}) => validateMcpRequest({
+        jsonrpc: '2.0', id: method, method,
+        params: { ...modality, prompt: 'Render the confirmed storyboard', output, context_json: '{}', ...ticket },
+      })
+      expect(MCP_METHOD_SCHEMAS[method]).toMatchObject({
+        properties: {
+          confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+        },
+      })
+      expect(MCP_METHOD_SCHEMAS[method].required).not.toEqual(expect.arrayContaining(['confirmation_ticket_nonce_hash', 'confirmation_ticket_intent_hash']))
+      expect(request('script')).toEqual({ valid: true, errors: [] })
+      const validTicket = { confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: 'b'.repeat(64) }
+      expect(request('rendering', validTicket)).toEqual({ valid: true, errors: [] })
+      expect(request('rendering', { confirmation_ticket_nonce_hash: 'a'.repeat(63), confirmation_ticket_intent_hash: 'g'.repeat(64) }).errors).toEqual(expect.arrayContaining([
+        'params.confirmation_ticket_nonce_hash 格式无效',
+        'params.confirmation_ticket_intent_hash 格式无效',
+      ]))
+    }
+  })
+
   it('accepts valid requests and rejects malformed or over-permissive params', () => {
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'start-1', method: 'merchant.start',
