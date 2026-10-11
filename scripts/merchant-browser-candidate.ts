@@ -102,6 +102,10 @@ const MERCHANT_UI_REGRESSION_SPECS = [
 type Environment = Record<string, string | undefined>
 const activeChildren = new Set<ChildProcess>()
 const candidateServices = ['api', 'ui', 'ops-ui', 'postgres', 'redis', 'migrate']
+// A cold amd64 candidate on an ARM developer host has to execute the full
+// checksum-verified migration chain under emulation. The 180s Compose default
+// expired around migration 145, before API startup could be evaluated.
+export const CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS = 900
 // Local browser-only IPAM space. Keep this pool separate from the host's
 // configured Docker pools and refuse any overlap with an existing Docker net.
 // Hosts with a VPN/LAN route through 10.253.0.0/16 should change that route or
@@ -336,7 +340,7 @@ export async function ensureBrowserCandidate(candidate: BrowserCandidate, onStar
   assertCandidateComposeRender(rendered, candidate)
   signal?.throwIfAborted()
   onStartup?.()
-  await command('docker', [...args, 'up', '-d', '--build', '--force-recreate', '--wait', '--wait-timeout', '180', 'api', 'ui', 'ops-ui'], candidate.env)
+  await command('docker', [...args, 'up', '-d', '--build', '--force-recreate', '--wait', '--wait-timeout', String(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS), 'api', 'ui', 'ops-ui'], candidate.env)
   for (const service of ['api', 'ui', 'ops-ui', 'postgres', 'redis']) {
     const id = execFileSync('docker', [...args, 'ps', '-q', service], { env: candidate.env, encoding: 'utf8' }).trim()
     if (!id || id.includes('\n')) throw new Error(`candidate service ${service} must resolve to exactly one container`)

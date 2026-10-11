@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { assertCandidateGitState, assertContainerOwnership, assertLocalDockerEndpoint, assertProbeIdentity, assertUnoccupiedPorts, candidateConfiguration, chooseCandidateNetworkSubnet, verifyBrowserIdentity } from '../scripts/merchant-browser-candidate.js'
+import { assertCandidateGitState, assertContainerOwnership, assertLocalDockerEndpoint, assertProbeIdentity, assertUnoccupiedPorts, candidateConfiguration, chooseCandidateNetworkSubnet, CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS, verifyBrowserIdentity } from '../scripts/merchant-browser-candidate.js'
 
 // Regression: ISSUE-001 — HTTP-success SSH tunnels were accepted as the current browser candidate.
 // Found by /qa on 2026-09-15
@@ -31,6 +31,9 @@ describe('browser candidate isolation', () => {
     const value = candidateConfiguration({ BUILDX_BUILDER: 'merchant-browser-proxy', DOCKER_HOST: 'unix:///tmp/qa-docker.sock' }, sha, ports, '0123456789ab')
     expect(value.env).toMatchObject({ BUILDX_BUILDER: 'merchant-browser-proxy', DOCKER_HOST: 'unix:///tmp/qa-docker.sock' })
     expect(candidateConfiguration({}, sha, ports, '0123456789ab').env.BUILDX_BUILDER).toBeUndefined()
+  })
+  it('allows the full verified migration chain to finish on emulated amd64 candidates', () => {
+    expect(CANDIDATE_STARTUP_WAIT_TIMEOUT_SECONDS).toBeGreaterThanOrEqual(600)
   })
   it('allocates a non-overlapping subnet in the isolated browser-only pool', () => {
     expect(chooseCandidateNetworkSubnet('10.253.1.0/24', ['172.17.0.0/16', '10.253.1.0/24', '10.253.2.0/23'])).toBe('10.253.4.0/24')
