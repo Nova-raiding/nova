@@ -11,7 +11,7 @@ const envelope = (data, error = null) => ({ request_id: 'task-feedback-recovery'
 const version = { id: versionId, taskId, version: 1, revision: 1, body: { title: '反馈详情恢复验收', detail: '合成内容', sellingPoints: ['合成事实'] }, factVersionIds: ['fact-v1'], ruleVersionIds: ['rule-v1'], state: 'review_required' }
 const feedback = []
 
-test('unknown feedback submit retries with the same key when session storage is unavailable', async () => {
+test('changed feedback payload keeps its key until the existing record is reviewed', async () => {
   test.setTimeout(90_000)
   const vite = await createServer({
     configFile: false, envDir: false, root: studioRoot, plugins: [react()],
@@ -83,10 +83,10 @@ test('unknown feedback submit retries with the same key when session storage is 
         submissions.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() })
         if (submissions.length === 1) {
           committedFeedback = { id: 'feedback-unknown-once', taskId, contentVersionId: versionId, rating: 'liked', actorId: 'feedback-writer', createdAt: '2026-10-11T00:00:00.000Z', revision: 1 }
+          feedback.push(committedFeedback)
           return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'API_REQUEST_TIMEOUT', message: '模拟反馈已提交，但响应丢失' })) })
         }
-        feedback.push(committedFeedback)
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(envelope(committedFeedback)) })
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'IDEMPOTENCY_KEY_REUSED', message: '该键已对应不同反馈内容' })) })
       }
       feedbackReads.push(request.method())
       if (feedbackReads.length === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'FIXTURE_TEMPORARY_UNAVAILABLE', message: '本地模拟反馈记录暂时不可读' })) })
@@ -110,21 +110,33 @@ test('unknown feedback submit retries with the same key when session storage is 
     await feedbackSection.getByRole('button', { name: '重试' }).click()
     await expect(feedbackSection.getByRole('alert')).toHaveCount(0)
     expect(feedbackReads).toEqual(['GET', 'GET'])
+    await page.evaluate(({ workspaceId, taskId, versionId }) => {
+      window.sessionStorage.setItem(`merchant-feedback:${workspaceId}:${taskId}:${versionId}:liked`, 'legacy-feedback-key')
+    }, { workspaceId, taskId, versionId })
+    await feedbackSection.locator('input.feedback-input').fill('第一次提交后补充了原因')
+    await feedbackSection.getByRole('button', { name: '满意' }).click()
+    const satisfactionButton = feedbackSection.getByRole('button', { name: '满意' })
+    await expect(satisfactionButton).toBeEnabled({ timeout: 15_000 })
+    await expect(feedbackSection.getByRole('alert')).toContainText('API 请求超时')
     await page.evaluate(() => window.__blockSessionStorage())
     expect(await page.evaluate(() => {
       try { window.sessionStorage.getItem('probe'); return false }
       catch { return true }
     })).toBe(true)
-    await feedbackSection.getByRole('button', { name: '满意' }).click()
-    const satisfactionButton = feedbackSection.getByRole('button', { name: '满意' })
-    await expect(satisfactionButton).toBeEnabled({ timeout: 15_000 })
+    await feedbackSection.locator('input.feedback-input').fill('修改后的反馈原因')
     await satisfactionButton.click()
-    await expect(feedbackSection.getByText('已记录 1 条任务反馈')).toBeVisible({ timeout: 15_000 })
+    await expect(feedbackSection.getByRole('alert')).toContainText('为避免重复记录')
     expect(submissions).toHaveLength(2)
-    expect(submissions[0].key).toBeTruthy()
+    expect(submissions[0].key).toBe('legacy-feedback-key')
     expect(submissions[1].key).toBe(submissions[0].key)
-    expect(submissions[1].body).toEqual(submissions[0].body)
+    expect(submissions[1].body).not.toEqual(submissions[0].body)
     expect(feedback).toHaveLength(1)
+    await expect(satisfactionButton).toBeDisabled()
+    await feedbackSection.getByRole('button', { name: '核对已有反馈' }).click()
+    await expect(feedbackSection.getByText('已记录 1 条任务反馈')).toBeVisible()
+    await expect(feedbackSection.getByRole('button', { name: '我已核对，开始新反馈' })).toBeVisible()
+    expect(submissions).toHaveLength(2)
+    expect(feedbackReads).toEqual(['GET', 'GET', 'GET'])
     expect(writeAttempts).toEqual([])
     expect(externalRequests).toEqual([])
   } finally {

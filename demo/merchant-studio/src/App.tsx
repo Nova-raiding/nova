@@ -10372,11 +10372,16 @@ function TaskWorkspace({
   const [feedback, setFeedback] = useState<TaskFeedback[]>([])
   const [feedbackError, setFeedbackError] = useState('')
   const [feedbackSubmitError, setFeedbackSubmitError] = useState('')
+  const [feedbackConflict, setFeedbackConflict] = useState<'none' | 'review' | 'reviewed'>('none')
   const [feedbackReason, setFeedbackReason] = useState('')
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating | null>(
     null,
   )
   const feedbackIdempotencyKeysRef = useRef(new Map<string, string>())
+  useEffect(() => {
+    setFeedbackConflict('none')
+    setFeedbackSubmitError('')
+  }, [task?.workspaceId, task?.id, content?.id])
   const [timeline, setTimeline] = useState<TaskTimelineEvent[]>([])
   const [timelineError, setTimelineError] = useState('')
   const [timelineLoading, setTimelineLoading] = useState(false)
@@ -10984,11 +10989,15 @@ function TaskWorkspace({
     if (!baseUrl || !task) return
     setOperation('反馈提交中…')
     setFeedbackSubmitError('')
-    const keySlot = `merchant-feedback:${task.workspaceId}:${task.id}:${content?.id ?? 'latest'}:${rating}`
+    const keySlot = `merchant-feedback:${task.workspaceId}:${task.id}:${content?.id ?? 'latest'}`
+    const legacyKeySlots = (['liked', 'neutral', 'needs_improvement'] as const).map((value) => `${keySlot}:${value}`)
     let idempotencyKey = feedbackIdempotencyKeysRef.current.get(keySlot) ?? ''
     if (!idempotencyKey) {
       try {
         idempotencyKey = window.sessionStorage.getItem(keySlot) ?? ''
+        if (!idempotencyKey) {
+          idempotencyKey = legacyKeySlots.map((legacySlot) => window.sessionStorage.getItem(legacySlot) ?? '').find(Boolean) ?? ''
+        }
       } catch { /* use the component cache when browser storage is unavailable */ }
       if (!idempotencyKey) idempotencyKey = window.crypto.randomUUID()
       feedbackIdempotencyKeysRef.current.set(keySlot, idempotencyKey)
@@ -11002,6 +11011,7 @@ function TaskWorkspace({
       .then((item) => {
         feedbackIdempotencyKeysRef.current.delete(keySlot)
         try { window.sessionStorage.removeItem(keySlot) } catch { /* browser storage may be unavailable */ }
+        try { for (const legacySlot of legacyKeySlots) window.sessionStorage.removeItem(legacySlot) } catch { /* legacy browser storage may be unavailable */ }
         setFeedback((current) => [item, ...current.filter((saved) => saved.id !== item.id)])
         setFeedbackSubmitError('')
         setFeedbackError('')
@@ -11019,9 +11029,8 @@ function TaskWorkspace({
       })
       .catch((cause) => {
         if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'IDEMPOTENCY_KEY_REUSED') {
-          feedbackIdempotencyKeysRef.current.delete(keySlot)
-          try { window.sessionStorage.removeItem(keySlot) } catch { /* browser storage may be unavailable */ }
-          setFeedbackSubmitError('反馈内容与上次未确认的提交不同。已重置提交状态，请确认内容后再点一次。')
+          setFeedbackConflict('review')
+          setFeedbackSubmitError('反馈内容与上次未确认的提交不同。为避免重复记录，已暂停提交；请先核对已有反馈。')
           return
         }
         setFeedbackSubmitError(describeApiError(cause))
@@ -11034,8 +11043,20 @@ function TaskWorkspace({
       .then((value) => {
         setFeedback(value)
         setFeedbackError('')
+        setFeedbackConflict((current) => current === 'review' ? 'reviewed' : current)
       })
       .catch((cause) => setFeedbackError(describeApiError(cause)))
+  }
+  const startFeedbackAfterReview = () => {
+    if (!task || !content || feedbackConflict !== 'reviewed') return
+    const keySlot = `merchant-feedback:${task.workspaceId}:${task.id}:${content.id}`
+    feedbackIdempotencyKeysRef.current.delete(keySlot)
+    try { window.sessionStorage.removeItem(keySlot) } catch { /* browser storage may be unavailable */ }
+    for (const value of ['liked', 'neutral', 'needs_improvement'] as const) {
+      try { window.sessionStorage.removeItem(`${keySlot}:${value}`) } catch { /* legacy browser storage may be unavailable */ }
+    }
+    setFeedbackConflict('none')
+    setFeedbackSubmitError('')
   }
   const reloadTimeline = () => {
     if (!baseUrl || !task) return
@@ -13191,12 +13212,25 @@ function TaskWorkspace({
                   />
                 )}
                 {feedbackSubmitError && <p className="error-notice" role="alert">{feedbackSubmitError}</p>}
+                {feedbackConflict !== 'none' && (
+                  <div className="feedback-conflict-actions">
+                    {feedbackConflict === 'review' ? (
+                      <button type="button" onClick={reloadFeedback} disabled={Boolean(operation) || Boolean(feedbackError)}>
+                        核对已有反馈
+                      </button>
+                    ) : (
+                      <button type="button" onClick={startFeedbackAfterReview}>
+                        我已核对，开始新反馈
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="feedback-actions">
                   <button
                     type="button"
                     className={feedbackRating === 'liked' ? 'selected' : ''}
                     onClick={() => sendFeedback('liked')}
-                    disabled={Boolean(operation) || !task || !content}
+                    disabled={Boolean(operation) || !task || !content || feedbackConflict !== 'none'}
                   >
                     满意
                   </button>
@@ -13204,7 +13238,7 @@ function TaskWorkspace({
                     type="button"
                     className={feedbackRating === 'neutral' ? 'selected' : ''}
                     onClick={() => sendFeedback('neutral')}
-                    disabled={Boolean(operation) || !task || !content}
+                    disabled={Boolean(operation) || !task || !content || feedbackConflict !== 'none'}
                   >
                     一般
                   </button>
@@ -13214,7 +13248,7 @@ function TaskWorkspace({
                       feedbackRating === 'needs_improvement' ? 'selected' : ''
                     }
                     onClick={() => sendFeedback('needs_improvement')}
-                    disabled={Boolean(operation) || !task || !content}
+                    disabled={Boolean(operation) || !task || !content || feedbackConflict !== 'none'}
                   >
                     需改进
                   </button>
