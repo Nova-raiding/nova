@@ -177,6 +177,9 @@ describe('material storage summary uses the live quota projection', () => {
         status: 'available',
       },
       uploadedGb: 0,
+      baseUrl: '/api',
+      quotaRead: true,
+      quotaError: '',
     }))
 
     expect(summary).toContain('31.5 GB / 50 GB')
@@ -191,11 +194,31 @@ describe('material storage summary uses the live quota projection', () => {
     const summary = renderToStaticMarkup(createElement(MaterialStorageQuotaCard, {
       quota: { usedBytes: 1, reservedBytes: 0, limitBytes: 0, availableBytes: 0, status: 'available' },
       uploadedGb: 0.3,
+      baseUrl: '/api',
+      quotaRead: true,
+      quotaError: '',
     }))
 
     expect(summary).toContain('未读取')
-    expect(summary).toContain('配额尚未读取，本次会话上传 0.3 GB')
+    expect(summary).toContain('服务端未提供储存配额，当前不显示用量。请到财务概况核对储存权益，或联系管理员确认配置。')
+    expect(summary).toContain('本次会话上传 0.3 GB')
     expect(summary).not.toContain('role="progressbar"')
+    expect(summary).not.toContain('重试')
+  })
+
+  it('keeps a failed quota request distinct from a successful response without a quota', () => {
+    const summary = renderToStaticMarkup(createElement(MaterialStorageQuotaCard, {
+      quota: null,
+      uploadedGb: 0.3,
+      baseUrl: '/api',
+      quotaRead: true,
+      quotaError: 'HTTP 402: INTERNAL_ENTITLEMENT_DETAILS',
+    }))
+
+    expect(summary).toContain('储存配额读取失败。请到财务概况核对储存权益，或联系管理员确认当前工作区权限。')
+    expect(summary).not.toContain('服务端未提供储存配额')
+    expect(summary).not.toContain('INTERNAL_ENTITLEMENT_DETAILS')
+    expect(summary).not.toContain('重试')
   })
 })
 

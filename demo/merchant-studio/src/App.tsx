@@ -6919,10 +6919,14 @@ export function materialUploadBalanceNotice(billing: BillingStatus | null): stri
   return null
 }
 
-export function MaterialStorageQuotaCard({ quota, uploadedGb }: {
+export function MaterialStorageQuotaCard({ quota, uploadedGb, baseUrl, quotaRead, quotaError }: {
   quota: StorageQuotaProjection | null
   uploadedGb: number
+  baseUrl?: string
+  quotaRead: boolean
+  quotaError: string
 }) {
+  const readState = resolveOverviewStorageRead({ baseUrl, read: quotaRead, error: quotaError })
   const hasQuota = Boolean(quota && Number.isFinite(quota.limitBytes) && quota.limitBytes > 0
     && Number.isFinite(quota.usedBytes) && Number.isFinite(quota.availableBytes))
   const usedBytes = hasQuota ? Math.max(0, quota!.usedBytes) : 0
@@ -6945,7 +6949,10 @@ export function MaterialStorageQuotaCard({ quota, uploadedGb }: {
           <b>剩余 {formatStorageGb(quota!.availableBytes)}</b>
         </div>
       </> : <div className="material-workspace-storage-details">
-        <small>配额尚未读取，本次会话上传 {uploadedGb.toFixed(1)} GB</small>
+        <span style={{ minWidth: 0, whiteSpace: 'normal' }}>{readState.message}</span>
+      </div>}
+      {!hasQuota && <div className="material-workspace-storage-details">
+        <small>本次会话上传 {uploadedGb.toFixed(1)} GB</small>
         <b>剩余 {UNREAD_METRIC}</b>
       </div>}
     </div>
@@ -6992,6 +6999,8 @@ export function MaterialLibraryWorkspace({
   const [assetReadAttempt, setAssetReadAttempt] = useState(0)
   const [materialDownloadError, setMaterialDownloadError] = useState('')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
+  const [storageQuotaRead, setStorageQuotaRead] = useState(false)
+  const [storageQuotaError, setStorageQuotaError] = useState('')
   useEffect(() => {
     setBrandLogoPreviews({})
     return () => brandAssetPreviewRegistry.current.clear()
@@ -7016,13 +7025,26 @@ export function MaterialLibraryWorkspace({
   useEffect(() => {
     if (!baseUrl) {
       setStorageQuota(null)
+      setStorageQuotaRead(false)
+      setStorageQuotaError('')
       return
     }
     let active = true
     setStorageQuota(null)
+    setStorageQuotaRead(false)
+    setStorageQuotaError('')
     fetchAssetStorageQuota(baseUrl)
-      .then((quota) => { if (active) setStorageQuota(quota ?? null) })
-      .catch(() => { if (active) setStorageQuota(null) })
+      .then((quota) => {
+        if (!active) return
+        setStorageQuota(quota ?? null)
+        setStorageQuotaRead(true)
+      })
+      .catch((cause) => {
+        if (!active) return
+        setStorageQuota(null)
+        setStorageQuotaError(describeApiError(cause))
+        setStorageQuotaRead(true)
+      })
     return () => { active = false }
   }, [baseUrl])
   useEffect(() => {
@@ -7908,7 +7930,7 @@ export function MaterialLibraryWorkspace({
           <div className="material-workspace-overview">
             <div className="material-workspace-intro"><span className="material-workspace-mark" aria-hidden="true"><FolderOpen size={20} /></span><div><span className="section-kicker">MATERIAL LIBRARY</span><h1>素材库</h1><p>按店铺独立管理图片与视频。</p></div></div>
             <div className="material-workspace-actions-card">
-              <MaterialStorageQuotaCard quota={storageQuota} uploadedGb={uploadedGb} />
+              <MaterialStorageQuotaCard quota={storageQuota} uploadedGb={uploadedGb} baseUrl={baseUrl} quotaRead={storageQuotaRead} quotaError={storageQuotaError} />
               <button type="button" className="material-upload-button" onClick={() => { setUploadStoreId(activeStore.id); setUploadSeries(''); setUploadDialogOpen(true) }}><Upload size={17} /><span>上传素材</span></button>
             </div>
           </div>
