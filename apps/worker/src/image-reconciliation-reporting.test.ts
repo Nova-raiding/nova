@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createImageStatusQuerierFromEnv } from '../../../packages/ai/src/image-generator.js'
+import { ProviderRequestFailedError } from '../../../packages/ai/src/provider-request.js'
 import { reconcileImageGenerationWorkspace, summarizeImageGenerationReconciliation } from './main.js'
 const input={apiBaseUrl:'https://fixture.test',apiToken:'fixture',workspaceId:'workspace'}
 const candidate={job_id:'job',event_id:'event',intent_hash:'a'.repeat(64),execution_attempt:1,query_attempt:1,execution_state:'outcome_unknown',provider_request_id:'provider'}
@@ -34,6 +35,21 @@ describe('image reconciliation truthfulness without provider query capability',(
     expect(evidence[0]).toMatchObject({provider_state:'unknown',provider_request_id:'provider'})
     expect(sweep).toMatchObject({scanCompleted:true,providerQueryConfigured:true,providerQueryState:'attempted',providerCandidates:1,providerQueriesAttempted:1,providerEvidenceSubmitted:1,providerQueriesBlocked:0})
     expect(sweep.results.map(result=>(result as {queried:number}).queried)).toEqual([1,0])
+  })
+  it('submits a status-query 401 as signed unknown evidence, never as a generation failure',async()=>{
+    const evidence:Array<{body:Record<string,unknown>;headers:Headers}>=[]
+    const queryStatus=vi.fn(async()=>{throw new ProviderRequestFailedError('image-status-query',401,'image provider status returned HTTP 401')})
+    const sweep=await reconcileImageGenerationWorkspace({...input,signingSecret:'fixture-signing-secret',queryStatus,fetcher:async(url,init)=>{
+      if(String(url).endsWith('/reconciliation')) return Response.json({data:{attention:[candidate],next_cursor:null,next_completion_ack_cursor:null}})
+      evidence.push({body:JSON.parse(String(init?.body)),headers:new Headers(init?.headers)})
+      return Response.json({data:{evidence_id:'fixture-evidence',provider_state:'unknown',reconciliation_required:true}})
+    }})
+    expect(queryStatus).toHaveBeenCalledOnce()
+    expect(evidence).toHaveLength(1)
+    expect(evidence[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+    expect(evidence[0]?.body).toMatchObject({provider_request_id:'provider',provider_state:'unknown',provider_status:'query_error',error_code:'MODEL_PROVIDER_REQUEST_FAILED',error_message:'image provider status returned HTTP 401'})
+    expect(evidence[0]?.body.provider_state).not.toBe('failed')
+    expect(sweep).toMatchObject({providerQueryState:'attempted',providerEvidenceSubmitted:1})
   })
   it('does not count a page-limited fulfilled scan as completed',async()=>{
     const sweep=await reconcileImageGenerationWorkspace({...input,maxPages:1,fetcher:async()=>Response.json({data:{attention:[candidate],next_cursor:'more'}})})
