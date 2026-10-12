@@ -27,7 +27,15 @@ export function createCommercialCapacity(deps: CommercialCapacityDependencies) {
       if (deps.isProduction()) throw new DomainError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', '商业权益仓储未配置，无法安全判定套餐额度', 503)
       return null
     }
-    const snapshots = await repository.listEntitlementSnapshots(workspaceId, 100)
+    let snapshots
+    try {
+      snapshots = await repository.listEntitlementSnapshots(workspaceId, 100)
+    } catch {
+      throw new DomainError('COMMERCIAL_ENTITLEMENT_UNAVAILABLE', 'V2 商业权益额度证据暂不可用，无法安全判定套餐额度', 503, {
+        retryable: true,
+        next_actions: ['commercial.catalog.get', 'commercial.order.create', 'commercial.access.get'],
+      })
+    }
     try {
       return await resolveCommercialCountBenefit({ workspaceId, code, snapshots })
     } catch (error) {

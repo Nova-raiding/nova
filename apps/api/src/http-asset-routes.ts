@@ -12,7 +12,7 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   const {
     createHash, randomBytes, isTrustedCleanAsset, isUsableAssetWithoutScan, DomainError,
     ObjectStorageError, ERROR_CODES, demoUnscannedAssetsEnabled, SUPPORTED_PLATFORMS,
-    service, persistence, configuredAssetLimit, configuredStorageQuotaLimit, effectiveStorageQuotaSnapshot,
+    service, persistence, configuredAssetLimit, effectiveStorageQuotaSnapshot,
     getStoredObjectWithRetry, compensateStoredAsset, putQuarantineObject,
     executeDurableAssetParse, confirmDurableAssetFacts, enforceHttpCommercialAccess,
     persistEvent, persistSnapshot, persistAssetSnapshotAndEvent, persistAssetReference,
@@ -158,7 +158,18 @@ export async function routeAssetHttp(req: IncomingMessage, res: ServerResponse, 
   if (req.method === 'GET' && path === '/v1/assets') {
     const workspaceId = resolveWorkspace(req)
     const accessibleIds = await accessibleAssetIds(req, workspaceId)
-    const quotaSnapshot = (await effectiveStorageQuotaSnapshot(workspaceId)) ?? { limitBytes: configuredStorageQuotaLimit(), usedBytes: 0, reservedBytes: 0 }
+    let quotaSnapshot: { limitBytes: number; usedBytes: number; reservedBytes: number } | undefined
+    try {
+      quotaSnapshot = await effectiveStorageQuotaSnapshot(workspaceId)
+    } catch (error) {
+      const optionalQuotaEvidenceErrors = new Set([
+        'COMMERCIAL_ENTITLEMENT_REQUIRED',
+        'COMMERCIAL_ENTITLEMENT_UNAVAILABLE',
+        'COMMERCIAL_ENTITLEMENT_AMBIGUOUS',
+        'STORAGE_QUOTA_USAGE_UNAVAILABLE',
+      ])
+      if (!(error instanceof DomainError) || !optionalQuotaEvidenceErrors.has(error.code)) throw error
+    }
     const storageQuota = quotaSnapshot
       ? (() => {
           const usedBytes = Math.max(0, quotaSnapshot.usedBytes)
