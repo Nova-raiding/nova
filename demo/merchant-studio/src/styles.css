@@ -773,6 +773,9 @@ body {
 .today-storage-progress { height:8px; margin:8px 0; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.13); }
 .today-storage-progress>span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#a8c964,#d7e98a); }
 .today-storage-meta { color:#9fb0a8; font-size:10px; }
+.today-storage-meta.has-retry { align-items:flex-start; }
+.today-storage-meta .today-storage-retry { flex:0 0 auto; min-height:32px; padding:4px 10px; border:1px solid #b6cabb; background:#f3f8f4; color:#153a2b; white-space:nowrap; }
+.today-storage-meta .today-storage-retry:hover { border-color:#d4e2d7; background:#fff; }
 .account-dashboard {
   overflow:hidden;
   border:1px solid #dfe5e1;

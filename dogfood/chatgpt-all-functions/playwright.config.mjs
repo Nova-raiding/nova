@@ -12,7 +12,7 @@ export default defineConfig({
   testMatch: merchantImageFixture
     ? ['image-generation-desktop.spec.js', 'image-generation-desktop-responsive.spec.js']
     : merchantOverviewFixture
-      ? ['merchant-risk-destination.browser.spec.js', 'overview-finance.browser.spec.js']
+      ? ['merchant-risk-destination.browser.spec.js', 'overview-finance.browser.spec.js', 'overview-storage-read-retry.browser.spec.js']
     : '**/*.spec.js',
   testIgnore: ['**/*.test.ts', '**/*.test.js'],
   workers: 1,

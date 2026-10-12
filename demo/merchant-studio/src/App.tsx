@@ -1913,6 +1913,30 @@ export function resolveRulePackBoard({
   return { mode: 'ready', message: '' }
 }
 
+export type OverviewStorageReadMode = 'unconfigured' | 'loading' | 'error' | 'missing'
+
+/** Keep a failed quota request distinct from a successful response without a quota. */
+export function resolveOverviewStorageRead({
+  baseUrl,
+  read,
+  error,
+}: {
+  baseUrl?: string
+  read: boolean
+  error: string
+}): { mode: OverviewStorageReadMode; message: string } {
+  if (!baseUrl) return { mode: 'unconfigured', message: '未配置 API，无法读取储存配额。' }
+  if (!read) return { mode: 'loading', message: '正在读取储存配额…' }
+  if (error) return {
+    mode: 'error',
+    message: '储存配额读取失败。请到财务概况核对储存权益，或联系管理员确认当前工作区权限。',
+  }
+  return {
+    mode: 'missing',
+    message: '服务端未提供储存配额，当前不显示用量。请到财务概况核对储存权益，或联系管理员确认配置。',
+  }
+}
+
 export function TodayDashboard({
   baseUrl,
   metrics,
@@ -1929,6 +1953,8 @@ export function TodayDashboard({
   const [rulePacksError, setRulePacksError] = useState('')
   const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [storageRead, setStorageRead] = useState(false)
+  const [storageError, setStorageError] = useState('')
+  const [storageRetryKey, setStorageRetryKey] = useState(0)
   const [yesterdayMetrics, setYesterdayMetrics] = useState<WorkspaceMetrics | null>(null)
   const [yesterdayMetricsRead, setYesterdayMetricsRead] = useState(false)
   const [yesterdayPoints, setYesterdayPoints] = useState<number | null>(null)
@@ -1974,17 +2000,25 @@ export function TodayDashboard({
     if (!baseUrl) {
       setStorageQuota(null)
       setStorageRead(false)
+      setStorageError('')
       return
     }
     let active = true
     setStorageQuota(null)
     setStorageRead(false)
+    setStorageError('')
     fetchAssetStorageQuota(baseUrl)
       .then((quota) => { if (active) setStorageQuota(quota ?? null) })
-      .catch(() => { if (active) setStorageQuota(null) })
+      .catch((cause) => {
+        if (!active) return
+        setStorageQuota(null)
+        // Keep the classified API error for state handling, but never expose
+        // transport details or internal codes in merchant-facing copy.
+        setStorageError(describeApiError(cause))
+      })
       .finally(() => { if (active) setStorageRead(true) })
     return () => { active = false }
-  }, [baseUrl])
+  }, [baseUrl, storageRetryKey])
   useEffect(() => {
     if (!baseUrl) { setRulePacks(null); setRulePacksError(''); return }
     let active = true
@@ -2012,13 +2046,8 @@ export function TodayDashboard({
   const storageLimitBytes = storageQuota?.limitBytes ?? null
   const storageAvailableBytes = storageQuota?.availableBytes ?? null
   const storageKnown = storageUsedBytes !== null && storageLimitBytes !== null && storageLimitBytes > 0
-  const storageState = storageKnown
-    ? null
-    : baseUrl
-      ? storageRead
-        ? '服务端未返回储存配额，当前不显示用量。'
-        : '正在读取储存配额…'
-      : '未配置 API，无法读取储存配额。'
+  const storageReadState = resolveOverviewStorageRead({ baseUrl, read: storageRead, error: storageError })
+  const storageState = storageKnown ? null : storageReadState.message
   const ruleBoard = resolveRulePackBoard({ baseUrl, packs: rulePacks, error: rulePacksError })
   const visibleRulePacks = (rulePacks ?? []).slice(0, 4)
 
@@ -2078,7 +2107,10 @@ export function TodayDashboard({
               <div className="today-storage-meta" role="status" aria-live="polite"><span>已用 {formatStorageGb(storageUsedBytes!)}</span><span>剩余 {formatStorageGb(storageAvailableBytes ?? Math.max(0, storageLimitBytes! - storageUsedBytes!))}</span></div>
             </>
           ) : (
-            <div className="today-storage-meta" role="status" aria-live="polite"><span>{storageState}</span></div>
+            <div className={`today-storage-meta${storageReadState.mode === 'error' ? ' has-retry' : ''}`} role={storageReadState.mode === 'error' ? 'alert' : 'status'} aria-live={storageReadState.mode === 'error' ? 'assertive' : 'polite'}>
+              <span>{storageState}</span>
+              {storageReadState.mode === 'error' && <button type="button" className="text-button today-storage-retry" disabled={!storageRead} onClick={() => setStorageRetryKey((attempt) => attempt + 1)}>重新读取</button>}
+            </div>
           )}
         </article>
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AccountDashboard, FinanceOverview, Overview, TodayDashboard, formatStorageGbValue, resolvePurchaseBlockNotice, resolveRulePackBoard } from './App'
+import { AccountDashboard, FinanceOverview, Overview, TodayDashboard, formatStorageGbValue, resolveOverviewStorageRead, resolvePurchaseBlockNotice, resolveRulePackBoard } from './App'
 import { fetchCreativePointStatement } from './api'
 import capture from './fixtures/creative-point-statement.capture.json'
 
@@ -120,6 +120,28 @@ describe('unread reads are never rendered as measured values', () => {
     expect(html).toContain('role="status" aria-live="polite"')
     expect(html).toMatch(/class="today-rule-list" role="status" aria-live="polite"/u)
     expect(html).toMatch(/class="today-storage-meta" role="status" aria-live="polite"/u)
+  })
+
+  it('distinguishes a failed quota request from a successful response without quota', () => {
+    const failed = resolveOverviewStorageRead({ baseUrl: '/api', read: true, error: 'HTTP 402: internal entitlement code' })
+    expect(failed.mode).toBe('error')
+    expect(failed.message).toContain('请到财务概况核对储存权益')
+    expect(failed.message).toContain('联系管理员确认当前工作区权限')
+    expect(failed.message).not.toContain('402')
+    expect(failed.message).not.toContain('internal entitlement code')
+
+    const missing = resolveOverviewStorageRead({ baseUrl: '/api', read: true, error: '' })
+    expect(missing.mode).toBe('missing')
+    expect(missing.message).toContain('服务端未提供储存配额')
+    expect(missing.message).not.toContain('读取失败')
+    expect(resolveOverviewStorageRead({ baseUrl: '/api', read: false, error: '' }).mode).toBe('loading')
+    expect(resolveOverviewStorageRead({ read: true, error: '' }).mode).toBe('unconfigured')
+  })
+
+  it('offers a same-read retry only after the overview quota request fails', () => {
+    expect(app).toContain('fetchAssetStorageQuota(baseUrl)')
+    expect(app).toContain("storageReadState.mode === 'error' && <button type=\"button\" className=\"text-button today-storage-retry\" disabled={!storageRead} onClick={() => setStorageRetryKey((attempt) => attempt + 1)}>重新读取</button>")
+    expect(app).toContain('}, [baseUrl, storageRetryKey])')
   })
 })
 
