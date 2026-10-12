@@ -234,14 +234,53 @@ it.each(['content.draft.generate', 'merchant.first_value'] as const)('denies %s 
   await api.creativePointsForTests.reserve({ workspaceId, actionKey: `test-hold:${workspaceId}`, idempotencyKey: `test-hold:${workspaceId}`, points: 1, rateCardVersion: 'test-rate-v1' })
   const relayRequests: string[] = []
   relayHandler = async url => { relayRequests.push(url); throw new Error('unfunded draft reached relay') }
+  if (method === 'merchant.first_value') {
+    const exampleResponse = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method, params: { example: 'true' } }),
+    })
+    expect(exampleResponse.status).toBe(200)
+    expect(await exampleResponse.json()).toMatchObject({
+      data: { result: { readOnly: true, previewOnly: true, example: true, execution: { modelCalled: false, providerExecuted: false } } },
+    })
+    expect((await api.creativePointsForTests.getBalance(workspaceId)).availablePoints).toBe(0)
+    expect(relayRequests).toEqual([])
+  }
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { draft: 'true', draft_title: '未绑定商品候选', idempotency_key: 'draft-zero-balance' } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { ...(method === 'merchant.first_value' ? { example: 'true' } : {}), draft: 'true', draft_title: '未绑定商品候选', idempotency_key: 'draft-zero-balance' } }),
   })
   const body = await response.json() as { error: { code: string; details: { quoted_points: number; available_points: number; classification: string } } }
   expect(response.status).toBe(402)
   expect(body.error).toMatchObject({ code: 'CREATIVE_POINTS_EXHAUSTED', details: { available_points: 0, classification: 'POINT_CHARGED' } })
+  expect(relayRequests).toEqual([])
+})
+
+it('allows only the static first-value example while the API balance is unknown', async () => {
+  const workspaceId = `ws_first_value_unknown_${Date.now()}`
+  const relayRequests: string[] = []
+  relayHandler = async url => { relayRequests.push(url); throw new Error('unknown-balance draft reached relay') }
+
+  const exampleResponse = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'merchant.first_value', params: { example: 'true' } }),
+  })
+  expect(exampleResponse.status).toBe(200)
+  expect(await exampleResponse.json()).toMatchObject({
+    data: { result: { readOnly: true, previewOnly: true, example: true, execution: { modelCalled: false, providerExecuted: false } } },
+  })
+
+  const draftResponse = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'merchant.first_value', params: { draft: 'true', draft_title: '余额未知时不得生成', idempotency_key: 'draft-unknown-balance' } }),
+  })
+  const draft = await draftResponse.json() as { error: { code: string; details: { balance_state: string; available_points: number | null } } }
+  expect(draftResponse.status).toBe(503)
+  expect(draft.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE', details: { balance_state: 'unknown', available_points: null } })
   expect(relayRequests).toEqual([])
 })
 

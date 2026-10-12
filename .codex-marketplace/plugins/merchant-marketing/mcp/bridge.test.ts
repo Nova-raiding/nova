@@ -4952,6 +4952,15 @@ describe('Codex stdio MCP bridge', () => {
         }
       }
       expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
+      const example = (await call(forwarded.length + 1, 'merchant.first_value', { example: 'true' })).result
+      expect(example).toMatchObject({ isError: false })
+      expect(forwarded.at(-1)).toBe('merchant.first_value')
+
+      const draft = (await call(forwarded.length + 1, 'merchant.first_value', {
+        example: 'true', draft: 'true', draft_title: '余额未知时不得生成', idempotency_key: 'unknown-balance-first-value-draft',
+      })).result
+      expect(draft).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_UNAVAILABLE', recovery_only: true } })
+      expect(forwarded).toEqual(['creative-points.balance.get', ...reads, 'merchant.first_value'])
       for (const method of ['asset.upload', 'knowledge.asset.create', 'content.generate', 'catalog.search']) {
         const blocked = (await call(forwarded.length + 2, method)).result
         expect(blocked).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_UNAVAILABLE', recovery_only: true } })
@@ -4959,7 +4968,7 @@ describe('Codex stdio MCP bridge', () => {
         expect(blocked.content[0].text).toContain('不能按套餐标称额度视为已到账')
         expect(blocked.content[0].text).not.toMatch(/CREATIVE_POINTS_UNAVAILABLE|https?:\/\//u)
       }
-      expect(forwarded).toEqual(['creative-points.balance.get', ...reads])
+      expect(forwarded).toEqual(['creative-points.balance.get', ...reads, 'merchant.first_value'])
     } finally {
       child.kill()
       await close(server)

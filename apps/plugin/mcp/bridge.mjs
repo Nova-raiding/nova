@@ -2295,8 +2295,11 @@ function rememberCommercialAccessResult(method, result) {
   if (projection) commercialRecoveryOnlySnapshot = { code, ...projection }
 }
 
-function recoveryOnlyResult(id, name) {
-  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || COMMERCIAL_API_READ_ONLY_METHODS.has(name) || name === 'workspace.interactive.confirm') return undefined
+function recoveryOnlyResult(id, name, args = {}) {
+  const staticFirstValueExample = name === 'merchant.first_value'
+    && args.example === 'true'
+    && args.draft !== 'true'
+  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || COMMERCIAL_API_READ_ONLY_METHODS.has(name) || name === 'workspace.interactive.confirm' || staticFirstValueExample) return undefined
   const structuredContent = {
     ...commercialRecoveryOnlySnapshot,
     message: '服务端已将当前会话限制为商业恢复操作；插件未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',
@@ -4308,7 +4311,7 @@ async function handle(request, signal) {
       }
       return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
     }
-    const cachedCommercialBlock = recoveryOnlyResult(id, name)
+    const cachedCommercialBlock = recoveryOnlyResult(id, name, args)
     if (cachedCommercialBlock) return cachedCommercialBlock
     // Deliberate fail-closed control, not schema drift. The authoritative
     // contract declares billing.recharge.get.confirm_test_payment for the
