@@ -25,7 +25,12 @@ export function restoreLaunchdEnvironment({
   if (platform !== 'darwin' || environment.NODE_ENV === 'test' || environment.VITEST === 'true') return []
 
   const restored = []
+  const explicitEnvironmentCredential = isMissingEnvironmentValue(environment.MERCHANT_MCP_TOKEN_SOURCE)
+    && !isMissingEnvironmentValue(environment.MERCHANT_MCP_TOKEN)
   for (const name of LAUNCHD_ENVIRONMENT_NAMES) {
+    // An explicit token without a source uses environment authentication. A
+    // later desktop login must not silently switch it to a managed store.
+    if (explicitEnvironmentCredential && name === 'MERCHANT_MCP_TOKEN_SOURCE') continue
     if (!isMissingEnvironmentValue(environment[name])) continue
     try {
       const value = run(launchctlExecutable(platform), ['getenv', name], {

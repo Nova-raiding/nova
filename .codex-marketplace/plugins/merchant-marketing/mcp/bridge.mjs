@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
-import { loadManagedToken, validatedRotatedCredential, withManagedRefreshLock } from './managed-token.mjs'
+import { loadManagedToken, managedTokenSource, validatedRotatedCredential, withManagedRefreshLock } from './managed-token.mjs'
 import { createManagedCredentialLoader } from './managed-credential-state.mjs'
 import { restoreLaunchdEnvironment } from './launchd-environment.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
@@ -89,7 +89,7 @@ async function performLocalDesktopTokenRefresh(markDispatched = async () => {}) 
   const payload = await response.json()
   const result = payload?.data?.result ?? payload?.data
   const workspaceId = process.env.MERCHANT_WORKSPACE_ID?.trim()
-  const tokenSource = process.env.MERCHANT_MCP_TOKEN_SOURCE?.trim() || 'environment'
+  const tokenSource = managedTokenSource(process.env)
   const rotated = validatedRotatedCredential(result, { tokenSource, workspaceId, apiOrigin: origin })
   if (!rotated) return false
   const { accessToken, refreshToken: nextRefreshToken, expiresAt } = rotated
@@ -128,15 +128,13 @@ async function performLocalDesktopTokenRefresh(markDispatched = async () => {}) 
 
 async function refreshLocalDesktopToken(rejectedToken) {
   if (!credentialRefreshPromise) {
-    const source = process.env.MERCHANT_MCP_TOKEN_SOURCE?.trim() || 'environment'
+    const source = managedTokenSource(process.env)
     const refresh = source === 'environment' ? performLocalDesktopTokenRefresh() : withManagedRefreshLock({
       origin: new URL(baseUrl()).origin, workspaceId: process.env.MERCHANT_WORKSPACE_ID?.trim(), source,
     }, async markDispatched => {
       // Bypass the successful-load cache: another bridge may have rotated the
       // shared credential while this request was in flight or waiting for lock.
-      await loadManagedToken(process.env, process.platform, name => execFileSync('launchctl', ['getenv', name], {
-        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
-      }))
+      if (!await managedCredentialLoader.ensure({ forceReload: true })) return false
       if (process.env.MERCHANT_MCP_TOKEN?.trim() !== rejectedToken) return true
       return performLocalDesktopTokenRefresh(markDispatched)
     })
@@ -206,6 +204,7 @@ let sessionArtifactFiles = 0
 let interactiveWriteUntil = 0
 const videoApprovalTickets = new Map()
 let bootstrappedWorkspaceId = ''
+let initialTransportConfigurationReady = false
 let commercialRecoveryOnlySnapshot
 const READ_ONLY_METHODS = new Set([
   'onboarding.status',
@@ -3317,6 +3316,24 @@ function workspaceId() {
   return value
 }
 
+function prepareInitialConnectionConfiguration(method) {
+  if (initialTransportConfigurationReady) return []
+  // Preserve an existing scoped workspace binding before filling missing
+  // settings from launchd. Recovery ends before the first credential read;
+  // later desktop logins cannot redirect this bridge or reopen a failed load.
+  const boundWorkspace = configuredEnv('MERCHANT_WORKSPACE_ID') || loadWorkspaceBinding()
+  if (boundWorkspace && !configuredEnv('MERCHANT_WORKSPACE_ID')) process.env.MERCHANT_WORKSPACE_ID = boundWorkspace
+  restoreLaunchdEnvironment()
+  const fixture = allowsLocalFixtureFallback()
+  const missing = []
+  if (!configuredEnv('MERCHANT_MCP_BASE_URL') && !fixture) missing.push('MERCHANT_MCP_BASE_URL')
+  const source = configuredEnv('MERCHANT_MCP_TOKEN_SOURCE') || 'environment'
+  if (!missing.length && !configuredEnv('MERCHANT_WORKSPACE_ID') && !loadWorkspaceBinding() && !fixture
+    && !(method === 'workspace.bootstrap' && source === 'environment')) missing.push('MERCHANT_WORKSPACE_ID')
+  if (!missing.length) initialTransportConfigurationReady = true
+  return missing
+}
+
 function idempotencyKey(method, params) {
   const digest = createHash('sha256')
     .update(JSON.stringify({ workspaceId: workspaceId(), method, params }))
@@ -4260,6 +4277,20 @@ async function handle(request, signal) {
     const args = request.params?.arguments === undefined ? {} : request.params.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
+    const missingConfiguration = prepareInitialConnectionConfiguration(name)
+    if (missingConfiguration.length) {
+      // Do not cache environment-source success (or a managed-store failure)
+      // while the host has not supplied the connection's initial binding.
+      const details = { missing: missingConfiguration, operation_status: 'blocked', retryable: false }
+      const presentation = toolErrorPresentation(name, args, 'MCP_CONFIGURATION_REQUIRED', details)
+      const structuredContent = {
+        code: 'MCP_CONFIGURATION_REQUIRED',
+        message: presentation.text,
+        details,
+        recovery: presentation.recovery,
+      }
+      return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
+    }
     if (!await ensureManagedCredential()) {
       const structuredContent = managedCredentialLoader.isPermanentlyUnavailable()
         ? managedCredentialError()

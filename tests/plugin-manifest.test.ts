@@ -47,6 +47,8 @@ describe('Codex plugin package', () => {
     const mirroredFiles = [
       '.codex-plugin/plugin.json', '.mcp.json', 'README.md', 'host-evidence-contract.test.ts',
       'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/managed-token.mjs', 'mcp/bridge.test.ts', 'mcp/merchant-conversation-flow.test.ts', 'package.json',
+      'mcp/launchd-environment.mjs', 'mcp/launchd-environment.d.mts', 'mcp/launchd-environment.test.ts',
+      'mcp/managed-credential-state.mjs', 'mcp/managed-credential-state.test.ts', 'mcp/managed-token.test.ts',
       'scripts/verify-installed-bridge.mjs',
       'skills/merchant-marketing/SKILL.md',
       'skills/merchant-marketing/references/product-image-workflow.md',

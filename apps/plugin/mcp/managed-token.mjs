@@ -11,10 +11,11 @@ function managedStoreReadFailure(error, env) {
   // diagnostics must never cross the MCP boundary.
   const classification = String(error?.code ?? error?.message ?? '')
   // Broker outages and native Keychain read timeouts are retryable. The native
-  // timeout can occur while macOS resolves a user's Keychain ACL; it does not
-  // mean the credential binding is invalid. Keep the match operation-specific
+  // timeout or interaction-not-allowed status can reflect the caller's current
+  // macOS context; neither proves the credential binding invalid. A retry still
+  // goes through the native store and grants no additional access. Keep the match operation-specific
   // so malformed records, writes, and authenticated IPC failures stay permanent.
-  if (/^(?:KEYCHAIN_BROKER_(?:UNAVAILABLE|TIMEOUT)|MCP_KEYCHAIN_HELPER_INVALID: broker_(?:unavailable|timeout)|MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read)$/u.test(classification)) {
+  if (/^(?:KEYCHAIN_BROKER_(?:UNAVAILABLE|TIMEOUT)|MCP_KEYCHAIN_HELPER_INVALID: broker_(?:unavailable|timeout)|MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read|MCP_KEYCHAIN_HELPER_INVALID: keychain_osstatus=-25308 operation=read)$/u.test(classification)) {
     delete env.MERCHANT_MCP_TOKEN
     delete env.MERCHANT_MCP_REFRESH_TOKEN
     delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT
@@ -43,8 +44,13 @@ export function validatedRotatedCredential(result, { tokenSource, workspaceId, a
   return { accessToken, refreshToken, expiresAt, bundle: { schema_version: '1', api_origin: apiOrigin, workspace_id: workspaceId, access_token: accessToken, refresh_token: refreshToken, expires_at: expiresAt } }
 }
 
+export function managedTokenSource(env) {
+  const source = env.MERCHANT_MCP_TOKEN_SOURCE?.trim()
+  return source && !/^\$\{[^}]+\}$/u.test(source) ? source : 'environment'
+}
+
 export function loadManagedToken(env, platform, readLaunchd, readKeychain = readKeychainCredential, readWindows = readWindowsCredential) {
-  const source = env.MERCHANT_MCP_TOKEN_SOURCE?.trim() || 'environment'
+  const source = managedTokenSource(env)
   if (source === 'environment') return
   const reject = () => {
     delete env.MERCHANT_MCP_TOKEN

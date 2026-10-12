@@ -1,0 +1,30 @@
+# 2026-10-12 当前交付验收证据矩阵（owner 整合）
+
+Agent 8 初稿由 owner 整合本轮实际运行和测试收据。PASS 只对应表内窄范围；FAIL 是已观察到失败；BLOCKED 是缺少当前真实验收证据，不推断功能必然失败。此文不是交付或部署批准，owner 须复核、整合并重新验证。
+
+依据：[项目宪法](../../AGENTS.md)、[唯一 Demo runbook](../runbooks/ecs-demo-direct-deploy.md)、verify-feature 的真实 surface 与 freshness 要求。唯一目标为 `101 / merchant-demo-85575f9c`；历史收据中的 production 仅保留其包/运行命名，不建立第二环境。市场、ChatGPT OAuth、Developer ID、公证、宿主祖先签名及移动端不列为门禁。
+
+证据截面：2026-10-12。GUI Terminal 06:36Z 原生读取与令牌刷新通过；Background 仍返回 -25308；旧 active Bridge 仍未切换。06:45Z 官方病毒库更新并验证加载后，scanner 恢复健康；新 status 无健康阻断。以下状态只覆盖对应范围。
+
+| 门禁 / 精确范围 | 状态 | 当前证据与边界 | 必要补充输入 / owner 动作 |
+|---|---|---|---|
+| 已安装插件 GUI Terminal 原生凭据与三个只读 MCP | PASS | [Terminal 收据](../../artifacts/owner-release/background-session-recovery/terminal-stdio-read-receipt.json)：精确安装提交 `c98a9cc4fb5a6c4e243954b1f32a02e5ec6c0a5f`；原生 read=0，过期 access 导致 401，refresh=200、native write=0，随后 onboarding.status / workspace.health / commercial.access.get 均 200；无 fixture fallback。属于独立 GUI Terminal，非实际 ChatGPT 宿主。刷新凭据写入是既有 owner 观察，本 agent 未执行。 | 保留安装版本、bridge hash、请求关联和脱敏收据；不能扩展为业务写入、生成或付费通过。 |
+| Background 原生凭据可用性 | FAIL | [Background 收据](../../artifacts/owner-release/background-session-recovery/stdio-read-receipt.json)：同提交/hash 初始化成功，onboarding.status 返回 MCP_CREDENTIAL_SOURCE_INVALID，native read=-25308。 | 实际 Background/宿主上下文恢复后的新鲜成功或明确阻断收据；GUI 成功不能替代。 |
+| 实际 ChatGPT active Bridge 配置刷新及认证读链路 | FAIL | [实际线程调用](../../artifacts/owner-release/background-session-recovery/mcp-actual-thread-read-receipt.json)：MCP_CONFIGURATION_REQUIRED，backend_request_sent=false；[WebSocket reload ACK](../../artifacts/owner-release/background-session-recovery/mcp-reload-websocket-receipt.json)仅确认请求成功。owner 最新消息：下一回合 PID 相同，active Bridge 未替换。 | 下一回合真实宿主 PID/缓存版本/配置读取与 onboarding.status、认证 MCP 响应的时间戳收据；ACK 不等于生命周期切换。 |
+| 实际线程商家 discovery 隔离 | PASS | 同一[线程收据](../../artifacts/owner-release/background-session-recovery/mcp-actual-thread-read-receipt.json)：134 商家工具，merchant.start / merchant.first_value 存在，无 ops 工具。只证明该次 discovery。 | 当前候选完整 descriptors/schema digest 与宿主加载身份；工具数量不能证明全部业务工具可用。 |
+| 包一致性与当前候选审查 | PASS（源码合同） | 已同步测试夹具与打包脚本镜像，并扩展关键模块一致性合同。[最终定向复测](../../artifacts/owner-release/background-session-recovery/owner-placeholder-retest.log) 58/58；[相邻合同复测](../../artifacts/owner-release/background-session-recovery/owner-final-contract-retest.log) 22/22。完整 Bridge 首批 249/251，通过修复诊断优先级与镜像后原失败两项均通过；不把各批重叠测试相加。新配置恢复与凭据缓存回归有红基线。 | 新包版本 `0.1.1+codex.20261012144725` 待冻结提交、打包、直装与真实宿主验证；[最终审查](../../artifacts/owner-release/delivery-10agents/5/final-candidate-review.md) 与 owner 新增占位符修复的 58 项回归均须保留。 |
+| 唯一 Demo 路由、API/Ops health 与 release 探针 | PASS | [Agent 6 本轮报告](../../artifacts/owner-release/delivery-10agents/6/REPORT.md)、[routing](../../artifacts/owner-release/delivery-10agents/6/routing.jsonl)、[status](../../artifacts/owner-release/delivery-10agents/6/status.json)、[receipts](../../artifacts/owner-release/delivery-10agents/6/receipts.json)：先确认域名到 canonical gateway；四个探针 200/ready，mode=demo；公开 release `release-01071ece-merchant-ui`。各组件源码不同，不能视为统一 c98 候选已部署。 | owner 绑定最终候选与每组件实际 source/digest；健康成功不替代业务权限验收。 |
+| API/MCP 业务权限及跨租户拒绝 | BLOCKED | Terminal 三个读接口及真实线程 discovery 只覆盖上述范围；未有本轮两租户/角色变化/业务写后读回证据。 | 已授权真实商家、平台及第二租户身份；请求 ID、拒绝响应、审计及目标资源读回，绑定当前组件。 |
+| 桌面 Ops 匿名登录页显示 | PASS | [匿名桌面报告](../../artifacts/ops-101-demo-52e30bce-anonymous-2026-10-12/new52ignoredreport.md)及 [shot-scraper 截图](../../artifacts/ops-101-demo-52e30bce-anonymous-2026-10-12/ops-shot-scraper.png)：空登录表单、静态资源 200，无 console error；Ops build 为 afa3eb3c。早于最新 release 探针，仅证明该次页面显示。 | 若 UI 候选改变，需对应构建的新截图与交互结果。 |
+| 桌面 Ops 租户、用户、权限、账务、规则、模型、审计 | BLOCKED | 同上明确未登录、未调用业务 API；匿名截图不证明七类运营能力。 | 授权平台账号及受限角色的当前桌面交互 capture、API 权限拒绝和业务/审计读回；不得用历史 fixture 填 PASS。 |
+| DB migration 完整链与真实 RLS | BLOCKED | [metadata](../../release-metadata.json) source=270,target=278，仅为源码声明；runbook/历史账本不是本轮 live `{version,name,checksum}` 链。 | DB owner 当前只读完整链、逐行目标比对、真实租户 RLS 拒绝与并发证据；需要迁移时另行授权窗口、备份/恢复/兼容证据，本任务禁止迁移。 |
+| worker 容器健康 | PASS | 新[status](../../artifacts/owner-release/background-session-recovery/status-after-scanner-update.json) 无健康阻断；[官方更新收据](../../artifacts/owner-release/background-session-recovery/scanner-update-receipt.json)：daily 28151、发布 06:24Z、签名校验通过、clamd 已加载，worker-scan 最近五次 health exit 0。[根因](../../artifacts/owner-release/delivery-10agents/9/REPORT.md)为旧库超过 86400 秒；未放宽 scanner 门禁。 | 容器健康不等于真实接受回调。ClamAV 运行阈值 172800 与 scanner 86400 仍有配置差异，source ECS 配置已为 86400；不得以健康状态隐去该差异。 |
+| worker 真实业务 readiness / 幂等 / 并发 | BLOCKED | 健康接口成功不证明真实接受回调、队列执行、扫描恢复、交付或对账；本轮未驱动任务。 | 受影响 worker 的真实 job/event、回调时间、队列/重试/幂等及产物读回；未知 provider 结果保留待核对，不伪造回调或盲目退款。 |
+| 文本中转 | BLOCKED | 本轮没有绑定当前运行组件的真实 provider、usage/cost 与结算收据。健康 configured 不算执行。 | text 的真实鉴权、请求 ID、provider 回执、实际 token/cost、预留/结算与错误证据。 |
+| 图片中转 | BLOCKED | 同上；未执行付费调用或查询 provider。 | image 实际计费单元、产物/hash、成本/账务及错误证据；未知结果需权威状态核对。 |
+| 图片编辑中转 | BLOCKED | 同上；未验证输入素材权益或编辑结果。 | image_edit 授权素材、实际计费单元、产物、成本/结算及错误证据。 |
+| OCR 中转 | BLOCKED | 同上；历史报价/文本回执不替代 OCR。 | ocr 真实输入、provider token usage、结果、成本/结算及错误证据。 |
+| 视频中转 | BLOCKED | 同上；脚本/分镜或配置就绪不等于视频成片。 | video provider 实际时长/usage、成片、成本/结算及错误证据。 |
+| 唯一 Demo 候选发布门禁 | BLOCKED | 本轮 inventory 不是批准；[inventory](../../artifacts/owner-release/delivery-10agents/6/host-inventory.json)另有 7 个非 canonical 容器待 owner 分类。worker-scan 已恢复；DB 链和真实业务证据未齐。本轮插件变更不需要 ECS 应用镜像更新；官方病毒库维护没有变更应用源码、迁移或业务权限。 | owner 分类全部运行容器、既有共享锁来源/权限/唯一 mutator、最终 SHA 与逐组件 digest、回滚材料、风险匹配检查及绑定候选的 owner 审查记录。本文不授予 GO。 |
+
+以上 PASS 不合并为部分或整体交付通过。旧账本 [2026-10-10 状态](2026-10-10-demo-review-status.md)仅用于历史追溯，其旧 migration 数字和健康观察不覆盖本轮较新收据。Agent 8 只提供初稿；owner 已执行全量 npm run typecheck（exit 0）、受影响定向测试、正式 Terminal stdio 链路和 canonical 健康修复。真实 ChatGPT 切换、Ops 管理员验收和有授权额度的五模态验证仍未完成。CodeGraph 本地查询已实际使用，但索引过期处以当前源码复核。
