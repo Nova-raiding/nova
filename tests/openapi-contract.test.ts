@@ -51,6 +51,24 @@ describe('OpenAPI security contract', () => {
     expect(operation).toContain("{ $ref: '#/components/parameters/IdempotencyKey' }")
   })
 
+  it('documents unauthenticated readiness and release identity probes with their failure responses', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const readiness = openApiOperation(source, '/readyz', 'get')
+    const release = openApiOperation(source, '/releasez', 'get')
+
+    expect(readiness).toContain('operationId: runtimeReadiness')
+    expect(readiness).toContain('security: []')
+    expect(readiness).toContain("'200': { $ref: '#/components/responses/Envelope' }")
+    expect(readiness).toContain("'503': { $ref: '#/components/responses/ErrorEnvelope' }")
+    expect(readiness).toContain('asset-scanner readiness')
+
+    expect(release).toContain('operationId: runtimeReleaseIdentity')
+    expect(release).toContain('security: []')
+    expect(release).toContain("'200': { $ref: '#/components/responses/Envelope' }")
+    expect(release).toContain("'503': { $ref: '#/components/responses/ErrorEnvelope' }")
+    expect(release).toContain('image-set digest')
+  })
+
   it('documents task answer/confirmation routes and their optional concurrency versions', () => {
     const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
     const answers = source.slice(source.indexOf('  /v1/tasks/{taskId}/answers:'), source.indexOf('  /v1/tasks/{taskId}/directions:'))

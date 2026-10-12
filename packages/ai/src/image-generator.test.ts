@@ -53,7 +53,8 @@ describe('image generator', () => {
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
+      // Synthetic parser fixture route; this does not assert a relay endpoint contract.
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => { method = String(init?.method); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'completed', data: [{ url: 'https://cdn.example/one.png' }] } }), { status: 200 }) },
     })
     await expect(generator.queryStatus!('provider-1')).resolves.toMatchObject({ state: 'succeeded', providerRequestId: 'provider-1', images: ['https://cdn.example/one.png'], evidence: { source: 'provider_status', providerStatus: 'completed' } })
@@ -61,13 +62,13 @@ describe('image generator', () => {
   })
 
   it('does not convert an unrecognized provider status into processing', async () => {
-    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
   })
 
   it('rejects a mismatched provider request id even when the provider reports failure', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/images/generations/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-other', status: 'failed' } }), { status: 200 }),
     })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
@@ -80,6 +81,40 @@ describe('image generator', () => {
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED', message: 'IMAGE_PROVIDER_STATUS_QUERY_NOT_CONFIGURED' })
     expect(fetcher).not.toHaveBeenCalled()
     expect(beforeRequest).not.toHaveBeenCalled()
+  })
+
+  it('classifies status query HTTP and response parsing failures without accepting a status', async () => {
+    const unauthorized = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}',
+      fetch: async () => new Response('', { status: 401 }),
+    })
+    await expect(unauthorized.queryStatus('provider-401')).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', providerSucceeded: false, reconciliationRequired: false, status: 401,
+    })
+
+    const unavailable = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}',
+      fetch: async () => new Response('', { status: 503 }),
+    })
+    await expect(unavailable.queryStatus('provider-503')).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', providerSucceeded: true, reconciliationRequired: true, status: 503,
+    })
+
+    const malformed = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}',
+      fetch: async () => new Response('{not-json', { status: 200 }),
+    })
+    await expect(malformed.queryStatus('provider-malformed')).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', providerSucceeded: true, reconciliationRequired: true,
+    })
+
+    const networkFailure = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', statusPath: '/fixture/status/{request_id}',
+      fetch: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('socket closed'), { code: 'ECONNRESET' }) }) },
+    })
+    await expect(networkFailure.queryStatus('provider-network')).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', providerSucceeded: true, reconciliationRequired: true,
+    })
   })
 
   it('uses explicitly configured status paths as GET templates or POST endpoints', async () => {

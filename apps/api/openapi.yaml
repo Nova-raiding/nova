@@ -1122,6 +1122,24 @@ paths:
       security: []
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
+  /readyz:
+    get:
+      tags: [Runtime]
+      operationId: runtimeReadiness
+      description: Public infrastructure readiness probe. Returns 200 when required runtime dependencies and readiness gates pass; returns 503 with an error envelope when database, Redis, production readiness, or required asset-scanner readiness is unavailable.
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /releasez:
+    get:
+      tags: [Runtime]
+      operationId: runtimeReleaseIdentity
+      description: Public release identity probe. Returns the injected release ID, git SHA, manifest SHA-256, image-set digest, and a readiness flag; production returns 503 when release metadata is incomplete or invalid.
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /metrics:
     get:
       tags: [Runtime]
