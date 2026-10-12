@@ -176,7 +176,7 @@ async function close(server: ReturnType<typeof createServer>) {
 
 async function credentialRetryBridge(stateFile: string, baseUrl: string) {
   const directory = await mkdtemp(join(tmpdir(), 'merchant-credential-retry-bridge-'))
-  for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
+  for (const name of ['bridge.mjs', 'launchd-environment.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
     await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(directory, name))
   }
   await writeFile(join(directory, 'keychain-credential.mjs'), `
@@ -204,7 +204,7 @@ async function qaPackageBrokerBridge(baseUrl: string) {
   const directory = await mkdtemp(join(tmpdir(), 'merchant-qa-broker-package-'))
   const mcpDirectory = join(directory, 'mcp')
   await mkdir(mcpDirectory)
-  for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs', 'keychain-credential.mjs', 'keychain-broker.mjs']) {
+  for (const name of ['bridge.mjs', 'launchd-environment.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs', 'keychain-credential.mjs', 'keychain-broker.mjs']) {
     await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(mcpDirectory, name))
   }
   await writeFile(join(directory, 'bundle-profile.json'), JSON.stringify({ schema_version: '1', profile: 'qa-broker', qa_only: true, release_eligible: false,
@@ -462,7 +462,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const origin = `http://127.0.0.1:${address.port}`
     await writeFile(stateFile, JSON.stringify({ access_token: 'old-access', refresh_token: 'old-refresh' }))
-    for (const name of ['bridge.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
+    for (const name of ['bridge.mjs', 'launchd-environment.mjs', 'relay-evidence.mjs', 'managed-token.mjs', 'managed-credential-state.mjs', 'windows-credential.mjs', 'windows-session-env.mjs']) {
       await copyFile(fileURLToPath(new URL(`./${name}`, import.meta.url)), join(directory, name))
     }
     await writeFile(join(directory, 'keychain-credential.mjs'), `

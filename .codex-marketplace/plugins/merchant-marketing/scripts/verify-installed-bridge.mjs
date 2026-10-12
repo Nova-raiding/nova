@@ -96,6 +96,7 @@ const fixedRuntimeFiles = [
   'mcp/relay-evidence.mjs',
   'mcp/managed-token.mjs',
   'mcp/managed-credential-state.mjs',
+  'mcp/launchd-environment.mjs',
   'mcp/installation-identity.mjs',
   'mcp/windows-credential.mjs',
   'mcp/windows-installation-binding.mjs',

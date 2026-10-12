@@ -85,7 +85,7 @@ export function installationIdentitySeed(apiOrigin, owner, identity) {
   }
 }
 
-function defaultHelper(request, spawn = spawnSync) {
+function defaultHelper(request, spawn = spawnSync, allowInteractivePrompt = false) {
   const qaBroker = isQaBrokerPackage()
   if (!qaBroker) assertKeychainHelperReady()
   // QA packages use the explicitly release-ineligible seeded broker. The
@@ -100,7 +100,12 @@ function defaultHelper(request, spawn = spawnSync) {
     : []
   const result = spawn(executable, arguments_, {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: request.operation === 'write' ? 125_000 : 10_000, maxBuffer: 1024 * 1024,
+    // Native reads can take longer than 10 seconds while macOS resolves the
+    // caller's Keychain access. Foreground login can wait for explicit ACL UI;
+    // optional identity discovery retains its shorter bound.
+    timeout: request.operation === 'write' || (request.operation === 'read' && allowInteractivePrompt === true)
+      ? 125_000 : request.operation === 'read' ? 30_000 : 10_000,
+    maxBuffer: 1024 * 1024,
   })
   if (result.error || result.status !== 0) {
     helperFail(qaBroker
@@ -129,7 +134,7 @@ export function writeKeychainCredential({ apiOrigin, workspaceId }, bundle, opti
 
 export function readKeychainCredential({ apiOrigin, workspaceId }, options = {}) {
   const { origin, workspace, account } = binding(apiOrigin, workspaceId)
-  const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper))
+  const runHelper = options.runHelper ?? (request => defaultHelper(request, options.spawnHelper, options.allowInteractivePrompt === true))
   let raw
   try { raw = runHelper({ operation: 'read', service: KEYCHAIN_SERVICE, account }) }
   catch (error) {

@@ -120,7 +120,7 @@ const required = [
   '.codex-plugin/plugin.json', '.mcp.json', 'package.json', 'README.md',
   'assets/store-nova-logo.png',
   'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/keychain-credential.mjs', 'mcp/keychain-credential-helper.swift',
-  'mcp/managed-token.mjs', 'mcp/managed-credential-state.mjs', 'mcp/relay-evidence.mjs', 'mcp/installation-identity.mjs', 'mcp/windows-credential.mjs',
+  'mcp/managed-token.mjs', 'mcp/managed-credential-state.mjs', 'mcp/launchd-environment.mjs', 'mcp/relay-evidence.mjs', 'mcp/installation-identity.mjs', 'mcp/windows-credential.mjs',
   'mcp/windows-installation-binding.mjs', 'mcp/windows-session-env.mjs',
   'macos/store-nova-connect-helper.swift',
   'scripts/build-connect-helper.mjs', 'scripts/connect-local-macos.mjs',

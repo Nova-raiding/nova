@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
 import { loadManagedToken, validatedRotatedCredential, withManagedRefreshLock } from './managed-token.mjs'
 import { createManagedCredentialLoader } from './managed-credential-state.mjs'
+import { restoreLaunchdEnvironment } from './launchd-environment.mjs'
 import { writeKeychainCredential } from './keychain-credential.mjs'
 import { writeWindowsCredential } from './windows-credential.mjs'
 import { restoreWindowsSession } from './windows-session-env.mjs'
@@ -17,24 +18,7 @@ import { restoreWindowsSession } from './windows-session-env.mjs'
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
 // explicit process environment always wins and production remains fail-closed.
-if (process.platform === 'darwin' && process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {
-  const launchdNames = [
-    'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
-    'MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_REFRESH_TOKEN', 'MERCHANT_MCP_TOKEN_SOURCE', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
-    'MERCHANT_MCP_WRITE_ENABLED', 'MERCHANT_RULE_APPROVAL_TOKEN', 'MERCHANT_ARTIFACT_DIR',
-    'MERCHANT_MCP_TIMEOUT_MS', 'MERCHANT_MCP_RETRY_ATTEMPTS', 'MERCHANT_MCP_RETRY_DELAY_MS',
-    'MERCHANT_ASSET_RESOURCE_DOMAINS', 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
-  ]
-  for (const name of launchdNames) {
-    if (typeof process.env[name] === 'string' && process.env[name].trim()) continue
-    try {
-      const value = execFileSync('launchctl', ['getenv', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-      if (value) process.env[name] = value
-    } catch {
-      // Missing launchd configuration is handled by the normal validation path.
-    }
-  }
-}
+restoreLaunchdEnvironment()
 
 restoreWindowsSession()
 const managedCredentialLoader = createManagedCredentialLoader({

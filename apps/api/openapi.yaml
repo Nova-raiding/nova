@@ -772,7 +772,11 @@ paths:
       tags: [Catalog]
       operationId: listAssets
       parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
-      responses: { '200': { $ref: '#/components/responses/Envelope' } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
     post:
       tags: [Catalog]
       operationId: registerAssetMetadata
