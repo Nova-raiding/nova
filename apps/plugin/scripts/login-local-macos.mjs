@@ -344,14 +344,14 @@ async function main() {
             throw error
           }
         }
-        const persisted = readKeychainCredential(target)
+        const persisted = readKeychainCredential(target, { allowInteractivePrompt: true })
         if (persisted.access_token !== bundle.access_token || persisted.refresh_token !== bundle.refresh_token
           || persisted.expires_at !== bundle.expires_at) throw fail('KEYCHAIN_VERIFY_FAILED')
       }, configureSession: async (configuration, bundle) => {
         configureLaunchd(configuration)
         // Do not acknowledge binding until ChatGPT has an authenticated way to
         // read the Keychain. A same-UID socket broker would expose bearer tokens.
-        const persisted = readKeychainCredential(configuration)
+        const persisted = readKeychainCredential(configuration, { allowInteractivePrompt: true })
         if (persisted.access_token !== bundle.access_token || persisted.refresh_token !== bundle.refresh_token
           || persisted.expires_at !== bundle.expires_at) throw fail('KEYCHAIN_VERIFY_FAILED')
       }, launchChatGPT, signal: controller.signal })

@@ -1,11 +1,19 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error Native Node installer module intentionally has no build step.
 import { credentialFromResponse, localPluginLoginCallbackFailureMessage, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
 
 describe('local plugin login installer runtime', () => {
+  it('opts into the longer Keychain read only for foreground login verification', () => {
+    const source = readFileSync(new URL('./login-local-macos.mjs', import.meta.url), 'utf8')
+    expect(source.match(/readKeychainCredential\(/gu)).toHaveLength(2)
+    expect(source).toContain('readKeychainCredential(target, { allowInteractivePrompt: true })')
+    expect(source).toContain('readKeychainCredential(configuration, { allowInteractivePrompt: true })')
+  })
+
   it.each([
     ['TARGET_INVALID', '平台分配的 ws_... 工作区 ID'],
     ['EXCHANGE_REJECTED', '重新运行登录脚本'],

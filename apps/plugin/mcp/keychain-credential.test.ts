@@ -54,6 +54,33 @@ describe('macOS keychain credential', () => {
     expect(() => readKeychainCredential(bound, { runHelper: () => '{bad' })).toThrow('MCP_KEYCHAIN_CREDENTIAL_INVALID')
   })
 
+  it('allows a foreground login read to wait for OS interaction while keeping routine reads bounded', () => {
+    const record = JSON.stringify({ schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
+      access_token: 'a', refresh_token: 'r', expires_at: '2030-01-01T00:00:00Z' })
+    const timeouts: number[] = []
+    const spawnHelper = (_executable: string, _arguments: string[], options: { timeout?: number }) => {
+      timeouts.push(options.timeout ?? 0)
+      return { status: 0, stdout: record, stderr: '' }
+    }
+    readKeychainCredential(bound, { spawnHelper })
+    readKeychainCredential(bound, { spawnHelper, allowInteractivePrompt: true })
+    readKeychainCredential(bound, { spawnHelper, allowInteractivePrompt: 125_000 })
+    expect(timeouts).toEqual([10_000, 125_000, 10_000])
+  })
+
+  it('keeps optional identity reads at the routine timeout and writes at the login timeout', () => {
+    const timeouts: number[] = []
+    const spawnHelper = (_executable: string, _arguments: string[], options: { timeout?: number }) => {
+      timeouts.push(options.timeout ?? 0)
+      return { status: 0, stdout: 'null', stderr: '' }
+    }
+    const store = installationIdentityStore(bound.apiOrigin, { accountId: 'account_123', workspaceId: bound.workspaceId }, { spawnHelper })
+    expect(store.load()).toBeUndefined()
+    writeKeychainCredential(bound, { schema_version: '1', api_origin: bound.apiOrigin, workspace_id: bound.workspaceId,
+      access_token: 'a', refresh_token: 'r', expires_at: '2030-01-01T00:00:00Z' }, { spawnHelper })
+    expect(timeouts).toEqual([10_000, 125_000])
+  })
+
   it('derives a stable account from origin and workspace and changes it across either boundary', async () => {
     const accounts: string[] = []
     const capture = (request: Record<string, string>) => {
