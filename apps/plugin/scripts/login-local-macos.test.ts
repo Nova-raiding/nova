@@ -2,11 +2,57 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error Native Node installer module intentionally has no build step.
-import { credentialFromResponse, localPluginLoginCallbackFailureMessage, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
+import { credentialFromResponse, launchChatGPTIfNotRunning, localPluginLoginCallbackFailureMessage, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
 
 describe('local plugin login installer runtime', () => {
+  it('skips ChatGPT app verification and launch when the host is already running', async () => {
+    const verify = vi.fn(() => ({ ok: true }))
+    const launch = vi.fn(async () => ({ launched: true }))
+    const result = await launchChatGPTIfNotRunning({
+      isRunning: async () => true,
+      appPaths: ['/Applications/ChatGPT.app'],
+      exists: () => true,
+      verify,
+      launch,
+    })
+    expect(result).toEqual({ launched: false, reason: 'already_running_restart_required' })
+    expect(verify).not.toHaveBeenCalled()
+    expect(launch).not.toHaveBeenCalled()
+  })
+
+  it('verifies and launches ChatGPT when no host process is running', async () => {
+    const exists = vi.fn(() => true)
+    const verify = vi.fn(() => ({ ok: true }))
+    const launch = vi.fn(async (path: string) => ({ launched: true, reason: path }))
+    const result = await launchChatGPTIfNotRunning({
+      isRunning: async () => false,
+      appPaths: ['/Applications/ChatGPT.app'],
+      exists,
+      verify,
+      launch,
+    })
+    expect(result).toEqual({ launched: true, reason: '/Applications/ChatGPT.app' })
+    expect(exists).toHaveBeenCalledWith('/Applications/ChatGPT.app')
+    expect(verify).toHaveBeenCalledWith('/Applications/ChatGPT.app')
+    expect(launch).toHaveBeenCalledWith('/Applications/ChatGPT.app')
+  })
+
+  it('does not verify or launch when the running-state check fails', async () => {
+    const verify = vi.fn(() => ({ ok: true }))
+    const launch = vi.fn(async () => ({ launched: true }))
+    await expect(launchChatGPTIfNotRunning({
+      isRunning: async () => { throw new Error('check failed') },
+      appPaths: ['/Applications/ChatGPT.app'],
+      exists: () => true,
+      verify,
+      launch,
+    })).rejects.toThrow('check failed')
+    expect(verify).not.toHaveBeenCalled()
+    expect(launch).not.toHaveBeenCalled()
+  })
+
   it('opts into the longer Keychain read only for foreground login verification', () => {
     const source = readFileSync(new URL('./login-local-macos.mjs', import.meta.url), 'utf8')
     expect(source.match(/readKeychainCredential\(/gu)).toHaveLength(2)

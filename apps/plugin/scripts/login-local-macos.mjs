@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -9,6 +9,12 @@ import { pathToFileURL } from 'node:url'
 
 const CALLBACK_PATH = '/merchant-mcp-callback'
 const fail = code => new Error(`LOCAL_PLUGIN_LOGIN_${code}`)
+
+export async function launchChatGPTIfNotRunning({ isRunning, appPaths, exists, verify, launch }) {
+  if (await isRunning()) return { launched: false, reason: 'already_running_restart_required' }
+  const appPath = appPaths.find(path => exists(path) && verify(path).ok)
+  return appPath ? launch(appPath) : { launched: false, reason: 'verified_app_not_found' }
+}
 
 export function localPluginLoginFailureMessage(code) {
   return ({
@@ -246,7 +252,8 @@ export async function loginLocalPlugin({ baseUrl, workspaceId, requestId, create
     // page even though token exchange and local persistence succeeded.
     await finishCallback(true)
     return { ok: true, mode: 'local_stdio', workspace_id: target.workspaceId, api_origin: target.apiOrigin,
-      credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched, host_verified: false }
+      credential_source: credentialSource, restart_required: !chatGPT.launched, chatgpt_launched: chatGPT.launched,
+      chatgpt_launch_reason: chatGPT.reason, host_verified: false }
   } catch (error) {
     await finishCallback(false, error instanceof Error ? error.message : '')
     if (error instanceof Error && error.message === 'LOCAL_PLUGIN_LOGIN_CANCEL_REVOKE_FAILED') throw error
@@ -324,10 +331,16 @@ async function main() {
     const { launchVerifiedChatGPT } = await import('./launch-verified-chatgpt-macos.mjs')
     const { verifyChatGPTMacApp } = await import('./verify-chatgpt-macos.mjs')
     const appPaths = [resolve(homedir(), 'Applications/ChatGPT.app'), '/Applications/ChatGPT.app', resolve(homedir(), 'Applications/Store Nova/ChatGPT.app')]
-    const launchChatGPT = async () => {
-      const appPath = appPaths.find(path => existsSync(path) && verifyChatGPTMacApp(path).ok)
-      return appPath ? launchVerifiedChatGPT(appPath) : { launched: false, reason: '未找到已验证的 ChatGPT.app' }
-    }
+    const launchChatGPT = () => launchChatGPTIfNotRunning({
+      isRunning: () => {
+        const result = spawnSync('/usr/bin/pgrep', ['-U', String(process.getuid?.() ?? 0), '-x', 'ChatGPT'], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'ignore'], timeout: 2000 })
+        if (result.error) throw new Error('CHATGPT_RUNNING_CHECK_FAILED')
+        if (result.status === 0) return true
+        if (result.status === 1) return false
+        throw new Error('CHATGPT_RUNNING_CHECK_FAILED')
+      },
+      appPaths, exists: existsSync, verify: verifyChatGPTMacApp, launch: launchVerifiedChatGPT,
+    })
     const result = await loginLocalPlugin({ baseUrl: options.get('--base-url'), workspaceId: options.get('--workspace'), requestId: options.get('--request-id'), createInstallationProof,
       openBrowser: url => options.get('--no-open') ? process.stdout.write(`请在商家浏览器打开此授权地址（不含 token）：\n${url}\n`)
         : execFileSync('/usr/bin/open', [url], { stdio: 'ignore', timeout: 5000 }),
