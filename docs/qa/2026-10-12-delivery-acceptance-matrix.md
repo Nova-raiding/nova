@@ -6,6 +6,7 @@
 |---|---|---|
 | 实际 ChatGPT 本地 stdio 认证读取 | PASS | 正式插件重新绑定后，08:55Z 连续 workspace_health / onboarding_status / workspace_health 成功；业务 needs_input / in_progress。安装版本 `0.1.1+codex.20261012144725`，插件源码 c6d6f771，90文件一致。早期 Background 和宿主失败保留，不推断所有进程上下文均恢复。 |
 | 标准重开 ChatGPT | PASS（只读调用） | 标准退出重开后的新会话真实调用 `workspace_health` 成功，返回 `needs_input / provide_materials`；macOS 钥匙串授权由用户在系统窗口完成。证明当前 Aqua 登录域的重启链路，不证明系统重启后的密钥持久恢复或商家资料齐备。见 [收据](../../artifacts/owner-release/2026-10-12-chatgpt-browser/chatgpt-standard-reopen-tool-receipt.json)。 |
+| Codex 后台 MCP 连接器 | BLOCKED（宿主凭据） | 本轮只读重试返回 `MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE`，未向后端发送请求。与上方 ChatGPT 桌面成功调用属于不同宿主上下文。 |
 | 宿主中转 Responses | PASS | 实际 deepseek-v4-pro 请求 HTTP200、111 tokens；模型目录403保留。不是商家文本结算/成本证据。 |
 | 商家及 Ops 桌面浏览器修复 | PASS | 真实登录后导航、必填校验、零空订单请求、模型验收边界均部署后复测。Ops 真实 platform / ops_admin / rules_admin；企业审计403、平台审计200保持真实 scope。 |
 | 风险匹配源码检查 | PASS | 全量 typecheck exit0；环境/模型20、配置24、runner相邻76、财务27及3个浏览器场景、fixture27、目标密码浏览器1；批次重叠不合计。临时容器清理完成。 |

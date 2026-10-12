@@ -8,7 +8,7 @@
 
 从实际 ChatGPT 窗口会话 `01a12f18-1ee8-7080-be23-b3c91dc455fd` 调用插件。早期观察到临时凭据不可用、UNAUTHENTICATED 和真实 macOS 钥匙串窗口，历史失败保留。随后通过正式本地插件登录流程恢复凭据，浏览器绑定完成，CLI 写入及读回校验成功。08:55Z 三次连续真实读取 `workspace_health → onboarding_status → workspace_health` 均通过认证，业务状态分别为 `needs_input / in_progress / needs_input`。详见 [实际宿主连续读取收据](../../artifacts/owner-release/2026-10-12-chatgpt-browser/chatgpt-final-authenticated-read-receipt.json)。这些业务状态表示待补资料，不是鉴权失败，也不证明付费生成通过。
 
-中转密钥来自既有 Keychain，当前 Aqua 登录域已恢复进程环境。标准方式重开 ChatGPT 后，新会话实际调用 `workspace_health` 成功，返回 `needs_input / provide_materials`；过程中 macOS 显示 `com.storenova.merchant-mcp` 钥匙串授权窗口，用户在系统窗口完成授权。详见 [重启后调用收据](../../artifacts/owner-release/2026-10-12-chatgpt-browser/chatgpt-standard-reopen-tool-receipt.json) 与截图。该结果通过宿主/插件重启链路验收，不代表已提供商品资料或系统重启后密钥持久恢复。
+中转密钥来自既有 Keychain，当前 Aqua 登录域已恢复进程环境。标准方式重开 ChatGPT 后，新会话实际调用 `workspace_health` 成功，返回 `needs_input / provide_materials`；过程中 macOS 显示 `com.storenova.merchant-mcp` 钥匙串授权窗口，用户在系统窗口完成授权。详见 [重启后调用收据](../../artifacts/owner-release/2026-10-12-chatgpt-browser/chatgpt-standard-reopen-tool-receipt.json) 与截图。该结果通过宿主/插件重启链路验收，不代表已提供商品资料或系统重启后密钥持久恢复。 当前 Codex 后台 MCP 连接器仍报告本地凭据服务暂时不可用，明确未向后端发送请求；这是另一宿主上下文，不覆盖桌面成功收据。
 
 ## 两个后台实际只读验收
 
