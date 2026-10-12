@@ -556,6 +556,45 @@ describe('durable rule-center HTTP boundary', () => {
     expect((generated.data as { result: { rule_preflight: { blocking: boolean; rule_hits: Array<{ ruleVersionId: string; version: string }> } } }).result.rule_preflight).toMatchObject({ blocking: false, rule_hits: expect.arrayContaining([expect.objectContaining({ ruleVersionId: `persisted-platform-${workspaceId}`, version: '2.0.0' })]) })
   })
 
+  it('fails closed on conflicting platform identity in a signed public rule before production generation', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_signed_rule_identity_conflict_${Date.now()}`
+    const now = new Date().toISOString()
+    repository.publicVersions.push({
+      id: `signed-conflict-${workspaceId}`, workspaceId: '__platform_rules__', packId: 'signed-conflict',
+      name: '身份冲突签名规则', version: '1.0.0', scope: 'platform', targetId: 'taobao', scopeValue: 'pinduoduo',
+      status: 'active', sourceKind: 'official', sourceReference: 'https://developer.alibaba.com/doc/doc.htm?articleId=120797&docType=1&treeId=23',
+      sourceCheckedAt: now, checksum: 'a'.repeat(64), checks: {}, createdBy: 'signed-rule-sync', revision: 1,
+      createdAt: now, updatedAt: now,
+    })
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `signed-conflict-store-${workspaceId}`, credentialRef: `vault://signed-conflict/${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, category: '女装外套', title: '签名规则身份冲突测试商品', stock: 1 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    service.selectDirection(task.id, 'A')
+    await workspaceMembers.upsert({ workspaceId, externalSubject: 'rules-regression-test', displayName: '规则回归测试', role: 'merchant_admin', status: 'active', invitedBy: 'test' })
+    const base = await start()
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'rules-regression-test': { workspaces: [workspaceId], roles: ['merchant_admin'], actor_id: 'rules-regression-test' } }))
+    vi.stubEnv('NODE_ENV', 'production')
+
+    const status = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, authorization: 'Bearer rules-regression-test' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.sync.status', params: {} }),
+    }).then(json)
+    expect(status.error).toBeNull()
+    const statuses = (status.data as { result: Array<{ platform: string; state: string }> }).result
+    expect(statuses.find(item => item.platform === 'taobao')?.state).toBe('not_configured')
+    expect(statuses.find(item => item.platform === 'pinduoduo')?.state).toBe('not_configured')
+
+    const generation = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, authorization: 'Bearer rules-regression-test' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'content.generate', params: { task_id: task.id } }),
+    }).then(json)
+    expect(generation.error).toMatchObject({ code: 'PLATFORM_RULE_DATA_UNAVAILABLE' })
+    expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
+  })
+
   it('freezes workspace-persisted rule versions into the confirmed task snapshot', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)

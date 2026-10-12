@@ -39,6 +39,19 @@ describe('local plugin login installer runtime', () => {
     expect(launch).toHaveBeenCalledWith('/Applications/ChatGPT.app')
   })
 
+  it('does not launch a present ChatGPT app when host verification fails', async () => {
+    const launch = vi.fn(async () => ({ launched: true }))
+    const result = await launchChatGPTIfNotRunning({
+      isRunning: async () => false,
+      appPaths: ['/Applications/ChatGPT.app'],
+      exists: () => true,
+      verify: () => ({ ok: false }),
+      launch,
+    })
+    expect(result).toEqual({ launched: false, reason: 'verified_app_not_found' })
+    expect(launch).not.toHaveBeenCalled()
+  })
+
   it('does not verify or launch when the running-state check fails', async () => {
     const verify = vi.fn(() => ({ ok: true }))
     const launch = vi.fn(async () => ({ launched: true }))

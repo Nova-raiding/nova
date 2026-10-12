@@ -135,6 +135,26 @@ describe('platform-owned model gate', () => {
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', AI_API_KEY: 'direct-key', AI_MODEL: 'text-v1' }, 'text')).toMatchObject({ ready: false, reasons: ['api_key_missing'] })
   })
 
+  it('fails closed for every modality when only direct-provider credentials are configured', () => {
+    const directOnly = {
+      MODEL_RELAY_BASE_URL: 'https://relay.example',
+      AI_API_KEY: 'direct-text-key',
+      AI_IMAGE_API_KEY: 'direct-image-key',
+      AI_VISION_API_KEY: 'direct-vision-key',
+      AI_VIDEO_API_KEY: 'direct-video-key',
+      AI_MODEL: 'text-v1',
+      IMAGE_MODEL: 'image-v1',
+      IMAGE_EDIT_MODEL: 'image-edit-v1',
+      OCR_MODEL: 'ocr-v1',
+      VIDEO_MODEL: 'video-v1',
+      EMBEDDING_MODEL: 'embedding-v1',
+    }
+
+    for (const kind of ['text', 'image', 'image_edit', 'ocr', 'video', 'embedding'] as const) {
+      expect(evaluatePlatformModelGate(directOnly, kind), kind).toMatchObject({ ready: false, reasons: expect.arrayContaining(['api_key_missing']) })
+    }
+  })
+
   it('never reports a relay ready that the runtime security boundary refuses', () => {
     // `relaySecurityFromEnv` returns undefined for these endpoints, so no
     // adapter is ever assembled: readiness must not claim otherwise.

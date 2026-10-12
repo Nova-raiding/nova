@@ -35,6 +35,25 @@ describe('storage reconciliation runner', () => {
     await expect(status.list('ws_b')).resolves.toHaveLength(1)
   })
 
+  it('replaces a prior clean snapshot when the same workspace cannot be verified on the latest run', async () => {
+    const status = new MemoryReconciliationStatusStore()
+    await status.put({ workspaceId: 'ws_a', status: 'clean', runStatus: 'succeeded', quota: { reservedBytes: 0, usedBytes: 4, projectedBytes: 4 }, counts: { references: 1, inventoryObjects: 1, matched: 1, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0, invalidMetadata: 0 }, findings: [] })
+
+    const result = await runReconciliationCycle({
+      workspaces: ['ws_a'],
+      inventory: { list: async () => { throw new Error('provider unavailable') } },
+      references: { list: async () => refs },
+      status,
+    })
+
+    expect(result).toMatchObject({ completed: 0, failed: 1 })
+    await expect(status.get('ws_a')).resolves.toMatchObject({
+      status: 'attention_required',
+      runStatus: 'failed',
+      error: { code: 'RECONCILIATION_PROVIDER_FAILED', retryable: true, nextActions: ['retry'] },
+    })
+  })
+
   it('rejects malformed workspace batches before invoking providers', async () => {
     const status = new MemoryReconciliationStatusStore()
     const list = async () => { throw new Error('provider must not be called') }
