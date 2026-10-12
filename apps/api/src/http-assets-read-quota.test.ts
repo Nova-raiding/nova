@@ -103,4 +103,20 @@ describe('GET /v1/assets when storage quota evidence cannot be resolved', () => 
     expect(quota).not.toHaveBeenCalled()
     expect(context.listAssets).not.toHaveBeenCalled()
   })
+
+  it.each(['?limit=0', '?limit=101', '?offset=-1', '?offset=1.5'])(
+    'rejects invalid pagination %s without listing assets', async query => {
+      const context = runtime(async () => ({ limitBytes: 100, usedBytes: 0, reservedBytes: 0 }))
+
+      await expect(routeAssetHttp(
+        context.req,
+        context.res,
+        '/v1/assets',
+        new URL(`http://localhost/v1/assets${query}`),
+        context.runtime,
+      )).rejects.toMatchObject({ code: 'INVALID_REQUEST', status: 400 })
+
+      expect(context.listAssets).not.toHaveBeenCalled()
+    },
+  )
 })
