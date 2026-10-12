@@ -6,7 +6,9 @@
 
 本机 Keychain 中已有桌面对话中转凭据。旧宿主默认 `openai`；备份用户配置后恢复 `damai_relay / deepseek-v4-pro`，密钥仅传入应用进程环境，没有输出或写入配置。真实 `/v1/responses` 返回 HTTP200、`OK`、111 total tokens 与 response ID；`/models` 返回403，不能用目录接口失败推断 Responses 不可用。
 
-从实际 ChatGPT 窗口新建会话 `01a12f18-1ee8-7080-be23-b3c91dc455fd`，显示中转模型并真实调用插件。`onboarding.status` 返回 `in_progress / provide_materials / available`；`workspace.health` 首次为临时凭据不可用，随后重试为 `UNAUTHENTICATED`。期间实际观察到 macOS 钥匙串确认窗口。对话中转、插件发现和首个认证读取已有实际证据；稳定凭据恢复及连续认证读取仍未通过，不能宣称完整插件验收。
+从实际 ChatGPT 窗口会话 `01a12f18-1ee8-7080-be23-b3c91dc455fd` 调用插件。早期观察到临时凭据不可用、UNAUTHENTICATED 和真实 macOS 钥匙串窗口，历史失败保留。随后通过正式本地插件登录流程恢复凭据，浏览器绑定完成，CLI 写入及读回校验成功。08:55Z 三次连续真实读取 `workspace_health → onboarding_status → workspace_health` 均通过认证，业务状态分别为 `needs_input / in_progress / needs_input`。详见 [实际宿主连续读取收据](../../artifacts/owner-release/2026-10-12-chatgpt-browser/chatgpt-final-authenticated-read-receipt.json)。这些业务状态表示待补资料，不是鉴权失败，也不证明付费生成通过。
+
+中转密钥来自既有 Keychain，当前 Aqua 登录域已恢复进程环境。标准方式退出并打开 ChatGPT 后，中转模型可加载；该次重启后的新插件调用尚未取得可归因的收据，不计为通过。没有设置重启系统后的持久密钥副本。
 
 ## 两个后台实际只读验收
 
@@ -26,6 +28,8 @@
 
 ## 发布状态
 
-当前基线15个canonical服务healthy，四个公开探针200；完整278条迁移的version/name/checksum与源码逐行相等。owner 已用既有共用锁捕获现网完整回滚配置，候选只构建两UI，更新服务为 `api api-replica ops-ui ui`；API镜像保持不变，仅刷新发布身份。本节在最终部署/真实桌面复验后更新，目前不授予完整交付通过。
+候选 `a36dda6061b3be9f1bc2517083305c8736866469` 已部署为 `release-a36dda60-desktop-ui`。更新服务为 `api api-replica ops-ui ui`；仅两 UI 镜像变化，API 镜像不变并刷新发布身份。既有共享锁内完成候选校验、部署和验收，随后正常释放；完整回滚材料保存在 ECS 保护目录。15 个 canonical 服务 healthy，四个公开探针200，完整278条迁移 version/name/checksum 不变；11个其余 canonical 服务及7个外部容器保持原 CID/镜像。未执行迁移、回滚、数据删除或权限授予。
+
+部署后已登录桌面浏览器与 shot-scraper 实际验证空订单 ID 必填提示、零订单读取请求、Ops 模型环境边界，以及两后台六个页面导航。上述修复验收通过，不能扩展为全部业务交付。五模态付费生成、跨租户权限拒绝和 worker 真实任务链仍缺当前运行证据；小红书规则配置、对象清单对账和商家待补资料保持未确认。
 
 证据目录：`artifacts/owner-release/2026-10-12-chatgpt-browser/`。CodeGraph 已实际只读查询，过期索引由当前源码补充，不称完全最新。
