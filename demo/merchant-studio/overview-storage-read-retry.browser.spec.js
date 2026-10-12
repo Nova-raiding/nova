@@ -152,3 +152,138 @@ test('overview explains a failed storage quota read and recovers after same GET 
   }, null, 2)}\n`)
   await testInfo.attach('quota-retry-receipt', { path: receiptPath, contentType: 'application/json' })
 })
+
+test('late quota response from the previous workspace cannot replace the active workspace quota', async ({ page }, testInfo) => {
+  const workspaceA = 'ws_overview_storage_retry_a'
+  const workspaceB = 'ws_overview_storage_retry_b'
+  const quotaReads = []
+  const blockedWrites = []
+  const pageErrors = []
+  let releaseAQuota
+  let markAStarted
+  const delayedAQuota = new Promise(resolve => { releaseAQuota = resolve })
+  const aQuotaStarted = new Promise(resolve => { markAStarted = resolve })
+  page.on('pageerror', error => pageErrors.push(error.message))
+
+  await page.route('**/api/**', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname.replace(/^\/api/u, '')
+    const method = request.method()
+    const workspace = request.headers()['x-workspace-id'] ?? workspaceA
+    const rpcMethod = method === 'POST' && path === '/mcp' ? request.postDataJSON()?.method : undefined
+
+    if (method !== 'GET' && !(method === 'POST' && path === '/v1/auth/mcp-token') && !(method === 'POST' && path === '/mcp' && readonlyMcpMethods.has(rpcMethod))) {
+      blockedWrites.push({ method, path, ...(rpcMethod ? { rpc_method: rpcMethod } : {}) })
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ ...envelope(null, { code: 'FIXTURE_WRITE_BLOCKED', message: 'unexpected write blocked by browser fixture' }), workspace_id: workspace }) })
+      return
+    }
+
+    let data = { items: [], total: 0, limit: 50, offset: 0 }
+    if (path === '/v1/auth/session') {
+      data = { account: { id: 'overview-storage-switch-account', login: 'qa@example.invalid', accountType: 'merchant', status: 'active', workspaceIds: [workspaceA, workspaceB] } }
+    } else if (path === '/v1/auth/mcp-token') {
+      const targetWorkspace = request.postDataJSON()?.workspace_id ?? workspace
+      data = { access_token: `fixture-token-${targetWorkspace}`, refresh_token: `fixture-refresh-${targetWorkspace}`, expires_in: 300, workspace_id: targetWorkspace }
+    } else if (path === '/healthz') {
+      data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true }, setup: {
+        platformOperations: { mode: 'manual', ready: true },
+        ai: { costGate: 'blocked', relay: { configured: false } },
+        modelReadiness: { text: { ready: false }, image: { ready: false }, image_edit: { ready: false }, ocr: { ready: false }, video: { ready: false } },
+      } }
+    } else if (path === '/v1/assets' && url.searchParams.get('limit') === '1') {
+      const quotaRead = { workspace, status: null }
+      quotaReads.push(quotaRead)
+      if (workspace === workspaceA && quotaReads.filter(item => item.workspace === workspaceA).length === 1) {
+        markAStarted()
+        await delayedAQuota
+      }
+      const usedBytes = workspace === workspaceB ? 2_000_000_000 : 1_000_000_000
+      quotaRead.status = 200
+      data = { items: [], total: 0, limit: 1, offset: 0, storage_quota: { usedBytes, reservedBytes: 0, limitBytes: 10_000_000_000, availableBytes: 10_000_000_000 - usedBytes, status: 'available' } }
+    } else if (path === '/v1/platform-accounts' || path === '/v1/products' || path === '/v1/rules' || path === '/v1/assets') {
+      data = { items: [], total: 0, limit: 50, offset: 0 }
+    } else if (path === '/mcp') {
+      const { method: rpc, params = {} } = request.postDataJSON()
+      if (rpc === 'workspace.metrics') data = { result: { stores: [], productSummary: { total: 0, lowStock: 0, missingImages: 0 }, riskItems: [], riskSummary: { total: 0, returned: 0, truncated: false }, taskFunnel: {}, completedTaskCount: 0, date_from: params.date_from ?? '', date_to: params.date_to ?? '' } }
+      else if (rpc === 'creative-points.statement.list') data = { result: { entries: [], next_cursor: null } }
+      else if (rpc === 'subscription.get' || rpc === 'commercial.subscription.get') data = { result: { schema_version: 'commercial.subscription.v1', status: 'available', current: null, future: [], packs: [], history: [], orders: [] } }
+      else if (rpc === 'creative-points.balance.get') data = { result: { available_points: 0 } }
+      else if (rpc === 'billing.transactions') data = { result: { balance_cny: '0.00', transactions: [] } }
+      else data = { result: {} }
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...envelope(data), workspace_id: workspace }) })
+  })
+
+  try {
+    await page.goto(`${studioUrl}/merchant/overview`, { waitUntil: 'domcontentloaded' })
+    const bootstrap = page.getByRole('combobox', { name: '选择当前商家工作区 ID' })
+    await expect(bootstrap).toBeVisible()
+    await bootstrap.click()
+    await page.getByText(`工作区 ID · ${workspaceA}`, { exact: true }).last().click()
+    await aQuotaStarted
+
+    const workspacePicker = page.getByRole('combobox', { name: '按工作区 ID 切换当前商家工作区' })
+    await workspacePicker.click()
+    await page.getByText(`工作区 ID · ${workspaceB}`, { exact: true }).last().click()
+    const storageSummary = page.locator('.today-storage-heading')
+    await expect(storageSummary).toContainText('2.0 GB / 10.0 GB')
+    mkdirSync(artifactDirectory, { recursive: true })
+    const beforeScreenshotPath = resolve(artifactDirectory, 'workspace-b-quota-before-late-a.png')
+    const beforeLateResponse = await page.screenshot({ path: beforeScreenshotPath })
+
+    await page.evaluate(() => {
+      const target = document.querySelector('.today-storage-heading')
+      if (!target) throw new Error('Storage quota heading was not rendered')
+      window.__storageQuotaHeadingChanges = []
+      new MutationObserver(() => window.__storageQuotaHeadingChanges.push(target.textContent ?? ''))
+        .observe(target, { subtree: true, childList: true, characterData: true })
+    })
+    const lateAResponsePromise = page.waitForResponse(response => {
+      const request = response.request()
+      const responseUrl = new URL(response.url())
+      return request.method() === 'GET'
+        && responseUrl.pathname.endsWith('/v1/assets')
+        && responseUrl.searchParams.get('limit') === '1'
+        && request.headers()['x-workspace-id'] === workspaceA
+    })
+    releaseAQuota()
+    const lateAResponse = await lateAResponsePromise
+    expect(lateAResponse.status()).toBe(200)
+    await lateAResponse.finished()
+    await lateAResponse.json()
+    // Let the response continuation and React's next paint complete before
+    // checking the unchanged B value; the response itself must have finished.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => window.setTimeout(resolve, 50)))))
+    await expect(storageSummary).toContainText('2.0 GB / 10.0 GB')
+    await expect(storageSummary).not.toContainText('1.0 GB')
+    expect(quotaReads.map(item => ({ workspace: item.workspace, status: item.status }))).toEqual([
+      { workspace: workspaceA, status: 200 },
+      { workspace: workspaceB, status: 200 },
+    ])
+    const staleResponseHeadingChanges = await page.evaluate(() => window.__storageQuotaHeadingChanges)
+    expect(staleResponseHeadingChanges).not.toContain('1.0 GB / 10.0 GB')
+    expect(blockedWrites).toEqual([])
+    expect(pageErrors).toEqual([])
+    const afterScreenshotPath = resolve(artifactDirectory, 'workspace-b-quota-after-late-a.png')
+    const afterLateResponse = await page.screenshot({ path: afterScreenshotPath })
+    await testInfo.attach('workspace-b-before-late-a', { body: beforeLateResponse, contentType: 'image/png' })
+    await testInfo.attach('workspace-b-after-late-a', { body: afterLateResponse, contentType: 'image/png' })
+    const receiptPath = resolve(artifactDirectory, 'workspace-switch-quota-stale-response-receipt.json')
+    writeFileSync(receiptPath, `${JSON.stringify({
+      scope: 'isolated Vite merchant overview workspace quota stale-response fixture',
+      quota_reads: quotaReads,
+      late_workspace_a_response_finished: lateAResponse.status(),
+      active_workspace_after_late_response: workspaceB,
+      observed_heading_changes_after_release: staleResponseHeadingChanges,
+      blocked_or_non_readonly_posts: blockedWrites,
+      page_errors: pageErrors,
+      screenshots: [beforeScreenshotPath, afterScreenshotPath],
+      result: 'late A response completed; active B quota remained 2.0 GB',
+      finished_at: new Date().toISOString(),
+    }, null, 2)}\n`)
+    await testInfo.attach('workspace-switch-receipt', { path: receiptPath, contentType: 'application/json' })
+  } finally {
+    releaseAQuota?.()
+  }
+})

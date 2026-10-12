@@ -81,6 +81,21 @@ describe('creative-point first-grant PostgreSQL concurrency regression', () => {
       await expect(repository.grant({ ...grantInput, idempotencyKey: `changed-key:${suffix}`, points: 38 }))
         .rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
 
+      // A distinct idempotency key per caller exercises source-level
+      // idempotency under a first-grant race, independently of operation-key
+      // replay tested above. Matching source facts must converge on one grant.
+      const concurrentSourceWorkspaceId = `ws_source_race_${suffix}`
+      await database.query("INSERT INTO workspaces(id,status) VALUES($1,'active')", [concurrentSourceWorkspaceId])
+      const concurrentSourceGrants = await Promise.all(Array.from({ length: 8 }, (_, index) => repository.grant({
+        ...grantInput,
+        workspaceId: concurrentSourceWorkspaceId,
+        idempotencyKey: `source-race:${suffix}:${index}`,
+        sourceId: `source-race:${suffix}`,
+      })))
+      const sourceRaceGrantId = concurrentSourceGrants[0]!.value.id
+      expect(concurrentSourceGrants.map(result => result.value.id)).toEqual(Array(8).fill(sourceRaceGrantId))
+      expect(concurrentSourceGrants.every(result => result.balance.availablePoints === 37)).toBe(true)
+
       const persisted = await database.query<{ operations: number; grants: number; ledger: number; balance: number; revision: number }>(`
         SELECT
           (SELECT count(*)::int FROM creative_point_operations WHERE workspace_id=$1 AND kind='grant') AS operations,
@@ -90,6 +105,16 @@ describe('creative-point first-grant PostgreSQL concurrency regression', () => {
           (SELECT revision::int FROM creative_point_access_state WHERE workspace_id=$1) AS revision
       `, [workspaceId])
       expect(persisted.rows[0]).toEqual({ operations: 1, grants: 1, ledger: 1, balance: 37, revision: 1 })
+
+      const sourceRacePersisted = await database.query<{ operations: number; grants: number; ledger: number; balance: number; revision: number }>(`
+        SELECT
+          (SELECT count(*)::int FROM creative_point_operations WHERE workspace_id=$1 AND kind='grant') AS operations,
+          (SELECT count(*)::int FROM creative_point_grants WHERE workspace_id=$1) AS grants,
+          (SELECT count(*)::int FROM creative_point_ledger_events WHERE workspace_id=$1 AND event_type='granted') AS ledger,
+          (SELECT available_points::int FROM creative_point_access_state WHERE workspace_id=$1) AS balance,
+          (SELECT revision::int FROM creative_point_access_state WHERE workspace_id=$1) AS revision
+      `, [concurrentSourceWorkspaceId])
+      expect(sourceRacePersisted.rows[0]).toEqual({ operations: 1, grants: 1, ledger: 1, balance: 37, revision: 1 })
     } finally {
       await app?.end()
       await database?.end()
