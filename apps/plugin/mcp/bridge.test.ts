@@ -185,6 +185,7 @@ export function readKeychainCredential({ apiOrigin, workspaceId }) {
   let state
   try { state = readFileSync(process.env.MOCK_CREDENTIAL_STATE_FILE, 'utf8').trim() }
   catch { throw new Error('MCP_KEYCHAIN_HELPER_INVALID: broker_unavailable') }
+  if (state === 'timeout') throw new Error('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
   if (state !== 'ready') throw new Error('MCP_KEYCHAIN_CREDENTIAL_INVALID: credential malformed or scope changed')
   return { access_token: 'recovered-bearer', refresh_token: 'recovered-refresh', expires_at: '2099-01-01T00:00:00.000Z', api_origin: apiOrigin, workspace_id: workspaceId }
 }
@@ -193,7 +194,7 @@ export function writeKeychainCredential() { throw new Error('unexpected credenti
 `)
   const child = spawn(process.execPath, [join(directory, 'bridge.mjs')], {
     cwd: process.cwd(),
-    env: { ...TEST_PROCESS_ENV, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: baseUrl, MERCHANT_WORKSPACE_ID: 'ws_retry_test', MERCHANT_MCP_TOKEN_SOURCE: 'keychain', MERCHANT_STRICT_AUTH: 'true', MOCK_CREDENTIAL_STATE_FILE: stateFile },
+    env: { ...TEST_PROCESS_ENV, DEPLOY_ENV: 'local_desktop', MERCHANT_MCP_BASE_URL: baseUrl, MERCHANT_WORKSPACE_ID: 'ws_retry_test', MERCHANT_MCP_TOKEN_SOURCE: 'keychain', MERCHANT_MCP_TOKEN: 'inherited-stale-access', MERCHANT_MCP_REFRESH_TOKEN: 'inherited-stale-refresh', MERCHANT_STRICT_AUTH: 'true', MOCK_CREDENTIAL_STATE_FILE: stateFile },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   return { child, directory }
@@ -546,6 +547,52 @@ describe('Codex stdio MCP bridge', () => {
       await rm(directory, { recursive: true, force: true })
     }
   }, 60_000)
+
+  it('fails a native Keychain read timeout closed without HTTP, then retries on the next call', async () => {
+    let requests = 0
+    const authorizationHeaders: string[] = []
+    const server = createServer(async (req, res) => {
+      requests += 1
+      authorizationHeaders.push(String(req.headers.authorization ?? ''))
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: body.id, result: { ok: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const stateDirectory = await mkdtemp(join(tmpdir(), 'merchant-keychain-read-timeout-'))
+    const stateFile = join(stateDirectory, 'state')
+    await writeFile(stateFile, 'timeout')
+    const { child, directory } = await credentialRetryBridge(stateFile, `http://127.0.0.1:${address.port}`)
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const unavailable = (await nextLine(child.stdout)).result
+      expect(unavailable).toMatchObject({ isError: true, structuredContent: {
+        code: 'MCP_CREDENTIAL_SOURCE_TEMPORARILY_UNAVAILABLE',
+        recovery: { state: 'credential_service_temporarily_unavailable', retryable: true, user_action_required: false,
+          next_action: { target: 'retry_tool_call' } },
+      } })
+      expect(unavailable.content[0].text).toContain('请稍后重试')
+      expect(unavailable.content[0].text).not.toContain('重新运行本地登录')
+      expect(requests).toBe(0)
+
+      await writeFile(stateFile, 'ready')
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result.isError).toBe(false)
+      expect(requests).toBe(1)
+      expect(authorizationHeaders).toEqual(['Bearer recovered-bearer'])
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, 'exit')
+        child.kill()
+        await exited
+      }
+      await close(server)
+      await rm(directory, { recursive: true, force: true })
+      await rm(stateDirectory, { recursive: true, force: true })
+    }
+  })
 
   it('latches a structurally invalid managed credential for the bridge process lifetime', async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), 'merchant-credential-structural-state-'))

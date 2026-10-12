@@ -10,11 +10,11 @@ function managedStoreReadFailure(error, env) {
   // Preserve only a safe retry classification. Raw credential-store and IPC
   // diagnostics must never cross the MCP boundary.
   const classification = String(error?.code ?? error?.message ?? '')
-  // QA broker packages wrap client startup/timeout failures at the Keychain
-  // helper boundary. Production's authenticated IPC gate uses a different
-  // reason and deliberately remains a permanent, fail-closed configuration
-  // error; recognizing these narrow reasons does not enable the QA broker.
-  if (/^(?:KEYCHAIN_BROKER_(?:UNAVAILABLE|TIMEOUT)|MCP_KEYCHAIN_HELPER_INVALID: broker_(?:unavailable|timeout))$/u.test(classification)) {
+  // Broker outages and native Keychain read timeouts are retryable. The native
+  // timeout can occur while macOS resolves a user's Keychain ACL; it does not
+  // mean the credential binding is invalid. Keep the match operation-specific
+  // so malformed records, writes, and authenticated IPC failures stay permanent.
+  if (/^(?:KEYCHAIN_BROKER_(?:UNAVAILABLE|TIMEOUT)|MCP_KEYCHAIN_HELPER_INVALID: broker_(?:unavailable|timeout)|MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read)$/u.test(classification)) {
     delete env.MERCHANT_MCP_TOKEN
     delete env.MERCHANT_MCP_REFRESH_TOKEN
     delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT

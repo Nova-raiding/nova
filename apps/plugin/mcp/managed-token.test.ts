@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // @ts-ignore JavaScript runtime module
 import { loadManagedToken, withManagedRefreshLock } from './managed-token.mjs'
+// @ts-ignore JavaScript runtime module
+import { createManagedCredentialLoader } from './managed-credential-state.mjs'
 
 const configured = () => ({
   MERCHANT_MCP_TOKEN_SOURCE: 'launchd',
@@ -17,7 +19,7 @@ const read = (name: string) => ({ ...configured(), MERCHANT_MCP_TOKEN: 'fresh-to
 
 describe('managed credential startup', () => {
   it.each(['sync', 'async'])('clears stale credentials and sanitizes a %s Keychain reader failure', async mode => {
-    const env = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    const env: Record<string, string | undefined> = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
     const reader = () => {
       const failure = new Error('sensitive-reader-error: stale-secret -25308')
       if (mode === 'sync') throw failure
@@ -30,10 +32,59 @@ describe('managed credential startup', () => {
     expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
   })
 
-  it('fails closed on a native Keychain read timeout without falling back to inherited credentials', () => {
-    const env = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
-    const reader = () => { throw new Error('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read') }
-    expect(() => loadManagedToken(env, 'darwin', read, reader)).toThrow('MCP_CREDENTIAL_SOURCE_INVALID')
+  it('retries a native Keychain read timeout without falling back to inherited credentials', async () => {
+    const env: Record<string, string | undefined> = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    let reads = 0
+    const reader = () => {
+      reads += 1
+      if (reads === 1) throw new Error('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
+      return { access_token: 'fresh-access', refresh_token: 'fresh-refresh', expires_at: '2099-01-01T00:00:00.000Z' }
+    }
+    const loader = createManagedCredentialLoader({
+      load: () => loadManagedToken(env, 'darwin', read, reader),
+      clear: () => {
+        delete env.MERCHANT_MCP_TOKEN
+        delete env.MERCHANT_MCP_REFRESH_TOKEN
+        delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT
+      },
+    })
+
+    await expect(loader.ensure()).resolves.toBe(false)
+    expect(loader.isPermanentlyUnavailable()).toBe(false)
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_REFRESH_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
+    await expect(loader.ensure()).resolves.toBe(true)
+    expect(loader.isPermanentlyUnavailable()).toBe(false)
+    expect(reads).toBe(2)
+    expect(env.MERCHANT_MCP_TOKEN).toBe('fresh-access')
+    expect(env.MERCHANT_MCP_REFRESH_TOKEN).toBe('fresh-refresh')
+  })
+
+  it.each([
+    ['write timeout', 'MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=write'],
+    ['optional-read timeout', 'MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read_optional'],
+    ['helper startup failure', 'MCP_KEYCHAIN_HELPER_INVALID: helper_start_failed operation=read'],
+    ['Keychain OSStatus failure', 'MCP_KEYCHAIN_HELPER_INVALID: keychain_osstatus=-25308 operation=read'],
+  ])('keeps %s permanently invalid and clears inherited tokens', async (_label, message) => {
+    const env: Record<string, string | undefined> = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    let reads = 0
+    const loader = createManagedCredentialLoader({
+      load: () => loadManagedToken(env, 'darwin', read, () => {
+        reads += 1
+        throw new Error(message)
+      }),
+      clear: () => {
+        delete env.MERCHANT_MCP_TOKEN
+        delete env.MERCHANT_MCP_REFRESH_TOKEN
+        delete env.MERCHANT_MCP_TOKEN_EXPIRES_AT
+      },
+    })
+
+    await expect(loader.ensure()).resolves.toBe(false)
+    expect(loader.isPermanentlyUnavailable()).toBe(true)
+    await expect(loader.ensure()).resolves.toBe(false)
+    expect(reads).toBe(1)
     expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN')
     expect(env).not.toHaveProperty('MERCHANT_MCP_REFRESH_TOKEN')
     expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
