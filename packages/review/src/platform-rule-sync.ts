@@ -101,7 +101,9 @@ export function platformRuleSyncStatus(
     // production generation preflight 503s on exactly that state. Both fields
     // are the same concept elsewhere in the rule center (`rule-center.ts`,
     // `server.ts`), so accept either.
-    const matchingPlatformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === source.platform)
+    const matchingPlatformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform'
+      && (!rule.targetId || !rule.scopeValue || rule.targetId === rule.scopeValue)
+      && (rule.targetId ?? rule.scopeValue) === source.platform)
     const trustedManualRules = matchingPlatformRules.filter(rule => rule.source.kind === 'internal' && isApprovedPlatformRuleSource(source.platform, rule.source.reference) && rule.source.trust === 'verified')
     const verifiedSignedRules = matchingPlatformRules.filter(rule => rule.source.kind === 'official' && rule.source.trust === 'verified' && rule.source.createdBy === 'signed-rule-sync' && isApprovedPlatformRuleSource(source.platform, rule.source.reference))
     const platformRules = manifestConfigured ? [...trustedManualRules, ...verifiedSignedRules] : trustedManualRules

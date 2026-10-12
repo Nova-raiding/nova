@@ -58,6 +58,18 @@ describe('platform rule sync status', () => {
     expect(result.find(item => item.platform === 'taobao')).toMatchObject({ state: 'ready', configured: true })
   })
 
+  it('fails closed when a signed rule has conflicting platform identity fields', () => {
+    const rules = [{
+      id: 'conflicting-platform', name: '跨平台错配规则', version: '1', scope: 'platform' as const,
+      status: 'active' as const, targetId: 'taobao', scopeValue: 'pinduoduo', updatedAt: '2026-08-26T06:00:00.000Z',
+      source: { kind: 'official' as const, reference: PLATFORM_RULE_SOURCES.find(source => source.platform === 'taobao')!.officialUrl, checkedAt: '2026-08-26T06:00:00.000Z', trust: 'verified' as const, createdBy: 'signed-rule-sync' },
+      checksum: 'c'.repeat(64), revision: 1, checks: {},
+    }]
+    const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
+    expect(result.find(item => item.platform === 'taobao')).toMatchObject({ state: 'not_configured', latestVersion: null })
+    expect(result.find(item => item.platform === 'pinduoduo')).toMatchObject({ state: 'not_configured', latestVersion: null })
+  })
+
   it('does not trust a signed row without importer identity and an approved platform source', () => {
     const rules = [{
       id: 'bad-signed', name: 'untrusted', version: '1', scope: 'platform' as const,
