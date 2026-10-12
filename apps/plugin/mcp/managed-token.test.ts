@@ -30,6 +30,15 @@ describe('managed credential startup', () => {
     expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
   })
 
+  it('fails closed on a native Keychain read timeout without falling back to inherited credentials', () => {
+    const env = { ...configured(), MERCHANT_MCP_TOKEN_SOURCE: 'keychain' }
+    const reader = () => { throw new Error('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read') }
+    expect(() => loadManagedToken(env, 'darwin', read, reader)).toThrow('MCP_CREDENTIAL_SOURCE_INVALID')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_REFRESH_TOKEN')
+    expect(env).not.toHaveProperty('MERCHANT_MCP_TOKEN_EXPIRES_AT')
+  })
+
   it.each([
     ['sync direct', 'KEYCHAIN_BROKER_UNAVAILABLE', 'sync'],
     ['async direct', 'KEYCHAIN_BROKER_TIMEOUT', 'async'],

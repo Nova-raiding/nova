@@ -65,7 +65,13 @@ describe('macOS keychain credential', () => {
     readKeychainCredential(bound, { spawnHelper })
     readKeychainCredential(bound, { spawnHelper, allowInteractivePrompt: true })
     readKeychainCredential(bound, { spawnHelper, allowInteractivePrompt: 125_000 })
-    expect(timeouts).toEqual([10_000, 125_000, 10_000])
+    expect(timeouts).toEqual([30_000, 125_000, 30_000])
+  })
+
+  it('keeps helper read timeouts fail-closed without exposing OS diagnostics', () => {
+    const timeout = () => ({ status: null, error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), stdout: '', stderr: '' })
+    expect(() => readKeychainCredential(bound, { spawnHelper: timeout })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
+    expect(() => readKeychainCredential(bound, { allowInteractivePrompt: true, spawnHelper: timeout })).toThrow('MCP_KEYCHAIN_HELPER_INVALID: helper_timeout operation=read')
   })
 
   it('keeps optional identity reads at the routine timeout and writes at the login timeout', () => {

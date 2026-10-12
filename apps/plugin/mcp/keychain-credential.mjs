@@ -100,9 +100,11 @@ function defaultHelper(request, spawn = spawnSync, allowInteractivePrompt = fals
     : []
   const result = spawn(executable, arguments_, {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    // A foreground login may need time for macOS to present and receive an
-    // ACL confirmation. Keep ordinary bridge reads (and optional reads) short.
-    timeout: request.operation === 'write' || (request.operation === 'read' && allowInteractivePrompt === true) ? 125_000 : 10_000,
+    // Native reads can take longer than 10 seconds while macOS resolves the
+    // caller's Keychain access. Foreground login can wait for explicit ACL UI;
+    // optional identity discovery retains its shorter bound.
+    timeout: request.operation === 'write' || (request.operation === 'read' && allowInteractivePrompt === true)
+      ? 125_000 : request.operation === 'read' ? 30_000 : 10_000,
     maxBuffer: 1024 * 1024,
   })
   if (result.error || result.status !== 0) {
