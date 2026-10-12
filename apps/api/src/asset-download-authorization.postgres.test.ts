@@ -82,11 +82,14 @@ describe('isolated PostgreSQL asset download authorization/storage boundary', ()
 
   afterAll(async () => {
     if (api?.server.listening) await new Promise<void>(resolve => api!.server.close(() => resolve()))
-    removeStorageOverride?.()
-    await quotaPool?.end()
-    await pool?.end()
-    vi.unstubAllEnvs()
-    if (storageRoot) await rm(storageRoot, { recursive: true, force: true })
+    try {
+      await (await api?.persistenceReady)?.close?.()
+    } finally {
+      removeStorageOverride?.()
+      await Promise.all([quotaPool?.end(), pool?.end()])
+      vi.unstubAllEnvs()
+      if (storageRoot) await rm(storageRoot, { recursive: true, force: true })
+    }
   })
 
   it('scopes asset listing and storage quota to the authorized workspace', async () => {
