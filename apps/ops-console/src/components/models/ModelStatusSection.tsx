@@ -15,6 +15,13 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   // The hook retains the last value after a failed refresh, but readiness is
   // a launch gate: stale data must not be presented as current evidence.
   const displayStatus = modelError ? undefined : modelStatus;
+  const environment = model.dataSetError("workspace.health") ? undefined : model.dataSource?.environment?.trim().toLowerCase();
+  const demoEnvironment = environment === "demo";
+  const productionEnvironment = environment === "production";
+  const releaseScope = demoEnvironment ? "唯一 Demo 验收" : productionEnvironment ? "生产发布" : "环境与发布";
+  const releaseBoundary = demoEnvironment
+    ? "唯一 Demo 验收与发布身份尚未由本页核验。"
+    : productionEnvironment ? "全局生产发布状态尚未由本页核验。" : "运行环境未核验，验收与发布状态保持未确认。";
   const errorRef = useRef<HTMLDivElement>(null);
   const statusLabel = displayStatus ? modelStateLabel(displayStatus.state) : modelStatusLoading ? "加载中" : "不可用";
   // `platform.model.status` is a model-service diagnostic. Even when it says
@@ -43,7 +50,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
         </div>
       ) : null}
       {!modelStatusLoading ? <>
-      {fixtureData ? <Alert type="warning" showIcon title="当前含演示数据，模型 readiness 不可视为真实生产就绪" description="请先切换到无 fixture 的真实 API/数据源；本页面不会把演示配置标记为可用。" /> : null}
+      {fixtureData ? <Alert type="warning" showIcon title="当前含演示数据，模型 readiness 不可视为真实验收通过" description="请先切换到无 fixture 的真实 API/数据源；本页面不会把演示配置标记为可用。" /> : null}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <Statistic title="模型归属" value="平台统一" />
@@ -73,15 +80,15 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
       <Typography.Paragraph type="secondary">
         用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站{" "}
         {displayStatus?.relay?.host ?? "-"}，TPM {displayStatus?.quotas.tpm ?? "-"}，模型状态接口中的插件构建字段标记{" "}
-        {displayStatus?.release_metadata_ready ? "已返回" : "未通过"}；该标记不是 /api/releasez 发布身份，全局生产发布状态尚未由本页核验。
+        {displayStatus?.release_metadata_ready ? "已返回" : "未通过"}；该标记不是 /api/releasez 发布身份，{releaseBoundary}
       </Typography.Paragraph>
       <Alert
         type="warning"
         showIcon
-        title="模型运行门禁不等于生产发布就绪"
-        description={!fixtureData && displayStatus?.release_metadata_ready && displayStatus.state === "ready"
-          ? "五模态运行状态均返回 ready，但这不是生产门禁通过。本响应没有 /api/releasez 的 release_id、git_sha、manifest_sha256 和 image_set_digest；全局发布身份未核验前，不得标记为生产通过。"
-          : "中转站已配置不等于生产可用。模型运行门禁和全局 release evidence 必须分别通过；任一项缺失时生成与生产写入保持阻断。"}
+        title={`模型运行门禁不等于${releaseScope}就绪`}
+        description={`${!fixtureData && displayStatus?.release_metadata_ready && displayStatus.state === "ready"
+          ? "五模态运行状态均返回 ready，但模型配置就绪不等于实际调用通过；用量与成本证据仍须核验。"
+          : "中转站已配置不等于实际调用通过；配置或运行证据缺失时生成保持阻断。"} ${releaseBoundary} 本响应没有 /api/releasez 的完整不可变发布身份，不得据此标记${releaseScope}通过。` }
       />
       <ModelReadinessTable status={displayStatus} />
       {modelError ? (
@@ -113,7 +120,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
         ) : modelStatus.next_actions.length ? (
           <Alert type="warning" showIcon title="模型上线门禁" description={modelStatus.next_actions.join("；")} />
         ) : modelStatus.state === "ready" ? (
-          <Alert type="info" showIcon title="模型运行状态为 ready，生产发布身份未核验" description="请以 /api/releasez 的完整不可变发布身份和 ready=true 作为生产发布结论。" />
+          <Alert type="info" showIcon title={`模型运行状态为 ready，${productionEnvironment ? "生产发布身份未核验" : "发布身份未核验"}`} description={`${releaseBoundary} 请分别核验实际模型调用证据和 /api/releasez 的完整不可变发布身份。`} />
         ) : (
           <Alert type="warning" showIcon title="模型状态未达到就绪" description={`服务端模型状态为 ${modelStateLabel(modelStatus.state)}，且未返回可执行的修复建议；不得按空建议推断为通过。`} />
         )

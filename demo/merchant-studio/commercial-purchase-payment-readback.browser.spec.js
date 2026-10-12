@@ -121,3 +121,75 @@ test('套餐购买弹窗可取消且不下单，确认模拟转账指引后按�
     await browser.close()
   }
 })
+
+test('空订单输入客户端校验且只读订单失败不进入支付提交未知恢复', async ({}, testInfo) => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await context.newPage()
+  const calls = []
+  const pageErrors = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await context.route('**/*', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.origin !== new URL(studioUrl).origin) return route.abort()
+    if (!url.pathname.startsWith('/api/')) return route.continue()
+    const path = url.pathname.slice(4)
+    let data = {}
+    if (path === '/v1/auth/session') data = { account: { id: 'merchant-order-query-fixture', login: 'query@example.invalid', accountType: 'merchant', displayName: '本地只读订单校验 Fixture', enterpriseName: '本地模拟工作区', status: 'active', workspaceIds: [workspaceId] } }
+    else if (path === '/v1/auth/mcp-token') data = { access_token: 'fixture-query-token', refresh_token: 'fixture-query-refresh', expires_in: 300, workspace_id: workspaceId }
+    else if (path === '/healthz') data = { status: 'ok', writesEnabled: false, connectors: {}, persistence: { mode: 'fixture', ready: true } }
+    else if (path === '/v1/assets') data = { items: [], total: 0, limit: 50, offset: 0 }
+    else if (path === '/mcp') {
+      const body = request.postDataJSON()
+      calls.push({ method: body.method, params: body.params })
+      if (body.method === 'commercial.catalog.get') data = { schema_version: 'commercial.catalog.v2', status: 'available', catalog: [] }
+      else if (body.method === 'commercial.subscription.get') data = { schema_version: 'commercial.subscription.v1', status: 'available', onboarding_qualified: false, current: null, future: [], packs: [], history: [], orders: [] }
+      else if (body.method === 'commercial.order.payment.get' && body.params.order_id === 'order_selected_fixture') data = { ...pendingOrder, order_id: 'order_selected_fixture' }
+      else if (body.method === 'commercial.order.payment.get') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ...envelope(null), error: { code: 'INTERNAL_ERROR', message: 'fixture read unavailable' } }) })
+      else if (/commercial\..*(?:create|confirm|cancel)/u.test(body.method)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ ...envelope(null), error: { code: 'FIXTURE_WRITES_FORBIDDEN', message: 'No writes in read-only query fixture' } }) })
+      else if (body.method === 'creative-points.balance.get') data = { available_points: 0, balance_state: 'known' }
+      else if (body.method === 'billing.transactions') data = { balance_cny: '0.00', transactions: [] }
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ result: data })) })
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(data)) })
+  })
+  try {
+    await page.goto(`${studioUrl}/merchant/finance`, { waitUntil: 'domcontentloaded' })
+    const center = page.getByRole('region', { name: '套餐与权益包' })
+    await center.getByRole('tab', { name: '订单与恢复' }).click()
+    const input = center.getByLabel('原订单 ID', { exact: true })
+    const query = center.getByRole('button', { name: '查询原订单', exact: true })
+    for (const value of ['', '   ']) {
+      await input.fill(value)
+      const before = calls.length
+      await query.click()
+      await expect(center.getByRole('alert').filter({ hasText: '请输入原订单 ID 后再查询。' })).toBeVisible()
+      await expect(input).toHaveAttribute('aria-invalid', 'true')
+      expect(calls).toHaveLength(before)
+      await expect(center).not.toContainText('本次提交结果待确认')
+      await expect(center).not.toContainText('不要重新下单或付款')
+    }
+    await input.fill('order_selected_fixture')
+    await query.click()
+    await expect.poll(() => calls.filter(call => call.method === 'commercial.order.payment.get').length).toBe(1)
+    await expect(query).toBeEnabled()
+    await input.fill('')
+    const beforeBlankWithPreviousOrder = calls.length
+    await query.click()
+    await expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(calls).toHaveLength(beforeBlankWithPreviousOrder)
+    await expect(center).not.toContainText('本次提交结果待确认')
+    await page.screenshot({ path: testInfo.outputPath('empty-order-validation-fixture.png'), fullPage: true })
+    await input.fill('order_read_fixture')
+    await expect(input).toHaveAttribute('aria-invalid', 'false')
+    await query.click()
+    await expect(center).toContainText('读取暂不可用，请稍后重试。')
+    await expect(center.getByRole('button', { name: '查询原提交结果', exact: true })).toHaveCount(0)
+    await expect(center).not.toContainText('结果待确认，请先查原订单或联系运营')
+    expect(calls.filter(call => call.method === 'commercial.order.payment.get').map(call => call.params.order_id)).toEqual(['order_selected_fixture', 'order_read_fixture'])
+    expect(calls.filter(call => /commercial\..*(?:create|confirm|cancel)/u.test(call.method))).toEqual([])
+    expect(pageErrors).toEqual([])
+    await page.screenshot({ path: testInfo.outputPath('readonly-order-failure-fixture.png'), fullPage: true })
+  } finally { await context.close(); await browser.close() }
+})

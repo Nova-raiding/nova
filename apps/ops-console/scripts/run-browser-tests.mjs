@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const vitest = fileURLToPath(new URL("../../../node_modules/vitest/vitest.mjs", import.meta.url));
+const opsRoot = fileURLToPath(new URL("../", import.meta.url));
 const files = [
   "src/pages/OverviewPage.browser.test.tsx",
   "src/pages/OverviewPage.controller-route.browser.test.tsx",
@@ -125,7 +126,8 @@ for (const file of filesToRun) {
   const dedicatedConfig = file === "src/components/rules/PublicRuleDraftReviewPanel.detail-boundary.regression.test.tsx"
     ? ["--config", fileURLToPath(new URL("../../../vitest.ops-rule-detail-browser.config.ts", import.meta.url))]
     : [];
-  const result = spawnSync(process.execPath, [vitest, "run", ...dedicatedConfig, "--pool=threads", "--no-file-parallelism", ...browserBudget, file], {
+  const result = spawnSync(process.execPath, [vitest, "run", ...dedicatedConfig, "--pool=threads", "--no-file-parallelism", "--passWithNoTests=false", ...browserBudget, file], {
+    cwd: opsRoot,
     stdio: "inherit",
     env: process.env,
   });

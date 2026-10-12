@@ -39,14 +39,15 @@ describe("ModelStatusSection", () => {
         model: {
           modelStatus: readyStatus,
           modelStatusLoading: false,
-          dataSource: { fixtureDataPresent: false },
+          dataSource: { fixtureDataPresent: false, environment: "production" },
           dataSetError: () => undefined,
           load: async () => undefined,
         } as unknown as OpsConsoleModel,
       }),
     );
     expect(markup).toContain("五模态运行状态均返回 ready");
-    expect(markup).toContain("这不是生产门禁通过");
+    expect(markup).toContain("不得据此标记生产发布通过");
+    expect(markup).toContain("模型配置就绪不等于实际调用通过");
     expect(markup).toContain("/api/releasez");
     expect(markup).toContain("生产发布身份未核验");
     expect(markup).toContain("该标记不是 /api/releasez 发布身份");
@@ -55,13 +56,26 @@ describe("ModelStatusSection", () => {
     expect(markup).not.toContain("最终 readiness");
   });
 
+  it.each(["demo", undefined, "unexpected"])("keeps response environment %s fail-closed without production gates", environment => {
+    const markup = renderToStaticMarkup(createElement(ModelStatusSection, {
+      model: { modelStatus: readyStatus, modelStatusLoading: false,
+        dataSource: { fixtureDataPresent: false, environment },
+        dataSetError: () => undefined, load: async () => undefined } as unknown as OpsConsoleModel,
+    }));
+    expect(markup).toContain(environment === "demo" ? "唯一 Demo 验收" : "运行环境未核验");
+    expect(markup).toContain("发布身份未核验");
+    expect(markup).toContain("不等于实际调用通过");
+    expect(markup).not.toContain("生产发布");
+    expect(markup).not.toContain("生产门禁");
+  });
+
   it("does not infer success from an empty next-actions list when model state is blocked", () => {
     const markup = renderToStaticMarkup(
       createElement(ModelStatusSection, {
         model: {
           modelStatus: { ...readyStatus, state: "release_metadata_blocked", release_metadata_ready: false },
           modelStatusLoading: false,
-          dataSource: { fixtureDataPresent: false },
+          dataSource: { fixtureDataPresent: false, environment: "production" },
           dataSetError: () => undefined,
           load: async () => undefined,
         } as unknown as OpsConsoleModel,

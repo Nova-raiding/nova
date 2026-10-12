@@ -51,7 +51,10 @@ describe('resolveMerchantEnvironmentStatus', () => {
     expect(result.detail).toContain('当前是演示模式')
     expect(result.actions.join('；')).toContain('唯一 Demo 环境')
     expect(result.actions.join('；')).not.toContain('切换到生产环境')
-    expect(result.facts).toContain('正式生产门禁：不适用（唯一 Demo）')
+    expect(result.facts).toContain('唯一 Demo 验收：待核验；发布身份：未核验')
+    expect(result.title).toBe('唯一 Demo · 验收待核验')
+    expect(result.detail).not.toContain('生产上线门禁')
+    expect(result.detail).toContain('配置就绪不等于实际调用')
     expect(result.facts.join('；')).not.toContain('生产门禁：已通过')
   })
 
@@ -132,7 +135,8 @@ describe('resolveMerchantEnvironmentStatus', () => {
     }))
 
     expect(result).toMatchObject({ state: 'blocked', tone: 'warning' })
-    expect(result.detail).toContain('未确认当前为生产环境')
+    expect(result.detail).toContain('运行环境未核验')
+    expect(result.facts.join('；')).not.toContain('生产门禁：已通过')
   })
 
   it('keeps official API mode fail-closed without write evidence', () => {

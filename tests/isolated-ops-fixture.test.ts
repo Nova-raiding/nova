@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { assertIsolatedMigrationChain, disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
+import { assertIsolatedMigrationChain, classifyIsolatedRedisPing, disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
 
 const runId = '00000000-0000-4000-8000-000000000163'
 const plan = isolatedContainerRunArgs({ runId, kind: 'postgres', image: ISOLATED_POSTGRES_IMAGE })
@@ -14,6 +14,14 @@ const inspection = () => ({
 })
 
 describe('isolated Ops fixture safety boundary', () => {
+  it('accepts only a lone authenticated PONG and retains secret-free failure classifications', () => {
+    expect(classifyIsolatedRedisPing('PONG\n')).toBe('PONG')
+    expect(classifyIsolatedRedisPing('NOAUTH Authentication required.')).toBe('NOAUTH')
+    expect(classifyIsolatedRedisPing('WRONGPASS invalid username-password pair')).toBe('WRONGPASS')
+    expect(classifyIsolatedRedisPing('NOAUTH Authentication required.\nPONG')).toBe('NOAUTH')
+    expect(classifyIsolatedRedisPing('unexpected sensitive details')).toBe('OTHER')
+    expect(classifyIsolatedRedisPing('')).toBe('OTHER')
+  })
   it('does not inherit database, Docker, model, shell, or node environment controls', () => {
     const poisoned = { DATABASE_URL: 'postgres://shared', OPS_DATABASE_URL: 'postgres://shared-ops', DOCKER_HOST: 'tcp://remote', DOCKER_CONTEXT: 'production', DOCKER_CONFIG: '/shared', NODE_OPTIONS: '--import /shared/hook.js', HTTP_PROXY: 'http://shared', OPENAI_API_KEY: 'existing-secret' }
     const previous = { ...process.env }

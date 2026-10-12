@@ -1,12 +1,106 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs'
+import { rename } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { renderCodexRelayCatalog, renderCodexRelayConfig } from '../scripts/configure-codex-relay.js'
+import { commitCodexRelayFiles, renderCodexRelayCatalog, renderCodexRelayConfig } from '../scripts/configure-codex-relay.js'
 import { validateCodexRelay } from '../scripts/validate-codex-relay.js'
 
 describe('Codex relay configuration renderer', () => {
+  const relayInput = { provider: 'damai_relay', model: 'deepseek-v4-pro', baseUrl: 'https://fixture.example/v1', apiKeyEnv: 'WORMHOLE_API_KEY', catalogPath: '/fixture/catalog.json' }
+
+  it('commits prepared files with private permissions and restores catalog after config rename failure', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-commit-fixture-'))
+    const configPath = join(directory, 'config.toml')
+    const catalogPath = join(directory, 'catalog.json')
+    try {
+      writeFileSync(configPath, 'old config')
+      writeFileSync(catalogPath, '{"models":[]}')
+      const input = { configPath, catalogPath, config: 'new config', catalog: '{"models":[{"slug":"fixture"}]}' }
+      await expect(commitCodexRelayFiles(input, async (from, to) => {
+        if (to === configPath) throw new Error('fixture rename failure')
+        await rename(from, to)
+      })).rejects.toThrow('fixture rename failure')
+      expect(readFileSync(configPath, 'utf8')).toBe('old config')
+      expect(readFileSync(catalogPath, 'utf8')).toBe('{"models":[]}')
+      expect(readdirSync(directory).sort()).toEqual(['catalog.json', 'config.toml'])
+      await commitCodexRelayFiles(input)
+      expect(readFileSync(configPath, 'utf8')).toBe(input.config)
+      expect(readFileSync(catalogPath, 'utf8')).toBe(input.catalog)
+      expect(statSync(configPath).mode & 0o777).toBe(0o600)
+      expect(statSync(catalogPath).mode & 0o777).toBe(0o600)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+
+  it('leaves existing files untouched when preparation fails and removes a newly committed catalog on rollback', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'relay-prepare-fixture-'))
+    const configPath = join(directory, 'config.toml')
+    const catalogPath = join(directory, 'catalog.json')
+    try {
+      writeFileSync(configPath, 'old config')
+      const input = { configPath, catalogPath, config: 'new config', catalog: '{"models":[]}' }
+      await expect(commitCodexRelayFiles({ ...input, catalog: '{invalid' })).rejects.toThrow()
+      expect(readFileSync(configPath, 'utf8')).toBe('old config')
+      await expect(commitCodexRelayFiles({ ...input, configPath: join(configPath, 'impossible.toml') })).rejects.toThrow()
+      expect(readdirSync(directory)).toEqual(['config.toml'])
+      await expect(commitCodexRelayFiles(input, async (from, to) => {
+        if (to === configPath) throw new Error('fixture rename failure')
+        await rename(from, to)
+      })).rejects.toThrow('fixture rename failure')
+      expect(readFileSync(configPath, 'utf8')).toBe('old config')
+      expect(readdirSync(directory)).toEqual(['config.toml'])
+      await expect(commitCodexRelayFiles({ ...input, catalogPath: configPath })).rejects.toThrow('路径不能相同')
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+
+  it('edits only root keys and preserves profile settings and tiers', () => {
+    const profile = '[profiles.old]\nmodel = "profile-model"\nmodel_provider = "openai"\nservice_tier = "priority"\n'
+    const rendered = renderCodexRelayConfig({ ...relayInput, existing: profile })
+    expect(rendered.slice(0, rendered.indexOf('[profiles.old]'))).toContain('model = "deepseek-v4-pro"')
+    expect(rendered).toContain(profile.trim())
+  })
+
+  it('replaces indented root keys once and removes only the root tier', () => {
+    const rendered = renderCodexRelayConfig({ ...relayInput, existing: '# root\n  model = "old"\n\tmodel_provider = "old"\n service_tier = "fast"\n[profiles.old]\nservice_tier = "priority"\n' })
+    const root = rendered.slice(0, rendered.indexOf('[profiles.old]'))
+    expect(root.match(/^[ \t]*model\s*=/gm)).toHaveLength(1)
+    expect(root.match(/^[ \t]*model_provider\s*=/gm)).toHaveLength(1)
+    expect(root).not.toContain('service_tier')
+    expect(rendered).toContain('[profiles.old]\nservice_tier = "priority"')
+  })
+
+  it('rejects duplicate target root keys and unsafe provider identifiers', () => {
+    expect(() => renderCodexRelayConfig({ ...relayInput, existing: 'model = "one"\n model = "two"\n' })).toThrow()
+    for (const provider of ['bad provider', 'bad.section', 'bad]header', '"quoted"']) {
+      expect(() => renderCodexRelayConfig({ ...relayInput, provider, existing: '' })).toThrow()
+    }
+  })
+
+  it('preserves literal replacement sequences in model and catalog paths', () => {
+    const rendered = renderCodexRelayConfig({ ...relayInput, model: 'relay$&model', catalogPath: '/fixture/$&catalog.json', existing: 'model = "old"\nmodel_catalog_json = "/old"\n[model_providers.damai_relay]\nname = "old"\n' })
+    expect(rendered).toContain('model = "relay$&model"')
+    expect(rendered).toContain('model_catalog_json = "/fixture/$&catalog.json"')
+  })
+
+  it('preserves an immediately adjacent table when replacing an empty provider', () => {
+    const rendered = renderCodexRelayConfig({ ...relayInput, existing: 'model = "old"\n  [model_providers.damai_relay] # old\n[other]\nvalue = true\n' })
+    expect(rendered).toContain('[other]\nvalue = true')
+    expect(rendered.match(/\[model_providers\.damai_relay\]/g)).toHaveLength(1)
+  })
+
+  it('fails closed on multiline TOML rather than editing embedded table text', () => {
+    expect(() => renderCodexRelayConfig({ ...relayInput, existing: 'instructions = """\n[profile]\nmodel = "embedded"\n"""\n' })).toThrow('多行 TOML')
+  })
+
+  it('does not inherit cached routing controls or model capability claims', () => {
+    const seed = { model_messages: { instructions_template: 'full instructions' }, auto_review_model_override: 'paid-model', default_service_tier: 'priority', available_access_programs: { cyber: ['standard'] }, context_window: 872000, max_context_window: 872000, supported_reasoning_levels: [{ effort: 'max' }], support_verbosity: true, unknown_future_control: true }
+    const model = renderCodexRelayCatalog('deepseek-v4-pro', seed).models[0]!
+    for (const field of ['auto_review_model_override', 'default_service_tier', 'available_access_programs', 'unknown_future_control']) expect(model).not.toHaveProperty(field)
+    expect(model.context_window).toBe(128000)
+    expect(model.supported_reasoning_levels).not.toContainEqual({ effort: 'max' })
+    expect(model.model_messages).toEqual(seed.model_messages)
+  })
   it('uses an OCR canary image large enough for production vision model constraints', () => {
     const source = readFileSync('scripts/model-relay-canary.ts', 'utf8')
     const encoded = source.match(/data:image\/png;base64,([A-Za-z0-9+/=]+)/u)?.[1]
@@ -66,7 +160,7 @@ describe('Codex relay configuration renderer', () => {
       model_messages: { instructions_template: 'full instructions', permissions: { shell: true } },
       context_window: 272000,
     })
-    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', display_name: 'glm-5.2 (Store Nova中转)', service_tiers: [], model_messages: { instructions_template: 'full instructions', permissions: { shell: true } }, context_window: 272000 })
+    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', display_name: 'glm-5.2 (Store Nova中转)', service_tiers: [], model_messages: { instructions_template: 'full instructions', permissions: { shell: true } }, context_window: 128000 })
     expect(catalog.models[0]).toHaveProperty('experimental_supported_tools', [])
     expect(catalog.models[0]).not.toHaveProperty('use_responses_lite')
     expect(catalog.models[0]).not.toHaveProperty('tool_mode')
@@ -130,6 +224,7 @@ describe('Codex relay configuration renderer', () => {
 
   it('validates configuration without contacting /models or claiming a runtime request succeeded', () => {
     const environment = {
+      WORMHOLE_API_KEY: 'fixture-no-keychain-read',
       DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
       AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
     }
@@ -139,7 +234,7 @@ describe('Codex relay configuration renderer', () => {
       writeFileSync(configPath, renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://127.0.0.1:1/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' }))
       const output = execFileSync(process.execPath, ['--import', 'tsx', 'scripts/validate-codex-relay.ts'], {
         cwd: process.cwd(), encoding: 'utf8', timeout: 10_000,
-        env: { ...process.env, ...environment, CODEX_CONFIG_PATH: configPath },
+        env: { PATH: process.env.PATH, HOME: directory, NODE_ENV: 'test', ...environment, CODEX_CONFIG_PATH: configPath },
       })
       expect(output).toContain('codex relay config validated:')
       expect(output).toContain('runtime=unverified')

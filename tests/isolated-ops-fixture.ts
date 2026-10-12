@@ -92,6 +92,13 @@ export function isolatedFixtureSpawnEnvironment(secrets: Record<string, string> 
   return { PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8', ...secrets }
 }
 
+export function classifyIsolatedRedisPing(response: string): 'PONG' | 'NOAUTH' | 'WRONGPASS' | 'OTHER' {
+  if (response.trim() === 'PONG') return 'PONG'
+  if (/\bWRONGPASS\b/u.test(response)) return 'WRONGPASS'
+  if (/\bNOAUTH\b/u.test(response)) return 'NOAUTH'
+  return 'OTHER'
+}
+
 export function isolatedContainerRunArgs(input: { runId: string; kind: ContainerKind; image: string }): { name: string; args: string[] } {
   if (!/^[a-f0-9-]{36}$/u.test(input.runId) || !/^[a-z0-9/:._-]+@sha256:[a-f0-9]{64}$/u.test(input.image)) throw new Error('ISOLATED_FIXTURE_IDENTITY_INVALID')
   const name = `merchant-ops-fixture-${input.kind}-${input.runId}`
@@ -212,18 +219,27 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
     adminUrl.username = 'merchant'; adminUrl.password = postgresPassword
     admin = new Pool({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 1_000, max: 3 })
     let ready = false
+    const postgresProbes: string[] = []
     for (let attempt = 0; attempt < 60; attempt++) {
-      try { await admin.query('SELECT 1'); ready = true; break } catch { await new Promise(resolveWait => setTimeout(resolveWait, 250)) }
+      try { await admin.query('SELECT 1'); postgresProbes.push('READY'); ready = true; break } catch (error) {
+        const candidate = error as { code?: string; message?: string }
+        postgresProbes.push(['ECONNREFUSED', 'ETIMEDOUT', '28P01', '57P03'].includes(candidate.code ?? '') ? candidate.code! : candidate.message?.includes('connection timeout') ? 'CONNECTION_TIMEOUT' : 'OTHER')
+        await new Promise(resolveWait => setTimeout(resolveWait, 250))
+      }
     }
+    await writeFile(join(output, `postgres-readiness-${runId}.json`), JSON.stringify({ runId, id: postgres.id, classifications: postgresProbes }), { mode: 0o600, flag: 'wx' })
     if (!ready) throw new Error('ISOLATED_FIXTURE_POSTGRES_NOT_READY')
     // Redis may accept the container start before redis-server is ready to
     // execute commands. Probe only the already-owned exact container ID and
     // retry this read-only ping for a bounded window; never start a second one.
     let redisReady = false
     let redisProbeError: Error | undefined
+    const redisProbes: string[] = []
     for (let attempt = 0; attempt < 20; attempt++) {
       try {
-        if (await docker(['exec', '--env', 'REDISCLI_AUTH', redis.id, 'redis-cli', '--raw', 'ping'], { REDISCLI_AUTH: redisPassword }, 2_000) === 'PONG') {
+        const result = classifyIsolatedRedisPing(await docker(['exec', '--env', 'REDISCLI_AUTH', redis.id, 'redis-cli', '--raw', 'ping'], { REDISCLI_AUTH: redisPassword }, 2_000))
+        redisProbes.push(result)
+        if (result === 'PONG') {
           redisReady = true
           break
         }
@@ -232,9 +248,11 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
         // docker() exposes only a sanitized action code, never stderr, args,
         // generated credentials, or daemon configuration.
         redisProbeError = error instanceof Error ? error : new Error('ISOLATED_FIXTURE_DOCKER_EXEC_FAILED')
+        redisProbes.push(redisProbeError.message === 'ISOLATED_FIXTURE_DOCKER_EXEC_FAILED_TIMEOUT' ? 'EXEC_TIMEOUT' : 'EXEC_FAILED')
       }
       if (attempt < 19) await new Promise(resolveWait => setTimeout(resolveWait, 250))
     }
+    await writeFile(join(output, `redis-readiness-${runId}.json`), JSON.stringify({ runId, id: redis.id, classifications: redisProbes }), { mode: 0o600, flag: 'wx' })
     if (!redisReady) throw redisProbeError ?? new Error('ISOLATED_FIXTURE_REDIS_NOT_READY')
     const serverVersion = String((await admin.query('SHOW server_version')).rows[0]?.server_version ?? '')
     if (!serverVersion.startsWith('17.')) throw new Error('ISOLATED_FIXTURE_POSTGRES_MAJOR_MISMATCH')

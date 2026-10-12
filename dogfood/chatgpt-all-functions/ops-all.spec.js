@@ -157,13 +157,9 @@ test('does not report model configuration success when model status fails', asyn
   })
   const page = await context.newPage()
   await openPlatformConsole(page)
-  // The converged platform console does not mount ModelStatusSection or
-  // ModelServiceSummary, so `状态不可用` is unreachable there — that surface is
-  // registered as a re-anchored retirement in ./retired-ops-assertions.md
-  // (entry 6). The product's fail-closed signal for a failed model-status read
-  // is the global load warning: it must be visible and it must name the dataset
-  // that failed. Swallowing the failure would leave the operator reading a
-  // console that looks like the model configuration is healthy.
+  // Overview mounts ModelStatusSection for model.status.read. Both the global
+  // dataset warning and the local unavailable summary must expose the failed
+  // read; neither model configuration nor release readiness may look verified.
   const loadWarning = page.locator('.ops-global-load-warning')
   await expect(loadWarning).toBeVisible({ timeout: 20_000 })
   expect(failedModelStatusCalls.length).toBeGreaterThan(0)
@@ -174,7 +170,14 @@ test('does not report model configuration success when model status fails', asyn
   // A failed model status read must never be presented as a successful model
   // configuration.
   await expect(page.getByText('平台模型配置完整')).toHaveCount(0)
-  await expect(page.getByText('状态不可用')).toHaveCount(0)
+  const modelError = page.getByRole('group', { name: '平台模型状态错误摘要' })
+  await expect(modelError).toBeVisible()
+  await expect(modelError.getByText('平台模型状态读取失败：状态不可用', { exact: true })).toBeVisible()
+  await expect(modelError.getByRole('button', { name: '重试加载平台模型状态' })).toBeVisible()
+  await expect(page.getByText('该标记不是 /api/releasez 发布身份', { exact: false })).toBeVisible()
+  if (process.env.OPS_E2E_OUTPUT_DIR) {
+    await page.screenshot({ path: resolve(process.env.OPS_E2E_OUTPUT_DIR, 'model-status-failure-fixture.png'), fullPage: true })
+  }
   await context.close()
   await browser.close()
 })

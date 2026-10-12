@@ -117,6 +117,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     }
   }, [notificationTarget?.notification_kind, notificationTarget?.order_id])
   const [recoverOrderId, setRecoverOrderId] = useState('')
+  const [orderQueryInputError, setOrderQueryInputError] = useState('')
   useEffect(() => {
     if (!orders.some(order => order.state === 'pending' && order.expires_at)) return
     const timer = setInterval(() => setClockNow(Date.now()), 1000)
@@ -135,7 +136,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     intent.current = null
     setTarget(null); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false)
     setRecoveredCheckoutOpen(false); setResultUnknown(false); setPaymentRequestUnknown(false); setWriteError('')
-    setRequestRef(''); setTraceRef(''); setRecoverOrderId(''); setSupportOpen(false); setCopyNotice('')
+    setRequestRef(''); setTraceRef(''); setRecoverOrderId(''); setOrderQueryInputError(''); setSupportOpen(false); setCopyNotice('')
     setLegacyRecoveryBlocked(false)
   }, [savedKey])
   useEffect(() => {
@@ -198,13 +199,13 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     setTarget(item); setQuote(null); setOrders([]); setConfirmed(false); setAccepted(false); setPaymentRequestUnknown(false); setWriteError('')
     if (intent.current?.target !== item.sku_code) intent.current = { target: item.sku_code, key: `merchant-${crypto.randomUUID()}`, checkoutId: crypto.randomUUID() }
   }
-  const reportError = (cause: unknown) => {
+  const reportError = (cause: unknown, operation: 'read' | 'write' = 'write') => {
     const error = cause as ApiError
     const businessReason = typeof error.details?.business_reason === 'string' ? error.details.business_reason : error.code && /^(COMMERCIAL_|ONBOARDING_|UPGRADE_|PAYMENT_)/u.test(error.code) ? error.message : ''
-    setWriteError(businessReason || describeApiError(cause)); setRequestRef(error.requestId ?? ''); setTraceRef(error.traceId ?? '')
+    setWriteError(businessReason || describeApiError(cause, { operation })); setRequestRef(error.requestId ?? ''); setTraceRef(error.traceId ?? '')
     if (typeof error.details?.order_id === 'string') setRecoverOrderId(error.details.order_id)
     const uncertain = error.code === 'API_REQUEST_TIMEOUT' || error.code === 'MCP_TRANSPORT_CLOSED' || error.status === 503 || !error.status
-    setResultUnknown(uncertain)
+    if (operation === 'write') setResultUnknown(uncertain)
   }
   const prepare = async () => {
     const scopeKey = savedKey
@@ -261,18 +262,27 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
       }
     } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
-  const queryOrders = async () => {
+  const queryOrders = async (requireExplicitId = false) => {
     const scopeKey = savedKey
     if (!scopeCurrent) return
     const ids = commercialRecoveryOrderIds(Boolean(target), recoverOrderId, orders)
-    if (!ids.length) { setWriteError('本次提交结果待确认。请保留请求标识联系运营查询原幂等意图，不要重新下单或付款。'); return }
+    if ((requireExplicitId && !recoverOrderId.trim()) || !ids.length) {
+      if (!requireExplicitId && (intent.current || resultUnknown || paymentRequestUnknown)) {
+        setWriteError('本次提交结果待确认。请保留请求标识联系运营查询原幂等意图，不要重新下单或付款。')
+      } else {
+        setOrderQueryInputError('请输入原订单 ID 后再查询。')
+        document.getElementById('commercial-order-recovery')?.focus()
+      }
+      return
+    }
+    setOrderQueryInputError('')
     setBusy(true); setWriteError('')
     try {
       const next = await Promise.all(ids.map(id => fetchCommercialPurchaseOrder(baseUrl, id)))
       if (workspaceScopeRef.current !== scopeKey) return
       setOrders(next); persist(next); setResultUnknown(false); setPaymentRequestUnknown(false); setConfirmed(false); setAccepted(false)
       if (next.every(order => order.state !== 'pending')) { intent.current = null; sessionStorage.removeItem(savedKey); setReload(value => value + 1) }
-    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause) } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
+    } catch (cause) { if (workspaceScopeRef.current === scopeKey) reportError(cause, 'read') } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }
   const confirmPayment = async () => {
     const scopeKey = savedKey
@@ -311,7 +321,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
         { key: 'future', label: `未来待生效（${portfolio.future.length}）`, children: <><p>未来套餐点数和服务在约定时点生效，当前不可消费或预留。</p><PeriodTable rows={portfolio.future} name="未来待生效套餐" /></> },
         { key: 'packs', label: `独立权益包（${portfolio.packs.length}）`, children: <Table rowKey="orderId" pagination={false} dataSource={portfolio.packs} locale={{ emptyText: '暂无已购独立权益包' }} scroll={{ x: 680 }} columns={[{ title: '权益包 / 版本', render: (_, row) => `${row.skuCode} / ${row.skuVersionId}` }, { title: '来源订单', dataIndex: 'orderId' }, { title: '有效期', dataIndex: 'expiresAt', render: (date: string | null) => date ? commercialDate(date) : '以批准合同为准' }, { title: '状态', dataIndex: 'grantStatus', render: (state: string) => commercialState(state) }, { title: '权益', render: (_, row) => <CommercialBenefitSnapshot benefits={row.benefits} label="查看权益包原始快照" /> }]} /> },
         { key: 'history', label: '套餐历史', children: <PeriodTable rows={portfolio.history} name="历史套餐" /> },
-        { key: 'orders', label: '订单与恢复', children: <><Table rowKey={row => String(row.id ?? row.orderId ?? row.order_id)} pagination={false} dataSource={portfolio.orders} locale={{ emptyText: '暂无商业订单' }} columns={[{ title: '订单', render: (_, row) => String(row.id ?? row.order_id ?? '') }, { title: '状态', render: (_, row) => commercialState(String(row.status ?? row.state ?? '待确认')) }, { title: '操作', render: (_, row) => <Button onClick={() => { setRecoverOrderId(String(row.id ?? row.order_id ?? '')); setTarget(null); setOrders([]) }}>选择查单</Button> }]} /><label htmlFor="commercial-order-recovery">原订单 ID</label><input id="commercial-order-recovery" value={recoverOrderId} onChange={event => setRecoverOrderId(event.target.value)} /><Button onClick={() => void queryOrders()} disabled={!baseUrl || busy}>查询原订单</Button></> },
+        { key: 'orders', label: '订单与恢复', children: <><Table rowKey={row => String(row.id ?? row.orderId ?? row.order_id)} pagination={false} dataSource={portfolio.orders} locale={{ emptyText: '暂无商业订单' }} columns={[{ title: '订单', render: (_, row) => String(row.id ?? row.order_id ?? '') }, { title: '状态', render: (_, row) => commercialState(String(row.status ?? row.state ?? '待确认')) }, { title: '操作', render: (_, row) => <Button onClick={() => { setRecoverOrderId(String(row.id ?? row.order_id ?? '')); setTarget(null); setOrders([]) }}>选择查单</Button> }]} /><label htmlFor="commercial-order-recovery">原订单 ID</label><input id="commercial-order-recovery" required aria-invalid={Boolean(orderQueryInputError)} aria-describedby={orderQueryInputError ? 'commercial-order-query-error' : undefined} value={recoverOrderId} onChange={event => { setRecoverOrderId(event.target.value); setOrderQueryInputError('') }} />{orderQueryInputError && <p id="commercial-order-query-error" role="alert">{orderQueryInputError}</p>}<Button onClick={() => void queryOrders(true)} disabled={!baseUrl || busy}>查询原订单</Button></> },
       ]} />
       <CommercialGiftPlans projection={portfolio.onboarding_gifts} />
       {notificationTarget?.notification_kind === 'purchase_result' && <Alert type="info" title="购买结果通知" description={<><p>通知记录的处理结果：{commercialResultLabel(notificationTarget.result_state)}。当前合同与权益以本页最新读取为准，通知不代表再次购买或再次授予。</p><p>相关订单：{notificationTarget.order_id ?? '尚未核实'}</p><Button onClick={() => { setActiveTab('orders'); setRecoverOrderId(notificationTarget.order_id ?? ''); setReload(value => value + 1) }}>查看相关原订单</Button><Button onClick={() => openCommercialCurrentPlanFromNotification(setActiveTab, setReload)}>查看当前套餐与升级选项</Button></>} />}
