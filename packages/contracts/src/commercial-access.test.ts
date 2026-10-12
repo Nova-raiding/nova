@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   COMMERCIAL_MCP_FOUNDATION_POLICIES,
+  COMMERCIAL_OPERATION_REGISTRY,
   ERROR_CODES,
   assertCommercialAccessDecision,
   assertCommercialOperationRegistryTotality,
@@ -125,6 +126,38 @@ describe('CommercialAccessDecision E1 contract', () => {
     }
     expect(assertCommercialAccessDecision(decision)).toBe(decision)
     expect(() => assertCommercialAccessDecision({ ...decision, available_points: 0 } as unknown as CommercialAccessDecision)).toThrow('unknown commercial balance must use null')
+    expect(() => assertCommercialAccessDecision({ ...decision, allowed: true, error_code: null })).toThrow('unknown business access must fail closed')
+  })
+
+  it('keeps interactive confirmation point-required and denies an unknown balance', () => {
+    const resolution = resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, {
+      surface: 'MCP',
+      operation: 'workspace.interactive.confirm',
+    })
+    expect(resolution).toMatchObject({
+      outcome: 'REGISTERED',
+      policy: {
+        domain: 'COMMERCIAL',
+        enabled: true,
+        classification: 'POINT_REQUIRED_NO_CHARGE',
+        rate_action: null,
+      },
+    })
+
+    const decision: CommercialAccessDecision = {
+      ...base,
+      surface: 'MCP',
+      operation: 'workspace.interactive.confirm',
+      classification: 'POINT_REQUIRED_NO_CHARGE',
+      balance_state: 'unknown',
+      available_points: null,
+      quoted_points: null,
+      rate_card_version: null,
+      access_revision: null,
+      allowed: false,
+      error_code: ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE,
+    }
+    expect(assertCommercialAccessDecision(decision)).toBe(decision)
     expect(() => assertCommercialAccessDecision({ ...decision, allowed: true, error_code: null })).toThrow('unknown business access must fail closed')
   })
 
