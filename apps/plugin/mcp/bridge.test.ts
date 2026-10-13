@@ -3666,7 +3666,7 @@ describe('Codex stdio MCP bridge', () => {
       await page.evaluate(({ payload, ticket, content }) => {
         window.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: payload, _meta: { 'merchant/candidateSelectionTickets': [ticket] }, content } }, '*')
       }, { payload: newPayload, ticket: currentTicket, content })
-      expect(await page.locator('input[type="radio"]').getAttribute('aria-label')).toContain('当前商品')
+      await page.waitForFunction(() => document.querySelector('input[type="radio"]')?.getAttribute('aria-label')?.includes('当前商品'))
 
       finishRefresh?.({ structuredContent: oldPayload, _meta: { 'merchant/candidateSelectionTickets': [refreshedOldTicket] }, content })
       await page.waitForFunction(() => document.querySelector('#candidate-root')?.getAttribute('aria-busy') === 'false')
