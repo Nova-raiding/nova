@@ -1249,7 +1249,7 @@ const METHODS = {
   },
   'multimodal.video.request': {
     description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。每个新渲染意图生成新的随机 idempotency_key；同一请求重试必须复用原 key，修改请求意图必须换新 key。',
-    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { ...idempotencyKeyProperty, description: '视频成片渲染必填；重试同一请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
@@ -2165,6 +2165,10 @@ function validateToolArguments(name, args) {
     const hasJobId = typeof args.job_id === 'string' && Boolean(args.job_id.trim())
     const hasVisualRef = typeof args.visual_ref === 'string' && Boolean(args.visual_ref.trim())
     if (hasJobId === hasVisualRef) return fail('job_id 和 visual_ref 必须且只能提供其中一个')
+  }
+  if (name === 'multimodal.video.request' && args.output === 'rendering'
+    && (typeof args.idempotency_key !== 'string' || !args.idempotency_key.trim())) {
+    return fail('视频成片渲染必须提供 idempotency_key；同一请求重试时复用原 key')
   }
   if (name === 'multimodal.video.get' && !args.provider_job_id.trim()) return fail('provider_job_id 不能为空')
   if (name === 'catalog.image.generate') {
@@ -3892,9 +3896,14 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     : typeof job.jobId === 'string' ? job.jobId.trim() : ''
   const expectedRevision = Number(job.revision)
   const visualBrief = job.visualBrief && typeof job.visualBrief === 'object' && !Array.isArray(job.visualBrief) ? job.visualBrief : {}
-  const detailPageImage = job.outputVariant === 'detail_long' || job.output_variant === 'detail_long'
+  const detailLongImage = job.outputVariant === 'detail_long' || job.output_variant === 'detail_long'
     || visualBrief.size === '1024x4096' || visualBrief.size === '1024x3072'
-    || (Array.isArray(visualBrief.detailSections) && visualBrief.detailSections.length > 0)
+  // `catalog.image.get` exposes the canonical variant, but omits visualBrief.
+  // Use that public projection directly so secondary detail sets never fall
+  // through to the main-image selection workflow.
+  const detailPageImage = detailLongImage || job.outputVariant === 'secondary' || job.output_variant === 'secondary'
+  const bannerImage = job.outputVariant === 'banner' || job.output_variant === 'banner'
+  const nonMainImage = detailPageImage || bannerImage
   const candidateSelectable = candidate => String(candidate?.scanStatus ?? candidate?.scan_status ?? '').toLowerCase() === 'clean'
     && String(candidate?.reviewStatus ?? candidate?.review_status ?? '').toLowerCase() === 'passed'
   const requestedCandidateClean = Boolean(requestedCandidate) && String(requestedCandidate.scanStatus ?? requestedCandidate.scan_status ?? '').toLowerCase() === 'clean'
@@ -3956,16 +3965,17 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         : rawJobState === 'queued'
           ? 'queued'
           : 'processing'
+  const detailPreviewLabel = detailLongImage ? '详情长图预览' : '详情套图预览'
   const nextAction = demoUnscannedDelivery
     ? { type: 'none', label: '演示预览·未扫描', allowed: false }
     : candidateLifecycle === 'blocked'
       ? { type: 'none', label: '安全检查未通过', allowed: false }
       : candidateLifecycle === 'needs_review'
         ? { type: 'none', label: '授权或审核状态待确认', allowed: false }
-    : candidateLifecycle === 'ready' && !detailPageImage
+    : candidateLifecycle === 'ready' && !nonMainImage
     ? { type: 'select', label: '选择主图', allowed: true }
     : candidateLifecycle === 'ready'
-      ? { type: 'none', label: '详情长图预览', allowed: false }
+      ? { type: 'none', label: bannerImage ? '横幅预览' : detailPreviewLabel, allowed: false }
     : candidateLifecycle === 'failed'
       ? { type: 'regenerate_in_conversation', label: '回到对话重新生成', allowed: true }
       : candidateLifecycle === 'unknown'
@@ -3998,7 +4008,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       archive_state: archived ? 'archived' : rawJobState === 'queued' ? 'pending' : 'processing',
       scan_status: deliverable ? demoUnscannedDelivery ? 'unscanned' : 'clean' : terminalBlockedScan ? 'blocked' : terminalNeedsReview ? candidateScanStatuses.find(Boolean) || 'unknown' : rawJobState === 'queued' ? 'pending' : 'processing',
       candidate_count: images.length,
-      presentation: demoUnscannedDelivery ? 'native_image' : detailPageImage && images.length ? 'detail_page_native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
+      presentation: demoUnscannedDelivery ? 'native_image' : detailPageImage && images.length ? 'detail_page_native_image' : bannerImage && images.length ? 'native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
       next_action: nextAction,
       recovery: {
         retryable: candidateLifecycle === 'failed',
@@ -4010,7 +4020,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     completed_summary: demoUnscannedDelivery
       ? '候选已归档（演示模式，未扫描），未批准、不可发布。'
       : detailPageImage && images.length
-      ? `详情长图已准备，共 ${images.length} 张；请检查商品事实、文案和画面后再继续。`
+      ? `${detailLongImage ? '详情长图' : '详情套图'}已准备，共 ${images.length} 张；请检查商品事实、文案和画面后再继续。`
+      : bannerImage && images.length
+        ? `横幅图已准备，共 ${images.length} 张；请检查商品事实、文案和画面后再继续。`
       : multiple
       ? `已准备 ${images.length} 张通过自动检查的主图候选。`
       : images.length === 1
@@ -4028,18 +4040,18 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
             : candidateLifecycle === 'queued'
               ? '图片任务已排队，完成后会继续，无需重复提交。'
             : '主图候选仍在自动检查，通过后会继续，无需操作。',
-    ...(images.length && !demoUnscannedDelivery && !detailPageImage
+    ...(images.length && !demoUnscannedDelivery && !nonMainImage
       ? { question: multiple ? '请选择一张作为主图。' : '要使用这张作为主图吗？' }
       : candidateLifecycle === 'failed'
         ? { question: '要回到对话重新生成主图吗？' }
           : {}),
-    expected_input: images.length && !demoUnscannedDelivery && !detailPageImage
+    expected_input: images.length && !demoUnscannedDelivery && !nonMainImage
       ? { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 }
       : candidateLifecycle === 'failed'
         ? { kind: 'component_action', action: nextAction.type, user_action_required: true }
         : { kind: 'none', user_action_required: false },
     ...(creativePoints ? { creative_points: creativePoints } : {}),
-    ...(deliverable && !demoUnscannedDelivery && !detailPageImage && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
+    ...(deliverable && !demoUnscannedDelivery && !nonMainImage && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
       selection_request: {
         job_id: selectionJobId,
         expected_revision: String(expectedRevision),
@@ -4527,7 +4539,7 @@ async function handle(request, signal) {
           || (workflowResult.generation_continuation && typeof workflowResult.generation_continuation === 'object' && (workflowResult.generation_continuation.job_id || workflowResult.generation_continuation.jobId))
         ),
       )
-      const candidateMethod = (name === 'catalog.image.generate' || name === 'asset.upload') && hasCandidateEnvelope ? 'catalog.image.get' : name
+      const candidateMethod = name === 'catalog.image.generate' || (name === 'asset.upload' && hasCandidateEnvelope) ? 'catalog.image.get' : name
       const projectedResult = merchantImageCandidateStructuredContent(candidateMethod, workflowResult, args)
       const result = projectedResult && typeof projectedResult === 'object' && !Array.isArray(projectedResult) ? projectedResult : workflowResult
       // Candidate projection is intentionally strict, but it must never erase
@@ -4549,7 +4561,18 @@ async function handle(request, signal) {
       if (name === 'content.draft.generate' && result && typeof result === 'object' && result.formalVersionCreated === true && typeof result.content_version_id === 'string' && !Array.isArray(normalizedResult?.action_cards)) {
         normalizedResult.action_cards = actionCards(name, result).action_cards ?? []
       }
-      const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
+      const imageCandidateState = normalizedResult?.candidate_state
+      const imageArchiveReady = imageCandidateState?.state === 'ready' && imageCandidateState?.archive_state === 'archived'
+      const imageScanAllowed = imageCandidateState?.scan_status === 'clean'
+        || (normalizedResult?.image_delivery_policy?.mode === 'demo_unscanned'
+          && normalizedResult.image_delivery_policy.scan_verified === false
+          && normalizedResult.image_delivery_policy.publishable === false)
+      const imageResultTool = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name)
+      const imageDeliveryAllowed = imageResultTool && imageArchiveReady && imageScanAllowed
+      const visibleImageResult = imageResultTool && !imageDeliveryAllowed
+        ? { ...normalizedResult, images: [], image_urls: [], download_urls: [] }
+        : normalizedResult
+      const nativeImages = imageDeliveryAllowed && Array.isArray(visibleImageResult?.images) ? visibleImageResult.images : []
       // Keep short-lived display URLs in structured content. ChatGPT Apps do
       // not guarantee that tool-result `_meta` or native image blocks are
       // forwarded into `window.openai.toolOutput` during the component's first
@@ -4562,12 +4585,12 @@ async function handle(request, signal) {
       if (name === 'content.draft.generate' && rawResult && typeof rawResult === 'object' && rawResult.formalVersionCreated === true && typeof rawResult.content_version_id === 'string') {
         normalizedResult.action_cards = actionCards(name, rawResult).action_cards ?? []
       }
-      const structuredContent = ['catalog.image.generate', 'catalog.image.get'].includes(name)
-        ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images'))
+      const structuredContent = imageResultTool
+        ? Object.fromEntries(Object.entries(visibleImageResult).filter(([key]) => key !== 'images'))
         : normalizedResult
       const selectionTickets = name === 'catalog.image.get' ? privateCandidateSelectionTickets(rawResult, normalizedResult) : []
-      const resultUi = toolResultUiMetadata(name, normalizedResult, selectionTickets)
-      const content = toolContent(name, normalizedResult)
+      const resultUi = toolResultUiMetadata(name, visibleImageResult, selectionTickets)
+      const content = toolContent(name, visibleImageResult)
       let videoAttachment
       if (name === 'multimodal.video.request' || name === 'multimodal.video.get') {
         try {

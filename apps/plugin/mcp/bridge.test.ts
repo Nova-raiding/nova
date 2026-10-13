@@ -2639,7 +2639,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}', idempotency_key: 'video-render-bridge-test' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       expect(forwarded).toBe(0)
     } finally {
@@ -2910,7 +2910,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES', video_prompt: '商品展示视频', video_context_json: '{}' } } })}\n`)
       expect((await nextLine(child.stdout)).result.isError).not.toBe(true)
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}', idempotency_key: 'video-render-bridge-test' } } })}\n`)
       const syncResponse = await nextLine(child.stdout)
       expect(syncResponse.result.content[0].text).toContain('视频已归档并通过自动安全检查')
       const syncVideoLink = syncResponse.result.content.find((item: any) => item.type === 'resource_link' && item.mimeType === 'video/mp4')
@@ -2989,6 +2989,7 @@ describe('Codex stdio MCP bridge', () => {
         prompt: sensitivePrompt,
         output: 'rendering',
         context_json: JSON.stringify({ brand: { id: 'brand_1', version: '1' }, product: { id: 'product_1', version: '1' }, rules: [] }),
+        idempotency_key: 'video-render-unknown-outcome-test',
       } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true })
       await expect.poll(() => stderr.trim(), { timeout: 2000 }).not.toBe('')
@@ -3434,7 +3435,7 @@ describe('Codex stdio MCP bridge', () => {
         ? { job_id: 'job_secret', execution: { providerRequestId: 'provider_secret' }, images: [firstImage], image_urls: [firstImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, archiveState: 'archived', candidates } }
         : state
           ? { job_id: request.params.job_id, job: { state, errorCode: state === 'failed' ? 'IMAGE_GENERATION_FAILED' : state === 'running' && request.params.job_id === 'job_unknown' ? 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' : undefined, reconciliationRequired: request.params.job_id === 'job_unknown', archiveState: request.params.job_id === 'job_dirty' ? 'archived' : 'pending', candidates } }
-          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, state: request.params.job_id === 'job_unarchived' ? undefined : 'succeeded', archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', ...(request.params.job_id === 'job_detail' ? { outputVariant: 'detail_long', visualBrief: { size: '1024x4096', detailSections: ['价值主张'] } } : {}), candidates } }
+          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, state: request.params.job_id === 'job_unarchived' ? undefined : 'succeeded', archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', ...(request.params.job_id === 'job_detail' ? { outputVariant: 'detail_long', visualBrief: { size: '1024x4096', detailSections: ['价值主张'] } } : request.params.job_id === 'job_detail_secondary' ? { outputVariant: 'secondary' } : request.params.job_id === 'job_banner' ? { outputVariant: 'banner' } : {}), candidates } }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -3500,6 +3501,26 @@ describe('Codex stdio MCP bridge', () => {
         { type: 'image', data: 'aW1hZ2Uy', mimeType: 'image/png' },
       ])
       expect(JSON.stringify(detail.result)).not.toMatch(/选择主图|selection_tickets|nonce_hash|intent_hash/u)
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_detail_secondary' } } })}\n`)
+      const detailSeries = await nextLine(child.stdout)
+      expect(detailSeries.result.structuredContent).toMatchObject({
+        candidate_state: { state: 'ready', presentation: 'detail_page_native_image', next_action: { type: 'none', label: '详情套图预览', allowed: false } },
+        completed_summary: '详情套图已准备，共 2 张；请检查商品事实、文案和画面后再继续。',
+      })
+      expect(detailSeries.result.structuredContent).not.toHaveProperty('selection_request')
+      expect(detailSeries.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(2)
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_banner' } } })}\n`)
+      const banner = await nextLine(child.stdout)
+      expect(banner.result.structuredContent).toMatchObject({
+        candidate_state: { state: 'ready', presentation: 'native_image', next_action: { type: 'none', label: '横幅预览', allowed: false } },
+        completed_summary: '横幅图已准备，共 2 张；请检查商品事实、文案和画面后再继续。',
+        expected_input: { kind: 'none', user_action_required: false },
+      })
+      expect(banner.result.structuredContent).not.toHaveProperty('selection_request')
+      expect(banner.result.structuredContent).not.toHaveProperty('question')
+
       expect(native.result.structuredContent).not.toHaveProperty('images')
       expect(native.result.structuredContent).not.toHaveProperty('image_urls')
       expect(native.result._meta).toMatchObject({
@@ -3523,6 +3544,8 @@ describe('Codex stdio MCP bridge', () => {
         completed_summary: '图片候选已归档，但安全检查未通过，不能使用。请更换素材或联系平台核对。',
         expected_input: { kind: 'none', user_action_required: false },
         display_request: { job_id: 'job_dirty' },
+        image_urls: [],
+        download_urls: [],
       })
       expect(dirty.result.content).toEqual([{ type: 'text', text: '图片候选已归档，但安全检查未通过，不能使用。请更换素材或联系平台核对。' }])
       expect(JSON.stringify(dirty.result)).not.toMatch(/data:image|管理员|运营后台|context_bar|action_cards/iu)
@@ -4481,10 +4504,62 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('drops generated image bytes when the API omits the candidate envelope', async () => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { images: ['data:image/png;base64,aW1hZ2U='], image_fallbacks: ['data:image/png;base64,aW1hZ2U='], private_render_url: 'https://example.invalid/image.png' } }, error: null }))
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('test server did not bind')
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(0)
+      expect(response.result.structuredContent).not.toHaveProperty('images')
+      expect(JSON.stringify(response.result)).not.toContain('aW1hZ2U=')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not expose data URI images until the archived clean candidate gate is ready', async () => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { job_id: 'job_unscanned', images: ['data:image/png;base64,aW1hZ2U='], job: { state: 'succeeded', archiveState: 'archived', candidates: [{ ordinal: 1, scanStatus: 'pending' }] } } }, error: null }))
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('test server did not bind')
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(0)
+      expect(response.result.structuredContent.candidate_state).not.toMatchObject({ state: 'ready', scan_status: 'clean' })
+      expect(JSON.stringify(response.result)).not.toContain('aW1hZ2U=')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('returns generated data URI images as MCP image content', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: { images: ['data:image/svg+xml;base64,PHN2Zy8+'] } }, error: null }))
+      res.end(JSON.stringify({ data: { result: { job_id: 'job_image_ready', images: ['data:image/svg+xml;base64,PHN2Zy8+'], job: { state: 'succeeded', archiveState: 'archived', candidates: [{ ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed' }] } } }, error: null }))
     })
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
@@ -4499,7 +4574,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result.content).toEqual(expect.arrayContaining([{ type: 'image', data: 'PHN2Zy8+', mimeType: 'image/svg+xml' }]))
-      expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).toBe('操作已完成。\n已生成 1 个图片附件。')
+      expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).toBe('要使用这张作为主图吗？')
       expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).not.toContain('PHN2Zy8+')
       expect(response.result.structuredContent).not.toHaveProperty('images')
     } finally {

@@ -31,6 +31,16 @@ describe('publicImageJob output variant', () => {
     expect(projected).toMatchObject({ outputVariant: 'detail_long', selectionRequired: false })
   })
 
+  it('preserves secondary gallery semantics when the visual brief has detail sections', () => {
+    const projected = publicImageJob({ ...base, visualBrief: { size: '1024x1024', detailSections: ['独立详情页卖点'], outputVariant: 'secondary' } } as ImageGenerationJob, assets)
+    expect(projected).toMatchObject({ outputVariant: 'secondary', selectionRequired: false })
+  })
+
+  it('preserves banner semantics without main-image selection', () => {
+    const projected = publicImageJob({ ...base, visualBrief: { size: '1536x1024', outputVariant: 'banner' } } as ImageGenerationJob, assets)
+    expect(projected).toMatchObject({ outputVariant: 'banner', selectionRequired: false })
+  })
+
   it('keeps ordinary product images on the existing main-image selection flow', () => {
     const projected = publicImageJob({ ...base, visualBrief: { size: '1024x1024' } } as ImageGenerationJob, assets)
     expect(projected).toMatchObject({ outputVariant: 'main_image', selectionRequired: true })

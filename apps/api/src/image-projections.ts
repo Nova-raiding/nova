@@ -1,10 +1,15 @@
 import { assetReadiness, isUsableAssetWithoutScan, type AssetMetadata, type ImageGenerationJob, type MerchantService } from '../../../packages/application/src/service.js'
 
 export function publicImageJob(job: ImageGenerationJob, assets: MerchantService['assets']) {
-  const outputVariant = job.visualBrief?.size === '1024x3072' || job.visualBrief?.size === '1024x4096'
-    || Boolean(job.visualBrief?.detailSections?.length)
+  const requestedVariant = job.visualBrief?.outputVariant
+  const isLongDetail = job.visualBrief?.size === '1024x3072' || job.visualBrief?.size === '1024x4096'
+  const outputVariant = isLongDetail || requestedVariant === 'detail_long'
     ? 'detail_long' as const
-    : 'main_image' as const
+    : requestedVariant === 'secondary'
+      ? 'secondary' as const
+      : requestedVariant === 'banner'
+        ? 'banner' as const
+        : 'main_image' as const
   return {
     jobId: job.id, productId: job.productId, taskId: job.taskId ?? null, contentVersionId: job.contentVersionId ?? null, revision: job.revision,
     state: job.state, artifactRole: 'candidate', imageMode: job.imageMode, direction: job.direction, requestedCount: job.count, skuIds: job.skuIds ?? [], sourceAssetIds: job.sourceAssetIds ?? [],
