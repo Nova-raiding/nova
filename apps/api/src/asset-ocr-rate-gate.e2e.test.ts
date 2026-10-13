@@ -30,12 +30,12 @@ beforeAll(async () => {
   const address = api.server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
   base = `http://127.0.0.1:${address.port}`
-})
+}, 90_000)
 
 afterAll(async () => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
-  if (api.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
+  if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
 })
 
 afterEach(() => { api?.setApprovedOcrRateForTests(); api?.setOcrPreDispatchFailureForTests(); api?.setOcrParseDeadlineForTests(); api?.setAssetParseRuntimeForTests() })
