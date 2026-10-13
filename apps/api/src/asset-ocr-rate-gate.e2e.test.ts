@@ -276,7 +276,7 @@ it('allows only the static first-value example while the API balance is unknown'
   const draftResponse = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'merchant.first_value', params: { draft: 'true', draft_title: '余额未知时不得生成', idempotency_key: 'draft-unknown-balance' } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'merchant.first_value', params: { example: 'true', draft: 'true', draft_title: '余额未知时不得生成', idempotency_key: 'draft-unknown-balance' } }),
   })
   const draft = await draftResponse.json() as { error: { code: string; details: { balance_state: string; available_points: number | null } } }
   expect(draftResponse.status).toBe(503)
