@@ -1249,7 +1249,7 @@ const METHODS = {
   },
   'multimodal.video.request': {
     description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。每个新渲染意图生成新的随机 idempotency_key；同一请求重试必须复用原 key，修改请求意图必须换新 key。',
-    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { ...idempotencyKeyProperty, description: '视频成片渲染必填；重试同一请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { ...idempotencyKeyProperty, description: '视频成片渲染必填；重试同一请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], oneOf: [{ properties: { output: { enum: ['script', 'storyboard'] } }, required: ['output'] }, { properties: { output: { enum: ['rendering'] } }, required: ['output', 'idempotency_key'] }], additionalProperties: false },
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
@@ -2190,9 +2190,15 @@ function validateToolArguments(name, args) {
     if (!hasProduct && !hasUnboundInputs) return fail('请提供 product_id，或同时提供 title 和 asset_ids_json')
   }
   if (Array.isArray(schema.oneOf)) {
-    const matchingAlternatives = schema.oneOf.filter(alternative =>
-      Array.isArray(alternative.required)
-      && alternative.required.every(key => Object.prototype.hasOwnProperty.call(args, key)))
+    const matchingAlternatives = schema.oneOf.filter(alternative => {
+      if (!Array.isArray(alternative.required)
+        || !alternative.required.every(key => Object.prototype.hasOwnProperty.call(args, key))) return false
+      return Object.entries(alternative.properties ?? {}).every(([key, constraint]) => {
+        if (Array.isArray(constraint.enum) && !constraint.enum.includes(args[key])) return false
+        if (Object.hasOwn(constraint, 'const') && args[key] !== constraint.const) return false
+        return true
+      })
+    })
     if (matchingAlternatives.length !== 1) return fail('必须且只能选择一个输入模式')
   }
   if (name === 'support.customer.replies.list'

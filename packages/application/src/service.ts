@@ -3077,7 +3077,7 @@ export class MerchantService {
     ].map(value => value.trim()).filter(Boolean))].slice(0, 12)
     const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
     const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${visualPlacement}`)
-    const detailSections = [
+    const defaultDetailSections = [
       '首屏价值主张：商品与核心收益',
       '痛点场景：用户为何需要',
       `核心卖点：${confirmedSellingPoints.slice(0, 3).join('、') || '已确认卖点'}`,
@@ -3087,6 +3087,15 @@ export class MerchantService {
       'SKU与套餐边界：包含与不包含',
       '信任与行动：售后与克制 CTA',
     ]
+    const selectedStructureSections = selectedDirection?.structure
+      .split(/(?:→|；|;|\n)+/u)
+      .map(section => section.trim())
+      .filter(Boolean)
+      .slice(0, 10)
+    const detailSections = selectedStructureSections?.length ? selectedStructureSections : defaultDetailSections
+    const detailDirectionGuidance = selectedDirection
+      ? [selectedDirection.coreIdea, selectedDirection.copyDirection].map(value => value.trim()).filter(Boolean).join('；').slice(0, 300)
+      : undefined
     const bannerPlacement = /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${visualPlacement}`)
     const visualBrief = {
       ...(input.size ? { size: input.size } : {}),
@@ -3100,7 +3109,11 @@ export class MerchantService {
       ...(marketingLabels.length ? { marketingLabels } : {}),
       marketingLayer,
       ...(promotionLabels.length ? { promotionLabels } : {}),
-      ...(detailPlacement || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
+      ...(detailPlacement || input.size === '1024x3072' || input.size === '1024x4096' ? {
+        detailSections,
+        ...(detailDirectionGuidance ? { detailDirectionGuidance } : {}),
+      } : {}),
+      ...(selectedDirection?.visualDirection ? { styleKeywords: [selectedDirection.visualDirection] } : {}),
       ...(detailPlacement && count > 1 ? { seriesConsistency: '同一商品详情页套图：统一网格、字体、色板、光影和商品比例；每张图承担独立章节，避免重复构图与规格冲突。' } : {}),
       platformRules: [
         '商品本体、颜色、材质、结构、Logo 与 SKU 必须保持不变',
@@ -3118,7 +3131,6 @@ export class MerchantService {
         headline: requestedMarketingBrief?.headline ?? brief?.headline,
         subheadline: requestedMarketingBrief?.subheadline ?? brief?.subheadline,
         cta: requestedMarketingBrief?.cta ?? brief?.cta,
-        styleKeywords: selectedDirection?.visualDirection ? [selectedDirection.visualDirection] : [],
       } : {}),
     }
     const sourceProductVersion = product.version ?? 1

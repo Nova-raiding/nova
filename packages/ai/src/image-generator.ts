@@ -42,6 +42,8 @@ export interface ImageGenerationInput {
     marketingLayer?: boolean
     /** Ordered long-page chapters, each with one buyer question. */
     detailSections?: string[]
+    /** Confirmed direction intent and copy tone; guidance only, never product facts. */
+    detailDirectionGuidance?: string
     /** Guidance shared by every image in a detail-page set. */
     seriesConsistency?: string
     /** Frozen platform rules that shaped this candidate. */
@@ -284,6 +286,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const logoAssetIds = boundedList(brief?.logoAssetIds, 4, 120)
       const promotionLabels = boundedList(brief?.promotionLabels, 4, 120)
       const detailSections = boundedList(brief?.detailSections, 10, 120)
+      const detailDirectionGuidance = brief?.detailDirectionGuidance?.trim().slice(0, 300)
       const seriesConsistency = brief?.seriesConsistency?.trim().slice(0, 240)
       const platformRules = boundedList(brief?.platformRules, 8, 160)
       const knowledgeFacts = boundedList(brief?.knowledgeFacts, 16, 240)
@@ -309,7 +312,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         competitorStructures.length || competitorThemes.length || differentiationAngles.length
           ? `同平台同类竞品研究（仅借鉴构图与表达趋势，不复制品牌、商品事实或原文）：结构=${competitorStructures.join('、') || '无'}；表达主题=${competitorThemes.join('、') || '无'}；差异化机会=${differentiationAngles.join('、') || '无'}。` : '',
         isLongPage
-          ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。每章只放一个结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
+          ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。${detailDirectionGuidance ? `已确认方向指导（核心思路与表达语气）：${detailDirectionGuidance}。它只决定章节组织和表达风格，不是商品事实或可直接展示的文案。` : ''}章节名称也只用于版式顺序；任何可见商品卖点、属性、效果或承诺都必须有已确认事实来源，缺少来源时省略，不得补造。每章只放一个有事实依据的结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
         skuLabels.length ? hasReferenceInput ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : `已确认的 SKU 仅作为事实约束，不在概念图中绘制文字：${skuLabels.join('、')}。` : '',
         factLabels.length ? `已确认商品事实仅作为视觉约束，不作为营销排版或模型文字：${factLabels.join('；')}。` : '',

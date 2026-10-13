@@ -3019,6 +3019,39 @@ it('builds a consistent detail-page image set brief from a suite request', () =>
   })
 })
 
+it('freezes the confirmed creative direction into one long-page brief without inventing copy', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const product = service.products.get('prod_fixture_1')!
+  const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: product.platform })
+  const modified = service.updateCreativeDirections({
+    workspaceId: 'ws_demo', taskId: task.id, action: 'modify', directionId: 'A',
+    changes: {
+      coreIdea: '先展示商品轮廓，再逐步说明可核实细节',
+      structure: '轮廓首屏→结构分区→细节对照→克制收尾',
+      copyDirection: '短句说明，只使用有来源的商品事实',
+      visualDirection: '俯拍网格、自然侧光、清晰留白',
+      sellingPoints: ['未经证实的三倍保暖'],
+    },
+    expectedVersion: task.version,
+  })
+  const selected = modified.newDirection!
+  service.selectDirection(task.id, selected.id, modified.task.version)
+  const job = service.enqueueImageGeneration({
+    workspaceId: 'ws_demo', productId: product.id, taskId: task.id,
+    direction: '详情长图', size: '1024x4096', count: 1, idempotencyKey: 'selected-direction-long-page',
+  })
+
+  expect(job.count).toBe(1)
+  expect(job.visualBrief).toMatchObject({ size: '1024x4096', outputVariant: 'detail_long' })
+  expect(job.visualBrief?.detailSections).toEqual(['轮廓首屏', '结构分区', '细节对照', '克制收尾'])
+  expect(job.visualBrief?.detailDirectionGuidance).toContain(selected.coreIdea)
+  expect(job.visualBrief?.detailDirectionGuidance).toContain(selected.copyDirection)
+  expect(job.visualBrief?.styleKeywords).toEqual([selected.visualDirection])
+  expect(job.visualBrief?.detailSections).not.toContain('痛点场景：用户为何需要')
+  expect(job.visualBrief?.marketingLabels ?? []).not.toContain('未经证实的三倍保暖')
+  expect(job.visualBrief?.sellingPoints ?? []).not.toContain('未经证实的三倍保暖')
+})
+
 it('preserves SKU-specific source images and refuses a missing or foreign SKU source', () => {
   const service = new MerchantService({ seedFixture: false })
   const source = service.registerAsset({ workspaceId: 'sku-owner', name: 'blue.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'a'.repeat(64), storageKey: 'quarantine/sku-owner/blue.png' })

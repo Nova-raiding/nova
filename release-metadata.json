@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "repositoryVersion": "0.2.10",
-  "pluginVersion": "0.1.2+codex.20261013233534",
+  "repositoryVersion": "0.2.11",
+  "pluginVersion": "0.1.3+codex.20261013165836",
   "sourceMigrationVersion": 270,
   "expectedMigrationVersion": 278,
   "mcpMethodCount": 389,

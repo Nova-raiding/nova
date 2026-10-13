@@ -241,6 +241,12 @@ describe('Codex stdio MCP bridge', () => {
         { required: ['title', 'asset_ids_json'] },
       ])
       expect(catalogImageGenerate.inputSchema.anyOf).toBeUndefined()
+      const videoRequest = listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request')
+      expect(videoRequest.inputSchema.oneOf).toEqual([
+        { properties: { output: { enum: ['script', 'storyboard'] } }, required: ['output'] },
+        { properties: { output: { enum: ['rendering'] } }, required: ['output', 'idempotency_key'] },
+      ])
+      expect(videoRequest.inputSchema.properties.idempotency_key.description).toContain('视频成片渲染必填')
       expect(await readFile(BRIDGE_PATH, 'utf8')).toBe(await readFile(join(repositoryRoot, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), 'utf8'))
     } finally {
       child.kill()
@@ -2625,6 +2631,31 @@ describe('Codex stdio MCP bridge', () => {
   // a job id that is not bound to a rendering owned by the calling workspace).
   // The poller stays exactly as reachable as its producer. Both are listed
   // when the shared registry enables video; the API enforces all gates.
+  it('rejects video rendering without an idempotency key before forwarding', async () => {
+    let forwarded = 0
+    const server = createServer(async (_req, res) => {
+      forwarded += 1
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
+      const response = (await nextLine(child.stdout)).result
+      expect(response).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } })
+      expect(response.structuredContent.message).toContain('idempotency_key')
+      expect(forwarded).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('does not forward a video render request before current-session confirmation', async () => {
     let forwarded = 0
     const server = createServer(async (req, res) => {

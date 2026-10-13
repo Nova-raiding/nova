@@ -44,6 +44,7 @@ describe('release version policy', () => {
 
       const result = bumpRelease(root, new Date('2026-10-11T12:34:56.000Z'))
       const lock = readJson(join(root, 'package-lock.json'))
+      expect(result.pluginVersion).toBe('0.1.1+codex.20261011123456')
       expect(lock.packages['apps/plugin'].version).toBe(result.pluginVersion)
       expect(readJson(join(root, 'apps/plugin/package.json')).version).toBe(result.pluginVersion)
       expect(readJson(join(root, 'apps/plugin/.codex-plugin/plugin.json')).version).toBe(result.pluginVersion)

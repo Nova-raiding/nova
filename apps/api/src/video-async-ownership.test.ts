@@ -147,7 +147,8 @@ function candidateRuntime() {
     workspaceId: 'video-workspace', req: {}, result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, ERROR_CODES: { INVALID_REQUEST: 'INVALID_REQUEST' },
     service: { products: new Map([['product', { id: 'product', workspaceId: 'video-workspace', platform: 'taobao', sourceAssetIds: ['asset'] }]]) },
     isExemptUnboundImageCandidateProduct: async () => true, enforceAssetAccess: async () => {}, requireApprovedAssetForImageGeneration: () => {},
-    assetForWorkspace: () => ({ id: 'asset', mimeType: 'image/png', storageKey: 'test-image', scanStatus: 'clean' }), getStoredObjectWithRetry: async () => ({ body: Buffer.from('original-test-image') }),
+    assetForWorkspace: (_workspaceId: string, assetId: string) => assetId === 'asset' ? ({ id: 'asset', mimeType: 'image/png', storageKey: 'test-image', scanStatus: 'clean' }) : ({ id: assetId, scanStatus: 'unscanned' }),
+    demoUnscannedAssetsEnabled: () => false, getStoredObjectWithRetry: async () => ({ body: Buffer.from('original-test-image') }),
     enforceProductBrandAccess: async () => {}, canonicalProductReadControl: async () => ({ mode: 'legacy' }), observeLegacyWalletShadow: async () => {},
     header: () => undefined, isProduction: () => false, generationRulePreflight: async () => ({ blocking: false }), requireRuleSafeGenerationText: () => {}, evaluateStoryboardBeforeRendering, requireVideoModelCostPreflight: async () => {}, enforceMcpCommercialAccess: async () => ({}),
     createVideoRenderingRequest: (value: object) => ({ ok: true, value: { ...value, output: 'rendering' } }), createOneSentenceGenerationRequest: (value: object) => ({ ok: true, value }), createHash,
@@ -201,7 +202,10 @@ describe('server-authorized internal candidate rendering', () => {
     expect(archive).not.toHaveBeenCalled()
     vi.mocked(runtime.videoGenerator!.getStatus).mockResolvedValue({ status: 'completed', settlementStatus: 'settled', providerJobId: 'job-1', videoUrl: 'https://relay.example/result.mp4' })
     archive.mockResolvedValue({ status: 'completed', settlementStatus: 'settled', assetId: 'archive-asset', archiveState: 'archived' })
-    expect(await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-1' }, runtime)).toMatchObject({ candidate_only: true, publishable: false, asset_id: 'archive-asset' })
+    const archived = await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-1' }, runtime) as Record<string, unknown>
+    expect(archived).toMatchObject({ candidate_only: true, publishable: false, asset_id: 'archive-asset', archive_state: 'archived', scan_status: 'unscanned' })
+    expect(archived).not.toHaveProperty('download_path')
+    expect(archived).not.toHaveProperty('preview_path')
   })
   it('requires explicit storyboard evidence with governance enabled and never upgrades default platform rendering', async () => {
     install(); vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'true')

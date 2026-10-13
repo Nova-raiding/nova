@@ -19,9 +19,13 @@ function replaceJsonVersion(path: string, version: string, key = 'version'): voi
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-function codexPluginVersion(date: Date): string {
+function codexPluginVersion(date: Date, previousVersion: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)\+codex\.\d{14}$/u.exec(previousVersion.trim())
+  const major = match?.[1] ?? '0'
+  const minor = match?.[2] ?? '1'
+  const patch = match ? Number(match[3]) + 1 : 0
   const stamp = date.toISOString().replace(/[-:TZ.]/gu, '').slice(0, 14)
-  return `0.1.0+codex.${stamp}`
+  return `${major}.${minor}.${patch}+codex.${stamp}`
 }
 
 export function bumpRelease(root = process.cwd(), date = new Date()): { previous: string; next: string; pluginVersion: string } {
@@ -32,7 +36,8 @@ export function bumpRelease(root = process.cwd(), date = new Date()): { previous
   writeFileSync(versionPath, `${next}\n`, 'utf8')
 
   replaceJsonVersion(at('package.json'), next)
-  const pluginVersion = codexPluginVersion(date)
+  const releaseMetadata = JSON.parse(readFileSync(at('release-metadata.json'), 'utf8')) as { pluginVersion?: string }
+  const pluginVersion = codexPluginVersion(date, releaseMetadata.pluginVersion ?? '')
   const lockPath = at('package-lock.json')
   const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as { version?: string; packages?: Record<string, { version?: string }> }
   if (!lock.packages?.['apps/plugin']) throw new Error('package-lock plugin workspace entry is missing')
