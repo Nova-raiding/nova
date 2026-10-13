@@ -330,6 +330,7 @@ describe('Codex stdio MCP bridge', () => {
       const validValues = Object.entries(args).every(([key, value]) => {
         const field = properties[key]
         if (field?.type === 'string' && (typeof value !== 'string' || value.length < (field.minLength ?? 0) || (field.pattern === '\\S' && !/\S/.test(value)))) return false
+        if (Array.isArray(field?.enum) && !field.enum.includes(value)) return false
         if (field?.jsonShape === 'array' && typeof value === 'string') {
           try {
             const parsed = JSON.parse(value)
@@ -351,6 +352,7 @@ describe('Codex stdio MCP bridge', () => {
       const cases = [
         { args: { product_id: 'product_1' }, accepted: true },
         { args: { product_id: 'product_1', title: '商品标题' }, accepted: true },
+        { args: { product_id: 'product_1', size: '1024x4096' }, accepted: true },
         { args: { product_id: 'product_1', asset_ids_json: '["asset_1"]' }, accepted: true },
         { args: { title: '商品标题', asset_ids_json: '["asset_1"]' }, accepted: true },
         { args: { product_id: 'product_1', title: '商品标题', asset_ids_json: '["asset_1"]' }, accepted: false },
@@ -368,6 +370,7 @@ describe('Codex stdio MCP bridge', () => {
         { args: { product_id: 'product_1', title: '' }, accepted: false },
         { args: { product_id: 'product_1', asset_ids_json: '' }, accepted: false },
         { args: { product_id: 'product_1', asset_ids_json: 'not-json' }, accepted: false },
+        { args: { product_id: 'product_1', size: '1024x9999' }, accepted: false },
       ]
       for (const [index, candidate] of cases.entries()) {
         expect(publicSchemaAccepts(candidate.args), JSON.stringify(candidate.args)).toBe(candidate.accepted)
@@ -379,7 +382,11 @@ describe('Codex stdio MCP bridge', () => {
           expect(result.structuredContent.code).not.toBe('TOOL_ARGUMENTS_INVALID')
         }
       }
-      expect(forwarded).toHaveLength(4)
+      expect(forwarded).toHaveLength(5)
+      expect(forwarded.some(request => {
+        const params = request.params as Record<string, unknown> | undefined
+        return request.method === 'catalog.image.generate' && params?.size === '1024x4096'
+      })).toBe(true)
     } finally {
       child.kill()
       await close(server)
