@@ -260,19 +260,24 @@ it.each(['content.draft.generate', 'merchant.first_value'] as const)('denies %s 
 
 it('allows only the static first-value example while the API balance is unknown', async () => {
   const workspaceId = `ws_first_value_unknown_${Date.now()}`
+  const exampleIdempotencyKey = 'static-example-no-charge'
+  const exampleActionId = `content-draft:${createHash('sha256').update(`${workspaceId}:${exampleIdempotencyKey}`).digest('hex')}`
   const relayRequests: string[] = []
   relayHandler = async url => { relayRequests.push(url); throw new Error('unknown-balance draft reached relay') }
 
   const exampleResponse = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'merchant.first_value', params: { example: 'true' } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'merchant.first_value', params: { example: 'true', idempotency_key: exampleIdempotencyKey } }),
   })
   expect(exampleResponse.status).toBe(200)
   expect(await exampleResponse.json()).toMatchObject({
     data: { result: { readOnly: true, previewOnly: true, example: true, execution: { modelCalled: false, providerExecuted: false } } },
   })
+  expect(await api.creativePointsForTests.getReservationByActionKey(workspaceId, exampleActionId)).toBeNull()
+  expect(await api.actionLedgerForTests.get(workspaceId, exampleActionId)).toBeUndefined()
 
+  const draftActionId = `content-draft:${createHash('sha256').update(`${workspaceId}:draft-unknown-balance`).digest('hex')}`
   const draftResponse = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { 'x-workspace-id': workspaceId, 'content-type': 'application/json' },
@@ -281,6 +286,8 @@ it('allows only the static first-value example while the API balance is unknown'
   const draft = await draftResponse.json() as { error: { code: string; details: { balance_state: string; available_points: number | null } } }
   expect(draftResponse.status).toBe(503)
   expect(draft.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE', details: { balance_state: 'unknown', available_points: null } })
+  expect(await api.creativePointsForTests.getReservationByActionKey(workspaceId, draftActionId)).toBeNull()
+  expect(await api.actionLedgerForTests.get(workspaceId, draftActionId)).toBeUndefined()
   expect(relayRequests).toEqual([])
 })
 
