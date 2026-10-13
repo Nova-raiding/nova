@@ -70,6 +70,20 @@ function generatedDecisionBody(title: string, detail: string, sellingPoints: str
 }
 
 describe('API HTTP vertical slice', () => {
+  it('keeps billing.status readable when the workspace has no commercial entitlement', async () => {
+    const base = await start()
+    const workspaceId = `ws_billing_recovery_${Date.now()}`
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.status', params: { workspace_id: workspaceId } }),
+    }).then(json)
+
+    expect(response.error).toBeNull()
+    expect(response.data).toMatchObject({ result: { schema_version: 'commercial.billing-status.v2', workspace_id: workspaceId } })
+    expect(JSON.stringify(response)).not.toContain('COMMERCIAL_ENTITLEMENT_REQUIRED')
+  })
+
   it('hydrates durable authorization context for password-authenticated merchant sessions', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('SESSION_ID_HASH_SECRET', 'password-authz-context-e2e-secret')
@@ -826,6 +840,11 @@ describe('API HTTP vertical slice', () => {
     expect(paid.error).toBeNull()
     for (const token of ['entry-operator', 'entry-owner-denied']) {
       expect((await call(token, 'creative-points.balance.get')).error?.code).toBe('FORBIDDEN')
+      const billingStatus = await call(token, 'billing.status')
+      expect(billingStatus.error).toBeNull()
+      expect(billingStatus.data?.result).toMatchObject({ balance_state: 'restricted', available_points: null, reserved_points: null, settled_points: null, access_revision: null, allowed: null, balance_cny: null, action_eligibility: 'restricted', plugin_access: { unlocked: null, balance_available: null, balance_cny: null, eligibility_state: 'restricted' }, model_access: { access_state: 'restricted' }, capability_entitlements: null, action_cards: [expect.objectContaining({ method: 'commercial.catalog.get' })], legacy_non_authoritative: { billing_mode: 'restricted', provider_ready: null } })
+      expect(JSON.stringify(billingStatus.data)).not.toContain('creative-points.balance.get')
+      expect(JSON.stringify(billingStatus.data)).not.toContain('12.34')
       const entry = await call(token, 'merchant.start')
       expect(entry.error).toBeNull()
       expect(entry.data?.result.creative_points).toMatchObject({ balance_state: 'restricted', available_points: null, reserved_points: null, access_revision: null })
@@ -928,7 +947,7 @@ describe('API HTTP vertical slice', () => {
     const replay = await call(3, 'billing.recharge.get', { order_id: orderId, confirm_test_payment: 'true' })
     expect(replay.data).toMatchObject({ result: { id: orderId, state: 'paid', test_payment_confirmed: true, replayed: true } })
     const status = await call(4, 'billing.status', {})
-    expect(status.data).toMatchObject({ result: { balance_cny: '10.00', plugin_access: { unlocked: true } } })
+    expect(status.data).toMatchObject({ result: { balance_cny: '10.00', action_eligibility: 'not_checked', plugin_access: { unlocked: null, balance_available: true, eligibility_state: 'not_checked' } } })
   })
 
   it('rolls back only its own batch writes when concurrent product state changes', () => {
@@ -1006,7 +1025,7 @@ describe('API HTTP vertical slice', () => {
       steps: [
         { id: 'connect_stores', state: 'required' },
         { id: 'scan_catalog', state: 'pending' },
-        { id: 'check_configuration', state: 'pending' },
+        { id: 'check_configuration', state: 'pending', next_action: { method: 'platform.connect', label: '先连接并授权店铺', required_inputs: ['platform'] } },
         { id: 'build_workspace', state: 'pending' },
       ],
     })
@@ -1048,9 +1067,9 @@ describe('API HTTP vertical slice', () => {
     expect(explicitConflictResponse.status).toBe(409)
     expect(explicitConflict.error).toMatchObject({ code: 'MERCHANT_INTENT_IDEMPOTENCY_CONFLICT' })
     const billing = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.6, method: 'billing.status', params: { workspace_id: workspaceId } }) }).then(json)
-    const billingResult = (billing.data as { result: { balance_cny: string; plugin_access: { unlocked: boolean }; model_access: { access_state: string }; capability_entitlements: { balance: { state: string }; package_quota: { state: string }; generation: { state: string; code: string }; platform_publish: { state: string; code: string } }; action_cards: Array<{ method: string; label: string; required_inputs?: string[]; arguments?: Record<string, unknown>; confirmation: string }> } }).result
-    expect(startResult.wallet).toMatchObject({ balance_cny: billingResult.balance_cny, unlocked: billingResult.plugin_access.unlocked })
-    expect(billingResult).toMatchObject({ balance_cny: '0.00', plugin_access: { unlocked: true }, model_access: { access_state: 'included_quota_available' }, capability_entitlements: { balance: { state: 'recharge_required' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: 'model_configuration' }, platform_publish: { state: 'blocked', code: 'store_authorization' } }, action_cards: [
+    const billingResult = (billing.data as { result: { balance_cny: string; action_eligibility: string; plugin_access: { unlocked: boolean | null; balance_available: boolean; eligibility_state: string }; model_access: { access_state: string }; capability_entitlements: { balance: { state: string }; package_quota: { state: string }; generation: { state: string; code: string }; platform_publish: { state: string; code: string } }; action_cards: Array<{ method: string; label: string; required_inputs?: string[]; arguments?: Record<string, unknown>; confirmation: string }> } }).result
+    expect(startResult.wallet).toMatchObject({ balance_cny: billingResult.balance_cny, unlocked: true })
+    expect(billingResult).toMatchObject({ balance_cny: '0.00', action_eligibility: 'not_checked', plugin_access: { unlocked: null, balance_available: true, eligibility_state: 'not_checked' }, model_access: { access_state: 'eligibility_unverified' }, capability_entitlements: { balance: { state: 'recharge_required' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: 'model_configuration' }, platform_publish: { state: 'blocked', code: 'store_authorization' } }, action_cards: [
       expect.objectContaining({ method: 'commercial.catalog.get', label: '查看可售点数套餐', confirmation: 'none' }),
       expect.objectContaining({ method: 'creative-points.balance.get', label: '查看创意点余额', confirmation: 'none' }),
     ] })
@@ -1334,7 +1353,7 @@ describe('API HTTP vertical slice', () => {
     const conflictingIntent = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '11.00', idempotency_key: `billing-${workspaceId}` } }) }).then(json)
     expect(conflictingIntent.error?.code).toBe('BILLING_ORDER_IDEMPOTENCY_CONFLICT')
     const status = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.status', params: { workspace_id: workspaceId } }) }).then(json)
-    expect((status.data as { result: { balance_cny: string; model_access: { ownership: string; user_key_required: boolean; access_state: string; message: string }; action_entitlement: { overage_policy: string }; capability_entitlements: { balance: { state: string; label: string; value_cny: string; reason: string }; package_quota: { state: string; label: string; remaining: number | null; reason: string }; generation: { state: string; label: string; code: string; reason: string }; platform_publish: { state: string; label: string; reason: string } }; plugin_access: { unlocked: boolean; balance_cny: string; unlocks: string[] } } }).result).toMatchObject({ balance_cny: '10.00', model_access: { ownership: 'platform', user_key_required: false, access_state: 'included_quota_available', message: '模型额度可用，生成时直接扣除创意点。' }, action_entitlement: { overage_policy: 'wallet' }, capability_entitlements: { balance: { state: 'available', label: '钱包余额可用（非扣费依据）', value_cny: '10.00', reason: '创意点账本是模型能力和扣费的唯一依据' }, package_quota: { state: 'available', label: '套餐额度可用', remaining: 30, reason: '优先消耗套餐内模型行动额度' }, generation: { state: 'blocked', label: '平台文案模型未配置，暂不能生成正式内容', code: 'model_configuration', reason: '平台文案模型未配置，暂不能生成正式内容' }, platform_publish: { state: 'blocked', label: '没有可读取的已授权店铺', reason: '没有可读取的已授权店铺' } }, plugin_access: { unlocked: true, balance_cny: '10.00', unlocks: expect.arrayContaining(['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务']) } })
+    expect((status.data as { result: { balance_cny: string; action_eligibility: string; model_access: { ownership: string; user_key_required: boolean; access_state: string; message: string }; action_entitlement: { overage_policy: string }; capability_entitlements: { balance: { state: string; label: string; value_cny: string; reason: string }; package_quota: { state: string; label: string; remaining: number | null; reason: string }; generation: { state: string; label: string; code: string; reason: string }; platform_publish: { state: string; label: string; reason: string } }; plugin_access: { unlocked: boolean | null; balance_available: boolean; eligibility_state: string; balance_cny: string; unlocks: string[] } } }).result).toMatchObject({ balance_cny: '10.00', action_eligibility: 'not_checked', model_access: { ownership: 'platform', user_key_required: false, access_state: 'eligibility_unverified', message: expect.stringContaining('资格') }, action_entitlement: { overage_policy: 'wallet' }, capability_entitlements: { balance: { state: 'available', label: '钱包余额可用（非扣费依据）', value_cny: '10.00', reason: '创意点账本是模型能力和扣费的唯一依据' }, package_quota: { state: 'available', label: '套餐额度可用', remaining: 30, reason: '优先消耗套餐内模型行动额度' }, generation: { state: 'blocked', label: '平台文案模型未配置，暂不能生成正式内容', code: 'model_configuration', reason: '平台文案模型未配置，暂不能生成正式内容' }, platform_publish: { state: 'blocked', label: '没有可读取的已授权店铺', reason: '没有可读取的已授权店铺' } }, plugin_access: { unlocked: null, balance_available: true, eligibility_state: 'not_checked', balance_cny: '10.00', unlocks: [] } })
     const unlockedStart = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     const unlockedCards = (unlockedStart.data as { result: { wallet: { unlocked: boolean }; cards: Array<{ id: string; capabilityGate?: { unlocked: boolean; method: string } }> } }).result
     expect(unlockedCards.wallet).toMatchObject({ unlocked: true })

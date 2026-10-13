@@ -265,4 +265,21 @@ describe('OpenAPI security contract', () => {
     expect(deliveryScanEnvelope).toContain('- { required: [authorization_recheck] }')
     expect(deliveryScanEnvelope).toContain('- { required: [commercial_access_recheck] }')
   })
+
+  it('documents the three distinct commercial access balance states', () => {
+    const source = readFileSync(resolve(process.cwd(), 'apps/api/openapi.yaml'), 'utf8')
+    const operation = openApiOperation(source, '/v1/commercial/access', 'get')
+    const decision = source.slice(source.indexOf('    CommercialAccessDecision:'), source.indexOf('    CommercialAccessEnvelope:'))
+    const response = source.slice(source.indexOf('    CommercialAccessEnvelope:'), source.indexOf('    WorkerCommercialRecheck:'))
+
+    expect(operation).toContain("$ref: '#/components/responses/CommercialAccessEnvelope'")
+    expect(decision).toContain('balance_state: { type: string, enum: [known] }')
+    expect(decision).toContain('balance_state: { type: string, enum: [unknown] }')
+    expect(decision).toContain('balance_state: { type: string, enum: [not_requested] }')
+    expect(decision).toContain('Required balance could not be confirmed; fail closed.')
+    expect(decision).toContain('Balance was intentionally not queried for this recovery operation')
+    expect(decision).toContain('COMMERCIAL_ENTITLEMENT_REQUIRED')
+    expect(decision).not.toContain('COMMERCIAL_OPERATION_DISABLED')
+    expect(response).toContain("$ref: '#/components/schemas/CommercialAccessDecision'")
+  })
 })

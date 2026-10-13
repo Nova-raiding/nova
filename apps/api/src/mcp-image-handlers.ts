@@ -12,6 +12,15 @@ export function durableImageAdmissionCommitted(events: ReadonlyArray<{ eventType
   return events.some(event => event.eventType === 'image.generation.requested' && event.payload.idempotency_key === idempotencyKey)
 }
 
+export function isDurableImageExecutionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const mode = env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase()
+  const localFixtureEnvironment = env.NODE_ENV === 'test'
+  if (!localFixtureEnvironment && mode !== 'durable') {
+    throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '部署环境图片生成必须配置 Durable Worker', 503)
+  }
+  return mode === 'durable'
+}
+
 /** Run work that is known to happen before any durable request is admitted. */
 export async function prepareDurableImageAdmission<T>(prepare: () => Promise<T>, compensate: (error: unknown) => Promise<void>): Promise<T> {
   try {
@@ -53,6 +62,8 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       // never publishable; store binding remains required by publish/sync.
       let unboundCandidate = false
       let productProtection: ReturnType<typeof protectedProductConclusion> | undefined
+      let preflightCommercialDecision: Awaited<ReturnType<typeof enforceMcpCommercialAccess>> | undefined
+      let preflightDurableImageGeneration: boolean | undefined
       let productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : ''
       const standaloneImageInputs = typeof params.asset_ids_json === 'string' && params.asset_ids_json.trim().length > 0
         && !(typeof params.task_id === 'string' && params.task_id.trim())
@@ -96,6 +107,29 @@ export async function handleImageMcpMethod(method: string, params: Record<string
         // have conflicting scopes.
         const inferredPlatforms = [...new Set(assetIds.flatMap(assetId => service.assets.get(assetId)?.applicablePlatforms ?? []))]
         const platform = requestedPlatform ?? (inferredPlatforms.length === 1 ? inferredPlatforms[0]! : 'taobao')
+        // Run all request-level admission checks before writing the unbound
+        // product shell. A rejected request must not leave catalog data behind.
+        for (const assetId of assetIds) await runtime.assertAssetActive?.(workspaceId, assetId)
+        requireApprovedAssetForImageGeneration(workspaceId, { platform }, assetIds, true)
+        preflightCommercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
+        requirePlatformModelCostGate('image')
+        preflightDurableImageGeneration = isDurableImageExecutionEnabled()
+        if (preflightDurableImageGeneration && (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions)) {
+          throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '普通图片 Durable Worker 尚未完成生产配置', 503)
+        }
+        if (params.mode !== undefined && params.mode !== 'create' && params.mode !== 'optimize') {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'mode 必须是 create 或 optimize', 400)
+        }
+        for (const field of ['sku_ids_json', 'selling_points_json', 'traffic_keywords_json', 'promotion_labels_json', 'marketing_labels_json']) {
+          const raw = params[field]
+          if (typeof raw !== 'string' || !raw.trim()) continue
+          try {
+            const parsed = JSON.parse(raw)
+            if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string' || !value.trim())) throw new Error('invalid string array')
+          } catch {
+            throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${field} 必须是非空字符串数组 JSON`, 400)
+          }
+        }
         const local = service.importProduct({ workspaceId, platform, title, sourceAssetIds: assetIds, storeName: '未绑定商品' })
         service.confirmProductFacts(workspaceId, local.id)
         // The in-memory service is only the request-facing projection. Persist
@@ -178,11 +212,13 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const effectiveSourceAssetIds = sourceAssetIds ?? (imageMode === 'optimize' ? defaultSourceAssetIds : undefined)
       if (imageMode === 'optimize' && !effectiveSourceAssetIds?.length) throw new DomainError('IMAGE_OPTIMIZATION_SOURCE_REQUIRED', '素材优化模式必须提供至少一个已授权商品素材', 400)
       imageTrace('generate.request', { workspace_id: workspaceId, product_id: product.id, platform: product.platform, mode: imageMode, size: typeof params.size === 'string' ? params.size : 'default', direction: typeof params.direction === 'string' ? params.direction.slice(0, 160) : 'default', source_asset_count: effectiveSourceAssetIds?.length ?? 0, requested_count: params.count ?? 'default' })
-      for (const assetId of effectiveSourceAssetIds ?? []) await runtime.assertAssetActive?.(workspaceId, assetId)
-      requireApprovedAssetForImageGeneration(workspaceId, product, effectiveSourceAssetIds, unboundCandidate && !imageTask && !params.content_version_id)
-      const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
-      requirePlatformModelCostGate('image')
-      const durableImageGeneration = process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'
+      if (!unboundCandidate) {
+        for (const assetId of effectiveSourceAssetIds ?? []) await runtime.assertAssetActive?.(workspaceId, assetId)
+        requireApprovedAssetForImageGeneration(workspaceId, product, effectiveSourceAssetIds)
+      }
+      const commercialDecision = preflightCommercialDecision ?? await enforceMcpCommercialAccess(req, workspaceId, method)
+      if (!preflightCommercialDecision) requirePlatformModelCostGate('image')
+      const durableImageGeneration = preflightDurableImageGeneration ?? isDurableImageExecutionEnabled()
       // Validate the durable execution boundary before reserving points. A
       // misconfigured worker must fail closed without leaving a customer
       // reservation stuck in `active` when no event can be enqueued.
@@ -421,7 +457,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       await enforceProductBrandAccess(req, workspaceId, previous.productId)
       requirePlatformModelCostGate('image')
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, 'catalog.image.generate')
-      const durableRetry = process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'
+      const durableRetry = isDurableImageExecutionEnabled()
       if (durableRetry && (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions)) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
       const durableAuthorizationSnapshot = durableRetry ? workerAuthorizationSnapshot(req, workspaceId, previous.id, 'image_generation.execute', { method: 'catalog.image.retry', product_id: previous.productId, source_product_version: previous.sourceProductVersion, intent_hash: previous.intentHash }) : undefined
       if (durableRetry && !durableAuthorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片安全重试缺少持久身份授权快照，已拒绝扣费和入队', 503)

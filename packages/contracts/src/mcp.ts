@@ -804,7 +804,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'workspace.commercial.get', description: 'Return adjustable workspace pricing, quotas, and platform settings.', params: params({}) },
   { method: 'workspace.commercial.update', description: 'Update workspace pricing in CNY and included quotas with optimistic concurrency; an optional reason is recorded in the operation audit trail.', params: params({ plan_code: { type: 'string' }, plan_name: { type: 'string' }, monthly_price_cny: { type: 'string' }, annual_price_cny: { type: 'string' }, included_stores: { type: 'string' }, included_tasks: { type: 'string' }, expected_revision: { type: 'string' }, reason: reasonProperty }, ['plan_code', 'plan_name']) },
   { method: 'workspace.usage.get', description: 'Return current monthly task quota usage for the workspace.', params: params({}) },
-  { method: 'commercial.access.get', description: 'Return the server-owned CommercialAccessDecision for the authenticated workspace; unknown values remain null and never fall back to wallet or legacy task quota.', params: params({}) },
+  { method: 'commercial.access.get', description: 'Return the server-owned CommercialAccessDecision for the authenticated workspace; RECOVERY_CONTROL uses balance_state=not_requested and available_points=null because no balance query is needed. Unknown query results remain null and never fall back to wallet or legacy task quota.', params: params({}) },
   { method: 'commercial.catalog.get', description: 'Return the versioned workspace-visible commercial catalog; unavailable catalog state is explicit and never falls back to legacy offer DTOs.', params: params({}) },
   { method: 'commercial.order.create', description: 'Create a V2 onboarding, plan purchase, upgrade, or point-pack order from one active approved server-owned SKU snapshot; clients cannot submit amount, currency, points, benefits, or private eligibility.', params: params({ purchase_kind: { type: 'string', enum: ['purchase', 'onboarding_once', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), upgrade_quote_id: boundedString(256), checkout_id: boundedString(256), onboarding_order_id: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['purchase_kind', 'sku_code', 'idempotency_key', 'reason']) },
   { method: 'commercial.upgrade.quote.create', description: 'Freeze a server-computed higher-tier quote prorated by the remaining current period. Never accepts client money or extends expiry.', params: params({ target_sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty }, ['target_sku_code', 'idempotency_key']) },
@@ -1094,7 +1094,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'platform.model.status', description: 'Return redacted platform-owned model provider readiness, quota, and cost-control metadata. Never returns credentials.', params: params({}) },
   {
     method: 'billing.status',
-    description: 'Return the merchant wallet balance, supported recharge channels, and current billing mode.',
+    description: 'Read the authoritative creative-point balance and billing facts for the current workspace. A known zero balance may require a recharge; an unknown or restricted balance must not be treated as zero. Balance does not prove subscription entitlement or generation eligibility; each operation is checked by server-side commercial access. Legacy wallet and task-quota fields are reconciliation-only.',
     params: params({}),
   },
   {

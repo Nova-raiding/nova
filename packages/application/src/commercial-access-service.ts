@@ -192,7 +192,7 @@ export class CommercialAccessService {
           workspace_id: request.workspace_id,
           ...ref,
           classification: policy.classification,
-          balance_state: 'unknown',
+          balance_state: 'not_requested',
           available_points: null,
           quoted_points: null,
           rate_card_version: null,

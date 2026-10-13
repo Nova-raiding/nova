@@ -79,7 +79,7 @@ URL 必须保存并恢复：
 紧凑单行或两行信息条展示：
 
 - `balance_state` 与稳定状态 code。
-- `available_points`、`reserved_points`；unknown 时显示“未知”，绝不显示 0。
+- `available_points`、`reserved_points`；`unknown` 显示“未知”，`not_requested` 显示“本次未查询”，绝不显示为 0。
 - 最早到期时间；服务端未返回则显示“未返回”，不推定有效期。
 - `access_revision`、目录/费率版本、最后核验时间。
 - 服务端许可的 `nextAction`。

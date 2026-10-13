@@ -69,8 +69,12 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
     const listedAssets = service.listAssets(workspaceId)
     const activeAssets = filterActiveAssets ? await filterActiveAssets(workspaceId, listedAssets) : listedAssets
     const trustedBrandMaterials = activeAssets.filter(asset => isTrustedCleanAsset(asset) && asset.parseStatus === 'succeeded')
-    const configurationNextAction = !knowledgeReady
-      ? { method: 'catalog.search', label: '核对商品事实', required_inputs: ['platform', 'account_id'] }
+    const configurationNextAction = !allStoresSynced
+      ? officialStores.length
+        ? { method: 'catalog.sync.start', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] }
+        : { method: 'platform.connect', label: '先连接并授权店铺', required_inputs: ['platform'] }
+      : !knowledgeReady
+        ? { method: 'catalog.search', label: '核对商品事实', required_inputs: ['platform', 'account_id'] }
       : !brandReady && trustedBrandMaterials.length
         ? { method: 'brand.extract', label: '核对品牌资料', required_inputs: [] }
         : !brandReady && brandClues.totalCandidates

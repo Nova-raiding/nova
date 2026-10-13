@@ -650,6 +650,10 @@ describe('Codex stdio MCP bridge', () => {
       expect((await rpc('initialize')).result.serverInfo.name).toBe('merchant-marketing')
       const tools = (await rpc('tools/list')).result.tools as ListedTool[]
       expect(tools.length).toBeGreaterThan(0)
+      expect(tools.find(tool => tool.name === 'commercial.access.get')?.description).toContain('balance_state=not_requested')
+      expect(tools.find(tool => tool.name === 'commercial.access.get')?.description).toContain('不读取点数账本')
+      expect(tools.find(tool => tool.name === 'commercial.access.get')?.description).toContain('不代表余额为零或余额服务故障')
+      expect(tools.find(tool => tool.name === 'billing.status')?.description).toContain('不得当作 0 或建议充值')
       const resources = (await rpc('resources/list')).result.resources as { uri: string }[]
       expect((await rpc('resources/templates/list')).result.resourceTemplates).toEqual([])
       for (const resource of resources) {
@@ -1531,6 +1535,8 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.structuredContent).toMatchObject({ availability: 'unknown' })
       expect(response.result.structuredContent.action_cards).toBeUndefined()
       expect(response.result.content[0].text).toContain('创意点状态：待确认')
+      expect(response.result.content[0].text).toContain('不应把待确认当作余额为 0')
+      expect(response.result.content[0].text).not.toContain('充值恢复入口')
       expect(response.result.content[0].text).not.toContain('subscription.change')
       expect(response.result.content[0].text).not.toContain('catalog.search')
       expect(response.result.content[0].text).not.toContain('product_id')
@@ -2858,7 +2864,16 @@ describe('Codex stdio MCP bridge', () => {
 
   it('allows polling an existing video job without opening an interactive write session', async () => {
     const received: any[] = []
+    const downloads: Array<{ url: string; workspace: string | string[] | undefined }> = []
+    const generatedAttachments: string[] = []
+    const videoBytes = Buffer.from([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0])
     const server = createServer(async (req, res) => {
+      if (req.method === 'GET') {
+        downloads.push({ url: req.url ?? '', workspace: req.headers['x-workspace-id'] })
+        res.writeHead(200, { 'content-type': 'video/mp4', 'content-length': String(videoBytes.length) })
+        res.end(videoBytes)
+        return
+      }
       const chunks: Buffer[] = []
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
       received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
@@ -2881,6 +2896,8 @@ describe('Codex stdio MCP bridge', () => {
         provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived',
         scan_status: clean ? 'clean' : 'unscanned', asset_id: clean ? 'asset-video-clean' : 'asset-video-demo',
         download_path: clean ? '/v1/assets/asset-video-clean/download' : undefined,
+        preview_path: clean ? undefined : '/v1/assets/asset-video-demo/download',
+        preview_only: clean ? undefined : true,
         video_url: 'https://cdn.example.test/video-existing.mp4',
       } }, error: null }))
     })
@@ -2895,25 +2912,42 @@ describe('Codex stdio MCP bridge', () => {
       expect((await nextLine(child.stdout)).result.isError).not.toBe(true)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.video.request', arguments: { prompt: '商品展示视频', output: 'rendering', context_json: '{}' } } })}\n`)
       const syncResponse = await nextLine(child.stdout)
-      expect(syncResponse.result.content[0].text).toBe('视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。')
-      expect(syncResponse.result.content[0].text).not.toContain('可下载查看')
-      expect(syncResponse.result.structuredContent).toMatchObject({ asset_id: 'asset-video-sync', archive_state: 'archived', scan_status: 'clean' })
+      expect(syncResponse.result.content[0].text).toContain('视频已归档并通过自动安全检查')
+      const syncVideoLink = syncResponse.result.content.find((item: any) => item.type === 'resource_link' && item.mimeType === 'video/mp4')
+      expect(syncVideoLink).toBeDefined()
+      generatedAttachments.push(fileURLToPath(syncVideoLink.uri))
+      expect(syncResponse.result.structuredContent).toMatchObject({ asset_id: 'asset-video-sync', archive_state: 'archived', scan_status: 'clean', video_attachment: { content_type: 'video/mp4', preview_only: false } })
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-existing' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: false, structuredContent: { provider_job_id: 'video-job-existing', status: 'completed', archive_state: 'archived' } })
-      expect(response.result.content[0].text).toBe('视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。')
+      expect(response.result.content[0].text).toContain('视频已归档并通过自动安全检查')
+      const videoLink = response.result.content.find((item: any) => item.type === 'resource_link' && item.mimeType === 'video/mp4')
+      expect(videoLink).toBeDefined()
+      generatedAttachments.push(fileURLToPath(videoLink.uri))
+      expect(await readFile(fileURLToPath(videoLink.uri))).toEqual(videoBytes)
+      expect(response.result.structuredContent.video_attachment).toMatchObject({ content_type: 'video/mp4', preview_only: false, size_bytes: videoBytes.length })
       expect(received.map(request => request.method)).toEqual(['workspace.interactive.confirm', 'multimodal.video.request', 'multimodal.video.get'])
+      expect(downloads).toEqual([
+        { url: '/v1/assets/asset-video-sync/download', workspace: 'ws_test' },
+        { url: '/v1/assets/asset-video-clean/download', workspace: 'ws_test' },
+      ])
       expect(received[0].params).toMatchObject({ intent_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), workspace_id: 'ws_test' })
       expect(received[1].params).toMatchObject({ prompt: '商品展示视频', output: 'rendering', context_json: '{}', workspace_id: 'ws_test', confirmation_ticket_nonce_hash: 'a'.repeat(64) })
       expect(received[2].params).toMatchObject({ provider_job_id: 'video-job-existing', workspace_id: 'ws_test' })
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-demo' } } })}\n`)
       const demoResponse = await nextLine(child.stdout)
-      expect(demoResponse.result.content[0].text).toBe('视频已生成，文件或安全检查尚未全部确认。')
+      expect(demoResponse.result.content[0].text).toContain('演示模式尚未扫描')
+      const demoVideoLink = demoResponse.result.content.find((item: any) => item.type === 'resource_link' && item.description.includes('不可作为正式交付'))
+      expect(demoVideoLink).toBeDefined()
+      generatedAttachments.push(fileURLToPath(demoVideoLink.uri))
+      expect(demoResponse.result.structuredContent.video_attachment).toMatchObject({ preview_only: true })
+      expect(downloads.at(-1)).toEqual({ url: '/v1/assets/asset-video-demo/download', workspace: 'ws_test' })
     } finally {
       child.kill()
       await close(server)
+      await Promise.all(generatedAttachments.map(file => rm(file, { force: true })))
     }
   })
 
@@ -2970,7 +3004,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps video storyboard briefs available while rendering stays hidden by default', async () => {
+  it('keeps video storyboard briefs available without starting video rendering', async () => {
     const received: any[] = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -2998,6 +3032,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(tools.find(tool => tool.name === 'creative.brief')?.inputSchema.properties?.asset_type.enum).toContain('video_storyboard')
       expect(names).toContain('multimodal.video.request')
       expect(names).toContain('multimodal.video.get')
+      expect(tools.find(tool => tool.name === 'multimodal.video.get')?.inputSchema.properties?.provider_job_id.description).toContain('不会重试渲染')
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
@@ -3399,7 +3434,7 @@ describe('Codex stdio MCP bridge', () => {
         ? { job_id: 'job_secret', execution: { providerRequestId: 'provider_secret' }, images: [firstImage], image_urls: [firstImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, archiveState: 'archived', candidates } }
         : state
           ? { job_id: request.params.job_id, job: { state, errorCode: state === 'failed' ? 'IMAGE_GENERATION_FAILED' : state === 'running' && request.params.job_id === 'job_unknown' ? 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' : undefined, reconciliationRequired: request.params.job_id === 'job_unknown', archiveState: request.params.job_id === 'job_dirty' ? 'archived' : 'pending', candidates } }
-          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, state: request.params.job_id === 'job_unarchived' ? undefined : 'succeeded', archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', candidates } }
+          : { job_id: request.params.job_id, execution: { providerRequestId: 'provider_secret' }, images: [firstImage, secondImage], image_urls: request.params.job_id === 'job_native' ? [] : [firstImageUrl, secondImageUrl], selection_tickets: [firstTicket, secondTicket, hiddenTicket], job: { revision: 7, state: request.params.job_id === 'job_unarchived' ? undefined : 'succeeded', archiveState: request.params.job_id === 'job_unarchived' ? 'processing' : 'archived', ...(request.params.job_id === 'job_detail' ? { outputVariant: 'detail_long', visualBrief: { size: '1024x4096', detailSections: ['价值主张'] } } : {}), candidates } }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -3450,6 +3485,21 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_native' } } })}\n`)
       const native = await nextLine(child.stdout)
       expect(native.result.structuredContent.candidate_state.presentation).toBe('native_image')
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_detail' } } })}\n`)
+      const detail = await nextLine(child.stdout)
+      expect(detail.result._meta).toBeUndefined()
+      expect(detail.result.structuredContent).toMatchObject({
+        candidate_state: { state: 'ready', presentation: 'detail_page_native_image', next_action: { type: 'none', allowed: false } },
+        completed_summary: '详情长图已准备，共 2 张；请检查商品事实、文案和画面后再继续。',
+        expected_input: { kind: 'none', user_action_required: false },
+      })
+      expect(detail.result.structuredContent.selection_request).toBeUndefined()
+      expect(detail.result.content.filter((item: { type: string }) => item.type === 'image')).toEqual([
+        { type: 'image', data: 'aW1hZ2Ux', mimeType: 'image/png' },
+        { type: 'image', data: 'aW1hZ2Uy', mimeType: 'image/png' },
+      ])
+      expect(JSON.stringify(detail.result)).not.toMatch(/选择主图|selection_tickets|nonce_hash|intent_hash/u)
       expect(native.result.structuredContent).not.toHaveProperty('images')
       expect(native.result.structuredContent).not.toHaveProperty('image_urls')
       expect(native.result._meta).toMatchObject({
@@ -4451,7 +4501,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content).toEqual(expect.arrayContaining([{ type: 'image', data: 'PHN2Zy8+', mimeType: 'image/svg+xml' }]))
       expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).toBe('操作已完成。\n已生成 1 个图片附件。')
       expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).not.toContain('PHN2Zy8+')
-      expect(response.result.structuredContent.images).toEqual(['data:image/svg+xml;base64,PHN2Zy8+'])
+      expect(response.result.structuredContent).not.toHaveProperty('images')
     } finally {
       child.kill()
       server.close()
@@ -4886,7 +4936,7 @@ describe('Codex stdio MCP bridge', () => {
       methods.push(method)
       res.setHeader('content-type', 'application/json')
       const result = method === 'commercial.access.get'
-        ? { decision: { classification: 'RECOVERY_CONTROL', allowed: true, balance_state: 'unknown', available_points: null } }
+        ? { decision: { classification: 'RECOVERY_CONTROL', allowed: true, balance_state: 'not_requested', available_points: null } }
         : method === 'billing.status'
           ? { schema_version: 'commercial.billing-status.v2', balance_state: 'known', available_points: points, allowed: points > 0, access_revision: String(points + 1), next_actions: ['commercial.catalog.get'] }
           : { accepted: true }
@@ -4904,15 +4954,47 @@ describe('Codex stdio MCP bridge', () => {
     try {
       const zero = await call(1, 'billing.status')
       expect(zero.result.structuredContent).toMatchObject({ balance_state: 'known', available_points: 0, availability: 'exhausted' })
-      await call(2, 'commercial.access.get')
+      const access = await call(2, 'commercial.access.get')
+      expect(access.result).toMatchObject({ isError: false, structuredContent: { decision: { balance_state: 'not_requested', available_points: null } } })
+      expect(access.result.content[0].text).toContain('本次未查询点数余额')
+      expect(access.result.content[0].text).not.toContain('待确认')
       expect((await call(3, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })).result).toMatchObject({ isError: true, structuredContent: { recovery_only: true } })
       expect((await call(31, 'merchant.start')).result).toMatchObject({ isError: true, structuredContent: { recovery_only: true } })
       expect(methods).toEqual(['billing.status', 'commercial.access.get'])
       points = 3 // Simulate an independently confirmed server-side recharge grant.
       const funded = await call(4, 'billing.status')
       expect(funded.result.structuredContent).toMatchObject({ balance_state: 'known', available_points: 3, availability: 'available' })
+      expect(funded.result.content[0].text).toContain('余额可用不代表生成资格已确认')
       expect((await call(5, 'creative.brief', { product_id: 'product_1', asset_type: 'banner' })).result.isError).toBe(false)
       expect(methods).toEqual(['billing.status', 'commercial.access.get', 'billing.status', 'creative.brief'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps a restricted billing balance restricted even if the server sends a stale available hint', async () => {
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* drain request */ }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result: {
+        balance_state: 'restricted', availability: 'available', available_points: 12395, allowed: true,
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: {
+      ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+      MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true',
+    }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.structuredContent).toMatchObject({
+        balance_state: 'restricted', availability: 'restricted', available_points: null, allowed: null,
+        action_eligibility: 'restricted', access_revision: null,
+      })
+      expect(response.result.content[0].text).toContain('无权查看工作区账务余额')
+      expect(response.result.content[0].text).not.toContain('余额可用')
     } finally {
       child.kill()
       await close(server)
@@ -5999,6 +6081,47 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.content[0].text).not.toContain('归档并通过自动安全检查')
       expect(requests).toHaveLength(1)
       expect(requests[0]).toMatchObject({ method: 'multimodal.video.get', params: { provider_job_id: 'video-job-blocked', workspace_id: 'ws_test' } })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('preserves the completed video job when attachment retrieval fails without re-rendering', async () => {
+    const requests: Array<{ method: string; url: string }> = []
+    const server = createServer(async (req, res) => {
+      if (req.method === 'GET') {
+        requests.push({ method: 'GET', url: req.url ?? '' })
+        res.writeHead(503, { 'content-type': 'text/plain' })
+        res.end('temporarily unavailable')
+        return
+      }
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const call = JSON.parse(body)
+      requests.push({ method: call.method, url: req.url ?? '' })
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        provider_job_id: 'video-job-retry-download', status: 'completed', archive_state: 'archived', scan_status: 'clean',
+        asset_id: 'asset-video-retry-download', download_path: '/v1/assets/asset-video-retry-download/download',
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'multimodal.video.get', arguments: { provider_job_id: 'video-job-retry-download' } } })}\n`)
+      const response = (await nextLine(child.stdout)).result
+      expect(response).toMatchObject({ isError: false, structuredContent: { provider_job_id: 'video-job-retry-download', status: 'completed', archive_state: 'archived' } })
+      expect(response.content.some((item: any) => item.type === 'resource_link')).toBe(false)
+      expect(response.content.some((item: any) => item.type === 'text' && item.text.includes('不要重新提交渲染'))).toBe(true)
+      expect(requests).toEqual([
+        { method: 'multimodal.video.get', url: '/mcp' },
+        { method: 'GET', url: '/v1/assets/asset-video-retry-download/download' },
+      ])
     } finally {
       child.kill()
       await close(server)

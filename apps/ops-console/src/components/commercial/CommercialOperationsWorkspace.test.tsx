@@ -95,6 +95,18 @@ describe("CommercialOperationsWorkspace", () => {
     expect(html).not.toContain("可用点数 </span><strong[^>]*>0");
   });
 
+  it("distinguishes a recovery decision that did not request a balance", () => {
+    const html = renderToStaticMarkup(<CommercialAccessStatusBar state={{ status: "ready", data: {
+      decisionId: "cad_recovery", workspaceId: "ws_1", balanceState: "not_requested", availablePoints: null,
+      reservedPoints: null, quotedPoints: null, accessRevision: null, rateCardVersion: null,
+      catalogVersion: null, errorCode: null, allowed: true,
+      earliestExpiresAt: null, verifiedAt: null, nextActions: [],
+    } }} onRetry={vi.fn()} />);
+    expect(html).toContain("本次未查询");
+    expect(html).not.toContain("待确认");
+    expect(html).not.toContain(">0<");
+  });
+
   it("defaults the rendered work queue to explicit blocked permission state", () => {
     const controller = {
       view: "blocks", setView: vi.fn(), loadSummary: vi.fn(), loadView: vi.fn(),

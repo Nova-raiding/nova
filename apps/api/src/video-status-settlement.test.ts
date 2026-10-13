@@ -7,6 +7,7 @@ import type { MultimodalMcpRuntime } from './server.js'
 describe('video.get settlement delivery boundary', () => {
   it.each([
     ['clean', { scan_status: 'clean', download_path: '/v1/assets/asset-generic/download' }, undefined],
+    ['unscanned', { scan_status: 'unscanned', preview_path: '/v1/assets/asset-generic/download', preview_only: true, publishable: false }, '演示模式下该视频尚未扫描'],
     ['pending', { scan_status: 'pending' }, '视频扫描尚未确认通过'],
   ] as const)('multimodal.generate exposes normalized %s archive readiness', async (scanStatus, expected, warning) => {
     const product = { id: 'product-a', workspaceId: 'workspace-a' }
@@ -25,6 +26,7 @@ describe('video.get settlement delivery boundary', () => {
       videoGenerator: { generate: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4' })) },
       generateOwnedVideo: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4' })),
       archiveCompletedVideo: vi.fn(async () => ({ status: 'completed', providerJobId: 'job-generic', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-generic', archiveState: 'archived' })),
+      demoUnscannedAssetsEnabled: () => scanStatus === 'unscanned',
       withOwnedVideoAction: async (_workspaceId: string, _actionId: string, _request: unknown, execute: (beforeDispatch?: () => Promise<void>) => Promise<unknown>) => execute(async () => {}),
       assetForWorkspace: vi.fn(() => ({ scanStatus })),
       requestActor: () => 'actor-a', releaseReservedModelPoints: vi.fn(async () => {}), refundPluginWalletDebit: vi.fn(async () => {}),
@@ -51,6 +53,12 @@ describe('video.get settlement delivery boundary', () => {
     const quarantined = publicVideoRenderingResult('workspace-a', { status: 'completed', providerJobId: 'job-b', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-b', archiveState: 'archived' }, () => ({ scanStatus: 'pending' }))
     expect(quarantined).toMatchObject({ availability_warning: expect.stringContaining('扫描尚未确认通过') })
     expect(quarantined).not.toHaveProperty('download_path')
+
+    const demoPreview = publicVideoRenderingResult('workspace-a', { status: 'completed', providerJobId: 'job-demo', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-demo', archiveState: 'archived' }, () => ({ scanStatus: 'unscanned' }), true)
+    expect(demoPreview).toMatchObject({ preview_path: '/v1/assets/asset-demo/download', preview_only: true, publishable: false, availability_warning: expect.stringContaining('仅供当前工作区预览') })
+    expect(demoPreview).not.toHaveProperty('download_path')
+    const unscannedWithoutDemo = publicVideoRenderingResult('workspace-a', { status: 'completed', providerJobId: 'job-no-demo', videoUrl: 'https://relay.example/private.mp4', assetId: 'asset-no-demo', archiveState: 'archived' }, () => ({ scanStatus: 'unscanned' }))
+    expect(unscannedWithoutDemo).not.toHaveProperty('preview_path')
   })
 
   function runtime() {
@@ -61,7 +69,7 @@ describe('video.get settlement delivery boundary', () => {
     const scope = vi.fn(async () => context)
     const nextEventSequence = vi.fn(async () => 1)
     const assetForWorkspace = vi.fn((_workspaceId: string, _assetId: string) => ({ scanStatus: 'clean' }))
-    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, assetForWorkspace, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: (error: unknown) => (error as { code?: string })?.code === 'MODEL_USAGE_SETTLEMENT_PENDING' ? new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503) : undefined, service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
+    const dependencies = { workspaceId: 'workspace-a', result: (value: unknown) => value, required: (params: Record<string, unknown>, key: string) => String(params[key]), DomainError, videoGenerator: { getStatus }, assertVideoProviderJobScope: scope, archiveCompletedVideo: archive, persistEvent, nextEventSequence, assetForWorkspace, demoUnscannedAssetsEnabled: () => false, executionContract: () => ({ providerExecuted: true }), modelSettlementDomainError: (error: unknown) => (error as { code?: string })?.code === 'MODEL_USAGE_SETTLEMENT_PENDING' ? new DomainError('MODEL_USAGE_SETTLEMENT_PENDING', 'pending', 503) : undefined, service: { findAssetBySourceProviderJobId: () => ({ id: 'cached-unsettled-asset' }) } } as unknown as MultimodalMcpRuntime
     return { dependencies, context, getStatus, archive, persistEvent, scope, assetForWorkspace }
   }
   it('uses server context and returns pending without downloading or returning any asset', async () => {

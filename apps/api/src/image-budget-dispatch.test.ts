@@ -85,6 +85,39 @@ function admissionFixture() {
   return { reserve, persist, release, discard, call }
 }
 describe('durable image MCP admission budget', () => {
+  it('fails closed before reserving points when production durable mode is missing or invalid', async () => {
+    for (const mode of ['', 'durabl', 'inline']) {
+      const f = admissionFixture()
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('IMAGE_GENERATION_EXECUTION_MODE', mode)
+      await expect(f.call()).rejects.toMatchObject({ code: 'IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', status: 503 })
+      expect(f.reserve).not.toHaveBeenCalled()
+      expect(f.persist).not.toHaveBeenCalled()
+      expect(f.discard).not.toHaveBeenCalled()
+    }
+  })
+
+  it('fails closed on production retry before reserving points or persisting when durable mode is invalid', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('IMAGE_GENERATION_EXECUTION_MODE', 'durabl')
+    const reserve = vi.fn()
+    const persist = vi.fn()
+    const runtime = {
+      service: { getImageGenerationJob: vi.fn(() => ({ id: 'job', productId: 'product' })) },
+      required: (_params: Record<string, unknown>, key: string) => key === 'job_id' ? 'job' : '',
+      enforceProductBrandAccess: vi.fn(),
+      requirePlatformModelCostGate: vi.fn(),
+      enforceMcpCommercialAccess: vi.fn(async () => ({ classification: 'POINT_CHARGED' })),
+      reserveCreativePointsForModel: reserve,
+      persistence: { persistSnapshotAndEvent: persist },
+    } as unknown as Parameters<typeof handleImageMcpMethod>[4]
+
+    await expect(handleImageMcpMethod('catalog.image.retry', { job_id: 'job' }, 'ws', {} as IncomingMessage, runtime))
+      .rejects.toMatchObject({ code: 'IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', status: 503 })
+    expect(reserve).not.toHaveBeenCalled()
+    expect(persist).not.toHaveBeenCalled()
+  })
+
   it('writes a dispatchable event only after the exact action/run budget is active', async () => {
     const f = admissionFixture(); await f.call()
     expect(f.reserve).toHaveBeenCalledWith('ws', 'image:key', 'image:key', 'image')
@@ -135,6 +168,53 @@ describe('durable image MCP admission budget', () => {
     expect(importProduct).not.toHaveBeenCalled()
     expect(persistSnapshot).not.toHaveBeenCalled()
     expect(persistEvent).not.toHaveBeenCalled()
+  })
+  it.each(['asset rights', 'commercial access', 'model cost configuration'] as const)(
+    'rejects an unbound candidate at the %s gate before writing a product shell', async gate => {
+      const importProduct = vi.fn()
+      const persistSnapshot = vi.fn()
+      const persistEvent = vi.fn()
+      const denial = new DomainError('PREFLIGHT_DENIED', `${gate} denied`, 409)
+      const requireApprovedAssetForImageGeneration = vi.fn(() => { if (gate === 'asset rights') throw denial })
+      const enforceMcpCommercialAccess = vi.fn(async () => { if (gate === 'commercial access') throw denial; return { classification: 'NO_CHARGE' } })
+      const requirePlatformModelCostGate = vi.fn(() => { if (gate === 'model cost configuration') throw denial })
+      const runtime = {
+        service: { assets: new Map([['asset-1', { applicablePlatforms: [] }]]), products: new Map(), importProduct },
+        enforceAssetAccess: vi.fn(async () => undefined),
+        requireProtectedProductIntent: vi.fn(() => ({})), protectedProductConclusion: vi.fn(() => ({})),
+        requireApprovedAssetForImageGeneration, enforceMcpCommercialAccess, requirePlatformModelCostGate,
+        assertAssetActive: vi.fn(async () => undefined),
+        persistence: { persistSnapshotAndEvent: vi.fn(), outbox: {}, imageGenerationExecutions: {} },
+        persistSnapshot, persistEvent,
+      } as unknown as Parameters<typeof handleImageMcpMethod>[4]
+
+      await expect(handleImageMcpMethod('catalog.image.generate', {
+        title: 'Merchant confirmed product', asset_ids_json: '["asset-1"]',
+      }, 'ws', {} as IncomingMessage, runtime)).rejects.toMatchObject({ code: 'PREFLIGHT_DENIED' })
+
+      expect(importProduct).not.toHaveBeenCalled()
+      expect(persistSnapshot).not.toHaveBeenCalled()
+      expect(persistEvent).not.toHaveBeenCalled()
+    },
+  )
+  it.each([
+    [{ mode: 'creat' }, 'mode'],
+    [{ sku_ids_json: 'not-json' }, 'sku_ids_json'],
+    [{ selling_points_json: '[1]' }, 'selling_points_json'],
+  ] as const)('rejects malformed unbound image input before writing a product shell (%s)', async (extra, field) => {
+    const importProduct = vi.fn()
+    const runtime = {
+      service: { assets: new Map([['asset-1', { applicablePlatforms: [] }]]), products: new Map(), importProduct },
+      enforceAssetAccess: vi.fn(async () => undefined),
+      requireProtectedProductIntent: vi.fn(() => ({})), protectedProductConclusion: vi.fn(() => ({})),
+      requireApprovedAssetForImageGeneration: vi.fn(), enforceMcpCommercialAccess: vi.fn(async () => ({ classification: 'NO_CHARGE' })),
+      requirePlatformModelCostGate: vi.fn(), assertAssetActive: vi.fn(async () => undefined),
+      persistence: { persistSnapshotAndEvent: vi.fn(), outbox: {}, imageGenerationExecutions: {} },
+    } as unknown as Parameters<typeof handleImageMcpMethod>[4]
+    await expect(handleImageMcpMethod('catalog.image.generate', {
+      title: 'Merchant confirmed product', asset_ids_json: '["asset-1"]', ...extra,
+    }, 'ws', {} as IncomingMessage, runtime)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    expect(importProduct).not.toHaveBeenCalled()
   })
 })
 

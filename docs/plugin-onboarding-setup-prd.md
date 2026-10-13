@@ -68,7 +68,7 @@
 | 插件连接 | `MERCHANT_MCP_BASE_URL`、HTTPS、MCP 握手 | `initialize` 和 `tools/list` 成功 | 地址缺失、非 HTTPS、工具为空 |
 | 用户身份 | Store Nova 账号密码会话与本地插件凭据 | 服务端返回当前 identity 与预分配 workspace | 未登录、凭据过期、角色缺失 |
 | 工作区 | `workspace.bootstrap` 或恢复 binding | 返回当前 workspace 且租户范围一致 | workspace 缺失、binding 失效 |
-| 创意点准入 | `billing.status` / commercial access | `balance_state=ready` 且 access revision 有效 | unknown、余额不足、准入过期 |
+| 创意点准入 | `billing.status` / commercial access | 权威余额已知且动作资格、access revision 有效 | unknown（余额查询失败）、not_requested（本次免余额查询）、restricted（权限不足）、余额不足、准入过期 |
 | 平台选择 | 六个平台列表 | 用户明确选择平台 | 用户未选择或选择不支持平台 |
 | 店铺绑定 | `platform.store.list` | 用户明确选择 `platform + account_id` | 同名店铺、多候选、撤权 |
 | 官方授权 | `platform.connect` 与 OAuth callback | 服务端报告授权成功和可读 scope | callback 失败、授权过期、scope 不足 |

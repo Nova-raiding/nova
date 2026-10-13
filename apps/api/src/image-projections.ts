@@ -1,6 +1,10 @@
 import { assetReadiness, isUsableAssetWithoutScan, type AssetMetadata, type ImageGenerationJob, type MerchantService } from '../../../packages/application/src/service.js'
 
 export function publicImageJob(job: ImageGenerationJob, assets: MerchantService['assets']) {
+  const outputVariant = job.visualBrief?.size === '1024x3072' || job.visualBrief?.size === '1024x4096'
+    || Boolean(job.visualBrief?.detailSections?.length)
+    ? 'detail_long' as const
+    : 'main_image' as const
   return {
     jobId: job.id, productId: job.productId, taskId: job.taskId ?? null, contentVersionId: job.contentVersionId ?? null, revision: job.revision,
     state: job.state, artifactRole: 'candidate', imageMode: job.imageMode, direction: job.direction, requestedCount: job.count, skuIds: job.skuIds ?? [], sourceAssetIds: job.sourceAssetIds ?? [],
@@ -10,7 +14,7 @@ export function publicImageJob(job: ImageGenerationJob, assets: MerchantService[
     binding: job.contentVersionId ? 'exact' : 'unbound', candidateCount: job.outputs?.length ?? job.images?.length ?? 0,
     candidates: (job.outputs ?? []).map(output => ({ visualRef: output.visualRef, ...(output.assetId ? { assetId: output.assetId } : {}), ordinal: output.ordinal, mimeType: output.mimeType, sizeBytes: output.sizeBytes, reviewStatus: output.reviewStatus, scanStatus: output.assetId ? assets.get(output.assetId)?.scanStatus ?? 'missing' : 'unknown' })),
     ...(job.preferredSelection ? { preferredCandidate: { visualRef: job.preferredSelection.visualRef, selectedAt: job.preferredSelection.selectedAt, status: 'preferred', reviewRequired: true, approvalRequired: true, platformPublished: false } } : {}),
-    platformUsage: { status: 'not_submitted', observed: false }, selectionRequired: true,
+    outputVariant, platformUsage: { status: 'not_submitted', observed: false }, selectionRequired: outputVariant === 'main_image',
   }
 }
 

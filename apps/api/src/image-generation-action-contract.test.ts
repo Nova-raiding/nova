@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { projectImageGenerationActions } from '../../../packages/application/src/image-generation-action-contract.js'
-import { durableImageAdmissionCommitted, prepareDurableImageAdmission } from './mcp-image-handlers.js'
+import { durableImageAdmissionCommitted, isDurableImageExecutionEnabled, prepareDurableImageAdmission } from './mcp-image-handlers.js'
 
 const source = readFileSync(new URL('./mcp-image-handlers.ts', import.meta.url), 'utf8')
 
@@ -15,7 +15,7 @@ describe('image generation API action contract', () => {
     const generate = source.slice(generateStart, retryStart)
     const retry = source.slice(retryStart, source.indexOf("case 'catalog.image.get':", retryStart))
     for (const route of [generate, retry]) {
-      expect(route).toContain("process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'")
+      expect(route).toContain('isDurableImageExecutionEnabled()')
       expect(route).toContain('persistence.persistSnapshotAndEvent')
       expect(route).toContain('persistence.outbox')
       expect(route).toContain('persistence.imageGenerationExecutions')
@@ -29,6 +29,19 @@ describe('image generation API action contract', () => {
     expect(generate.indexOf('const durableImageGeneration')).toBeGreaterThanOrEqual(0)
     expect(generate.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeGreaterThanOrEqual(0)
     expect(generate.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeLessThan(generate.indexOf('await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)'))
+  })
+
+  it('requires durable execution mode outside explicit local test/development environments', () => {
+    for (const nodeEnv of ['production', 'staging', 'preview', 'development', '']) {
+      for (const mode of ['', 'durabl', 'inline']) {
+        expect(() => isDurableImageExecutionEnabled({ NODE_ENV: nodeEnv, IMAGE_GENERATION_EXECUTION_MODE: mode })).toThrowError(expect.objectContaining({
+          code: 'IMAGE_GENERATION_DURABLE_NOT_CONFIGURED',
+          status: 503,
+        }))
+      }
+      expect(isDurableImageExecutionEnabled({ NODE_ENV: nodeEnv, IMAGE_GENERATION_EXECUTION_MODE: ' Durable ' })).toBe(true)
+    }
+    expect(isDurableImageExecutionEnabled({ NODE_ENV: 'test' })).toBe(false)
   })
 
   it('does not tell a terminal durable image job to continue automatic polling', () => {

@@ -113,6 +113,8 @@ export type CommercialAccessErrorCode = (typeof COMMERCIAL_ACCESS_ERROR_CODES)[n
 
 export const COMMERCIAL_BALANCE_STATES = ['known', 'unknown'] as const
 export type CommercialBalanceState = (typeof COMMERCIAL_BALANCE_STATES)[number]
+export const COMMERCIAL_ACCESS_DECISION_BALANCE_STATES = ['known', 'unknown', 'not_requested'] as const
+export type CommercialAccessDecisionBalanceState = (typeof COMMERCIAL_ACCESS_DECISION_BALANCE_STATES)[number]
 
 export interface CommercialAccessDecisionBase extends CommercialOperationRef {
   readonly schema_version: 'commercial-access.v1'
@@ -143,7 +145,13 @@ export interface UnknownCommercialAccessDecision extends CommercialAccessDecisio
   readonly available_points: null
 }
 
-export type CommercialAccessDecision = KnownCommercialAccessDecision | UnknownCommercialAccessDecision
+export interface NotRequestedCommercialAccessDecision extends CommercialAccessDecisionBase {
+  readonly balance_state: 'not_requested'
+  /** Recovery controls do not query balances; null is intentional and not an error. */
+  readonly available_points: null
+}
+
+export type CommercialAccessDecision = KnownCommercialAccessDecision | UnknownCommercialAccessDecision | NotRequestedCommercialAccessDecision
 
 export interface CommercialAccessGetResult {
   readonly decision: CommercialAccessDecision
@@ -308,6 +316,7 @@ export function assertCommercialAccessDecision(decision: CommercialAccessDecisio
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(decision.decided_at) || Number.isNaN(Date.parse(decision.decided_at))) throw new Error('commercial access decision lacks a valid decided_at timestamp')
   if (!decision.workspace_id || !decision.registry_version) throw new Error('commercial access decision lacks workspace or registry version')
   if (decision.balance_state === 'unknown' && decision.available_points !== null) throw new Error('unknown commercial balance must use null available_points')
+  if (decision.balance_state === 'not_requested' && decision.available_points !== null) throw new Error('not-requested commercial balance must use null available_points')
   if (decision.balance_state === 'known' && (!Number.isSafeInteger(decision.available_points) || decision.available_points < 0)) throw new Error('known available_points must be a non-negative safe integer')
   if (decision.quoted_points !== null && (!Number.isSafeInteger(decision.quoted_points) || decision.quoted_points <= 0)) throw new Error('quoted_points must be null or a positive safe integer')
   if (decision.allowed === (decision.error_code !== null)) throw new Error('allowed decisions cannot have an error_code and denied decisions require one')
@@ -316,8 +325,11 @@ export function assertCommercialAccessDecision(decision: CommercialAccessDecisio
     if (!decision.allowed || decision.error_code !== null || decision.quoted_points !== null || decision.rate_card_version !== null) {
       throw new Error('recovery controls cannot be commercially denied or charged')
     }
+    if (decision.balance_state !== 'not_requested') throw new Error('recovery controls must not imply a balance query')
     return decision
   }
+
+  if (decision.balance_state === 'not_requested') throw new Error('business access decisions must query the authoritative balance')
 
   if (decision.balance_state === 'unknown') {
     if (decision.allowed || decision.error_code !== ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE) throw new Error('unknown business access must fail closed as CREATIVE_POINTS_UNAVAILABLE')

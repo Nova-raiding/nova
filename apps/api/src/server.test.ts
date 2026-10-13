@@ -981,7 +981,7 @@ describe('API application wiring', () => {
     expect(source).toContain('MCP_IMAGE_METHODS.has(method)')
     expect(source).toContain('handleImageMcpMethod(method, params, workspaceId, req, imageMcpRuntime())')
     expect(handler).toContain("case 'catalog.image.generate':")
-    expect(handler).toContain("process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'")
+    expect(handler).toContain('isDurableImageExecutionEnabled()')
     expect(handler).toContain("eventType: 'image.generation.requested'")
     expect(handler).toContain('const requestedEvents = existingImageJob')
     expect(handler).toContain("entityType: 'image_generation_job'")

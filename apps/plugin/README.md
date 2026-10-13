@@ -143,7 +143,7 @@ npm run codex:relay:validate
 
 ## 在插件中查看订单与账单
 
-在 ChatGPT 会话中输入“查看我的订单和账单”，插件调用 `billing.status`、`subscription.orders.list` 或其他 exact recovery 查询，展示创意点的 `balance_state`、`available_points`、`quoted_points`、`access_revision`、`rate_card_version`、`request_id`、`trace_id` 和服务端授权的 `next_actions`。`balance_state=unknown` 时 `available_points` 必须保持 `null`，禁止显示为 0。旧钱包、任务额度和 add-on 只可作为历史证据，不贡献创意点也不解除门禁。
+在 ChatGPT 会话中输入“查看我的订单和账单”，插件调用 `billing.status`、`subscription.orders.list` 或其他 exact recovery 查询，展示创意点的 `balance_state`、`available_points`、`quoted_points`、`access_revision`、`rate_card_version`、`request_id`、`trace_id` 和服务端授权的 `next_actions`。`commercial.access.get` 的 `RECOVERY_CONTROL` 使用 `balance_state=not_requested`、`available_points=null` 表示无需查询余额；`unknown` 表示已请求余额但无法确认；无查看权限时使用 `restricted`。所有 null 都不得显示为 0。旧钱包、任务额度和 add-on 只可作为历史证据，不贡献创意点也不解除门禁。
 
 ### 套餐、订阅、点数包与支付渠道
 

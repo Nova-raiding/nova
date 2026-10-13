@@ -185,6 +185,7 @@ const IMAGE_EDIT_UI_METHODS = new Set(['multimodal.image.edit'])
 const IMAGE_CANDIDATE_UI_METHODS = new Set(['catalog.image.generate', 'catalog.image.get'])
 const MAX_LOCAL_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_EXPORT_ARTIFACT_BYTES = 25 * 1024 * 1024
+const MAX_VIDEO_ARTIFACT_BYTES = 50 * 1024 * 1024
 const MAX_REMOTE_RESPONSE_BYTES = 36 * 1024 * 1024
 const MAX_SESSION_ARTIFACT_BYTES = 250 * 1024 * 1024
 const MAX_SESSION_ARTIFACT_FILES = 100
@@ -554,7 +555,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'commercial.access.get': {
-    description: '查看服务端持有的当前商业准入决策；未知余额保持为空，不回退到旧钱包或任务额度。只读恢复入口。',
+    description: '查看服务端持有的商业准入分类。RECOVERY_CONTROL 不读取点数账本，因此 balance_state=not_requested、available_points=null 表示本次无需查询余额，不代表余额为零或余额服务故障；需要实际余额时只读调用 billing.status（或权限允许时 creative-points.balance.get）。不回退到旧钱包或任务额度。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'commercial.catalog.get': {
@@ -704,7 +705,7 @@ const METHODS = {
   },
   'platform.model.status': { description: '查看模型和中转服务可用性。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'billing.status': {
-    description: '查看当前工作区余额、充值渠道和计费模式。只读。',
+    description: '只读查询当前工作区创意点余额和账务事实。余额为已确认的 0 时才提示点数不足；余额待确认或无权查看时不得当作 0 或建议充值。余额不代表套餐权益或生成资格，具体操作仍由服务端商业准入检查。旧钱包和任务额度仅用于对账。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'billing.model-usage.statement': {
@@ -1252,7 +1253,7 @@ const METHODS = {
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
-    inputSchema: { type: 'object', properties: { provider_job_id: { type: 'string', minLength: 1, description: '从 multimodal.video.request 返回的任务标识；查询或重试时原样复用' } }, required: ['provider_job_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { provider_job_id: { type: 'string', minLength: 1, description: '从 multimodal.video.request 返回的任务标识；查询时原样复用。此工具只查询状态，不会重试渲染' } }, required: ['provider_job_id'], additionalProperties: false },
   },
 }
 
@@ -1616,6 +1617,12 @@ function userFacingToolText(method, result) {
       ].filter(Boolean).join('\n')
     }
   }
+  if (method === 'commercial.access.get') {
+    const decision = result?.decision && typeof result.decision === 'object' && !Array.isArray(result.decision) ? result.decision : result
+    if (decision?.balance_state === 'not_requested') return '商业准入检查已完成；本次未查询点数余额，这不代表余额为 0 或余额服务故障。需要查看余额时请查询 billing.status。'
+    if (decision?.balance_state === 'unknown') return '本次余额查询待确认，相关业务操作仍由服务端准入门禁控制；可通过授权的恢复入口重试查询。'
+    if (decision?.balance_state === 'known') return `商业准入检查已完成；已确认余额为 ${decision.available_points} 点，具体操作资格仍以服务端准入结果为准。`
+  }
   const points = result && typeof result === 'object' && !Array.isArray(result) && result.creative_points && typeof result.creative_points === 'object'
     ? result.creative_points
     : undefined
@@ -1781,12 +1788,19 @@ function userFacingToolText(method, result) {
     }
   }
   if (method === 'billing.status' || method === 'creative-points.balance.get') {
+    if (result.balance_state === 'restricted') return '当前身份无权查看工作区账务余额；未查询余额，因此不显示点数，也不将其解释为 0 或待确认。'
     const balanceKnown = result.balance_state === 'known' || points?.balance_state === 'known'
     const available = balanceKnown && Number.isSafeInteger(result.available_points)
       ? result.available_points
       : balanceKnown && Number.isSafeInteger(points?.available_points) ? points.available_points : undefined
     const availability = result.availability ?? (available === undefined ? 'unknown' : available === 0 ? 'exhausted' : result.allowed === false ? 'insufficient' : 'available')
-    return `创意点状态：${availability === 'unknown' ? '待确认' : availability === 'exhausted' ? '已用尽' : availability === 'insufficient' ? '不足' : '可用'}。${result.allowed === false ? '当前生成能力已阻断。' : '生成能力由服务端准入决定。'}${availability !== 'available' ? '请使用服务端提供的充值恢复入口；支付待确认或未到账时不会解锁。' : ''}`
+    const balanceMessage = availability === 'unknown'
+      ? '余额待确认；当前无法判断是否需要充值，也不应把待确认当作余额为 0。'
+      : availability === 'exhausted' || availability === 'insufficient'
+        ? '请使用服务端提供的充值恢复入口；支付待确认或未到账时不会解锁。'
+        : '余额可用不代表生成资格已确认，具体生成能力由服务端准入决定。'
+    const operationBlocked = available !== undefined && result.allowed === false ? '当前已确认余额无法满足此点数检查。' : ''
+    return `创意点状态：${availability === 'unknown' ? '待确认' : availability === 'exhausted' ? '已用尽' : availability === 'insufficient' ? '不足' : '可用'}。${operationBlocked}${balanceMessage}`
   }
   if (method === 'catalog.search' && Array.isArray(result.products)) {
     if (!result.products.length) return '当前查询未找到商品，请调整商品名称或 SKU 条件。'
@@ -1836,9 +1850,10 @@ function userFacingToolText(method, result) {
       const scanStatus = video.scanStatus ?? video.scan_status
       const assetId = video.assetId ?? video.asset_id
       const downloadPath = video.downloadPath ?? video.download_path
-      return (video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'clean' && typeof assetId === 'string' && typeof downloadPath === 'string'
-        ? '视频已归档并通过自动安全检查。结果中包含工作区资产 ID 和受鉴权的下载接口路径；当前插件没有内置下载或播放入口。'
-        : '视频已生成，文件或安全检查尚未全部确认。'
+      const previewPath = video.previewPath ?? video.preview_path
+      if ((video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'clean' && typeof assetId === 'string' && typeof downloadPath === 'string') return '视频已归档并通过自动安全检查，视频文件已附在本条结果中。'
+      if ((video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'unscanned' && video.preview_only === true && typeof assetId === 'string' && typeof previewPath === 'string') return '视频候选已归档。演示模式尚未扫描，所附文件仅供当前工作区预览，不代表审核通过或可发布。'
+      return '视频已生成，文件或安全检查尚未全部确认。'
     }
   }
   const merchantStatus = result.merchant_status && typeof result.merchant_status === 'object' ? result.merchant_status : undefined
@@ -1934,12 +1949,18 @@ function merchantBillingProjection(method, result) {
     return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
   }
   if (method === 'billing.status') {
-    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'available_points', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
+    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'available_points', 'allowed', 'action_eligibility', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
     const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
-    const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
+    const restricted = result.balance_state === 'restricted'
+    const availability = restricted
+      ? 'restricted'
+      : result.availability ?? (
+      result.balance_state !== 'known' || available === undefined
       ? 'unknown'
       : available === 0 ? 'exhausted' : result.allowed === false ? 'insufficient' : 'available')
-    return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
+    const projected = Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
+    if (restricted) Object.assign(projected, { availability, available_points: null, allowed: null, action_eligibility: 'restricted', access_revision: null })
+    return projected
   }
   if (method === 'billing.model-usage.statement' || method === 'billing.transactions') {
     return {
@@ -3003,6 +3024,101 @@ function materializeExportArtifact(result) {
   }
 }
 
+function videoArtifactDescriptor(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined
+  const video = result.rendering && typeof result.rendering === 'object' && !Array.isArray(result.rendering)
+    ? { ...result, ...result.rendering }
+    : result
+  const status = String(video.status ?? '').toLowerCase()
+  if (!['completed', 'complete', 'succeeded'].includes(status) || (video.archive_state ?? video.archiveState) !== 'archived') return undefined
+  const previewOnly = video.preview_only === true
+  const scanStatus = video.scan_status ?? video.scanStatus
+  const downloadPath = previewOnly ? video.preview_path ?? video.previewPath : video.download_path ?? video.downloadPath
+  const assetId = video.asset_id ?? video.assetId
+  if (typeof assetId !== 'string' || !assetId.trim() || typeof downloadPath !== 'string') return undefined
+  if (previewOnly ? scanStatus !== 'unscanned' : scanStatus !== 'clean') return undefined
+  return { assetId: assetId.trim(), downloadPath, previewOnly }
+}
+
+function isVideoArtifactSignatureValid(contentType, bytes) {
+  if (contentType === 'video/mp4' || contentType === 'video/quicktime') return bytes.length >= 12 && bytes.subarray(4, 8).toString('ascii') === 'ftyp'
+  if (contentType === 'video/webm') return bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3
+  return false
+}
+
+async function materializeVideoArtifact(result, signal) {
+  const descriptor = videoArtifactDescriptor(result)
+  if (!descriptor) return undefined
+  const expectedPath = `/v1/assets/${encodeURIComponent(descriptor.assetId)}/download`
+  if (descriptor.downloadPath !== expectedPath) throw new Error('视频归档路径与工作区素材不匹配')
+  await ensureManagedCredential()
+  assertTransportConfiguration()
+  const origin = new URL(baseUrl()).origin
+  const url = new URL(expectedPath, origin)
+  const workspace = workspaceId()
+  const requestHeaders = { accept: 'video/mp4, video/webm, video/quicktime', 'x-workspace-id': workspace, 'x-ops-workbench': 'workspace' }
+  const token = process.env.MERCHANT_MCP_TOKEN?.trim()
+  if (token && !/^\$\{[^}]+\}$/u.test(token)) requestHeaders.authorization = `Bearer ${token}`
+  if (!requestHeaders.authorization && new URL(baseUrl()).protocol === 'https:' && !allowsLocalFixtureFallback()) throw new Error('视频素材下载缺少商家凭据')
+
+  const timeoutSignal = AbortSignal.timeout(120_000)
+  const fetchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+  let response = await fetch(url, { method: 'GET', headers: requestHeaders, redirect: 'error', signal: fetchSignal })
+  if (response.status === 401 && requestHeaders.authorization) {
+    const rejectedToken = requestHeaders.authorization.slice('Bearer '.length)
+    if (await refreshLocalDesktopToken(rejectedToken)) {
+      requestHeaders.authorization = `Bearer ${process.env.MERCHANT_MCP_TOKEN}`
+      response = await fetch(url, { method: 'GET', headers: requestHeaders, redirect: 'error', signal: fetchSignal })
+    }
+  }
+  if (!response.ok) throw new Error(`视频素材下载暂不可用（HTTP ${response.status}）`)
+  const contentType = (response.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase()
+  const declaredLength = response.headers.get('content-length')
+  if (declaredLength && /^\d+$/u.test(declaredLength) && Number(declaredLength) > MAX_VIDEO_ARTIFACT_BYTES) throw new Error('视频文件超过 50MB 附件限制')
+  if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(contentType)) throw new Error('视频归档返回了不支持的文件类型')
+  if (!response.body) throw new Error('视频归档文件为空')
+  const reader = response.body.getReader()
+  const chunks = []
+  let totalBytes = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    totalBytes += value.byteLength
+    if (totalBytes > MAX_VIDEO_ARTIFACT_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      throw new Error('视频文件超过 50MB 附件限制')
+    }
+    chunks.push(Buffer.from(value))
+  }
+  const bytes = Buffer.concat(chunks, totalBytes)
+  if (!bytes.length || !isVideoArtifactSignatureValid(contentType, bytes)) throw new Error('视频文件签名校验失败')
+  if (sessionArtifactFiles >= MAX_SESSION_ARTIFACT_FILES || sessionArtifactBytes + bytes.length > MAX_SESSION_ARTIFACT_BYTES) throw new Error('当前会话视频附件配额已用尽')
+
+  const extension = contentType === 'video/webm' ? '.webm' : contentType === 'video/quicktime' ? '.mov' : '.mp4'
+  const safeAssetId = descriptor.assetId.replace(/[^A-Za-z0-9_-]/gu, '_').slice(0, 96) || 'candidate'
+  const fileName = `store-nova-video-${safeAssetId}${extension}`
+  const file = join(artifactDirectory(), `${randomUUID()}-${fileName}`)
+  writeFileSync(file, bytes, { mode: 0o600, flag: 'wx' })
+  sessionArtifactFiles += 1
+  sessionArtifactBytes += bytes.length
+  return {
+    fileName,
+    contentType,
+    sizeBytes: bytes.length,
+    previewOnly: descriptor.previewOnly,
+    link: {
+      type: 'resource_link',
+      name: fileName,
+      title: descriptor.previewOnly ? '视频预览（未扫描）' : '已扫描视频',
+      uri: pathToFileURL(file).href,
+      mimeType: contentType,
+      size: bytes.length,
+      description: descriptor.previewOnly ? '演示模式未扫描的视频候选，仅供当前工作区预览，不可作为正式交付或发布。' : '已完成扫描和归档的视频候选；仍需按商品工作流进行人工审核。',
+      annotations: { audience: ['user'] },
+    },
+  }
+}
+
 async function responseJsonWithLimit(response) {
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (Number.isFinite(declared) && declared > MAX_REMOTE_RESPONSE_BYTES) throw new Error('MCP gateway response exceeds the 36MB limit')
@@ -3775,6 +3891,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ? result.job_id.trim()
     : typeof job.jobId === 'string' ? job.jobId.trim() : ''
   const expectedRevision = Number(job.revision)
+  const visualBrief = job.visualBrief && typeof job.visualBrief === 'object' && !Array.isArray(job.visualBrief) ? job.visualBrief : {}
+  const detailPageImage = job.outputVariant === 'detail_long' || job.output_variant === 'detail_long'
+    || visualBrief.size === '1024x4096' || visualBrief.size === '1024x3072'
+    || (Array.isArray(visualBrief.detailSections) && visualBrief.detailSections.length > 0)
   const candidateSelectable = candidate => String(candidate?.scanStatus ?? candidate?.scan_status ?? '').toLowerCase() === 'clean'
     && String(candidate?.reviewStatus ?? candidate?.review_status ?? '').toLowerCase() === 'passed'
   const requestedCandidateClean = Boolean(requestedCandidate) && String(requestedCandidate.scanStatus ?? requestedCandidate.scan_status ?? '').toLowerCase() === 'clean'
@@ -3842,8 +3962,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       ? { type: 'none', label: '安全检查未通过', allowed: false }
       : candidateLifecycle === 'needs_review'
         ? { type: 'none', label: '授权或审核状态待确认', allowed: false }
-    : candidateLifecycle === 'ready'
+    : candidateLifecycle === 'ready' && !detailPageImage
     ? { type: 'select', label: '选择主图', allowed: true }
+    : candidateLifecycle === 'ready'
+      ? { type: 'none', label: '详情长图预览', allowed: false }
     : candidateLifecycle === 'failed'
       ? { type: 'regenerate_in_conversation', label: '回到对话重新生成', allowed: true }
       : candidateLifecycle === 'unknown'
@@ -3876,7 +3998,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       archive_state: archived ? 'archived' : rawJobState === 'queued' ? 'pending' : 'processing',
       scan_status: deliverable ? demoUnscannedDelivery ? 'unscanned' : 'clean' : terminalBlockedScan ? 'blocked' : terminalNeedsReview ? candidateScanStatuses.find(Boolean) || 'unknown' : rawJobState === 'queued' ? 'pending' : 'processing',
       candidate_count: images.length,
-      presentation: demoUnscannedDelivery ? 'native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
+      presentation: demoUnscannedDelivery ? 'native_image' : detailPageImage && images.length ? 'detail_page_native_image' : imageUrls.length ? 'component' : images.length ? 'native_image' : recoveryPresentation,
       next_action: nextAction,
       recovery: {
         retryable: candidateLifecycle === 'failed',
@@ -3887,6 +4009,8 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ...(demoUnscannedDelivery ? { image_delivery_policy: { mode: 'demo_unscanned', scan_verified: false, publishable: false } } : {}),
     completed_summary: demoUnscannedDelivery
       ? '候选已归档（演示模式，未扫描），未批准、不可发布。'
+      : detailPageImage && images.length
+      ? `详情长图已准备，共 ${images.length} 张；请检查商品事实、文案和画面后再继续。`
       : multiple
       ? `已准备 ${images.length} 张通过自动检查的主图候选。`
       : images.length === 1
@@ -3904,18 +4028,18 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
             : candidateLifecycle === 'queued'
               ? '图片任务已排队，完成后会继续，无需重复提交。'
             : '主图候选仍在自动检查，通过后会继续，无需操作。',
-    ...(images.length && !demoUnscannedDelivery
+    ...(images.length && !demoUnscannedDelivery && !detailPageImage
       ? { question: multiple ? '请选择一张作为主图。' : '要使用这张作为主图吗？' }
       : candidateLifecycle === 'failed'
         ? { question: '要回到对话重新生成主图吗？' }
           : {}),
-    expected_input: images.length && !demoUnscannedDelivery
+    expected_input: images.length && !demoUnscannedDelivery && !detailPageImage
       ? { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 }
       : candidateLifecycle === 'failed'
         ? { kind: 'component_action', action: nextAction.type, user_action_required: true }
         : { kind: 'none', user_action_required: false },
     ...(creativePoints ? { creative_points: creativePoints } : {}),
-    ...(deliverable && !demoUnscannedDelivery && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
+    ...(deliverable && !demoUnscannedDelivery && !detailPageImage && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
       selection_request: {
         job_id: selectionJobId,
         expected_revision: String(expectedRevision),
@@ -4438,12 +4562,22 @@ async function handle(request, signal) {
       if (name === 'content.draft.generate' && rawResult && typeof rawResult === 'object' && rawResult.formalVersionCreated === true && typeof rawResult.content_version_id === 'string') {
         normalizedResult.action_cards = actionCards(name, rawResult).action_cards ?? []
       }
-      const structuredContent = name === 'catalog.image.get'
+      const structuredContent = ['catalog.image.generate', 'catalog.image.get'].includes(name)
         ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images'))
         : normalizedResult
       const selectionTickets = name === 'catalog.image.get' ? privateCandidateSelectionTickets(rawResult, normalizedResult) : []
       const resultUi = toolResultUiMetadata(name, normalizedResult, selectionTickets)
       const content = toolContent(name, normalizedResult)
+      let videoAttachment
+      if (name === 'multimodal.video.request' || name === 'multimodal.video.get') {
+        try {
+          videoAttachment = await materializeVideoArtifact(normalizedResult, signal)
+          if (videoAttachment) content.push(videoAttachment.link)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : '视频附件读取失败'
+          content.push({ type: 'text', text: `视频任务和归档状态已保留，但未能附加视频文件：${reason}。请用本次相同的 provider_job_id 调用 multimodal.video.get 重试读取；不要重新提交渲染。` })
+        }
+      }
       if (nativeImages.length && !content.some(item => item?.type === 'image')) {
         for (const image of nativeImages) {
           if (typeof image !== 'string') continue
@@ -4452,7 +4586,10 @@ async function handle(request, signal) {
         }
       }
       if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? workflowResult?.job_id ?? rawResult?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, structured_image_url_count: Array.isArray(structuredContent?.image_urls) ? structuredContent.image_urls.length : 0, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
-      return jsonRpc(id, { content, structuredContent: merchantVisibleResultCopy(structuredContent), ...(resultUi ? { _meta: resultUi } : {}), isError: false })
+      const visibleStructuredContent = videoAttachment
+        ? merchantVisibleResultCopy({ ...structuredContent, video_attachment: { name: videoAttachment.fileName, content_type: videoAttachment.contentType, size_bytes: videoAttachment.sizeBytes, preview_only: videoAttachment.previewOnly } })
+        : merchantVisibleResultCopy(structuredContent)
+      return jsonRpc(id, { content, structuredContent: visibleStructuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
       mcpErrorTrace(name, error)
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'

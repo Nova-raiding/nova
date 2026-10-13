@@ -103,7 +103,7 @@ describe('CommercialAccessDecision E1 contract', () => {
     const decision: CommercialAccessDecision = {
       ...base,
       surface: 'MCP', operation: 'subscription.get', classification: 'RECOVERY_CONTROL',
-      balance_state: 'unknown', available_points: null, quoted_points: null, rate_card_version: null,
+      balance_state: 'not_requested', available_points: null, quoted_points: null, rate_card_version: null,
       access_revision: null, allowed: true, error_code: null,
     }
     expect(() => assertCommercialAccessDecision({ ...decision, decision_id: '' })).toThrow('valid decision_id')
@@ -161,13 +161,13 @@ describe('CommercialAccessDecision E1 contract', () => {
     expect(() => assertCommercialAccessDecision({ ...decision, allowed: true, error_code: null })).toThrow('unknown business access must fail closed')
   })
 
-  it('allows exact recovery controls even while the balance is unknown', () => {
+  it('marks the balance not requested for exact recovery controls', () => {
     const decision: CommercialAccessDecision = {
       ...base,
       surface: 'MCP',
       operation: 'subscription.get',
       classification: 'RECOVERY_CONTROL',
-      balance_state: 'unknown',
+      balance_state: 'not_requested',
       available_points: null,
       quoted_points: null,
       rate_card_version: null,

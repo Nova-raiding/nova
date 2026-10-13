@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AssetMetadata } from '../../../packages/application/src/service.js'
-import { assetDisplayProjection } from './image-projections.js'
+import type { AssetMetadata, ImageGenerationJob, MerchantService } from '../../../packages/application/src/service.js'
+import { assetDisplayProjection, publicImageJob } from './image-projections.js'
 
 function restrictedAsset(rightsScope: 'internal_only' | 'limited_use'): AssetMetadata {
   return {
@@ -19,5 +19,20 @@ describe('assetDisplayProjection', () => {
     expect(assetDisplayProjection(restrictedAsset(scope), false).nextAction).toEqual({
       method: 'asset.rights.update', label: '调整权益范围', allowed: true,
     })
+  })
+})
+
+describe('publicImageJob output variant', () => {
+  const assets = new Map() as MerchantService['assets']
+  const base = { id: 'image-job', workspaceId: 'ws', productId: 'product', revision: 1, state: 'queued', idempotencyKey: 'key', direction: '产品视觉', imageMode: 'create', count: 1, sourceProductVersion: 1, intentHash: 'hash', artifactRole: 'candidate', archiveState: 'pending', createdAt: '2026-10-13T00:00:00.000Z', updatedAt: '2026-10-13T00:00:00.000Z', outputs: [] } as unknown as ImageGenerationJob
+
+  it('preserves long-detail semantics for ChatGPT result rendering without requiring main-image selection', () => {
+    const projected = publicImageJob({ ...base, visualBrief: { size: '1024x4096', detailSections: ['价值主张'] } } as ImageGenerationJob, assets)
+    expect(projected).toMatchObject({ outputVariant: 'detail_long', selectionRequired: false })
+  })
+
+  it('keeps ordinary product images on the existing main-image selection flow', () => {
+    const projected = publicImageJob({ ...base, visualBrief: { size: '1024x1024' } } as ImageGenerationJob, assets)
+    expect(projected).toMatchObject({ outputVariant: 'main_image', selectionRequired: true })
   })
 })

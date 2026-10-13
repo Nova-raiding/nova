@@ -120,7 +120,7 @@ import json,subprocess,shutil
 DOCKER_CALL_TIMEOUT_SECONDS=45
 def docker(*args):
     return subprocess.check_output(['docker','--host','unix:///var/run/docker.sock',*args],universal_newlines=True,timeout=DOCKER_CALL_TIMEOUT_SECONDS)
-ids=docker('ps','-q','--filter','label=com.docker.compose.project=merchant-demo-85575f9c').split()
+ids=docker('ps','-a','-q','--filter','label=com.docker.compose.project=merchant-demo-85575f9c').split()
 services=[]
 for cid in ids:
     c=json.loads(docker('inspect',cid))[0]

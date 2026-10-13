@@ -92,7 +92,7 @@ it('returns from merchant login to the original local plugin consent in a browse
       window.localStorage.setItem(`storenova.plugin.installation:${origin}:${accountId}:${workspace}`,
         '11111111-1111-4111-8111-111111111111')
     }, { origin: base, accountId: account.id, workspace: workspaceId })
-    await page.getByRole('button', { name: '打开账号菜单' }).click()
+    if (!(await connect.isVisible())) await page.getByRole('button', { name: '打开账号菜单' }).click()
     await connect.click()
     await dialog.waitFor({ state: 'visible' })
     await dialog.getByText('连接失败，请重试').waitFor({ state: 'visible' })

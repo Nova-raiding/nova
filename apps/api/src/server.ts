@@ -7958,7 +7958,7 @@ function billingCapabilityEntitlements(input: {
       ? { state: 'available' as const, label: '套餐额度可用', remaining: input.usage!.remainingTasks, reason: '优先消耗套餐内模型行动额度', code: null }
       : { state: 'exhausted' as const, label: '套餐额度已用尽', remaining: input.usage?.remainingTasks ?? null, reason: pointsReady ? '后续模型行动将直接扣除创意点' : '创意点不足，无法执行模型行动', code: 'package_quota' },
     generation: generationReady
-      ? { state: 'available' as const, label: '生成能力可用', reason: '仍需素材事实、权益和人工确认门禁', code: null }
+      ? { state: 'eligibility_unverified' as const, label: '点数与模型配置可用，生成资格尚未核验', reason: '余额不等于商业资格；具体生成操作仍须服务端检查工作区权益、商家资格、素材事实和人工确认', code: 'commercial_access_check' }
       : blocked(
         !pointsReady ? '创意点不足或余额未知' : '平台文案模型未配置，暂不能生成正式内容',
         !pointsReady ? 'creative_points' : 'model_configuration',
@@ -13541,18 +13541,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'billing.status': {
       await persistenceReady
-      const balanceFen = persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId)
-      const usage = persistence.usage ? await persistence.usage.get(workspaceId) : undefined
-      const storeCapacitySnapshot = await storeCapacity(workspaceId)
-      const stores = workspaceStoreDirectory(workspaceId)
-      const actions = persistence.actionLedger ? await persistence.actionLedger.list(workspaceId, 1000) : []
+      const canViewWorkspaceBilling = !requiresStrictAuth() || effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId).capabilities.includes('billing.workspace.read')
+      const balanceFen = canViewWorkspaceBilling ? persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId) : 0
+      const usage = canViewWorkspaceBilling ? await persistence.usage?.get(workspaceId) : undefined
+      const storeCapacitySnapshot = canViewWorkspaceBilling ? await storeCapacity(workspaceId) : null
+      const stores = canViewWorkspaceBilling ? workspaceStoreDirectory(workspaceId) : []
+      const actions = canViewWorkspaceBilling && persistence.actionLedger ? await persistence.actionLedger.list(workspaceId, 1000) : []
       const pendingActions = actions.filter(item => ['authorized', 'pending_receipt', 'manual_attention'].includes(item.settlementStatus ?? ''))
       const pendingAuthorizationFen = pendingActions.reduce((sum, item) => sum + (item.reservedAmountFen ?? item.amountFen), 0)
-      const billingRoles = authorizedRoles(requestPrincipals.get(req))
-      const canViewWorkspaceBilling = !requiresStrictAuth() || billingRoles.some(role => ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'].includes(role))
-      const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
-      const setup = setupDiagnostics()
-      const capabilityEntitlements = billingCapabilityEntitlements({ balanceFen, availablePoints: pointBalance?.availablePoints ?? null, usage, setup, stores })
+      const pointBalance = canViewWorkspaceBilling ? await persistence.creativePoints?.getBalance(workspaceId) : undefined
+      const setup = canViewWorkspaceBilling ? setupDiagnostics() : null
+      const capabilityEntitlements = canViewWorkspaceBilling ? billingCapabilityEntitlements({ balanceFen, availablePoints: pointBalance?.availablePoints ?? null, usage, setup: setup!, stores }) : null
       return result(billingStatusProjection({ workspaceId, balanceFen, usage, storeCapacitySnapshot, pendingAuthorizationFen, pendingActionCount: pendingActions.length, canViewWorkspaceBilling, pointBalance, capabilityEntitlements, actionCards: billingActionCards(), providerReady: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready }))
     }
     case 'billing.recharge.create': {

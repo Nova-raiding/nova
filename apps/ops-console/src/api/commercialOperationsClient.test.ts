@@ -78,6 +78,15 @@ describe("commercial operations DTO parsers", () => {
     expect(result.errorCode).toBe("CREATIVE_POINTS_UNAVAILABLE");
   });
 
+  it("preserves a recovery decision whose balance was not requested", () => {
+    const result = parseCommercialAccessSummary({
+      decision_id: "cad_recovery", workspace_id: "ws_1", balance_state: "not_requested",
+      available_points: null, reserved_points: null, allowed: true, access_revision: null,
+    });
+    expect(result.balanceState).toBe("not_requested");
+    expect(result.availablePoints).toBeNull();
+  });
+
   it("rejects contradictory balance projections instead of normalizing them", () => {
     expect(() => parseCommercialAccessSummary({
       decision_id: "cad_2", workspace_id: "ws_1", balance_state: "known",

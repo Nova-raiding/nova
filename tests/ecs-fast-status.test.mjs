@@ -102,6 +102,9 @@ test('fast status keeps liveness and readiness probes separate', () => {
   assert.match(source, /https:\/\/yxsona\.com\/api\/healthz/u)
   assert.match(source, /DOCKER_CALL_TIMEOUT_SECONDS=45/u)
   assert.match(source, /timeout=DOCKER_CALL_TIMEOUT_SECONDS/u)
+  // Inventory must include stopped containers so an exited Compose service is
+  // reported as present but unhealthy, rather than incorrectly missing.
+  assert.match(source, /docker\('ps','-a','-q','--filter','label=com\.docker\.compose\.project=merchant-demo-85575f9c'\)/u)
   assert.match(source, /https:\/\/ops\.yxsona\.com\/healthz/u)
   assert.match(source, /body\.data\?\.ready \?\? body\.data\?\.status === 'ok'/u)
   assert.match(source, /probe\.status !== 200 \|\| !probe\.ready/u)
@@ -152,7 +155,7 @@ test('public API healthz probe is required and cannot grant release approval', a
   }
 })
 
-test('a ready API does not hide an exited or unhealthy replica', () => {
+test('an exited replica is present but blocks health instead of being classified missing', () => {
   const value = snapshot()
   Object.assign(value.services.find(service => service.service === 'api-replica'), { state: 'exited', health: 'absent' })
   assert.deepEqual(assess(value), ['service_not_healthy:api-replica'])

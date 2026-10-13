@@ -195,10 +195,10 @@ paths:
     get:
       tags: [Commercial]
       operationId: getCommercialAccess
-      description: Returns the server-owned creative-point access decision. Unknown balance remains null and fails closed for business execution.
+      description: Returns the server-owned creative-point access decision. RECOVERY_CONTROL returns balance_state=not_requested with available_points=null because no balance query is required; unknown means a requested balance could not be confirmed and fails closed for business execution.
       parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
       responses:
-        '200': { $ref: '#/components/responses/Envelope' }
+        '200': { $ref: '#/components/responses/CommercialAccessEnvelope' }
         '401': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '503': { $ref: '#/components/responses/CommercialAccessErrorEnvelope' }
@@ -14459,6 +14459,84 @@ components:
         registry_version: { type: string }
         retryable: { type: boolean }
       additionalProperties: true
+    CommercialAccessDecision:
+      description: Server-issued access decision. not_requested means this operation does not require a balance read; unknown means a required read failed and must fail closed.
+      oneOf:
+        - type: object
+          required: [schema_version, decision_id, decided_at, registry_version, workspace_id, surface, operation, classification, allowed, balance_state, available_points, quoted_points, rate_card_version, access_revision, error_code, next_actions]
+          properties:
+            schema_version: { type: string, enum: [commercial-access.v1] }
+            decision_id: { type: string }
+            decided_at: { type: string, format: date-time }
+            registry_version: { type: string }
+            workspace_id: { type: string }
+            surface: { type: string, enum: [MCP, HTTP, WORKER] }
+            operation: { type: string }
+            classification: { type: string, enum: [RECOVERY_CONTROL, POINT_REQUIRED_NO_CHARGE, POINT_CHARGED] }
+            allowed: { type: boolean }
+            balance_state: { type: string, enum: [known] }
+            available_points: { type: integer, minimum: 0 }
+            quoted_points: { oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }] }
+            rate_card_version: { oneOf: [{ type: string }, { type: 'null' }] }
+            access_revision: { type: string }
+            error_code: { oneOf: [{ type: string, enum: [CREATIVE_POINTS_EXHAUSTED, CREATIVE_POINTS_INSUFFICIENT, CREATIVE_POINTS_UNAVAILABLE, RATE_CARD_UNAVAILABLE, COMMERCIAL_ACCESS_STALE, COMMERCIAL_ENTITLEMENT_UNAVAILABLE, COMMERCIAL_ENTITLEMENT_REQUIRED, COMMERCIAL_ENTITLEMENT_AMBIGUOUS] }, { type: 'null' }] }
+            next_actions: { type: array, items: { type: string } }
+          additionalProperties: false
+        - type: object
+          required: [schema_version, decision_id, decided_at, registry_version, workspace_id, surface, operation, classification, allowed, balance_state, available_points, quoted_points, rate_card_version, access_revision, error_code, next_actions]
+          properties:
+            schema_version: { type: string, enum: [commercial-access.v1] }
+            decision_id: { type: string }
+            decided_at: { type: string, format: date-time }
+            registry_version: { type: string }
+            workspace_id: { type: string }
+            surface: { type: string, enum: [MCP, HTTP, WORKER] }
+            operation: { type: string }
+            classification: { type: string, enum: [RECOVERY_CONTROL, POINT_REQUIRED_NO_CHARGE, POINT_CHARGED] }
+            allowed: { type: boolean }
+            balance_state: { type: string, enum: [unknown] }
+            available_points: { type: 'null', description: Required balance could not be confirmed; fail closed. }
+            quoted_points: { oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }] }
+            rate_card_version: { oneOf: [{ type: string }, { type: 'null' }] }
+            access_revision: { oneOf: [{ type: string }, { type: 'null' }] }
+            error_code: { oneOf: [{ type: string, enum: [CREATIVE_POINTS_EXHAUSTED, CREATIVE_POINTS_INSUFFICIENT, CREATIVE_POINTS_UNAVAILABLE, RATE_CARD_UNAVAILABLE, COMMERCIAL_ACCESS_STALE, COMMERCIAL_ENTITLEMENT_UNAVAILABLE, COMMERCIAL_ENTITLEMENT_REQUIRED, COMMERCIAL_ENTITLEMENT_AMBIGUOUS] }, { type: 'null' }] }
+            next_actions: { type: array, items: { type: string } }
+          additionalProperties: false
+        - type: object
+          required: [schema_version, decision_id, decided_at, registry_version, workspace_id, surface, operation, classification, allowed, balance_state, available_points, quoted_points, rate_card_version, access_revision, error_code, next_actions]
+          properties:
+            schema_version: { type: string, enum: [commercial-access.v1] }
+            decision_id: { type: string }
+            decided_at: { type: string, format: date-time }
+            registry_version: { type: string }
+            workspace_id: { type: string }
+            surface: { type: string, enum: [MCP, HTTP, WORKER] }
+            operation: { type: string }
+            classification: { type: string, enum: [RECOVERY_CONTROL, POINT_REQUIRED_NO_CHARGE, POINT_CHARGED] }
+            allowed: { type: boolean }
+            balance_state: { type: string, enum: [not_requested] }
+            available_points: { type: 'null', description: Balance was intentionally not queried for this recovery operation; this is not an unknown balance. }
+            quoted_points: { oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }] }
+            rate_card_version: { oneOf: [{ type: string }, { type: 'null' }] }
+            access_revision: { oneOf: [{ type: string }, { type: 'null' }] }
+            error_code: { oneOf: [{ type: string, enum: [CREATIVE_POINTS_EXHAUSTED, CREATIVE_POINTS_INSUFFICIENT, CREATIVE_POINTS_UNAVAILABLE, RATE_CARD_UNAVAILABLE, COMMERCIAL_ACCESS_STALE, COMMERCIAL_ENTITLEMENT_UNAVAILABLE, COMMERCIAL_ENTITLEMENT_REQUIRED, COMMERCIAL_ENTITLEMENT_AMBIGUOUS] }, { type: 'null' }] }
+            next_actions: { type: array, items: { type: string } }
+          additionalProperties: false
+    CommercialAccessEnvelope:
+      description: Successful commercial access response; the decision explicitly distinguishes known, failed-to-confirm, and intentionally unqueried balances.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ApiEnvelope' }
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [decision]
+                    properties:
+                      decision: { $ref: '#/components/schemas/CommercialAccessDecision' }
+                    additionalProperties: false
     WorkerCommercialRecheck:
       type: object
       required: [recheck_id, workspace_id, operation, access_mode, access_revision, balance_state, entitlement_snapshot_id, entitlement_snapshot_checksum, rate_version, quoted_points, reservation_state, allowed, ready, checked_at]

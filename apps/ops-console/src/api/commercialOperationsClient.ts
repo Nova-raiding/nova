@@ -549,8 +549,10 @@ export function parseCommercialAccessSummary(value: unknown): CommercialAccessSu
   const balanceState = requiredText(value, method, "balance_state", "balance_state", "balanceState");
   const availablePoints = finiteNumber(pick(value, "available_points", "availablePoints"));
   const reservedPoints = finiteNumber(pick(value, "reserved_points", "reservedPoints"));
+  if (!['known', 'unknown', 'not_requested'].includes(balanceState)) invalid(method, "balance_state 不受支持");
   if (balanceState === "known" && (availablePoints === null || reservedPoints === null)) invalid(method, "known 余额必须包含 available_points 与 reserved_points");
   if (balanceState === "unknown" && (availablePoints !== null || reservedPoints !== null)) invalid(method, "unknown 余额不能携带确定点数");
+  if (balanceState === "not_requested" && (availablePoints !== null || reservedPoints !== null)) invalid(method, "not_requested 余额不能携带点数");
   return {
     decisionId: requiredText(value, method, "decision_id", "decision_id", "decisionId"),
     workspaceId: requiredText(value, method, "workspace_id", "workspace_id", "workspaceId"),

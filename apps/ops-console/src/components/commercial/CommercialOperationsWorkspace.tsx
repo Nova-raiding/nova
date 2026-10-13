@@ -70,6 +70,9 @@ import { yuanToFen } from "../../utils/currency.js";
 const dash = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : String(value);
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
 const point = (value: number | null | undefined) => value === null || value === undefined ? "待确认" : value.toLocaleString();
+const balancePoint = (value: number | null | undefined, state: string) => value === null || value === undefined
+  ? state === "not_requested" ? "本次未查询" : state === "restricted" ? "无权限" : "待确认"
+  : value.toLocaleString();
 
 export const platformCatalogGovernanceTarget = {
   id: "ops-platform-catalog",
@@ -157,8 +160,8 @@ export function CommercialAccessStatusBar({ state, onRetry }: { state: Commercia
     <section className="commercial-access-status" aria-label="商业准入状态" aria-live="polite">
       <Space size={16} wrap>
         <StateTag value={value.errorCode ?? (value.allowed ? "ALLOWED" : value.balanceState)} />
-        <span><Typography.Text type="secondary">可用点数 </Typography.Text><Typography.Text className="ops-token" strong>{point(value.availablePoints)}</Typography.Text></span>
-        <span><Typography.Text type="secondary">已预留 </Typography.Text><Typography.Text className="ops-token">{point(value.reservedPoints)}</Typography.Text></span>
+        <span><Typography.Text type="secondary">可用点数 </Typography.Text><Typography.Text className="ops-token" strong>{balancePoint(value.availablePoints, value.balanceState)}</Typography.Text></span>
+        <span><Typography.Text type="secondary">已预留 </Typography.Text><Typography.Text className="ops-token">{balancePoint(value.reservedPoints, value.balanceState)}</Typography.Text></span>
         <span><Typography.Text type="secondary">最早到期 </Typography.Text>{time(value.earliestExpiresAt)}</span>
         <span><Typography.Text type="secondary">Access revision </Typography.Text><Typography.Text code>{dash(value.accessRevision)}</Typography.Text></span>
         <span><Typography.Text type="secondary">目录 / 费率 </Typography.Text><Typography.Text code>{dash(value.catalogVersion)} / {dash(value.rateCardVersion)}</Typography.Text></span>

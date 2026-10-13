@@ -82,7 +82,7 @@ describe('CommercialAccessService E1', () => {
   it('does not read qualification or balances for an exact recovery action', async () => {
     const projectCommercialQualification = vi.fn(async () => { throw new Error('qualification database unavailable') })
     const h = harness({ state: 'unknown' }, undefined, { qualification_projection: { projectCommercialQualification } })
-    expect(await decision(h.service, 'subscription.get')).toMatchObject({ allowed: true, balance_state: 'unknown' })
+    expect(await decision(h.service, 'subscription.get')).toMatchObject({ allowed: true, balance_state: 'not_requested', available_points: null })
     expect(projectCommercialQualification).not.toHaveBeenCalled()
     expect(h.projectCreativePointBalance).not.toHaveBeenCalled()
   })
@@ -146,7 +146,7 @@ describe('CommercialAccessService E1', () => {
   it('allows an exact recovery control without consulting balance or rate ports', async () => {
     const h = harness({ state: 'unknown' }, { state: 'unavailable' })
     expect(await decision(h.service, 'subscription.get')).toMatchObject({
-      classification: 'RECOVERY_CONTROL', balance_state: 'unknown', available_points: null, allowed: true, error_code: null,
+      classification: 'RECOVERY_CONTROL', balance_state: 'not_requested', available_points: null, allowed: true, error_code: null,
     })
     expect(h.projectCreativePointBalance).not.toHaveBeenCalled()
     expect(h.resolveApprovedRate).not.toHaveBeenCalled()
