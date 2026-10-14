@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "repositoryVersion": "0.2.11",
+  "repositoryVersion": "0.2.12",
   "pluginVersion": "0.1.4+codex.20261017155812",
   "sourceMigrationVersion": 270,
   "expectedMigrationVersion": 279,
