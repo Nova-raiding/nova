@@ -62,3 +62,10 @@ CodeGraph 1.5.0 的已索引调用边显示 `apps/api/src/mcp-image-handlers.ts:
 | 类型检查 | 通过（全仓；后续 application 包单独重建） | 全仓 `npm run typecheck` 在首轮修补后通过；收窄正则后又运行 `npm run build --workspace @merchant-marketing/application` 成功。 |
 
 这轮只修复商品意图中文否定词识别，没有扩大功能范围。真实素材生成、长详情页图片展示、视频 provider 交付和当前 Demo 部署仍未通过验收。唯一 Demo 的新鲜只读 inventory 于 `2026-10-14T01:40:38.350Z` 显示服务健康、四个探针 HTTP 200，但组件版本混合且 `scope=inventory_only`；容器逐项 owner 分类、候选 SHA 绑定的 owner GO、当前 migration chain 对比、共享锁证明和回滚身份仍未齐，故没有部署。
+
+### 2026-10-14 发布同步与素材拒绝核对
+
+- `e2884c277d9d0f2079a3655b1721407048739728`（意图校验修复）与 `5854c379`（本验收文档）已推送到 `origin/main`；push 返回更新范围 `426b3db5..5854c379`。本机没有 `gh` CLI，故远端 workflow 结果尚未读取；不得把 push 当作 CI 通过或 Demo 部署。
+- 唯一 Demo 新鲜状态 `2026-10-14T01:40:38.350Z`：Demo 容器均 reported healthy，四个探针 HTTP 200，当前 release 仍为 `a36dda60`，API `9b97209c`、worker `52e30bce`，存在混合 revision。`scope=inventory_only`；尚缺逐项 owner 分类、候选 SHA 对应 GO、当前 migration chain、锁证明和回滚身份，部署仍 NO-GO。
+- 单张未绑定图候选尝试返回 `IMAGE_SOURCE_ASSET_INVALID`，无 job/visual_ref。来源素材记录 `asset_1fe70d63-d081-4d72-8853-65ff4e801870` 显示权益 owned/approved、readiness ready，但扫描状态为 `unscanned`；服务端拒绝原因没有进一步细节，无法据此确认是扫描、文件内容还是其他来源校验。没有继续重试或修改素材权益。
+- `creative_points.statement.list` 最近流水显示：`image:qa-image-20261014-01` 在 `2026-10-14T01:36:09Z` 预留并结算实际消耗 1 点；`asset-parse:asset_1fe...:attempt:1` 在 `01:45:08Z` 预留 40 点、`01:45:20Z` 结算 `actual_points=0`。当前可用余额为 12,389。最近流水窗口没有本次 `sn-acceptance-...` 图像请求对应的扣点事件；因此余额变化有独立账务流水解释，不把失败请求记作已生成或已扣点。`billing.transactions` 与 `billing.model-usage.statement` 在本次 MCP 上只返回“请查看当前状态”，以创意点账本作为可见流水证据。
