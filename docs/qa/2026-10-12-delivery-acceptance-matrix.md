@@ -19,3 +19,46 @@
 | 规则及清单对账 | 离线合同通过；demo 待验证 | 本轮组合重跑 platform-rule-sync、storage reconciliation runner、API storage contract 与 API rules E2E，4 个测试文件共 48 项通过；新增 API 回归验证签名规则平台身份冲突时两平台均非 ready，生产生成在 provider/job 前阻断。修复仍未部署。demo 上小红书规则状态仍缺少新鲜只读证据，对象清单对账状态未知、商家资料待补；未执行规则同步或触发对账，也不以静态配置或未知余额计通过。 |
 
 已部署候选仍是 a36dda60。规则身份冲突修复在提交 f698e2a6；其离线测试通过，但该提交及当前工作区改动尚未部署。完整业务验收尚未通过。详见 [运行验收报告](2026-10-12-chatgpt-desktop-backends.md)，历史收据保存在 `artifacts/owner-release/2026-10-12-chatgpt-browser/`。
+
+## 2026-10-14 续验记录
+
+本续记保留 10 月 12 日矩阵为历史快照，并记录本次对当前 `main` 与唯一 Demo 的新鲜检查；新旧证据不合并计数。
+
+| 验收范围 | 状态 | 当前证据与边界 |
+|---|---|---|
+| 当前源码候选 | `426b3db5b76a231217b85b553318c52bbdb0b766`，工作树干净 | `main` 与 `origin/main` 指向该提交。打包时插件源码输入干净；之后本续记文件产生唯一未提交改动。候选变更涉及 API、插件桥接、商家 UI、Ops UI 和共享包；不能按单独插件静态文件更新处理。已检查的候选差异未发现持久化迁移文件；这不代替 live migration chain 核验。 |
+| 当前 Demo 运行状态 | 运行健康；候选未获准 | 2026-10-14T00:36:00Z 只读 `deploy:101:status`：`/releasez`、API `/healthz`、`/readyz`、Ops `/healthz` 均为 HTTP 200。API 当前提交 `9b97209c`，商家/Ops UI 为 `a36dda60`，worker 为 `52e30bce`，gateway 为 `88457a96`，payment 为 `811a01a8`，源码版本混合。结果为 `scope=inventory_only`、`release_approved=false`；该字段本身不授予批准。 |
+| 容器归属与发布记录 | BLOCKED | 新鲜 inventory 包含 Demo API/UI/worker，也列出 gateway、payment、ClamAV、Postgres、Redis 等运行容器。尚无绑定候选完整 SHA 的当前 owner GO 记录、逐容器 owner 分类、当前 live migration chain 对比与候选回滚身份；依部署 runbook 必须 STOP/NO-GO。本轮没有构建、部署、迁移、重启或改服务器。 |
+| 当前插件会话认证 | BLOCKED（缺本地凭据） | Store Nova MCP `workspace_health` 返回 `UNAUTHENTICATED`，未完成健康读取。安装后按正式 `login.sh --workspace ws_guirenniaoniao` 启动本地 PKCE 登录，等待浏览器授权超时并返回 `LOCAL_PLUGIN_LOGIN_TIMEOUT`；没有写入钥匙串凭据。商品检索接口虽返回该工作区数据，但与未认证响应矛盾，故不作为认证或真实业务验收证据。未调用生成、扣点或发布。 |
+| 授权流程口径 | 修正 | 当前仓库 `AGENTS.md` 与商家营销 PRD 规定 ChatGPT 侧走本地直装/stdio；远程 ChatGPT OAuth 是历史方案，不是本次上线门禁。Merchant Studio 当前浏览器账号 `demo@sn.com` 显示 QA 标记，工作区 `ws_57fd2361ed5b44c7891f3d37`，与插件请求中的 `ws_guirenniaoniao` 不一致；一键连接入口同时受服务端门禁禁用。没有提交该 OAuth，也没有创建本地凭据。 |
+| 本机 arm64 插件安装候选 | PASS（安装与文件校验）；宿主重启/登录待办 | 从 `426b3db5b76a231217b85b553318c52bbdb0b766` 打包并安装 `0.1.3+codex.20261013165836`，内置 Node `v22.16.0`。安装器成功更新本机插件目录和启用配置，提示需重启 ChatGPT、需登录。production 包 provenance 校验通过；73/73 运行文件匹配，134 项工具快照与源码一致；未配置状态下 `workspace.health` 正确 fail-closed 为 `MCP_CONFIGURATION_REQUIRED`。当前会话刷新及工作区登录尚未验证。包：[arm64 本地安装候选](../../artifacts/local-plugin/merchant-marketing-0.1.3+codex.20261013165836-production-darwin-arm64.tar.gz)。 |
+| 当前已完成的自动化证据 | 局部通过 | `apps/plugin/install-smoke.test.ts` 29/29、`local-plugin-connect-request.e2e.test.ts` 8/8、`npm run typecheck` 通过；此前媒体目标回归 302 项通过。它们证明对应自动化范围，不证明这轮工作区登录、真实模型生成、商品详情长图展示、视频播放或当前 Demo 部署完成。 |
+
+**当前交付结论：**当前 `main` 已打包并安装到本机 arm64 插件目录，安装包来源、文件完整性和 MCP 工具面 smoke test 通过；ChatGPT 重启后的宿主加载、工作区登录、真实图像/详情页/视频生成交付仍待验收。当前 `426b3db5` 候选的唯一 Demo 部署仍为 NO-GO，须按 `docs/runbooks/ecs-demo-direct-deploy.md` 补齐新鲜容器归属、迁移、回滚和绑定候选 SHA 的 owner GO 证据。
+
+### 2026-10-14 续验补充：ChatGPT MCP 与商品图准入
+
+| 验收范围 | 状态 | 当前证据与边界 |
+|---|---|---|
+| Store Nova ChatGPT MCP 只读会话 | PASS（只读） | 本轮 `workspace_health` 返回工作区会话状态与商品选择步骤；`commercial_access_get` 标识 `ws_guirenniaoniao` 且允许 recovery control；`billing_status` 报余额已知、可用 12,390 创意点。`catalog_search(scope=workspace)` 读到该工作区的商品。此证据仅说明当前 ChatGPT MCP 只读接口可访问，不代表本机 stdio 插件已完成本地 PKCE 绑定。 |
+| 本机 stdio 插件 PKCE | BLOCKED（浏览器身份/工作区不匹配） | Chrome 授权页面针对 `ws_guirenniaoniao` 返回 `MCP_OAUTH_WORKSPACE_AMBIGUOUS`，正文为“本地插件请求与当前账号工作区不一致”；未授权成功，未确认本机钥匙串写入，也未重试其他账号。 |
+| 未绑定商品图候选生成 | BLOCKED（请求准入/当前附件） | `merchant_start` 明确等待本条请求的商品图片附件；工作区旧资产有待解析/待权益的素材。随后单次未绑定候选生成尝试被服务端拒绝 `PROTECTED_PRODUCT_MUTATION_BLOCKED`，没有返回 job/visual_ref，未形成图片产物。未对旧素材做事实确认或权益批准，也没有店铺发布。 |
+| 当前工作区、余额与商品事实 | 仅作只读核对 | workspace catalog 可见“贵人鸟儿童运动鞋（雾霾蓝）六屏详情候选”，但其平台为未绑定淘宝草稿、商品属性和图片字段为空，canonical 状态为 `legacy_only`，相关知识资产列表为空。不能据此启动正式绑定详情页或商品视频验收。 |
+
+本补充没有改动业务代码；工作树唯一变更仍为本验收文档。真实图像/详情页/视频链路仍需在正确工作区会话中提供当前商品素材，并按产品服务端准入完成可审计的生成测试。不得把 ChatGPT MCP 只读可用等同于本机 stdio PKCE 成功。
+
+### 2026-10-14 代码路径回归与专项测试补充
+
+CodeGraph 1.5.0 的已索引调用边显示 `apps/api/src/mcp-image-handlers.ts::handleImageMcpMethod` 在未绑定图片候选和商品绑定图片请求两处调用 `apps/api/src/protected-product-runtime.ts::requireProtectedProductIntent`，由其进入 `packages/application/src/protected-product-intent.ts::validateProtectedProductIntent`。CodeGraph 的 API/stdio 调用边用于定位链路；其中 application 校验器文件记录的索引时间早于本次改动，故本轮对该文件以当前源码和实际回归测试为准，没有把旧索引当成修复后图谱。
+
+本次请求词“无新增配件”命中受保护商品拦截。TDD 先复现该误判；第一次加宽否定词规则又被对抗用例“无论如何新增商品配件”证明会错误放过肯定修改。最终规则仅把紧邻的“无新增/无添加”当作否定，并保留肯定变更拦截。修复提交：`e2884c277d9d0f2079a3655b1721407048739728`。
+
+| 检查 | 结果 | 边界 |
+|---|---|---|
+| 受保护商品意图校验 | 71/71 通过 | 新回归覆盖“无新增配件/无添加”、肯定新增、以及“无论如何新增/添加”仍阻断；含原有 65 项规则测试。 |
+| 商品主图 API 流程 | 12/12 通过 | 仅本地模拟 provider，覆盖候选归档、读取、审核/选择、受保护事实拦截和正式素材门禁；不代表远端付费模型生成。 |
+| 图片 provider 与详情长图尺寸/投影 | 73/73 通过 | 包含 `1024x4096` 长画布请求、模型响应映射、归档辅助、详情编排和投影测试；provider 请求被测试替身模拟。 |
+| 视频脚本/分镜/渲染审批/异步费用与 stdio | 96/96 通过 | 6 个单元/API 文件及 3 个 stdio/API 成本和 provider-outcome 文件；渲染 provider 均为 mock，验证一次性授权、异步状态/结算和成本预检契约。 |
+| 类型检查 | 通过（全仓；后续 application 包单独重建） | 全仓 `npm run typecheck` 在首轮修补后通过；收窄正则后又运行 `npm run build --workspace @merchant-marketing/application` 成功。 |
+
+这轮只修复商品意图中文否定词识别，没有扩大功能范围。真实素材生成、长详情页图片展示、视频 provider 交付和当前 Demo 部署仍未通过验收。唯一 Demo 的新鲜只读 inventory 于 `2026-10-14T01:40:38.350Z` 显示服务健康、四个探针 HTTP 200，但组件版本混合且 `scope=inventory_only`；容器逐项 owner 分类、候选 SHA 绑定的 owner GO、当前 migration chain 对比、共享锁证明和回滚身份仍未齐，故没有部署。
