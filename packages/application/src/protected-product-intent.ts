@@ -56,6 +56,7 @@ const mutationAction = /(?:改变|更改|修改|调整|替换|更换|改写|重�
 
 const preservationPatterns = [
   /(?:不要|不应|不得|不能|请勿|禁止|避免|无需|无须|不需要)(?:[^，。；;,.!?]{0,24})(?:改变|更改|修改|调整|替换|更换|重做|重塑|改成|换成|变成|去掉|移除|删除|隐藏|新增|添加)/iu,
+  /无(?:新增|添加)/iu,
   /(?:保持|保留|维持|确保)(?:[^，。；;,.!?]{0,28})(?:不变|原样|原有|原始|一致|完整)/iu,
   /(?:不改变|不更改|不修改|不调整|不替换|不更换|不移除|不删除|不新增|不添加)/iu,
   /(?:do\s+not|don't|never|must\s+not|should\s+not|avoid)(?:[^,.;!?]{0,80})(?:alter|adjust|change|modify|replace|rewrite|reword|remove|delete|hide|add|redesign|reshape|distort)(?:[^,.;!?]{0,32})/iu,
