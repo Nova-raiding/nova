@@ -14745,6 +14745,8 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   // workspace before resolving the job; other worker-only routes stay
   // persistence-first and do not pay the full workspace hydration cost.
   const workerNeedsWorkspaceHydration = workerRoute && (
+    /^\/v1\/generation-jobs\/[^/]+(?:\/(?:defer|result))?$/u.test(path)
+    ||
     /^\/v1\/internal\/image-generation-jobs\/[^/]+\/(?:result|execution|reconciliation-evidence)$/u.test(path)
     || path === '/v1/internal/image-generation-jobs/reconciliation'
     || path === '/v1/internal/assets/lifecycle/purge'

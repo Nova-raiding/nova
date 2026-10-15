@@ -1010,6 +1010,7 @@ describe('API application wiring', () => {
     expect(eventBinding).toBeGreaterThan(receiptStart)
     expect(archiveCall).toBeGreaterThan(eventBinding)
     expect(source).toContain('const workerNeedsWorkspaceHydration = workerRoute')
+    expect(source).toContain("/^\\/v1\\/generation-jobs\\/[^/]+(?:\\/(?:defer|result))?$/u.test(path)")
     expect(source).toContain("path === '/v1/internal/image-generation-jobs/reconciliation'")
     expect(source).toContain('(!workerRoute || workerNeedsWorkspaceHydration || assetScannerRoute)')
   })
