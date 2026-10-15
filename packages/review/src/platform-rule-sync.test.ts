@@ -27,11 +27,60 @@ describe('platform rule sync status', () => {
     expect(result.every(item => item.state === 'not_configured' && item.configured === false)).toBe(true)
   })
 
-  it('detects stale platform packs individually', () => {
+  it('keeps approved active platform packs ready while flagging review freshness', () => {
     const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds.map(seed => ({ ...seed, source: { ...seed.source, kind: 'official' as const, trust: 'verified' as const, reference: seed.targetId ? PLATFORM_RULE_SOURCES.find(source => source.platform === seed.targetId)?.officialUrl ?? seed.source.reference : seed.source.reference.replace('manual://', 'manifest://'), createdBy: 'signed-rule-sync' } }))).list()
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
     expect(result.find(item => item.platform === 'douyin')).toMatchObject({ state: 'ready', latestVersion: 'douyin-content-1.0.0' })
-    expect(result.find(item => item.platform === 'jd')).toMatchObject({ state: 'stale', stale: true })
+    expect(result.find(item => item.platform === 'jd')).toMatchObject({ state: 'ready', stale: true })
+    expect(result.find(item => item.platform === 'jd')?.reason).toContain('已审核启用版本仍继续生效')
+  })
+
+  it('keeps an active platform package applicable after effectiveTo until it is explicitly withdrawn', () => {
+    const center = new RuleCenter(() => '2026-08-26T00:00:00.000Z', [{
+      packId: 'jd-approved-policy',
+      name: '京东已审核规则',
+      version: '1.0.0',
+      scope: 'platform',
+      targetId: 'jd',
+      status: 'active',
+      effectiveTo: '2026-01-01T00:00:00.000Z',
+      source: {
+        kind: 'internal',
+        trust: 'verified',
+        reference: 'https://rule.jd.com/rule/list.action',
+        checkedAt: '2025-01-01T00:00:00.000Z',
+      },
+      checks: { forbiddenTerms: ['虚构认证'] },
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }])
+
+    const evaluation = center.evaluate({ platform: 'jd' }, '2026-08-26T00:00:00.000Z')
+    expect(evaluation.applicable).toEqual(expect.arrayContaining([expect.objectContaining({ version: '1.0.0' })]))
+    expect(evaluation.findings.some(finding => finding.code === 'RULE_EXPIRED')).toBe(false)
+  })
+
+  it('does not validate effectiveTo for an active platform package', () => {
+    const center = new RuleCenter(() => '2026-08-26T00:00:00.000Z', [{
+      packId: 'jd-approved-policy-no-expiry',
+      name: '京东已审核规则',
+      version: '1.0.0',
+      scope: 'platform',
+      targetId: 'jd',
+      status: 'active',
+      effectiveTo: 'not-a-date',
+      source: {
+        kind: 'internal',
+        trust: 'verified',
+        reference: 'https://rule.jd.com/rule/list.action',
+        checkedAt: '2025-01-01T00:00:00.000Z',
+      },
+      checks: { forbiddenTerms: ['虚构认证'] },
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }])
+
+    const evaluation = center.evaluate({ platform: 'jd' }, '2026-08-26T00:00:00.000Z')
+    expect(evaluation.applicable).toEqual(expect.arrayContaining([expect.objectContaining({ version: '1.0.0' })]))
+    expect(evaluation.findings.some(finding => finding.code === 'RULE_SOURCE_INVALID')).toBe(false)
   })
 
   it('finds a signed public rule that carries its platform only in scopeValue', () => {

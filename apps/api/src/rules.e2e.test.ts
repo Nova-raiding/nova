@@ -175,6 +175,30 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.publicVersions).toHaveLength(0)
   })
 
+  it('returns a deterministic no-op when the signed rule sync is not configured', async () => {
+    const repository = new MemoryRuleRepository()
+    vi.spyOn(repository, 'list').mockImplementation(async (workspaceId) => {
+      if (workspaceId !== '__platform_rules__') throw new Error('workspace-scoped rule list must not run for platform sync')
+      return []
+    })
+    setRuleRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'platform-rules-admin': { workspaces: ['ws_rule_sync_not_configured'], roles: ['rules_admin'], workbenches: ['platform'], actor_id: 'platform_rules_admin' },
+    }))
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers: {
+      authorization: 'Bearer platform-rules-admin', 'x-workspace-id': 'ws_rule_sync_not_configured', 'x-ops-workbench': 'platform', 'content-type': 'application/json',
+    }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.sync.now', params: {} }) }).then(json)
+
+    expect(response.error).toBeNull()
+    expect(response.data?.result).toMatchObject({
+      sync: { state: 'not_configured', imported: 0, activated: 0, reason: 'manifest_url_missing' },
+    })
+    expect(repository.publicVersions).toHaveLength(0)
+    expect(repository.audits).toHaveLength(0)
+  })
+
   it('does not expose active platform rules with forged or cross-platform official provenance', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
@@ -652,30 +676,27 @@ describe('durable rule-center HTTP boundary', () => {
     expect((reviewed.data as { findings: Array<{ code: string }> }).findings).not.toContainEqual(expect.objectContaining({ code: 'MISSING_RULE_VERSION' }))
   })
 
-  it('blocks ordinary text generation before wallet usage when a persisted platform rule is expired', async () => {
+  it('allows ordinary text generation when an active persisted platform rule has passed effectiveTo', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
     const workspaceId = `ws_persisted_generation_gate_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `persisted-gate-store-${workspaceId}`, credentialRef: `vault://persisted-gate/${workspaceId}` })
-    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, category: '女装外套', title: '过期规则生成商品', stock: 4 })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, category: '女装外套', title: '已审核规则生成商品', stock: 4 })
     service.confirmProductFacts(workspaceId, product.id)
     const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
     service.selectDirection(task.id, 'A')
-    await repository.insertVersion({ id: `persisted-gate-${workspaceId}`, workspaceId, packId: 'persisted-gate', name: '过期淘宝规则', version: '4.0.0', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://taobao/4', sourceCheckedAt: new Date().toISOString(), checksum: 'd'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1, effectiveTo: '2026-01-01T00:00:00.000Z' })
+    await repository.insertVersion({ id: `persisted-gate-${workspaceId}`, workspaceId, packId: 'persisted-gate', name: '已审核淘宝规则', version: '4.0.0', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://taobao/4', sourceCheckedAt: new Date().toISOString(), checksum: 'd'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1, effectiveTo: '2000-01-01T00:00:00.000Z' })
     const base = await start()
+    const confirmed = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'task.plan.confirm', params: { workspace_id: workspaceId, task_id: task.id } }) }).then(json)
+    expect(confirmed.error).toBeNull()
     const generated = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.generate', params: { task_id: task.id } }) }).then(json)
-    expect(generated.error).toMatchObject({ code: 'PLATFORM_RULE_PREFLIGHT_BLOCKED' })
-    expect((generated.error as { details?: { rule_preflight?: { findings?: Array<{ code: string }> } } }).details?.rule_preflight?.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED' }))
-    expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
-
-    const restSync = await fetch(`${base}/v1/tasks/${task.id}/content`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: '{}' }).then(json)
-    expect(restSync.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
-    const restAsync = await fetch(`${base}/v1/tasks/${task.id}/content-jobs`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'idempotency-key': `expired-rule-job-${workspaceId}` }, body: '{}' }).then(json)
-    expect(restAsync.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
+    expect(generated.error?.code).toBe('AI_GENERATION_NOT_CONFIGURED')
     expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
   })
 
-  it('blocks ordinary text generation when a persisted rule has an invalid effective window', async () => {
+  it('blocks ordinary text generation when a nonplatform rule has an invalid effective window', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
     const workspaceId = `ws_persisted_malformed_rule_${Date.now()}`
@@ -684,7 +705,7 @@ describe('durable rule-center HTTP boundary', () => {
     service.confirmProductFacts(workspaceId, product.id)
     const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
     service.selectDirection(task.id, 'A')
-    await repository.insertVersion({ id: `persisted-malformed-${workspaceId}`, workspaceId, packId: 'persisted-malformed', name: '非法日期淘宝规则', version: '1.0.0', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://platform/malformed', sourceCheckedAt: new Date().toISOString(), checksum: 'e'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1, effectiveTo: 'not-a-date' })
+    await repository.insertVersion({ id: `persisted-malformed-${workspaceId}`, workspaceId, packId: 'persisted-malformed', name: '非法日期品类规则', version: '1.0.0', scope: 'category', scopeValue: '女装外套', status: 'active', sourceKind: 'official', sourceReference: 'official://platform/malformed', sourceCheckedAt: new Date().toISOString(), checksum: 'e'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1, effectiveTo: 'not-a-date' })
     const base = await start()
     const generated = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.generate', params: { task_id: task.id } }) }).then(json)
     expect(generated.error).toMatchObject({ code: 'PLATFORM_RULE_PREFLIGHT_BLOCKED' })

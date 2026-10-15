@@ -116,7 +116,10 @@ export function platformRuleSyncStatus(
     // this platform has no imported trusted version, keep the state explicit
     // so every consumer can explain that the platform rule data itself is
     // missing (rather than implying that an old version merely went stale).
-    const state = !configured || !latest ? 'not_configured' : stale ? 'stale' : 'ready'
+    // Approval and activation determine whether a platform rule can be used.
+    // Freshness remains visible for operations follow-up, but it must not turn
+    // an approved active version into an unavailable generation dependency.
+    const state = !configured || !latest ? 'not_configured' : 'ready'
     return {
       platform: source.platform, label: source.label, officialUrl: source.officialUrl,
       configured, machineReadable: source.machineReadable, latestVersion: latest?.version ?? null,
@@ -126,7 +129,7 @@ export function platformRuleSyncStatus(
         : !latest
           ? `尚未导入可验证的${source.label}平台规则，商户与插件不能消费该平台规则`
           : stale
-            ? `规则来源已超过 ${intervalHours} 小时未检查`
+            ? `规则来源已超过 ${intervalHours} 小时未复核；已审核启用版本仍继续生效`
             : latest.source.kind === 'internal' ? '规则来源由平台运营人工复核并审批' : '规则来源在检查窗口内',
     }
   })

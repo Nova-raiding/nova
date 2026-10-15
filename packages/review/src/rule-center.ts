@@ -160,9 +160,6 @@ function intersectConflictKeys(higher: RuleChecks, lower: RuleChecks) {
 }
 
 function expirationPolicy(rule: Pick<RulePackVersion, 'scope' | 'severity' | 'action'>): Pick<RuleEvaluationFinding, 'severity' | 'action'> {
-  // A stale platform policy makes platform compliance unknowable, so the P0
-  // boundary remains fail-closed even if the imported rule was advisory.
-  if (rule.scope === 'platform') return { severity: 'error', action: 'block' }
   const configuredAction = rule.action ?? 'block'
   const blocking = rule.severity === 'error' || configuredAction === 'block'
   return { severity: blocking ? 'error' : 'warning', action: blocking ? 'block' : configuredAction }
@@ -200,9 +197,9 @@ export class RuleCenter {
     if (!seed.source.checkedAt) throw new Error('RULE_SOURCE_CHECK_REQUIRED')
     if (Number.isNaN(Date.parse(seed.source.checkedAt))) throw new Error('RULE_SOURCE_CHECK_INVALID')
     const effectiveFrom = seed.effectiveFrom ? Date.parse(seed.effectiveFrom) : undefined
-    const effectiveTo = seed.effectiveTo ? Date.parse(seed.effectiveTo) : undefined
+    const effectiveTo = seed.effectiveTo && seed.scope !== 'platform' ? Date.parse(seed.effectiveTo) : undefined
     if (seed.effectiveFrom && Number.isNaN(effectiveFrom)) throw new Error('RULE_EFFECTIVE_FROM_INVALID')
-    if (seed.effectiveTo && Number.isNaN(effectiveTo)) throw new Error('RULE_EFFECTIVE_TO_INVALID')
+    if (seed.effectiveTo && seed.scope !== 'platform' && Number.isNaN(effectiveTo)) throw new Error('RULE_EFFECTIVE_TO_INVALID')
     if (effectiveFrom !== undefined && effectiveTo !== undefined && effectiveFrom >= effectiveTo) throw new Error('RULE_EFFECTIVE_RANGE_INVALID')
     for (const term of seed.checks?.forbiddenTerms ?? []) if (!term.trim()) throw new Error('RULE_CHECK_INVALID')
     for (const field of seed.checks?.requiredFields ?? []) if (!field.trim()) throw new Error('RULE_CHECK_INVALID')
@@ -303,12 +300,12 @@ export class RuleCenter {
             continue
           }
           const from = item.effectiveFrom ? Date.parse(item.effectiveFrom) : Number.NEGATIVE_INFINITY
-          const to = item.effectiveTo ? Date.parse(item.effectiveTo) : Number.POSITIVE_INFINITY
+          const to = item.effectiveTo && item.scope !== 'platform' ? Date.parse(item.effectiveTo) : Number.POSITIVE_INFINITY
           if (item.effectiveFrom && Number.isNaN(from)) {
             findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 的生效时间无效，不能用于本次审核` })
             continue
           }
-          if (item.effectiveTo && Number.isNaN(to)) {
+          if (item.effectiveTo && item.scope !== 'platform' && Number.isNaN(to)) {
             findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 的失效时间无效，不能用于本次审核` })
             continue
           }
@@ -316,6 +313,10 @@ export class RuleCenter {
             findings.push({ code: 'RULE_NOT_YET_EFFECTIVE', severity: item.severity ?? 'error', action: item.action ?? 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 尚未到生效时间 ${item.effectiveFrom}` })
             continue
           }
+          // Platform packages stay applicable while their approved version is
+          // active. Source freshness is reported separately by
+          // `platformRuleSyncStatus`; only an explicit inactive/expired status
+          // withdraws an approved platform package.
           if (now >= to) {
             const policy = expirationPolicy(item)
             findings.push({ code: 'RULE_EXPIRED', ...policy, field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 已于 ${item.effectiveTo} 过期，不能用于本次审核` })

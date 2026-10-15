@@ -223,7 +223,7 @@ import { hashPkceVerifier, OAuthStateError } from '../../../packages/security/sr
 import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSignature, type SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
-import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
+import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, localPluginWorkspaceMismatchHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
 import { LocalPluginConnectionError, MemoryLocalPluginConnectionRepository, PostgresLocalPluginConnectionRepository, type LocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
 import { LocalPluginInstallInstanceError, MemoryLocalPluginInstallInstanceRepository, PostgresLocalPluginInstallInstanceRepository, type LocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
 import { CreativeActionClaimError, PostgresCreativeActionClaimRepository, type CreativeActionClaimRepository, type LeasedCreativeAction } from '../../../packages/persistence/src/creative-point-action-claim-repository.js'
@@ -2461,7 +2461,7 @@ async function generationRulePreflight(workspaceId: string, productId: string) {
     const status = (await trustedPlatformRuleSyncStatuses(workspaceId)).find(item => item.platform === product.platform)
     if (!status || status.state !== 'ready') {
       const nextActions = platformRuleDataRecoveryActions(process.env)
-      throw new DomainError('PLATFORM_RULE_DATA_UNAVAILABLE', `未取得可验证且在有效期内的${status?.label ?? product.platform}平台规则，已阻止生成`, 503, {
+      throw new DomainError('PLATFORM_RULE_DATA_UNAVAILABLE', `未取得已审核并启用的${status?.label ?? product.platform}平台规则，已阻止生成`, 503, {
         platform: product.platform,
         rule_sync: status ?? null,
         next_actions: nextActions,
@@ -2626,12 +2626,12 @@ async function persistedRuleEvaluation(workspaceId: string, product: { platform:
       continue
     }
     const from = row.effectiveFrom ? Date.parse(String(row.effectiveFrom)) : Number.NEGATIVE_INFINITY
-    const to = row.effectiveTo ? Date.parse(String(row.effectiveTo)) : Number.POSITIVE_INFINITY
+    const to = row.effectiveTo && row.scope !== 'platform' ? Date.parse(String(row.effectiveTo)) : Number.POSITIVE_INFINITY
     if (row.effectiveFrom && Number.isNaN(from)) {
       findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: row.id, message: `规则 ${row.version} 的生效时间无效，不能用于本次生成` })
       continue
     }
-    if (row.effectiveTo && Number.isNaN(to)) {
+    if (row.effectiveTo && row.scope !== 'platform' && Number.isNaN(to)) {
       findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: row.id, message: `规则 ${row.version} 的失效时间无效，不能用于本次生成` })
       continue
     }
@@ -4296,6 +4296,7 @@ const noChargeWorkerEventOperations: Readonly<Record<string, CriticalWorkerOpera
   'asset.generated_quarantined': 'asset.scan.execute',
   'asset.video_quarantined': 'asset.scan.execute',
   'asset.scan_redrive_requested': 'asset.scan.execute',
+  'asset.scan_bootstrap_requested': 'asset.scan.execute',
 }
 
 async function withCommercialWorkerSnapshot(workspaceId: string, eventType: string, payload: Record<string, unknown>) {
@@ -13043,6 +13044,44 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         throw new DomainError(error.code, '素材扫描恢复条件已变化或失败证据不可安全重试，请刷新后重新检查', status)
       }
     }
+    case 'ops.marketing.asset_scan.bootstrap': {
+      const actorId = requireWorkspaceDataRole(req)
+      const repository = persistence.assetScanRedrive
+      if (!repository) throw new DomainError('ASSET_SCAN_BOOTSTRAP_REPOSITORY_UNAVAILABLE', '历史素材扫描补录仓储未配置，已拒绝入队', 503)
+      const assetId = required(params, 'asset_id')
+      const expectedAssetRevision = Number(required(params, 'expected_asset_revision'))
+      const recoveryKey = required(params, 'idempotency_key')
+      const reason = required(params, 'reason').trim()
+      if (!Number.isSafeInteger(expectedAssetRevision) || expectedAssetRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_asset_revision 必须是正整数', 400)
+      const asset = assetForWorkspace(workspaceId, assetId)
+      const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, assetId, 'asset.scan.execute', { method: 'ops.marketing.asset_scan.bootstrap', asset_id: assetId, expected_asset_revision: expectedAssetRevision })
+      if (!authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '历史素材扫描补录缺少持久身份授权快照，已拒绝入队', 503)
+      if (asset.revision === expectedAssetRevision) {
+        if (asset.scanStatus !== 'unscanned') throw new DomainError('ASSET_SCAN_BOOTSTRAP_NOT_UNSCANNED', '仅历史未扫描素材可补录扫描；不会覆盖已扫描状态', 409)
+        const trust = productionAssetScannerReadiness(process.env)
+        if (!trust.ready) throw new DomainError('SCANNER_NOT_READY', '素材安全扫描信任配置未就绪，已拒绝重新排队', 503, { reasons: trust.reasons })
+        if (!redisHealth) throw new DomainError('SCANNER_HEARTBEAT_MISSING', '未发现素材扫描服务心跳，已拒绝重新排队', 503)
+        const readiness = await evaluateScannerRecoveryAdmission({ redis: redisHealth, env: process.env })
+        if (!readiness.ready) throw new DomainError(readiness.code, '素材安全扫描服务未就绪，已拒绝重新排队', 503, { scanner: readiness.summary, reasons: readiness.reasons })
+        const object = await getAssetStorage().head(workspaceId, asset.storageKey, { includeQuarantine: true })
+        if (!object || object.key !== asset.storageKey || object.workspaceId !== workspaceId || object.zone !== 'quarantine'
+          || object.sha256 !== asset.sha256 || object.sizeBytes !== asset.sizeBytes || object.contentType.toLowerCase() !== asset.mimeType.toLowerCase()) {
+          throw new DomainError('ASSET_SCAN_BOOTSTRAP_OBJECT_BINDING_INVALID', '隔离对象与素材快照不一致，禁止补录扫描；请先调查对象完整性', 409)
+        }
+      }
+      try {
+        const commercialEnvelope = await withCommercialWorkerSnapshot(workspaceId, 'asset.scan_bootstrap_requested', {})
+        const bootstrap = await repository.bootstrapUnscanned({ workspaceId, assetId, expectedAssetRevision, recoveryKey, actorId, reason, authorizationSnapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot), commercialAccessSnapshot: commercialEnvelope.commercial_access_snapshot as import('../../../packages/persistence/src/asset-scan-redrive-repository.js').SerializedAssetScanCommercialAccessSnapshot })
+        const durableAsset = bootstrap.asset as unknown as import('../../../packages/application/src/service.js').AssetMetadata
+        service.assets.set(assetId, durableAsset)
+        invalidateWorkspaceHydration(workspaceId)
+        return result({ requestStatus: bootstrap.replayed ? 'idempotent_replay' : 'accepted', replayed: bootstrap.replayed, bootstrapId: bootstrap.bootstrapId, auditId: bootstrap.auditId, newEventId: bootstrap.event.id, event: { id: bootstrap.event.id, eventType: bootstrap.event.eventType, createdAt: bootstrap.event.createdAt, publishedAt: bootstrap.event.publishedAt ?? null }, asset: { id: assetId, revision: durableAsset.revision, sourceRevision: durableAsset.sourceRevision, scanStatus: durableAsset.scanStatus }, message: bootstrap.replayed ? '已返回同一幂等补录事件；请以当前素材状态和签名扫描回调为准' : '历史素材已进入自动扫描队列；扫描通过后可继续既有生成续跑，文件不会被人工标记为 clean' })
+      } catch (error) {
+        if (!(error instanceof AssetScanRedriveError)) throw error
+        const status = error.code.endsWith('_NOT_FOUND') ? 404 : error.code.endsWith('_INPUT_INVALID') ? 400 : 409
+        throw new DomainError(error.code, '历史素材扫描补录条件已变化，请刷新后重新检查', status)
+      }
+    }
     case 'ops.marketing.publish.acknowledge': {
       const actorId = requireWorkspaceDataRole(req)
       const job = service.acknowledgePublish({ workspaceId, publishJobId: required(params, 'publish_job_id'), actorId, reason: required(params, 'reason') })
@@ -14567,7 +14606,12 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       }
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
       const workspaceId = authorization.workspaceId ?? ''
-      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) {
+        if (req.method === 'GET') {
+          res.statusCode = 409; res.setHeader('content-type', 'text/html; charset=utf-8'); res.setHeader('content-security-policy', localPluginAuthorizationCsp(authorization.redirectUri)); res.end(localPluginWorkspaceMismatchHtml(authorization)); return
+        }
+        throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      }
       const origin = publicRequestOrigin(req)
       if (authorization.resource !== `${origin}/mcp` || authorization.workspaceId !== workspaceId) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
       if (authorization.requestId && (isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !authorization.installInstanceId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须提供安装实例持有证明', 409)

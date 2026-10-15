@@ -182,15 +182,15 @@ describe('deterministic content review', () => {
     ]))
   })
 
-  it('returns an explainable blocking finding for a matched expired rule', () => {
+  it('keeps an active platform rule applicable after effectiveTo', () => {
     const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
       packId: 'expired-platform', name: '过期平台规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
       effectiveTo: '2026-08-24T11:00:00.000Z', source: { kind: 'official', reference: 'manual://expired', checkedAt: '2026-08-20T00:00:00.000Z' },
     }])
     const result = center.evaluate({ platform: 'taobao' }, '2026-08-24T12:00:00.000Z')
-    expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error', action: 'block', ruleVersionId: 'expired-platform@1' }))
-    expect(result.findings[0]?.message).toContain('已于 2026-08-24T11:00:00.000Z 过期')
-    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(true)
+    expect(result.applicable).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'expired-platform@1' })]))
+    expect(result.findings).not.toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', ruleVersionId: 'expired-platform@1' }))
+    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(false)
   })
 
   it('rejects malformed rule evidence before it can be activated', () => {
@@ -229,27 +229,24 @@ describe('deterministic content review', () => {
     expect(advisoryFinding).toMatchObject({ severity: 'warning', priority: 'P1' })
     expect(decision(advisoryFinding)).toMatchObject({ key: 'RULE_EXPIRED:rules', status: 'acknowledged' })
 
-    // The blocking direction must not be downgraded with it: a platform rule
-    // that expired stays P0 and stays undecidable even when configured advisory.
-    const blocking = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+    const platform = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
       packId: 'advisory-platform', name: '平台建议规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
       effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'allow',
       source: { kind: 'official', reference: 'manual://platform-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
     }])
-    const blockingFinding = reviewDeterministic({ ...base, ruleCenter: blocking, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }).find(item => item.code === 'RULE_EXPIRED')!
-    expect(blockingFinding).toMatchObject({ severity: 'error', priority: 'P0' })
-    expect(() => decision(blockingFinding)).toThrow('REVIEW_P0_DECISION_FORBIDDEN')
+    const platformFindings = reviewDeterministic({ ...base, ruleCenter: platform, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' })
+    expect(platformFindings).not.toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED' }))
   })
 
-  it('keeps expired platform rules P0 fail-closed even when configured as advisory', () => {
+  it('does not expire an active platform rule from effectiveTo', () => {
     const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
       packId: 'advisory-platform', name: '平台建议规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
       effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'allow',
       source: { kind: 'official', reference: 'manual://platform-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
     }])
     const result = center.evaluate({ platform: 'taobao' }, '2026-08-24T12:00:00.000Z')
-    expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error', action: 'block' }))
-    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(true)
+    expect(result.findings).not.toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED' }))
+    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(false)
   })
 
   it('uses advisory policy for a rule explicitly transitioned to expired', () => {
