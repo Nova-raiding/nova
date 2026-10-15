@@ -904,6 +904,14 @@ describe('API application wiring', () => {
     expect(source).toContain("if (task.candidateOnly && !documents.some(document => document.indexState !== 'deleted')) return")
   })
 
+  it('allows generation recovery only after a proven pre-provider callback failure', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("requested.lastError?.['message'] === 'generation result API returned 404'")
+    expect(source).toContain('&& usage.length === 0')
+    expect(source).toContain("'GENERATION_REDRIVE_NOT_SAFE'")
+    expect(source).toContain("'GENERATION_CALLBACK_PRE_PROVIDER_FAILED'")
+  })
+
   it('releases settled storage quota only after confirmed object deletion', async () => {
     const releases: string[] = []
     const quota = { releaseAfterPhysicalDeletion: async (input: { workspaceId: string; reservationKey: string }) => { releases.push(`${input.workspaceId}:${input.reservationKey}`) } } as never

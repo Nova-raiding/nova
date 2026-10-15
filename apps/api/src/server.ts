@@ -12964,7 +12964,30 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.marketing.generation.retry': {
       const actorId = requireWorkspaceDataRole(req)
       const jobId = required(params, 'job_id')
-      const previous = service.getGenerationJob(workspaceId, jobId)
+      let previous = service.getGenerationJob(workspaceId, jobId)
+      if (previous.state === 'queued') {
+        if (!persistence.outbox || !persistence.modelUsage) {
+          throw new DomainError('GENERATION_REDRIVE_EVIDENCE_UNAVAILABLE', '生成恢复缺少持久 outbox 或模型用量证据，已拒绝重试', 503)
+        }
+        const events = await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100)
+        const requested = events.find(event => event.eventType === 'generation.requested' && event.sequence === previous.revision)
+        const actionId = requested && typeof requested.payload.action_id === 'string' ? requested.payload.action_id : undefined
+        const usage = actionId ? await persistence.modelUsage.listByAction(workspaceId, actionId) : []
+        const callbackFailedBeforeProvider = requested !== undefined
+          && requested.publishedAt === undefined
+          && requested.unknownAt === undefined
+          && (requested.attempts ?? 0) > 0
+          && requested.lastError?.['code'] === 'WORKER_ERROR'
+          && requested.lastError?.['message'] === 'generation result API returned 404'
+          && usage.length === 0
+        if (!requested || !callbackFailedBeforeProvider) {
+          throw new DomainError('GENERATION_REDRIVE_NOT_SAFE', '当前排队任务缺少“Provider 未调用且回调失败”的完整证据，已拒绝重试', 409)
+        }
+        const failed = service.failGeneration({ workspaceId, jobId, code: 'GENERATION_CALLBACK_PRE_PROVIDER_FAILED', message: 'Worker 在 Provider 调用前无法读取生成任务；已记录为可恢复失败' })
+        await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
+        await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode, error_message: failed.errorMessage, pre_provider: true, source_event_id: requested.id, source_error_code: requested.lastError?.['code'] })
+        previous = failed
+      }
       const task = service.getTask(previous.taskId)
       const currentKnowledge = await hydrateDurableKnowledgeForGeneration(task, false)
       const frozenSnapshot = task.inputSnapshotId
