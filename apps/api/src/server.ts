@@ -1040,7 +1040,7 @@ async function hydrateDurableKnowledgeForGeneration(task: { id: string; workspac
   if (!repository || !product || product.workspaceId !== task.workspaceId) return
   const documents = (await repository.listDocuments(task.workspaceId, { productId: product.id }))
     .filter(document => document.workspaceId === task.workspaceId && document.productId === product.id)
-  if (task.candidateOnly && !documents.some(document => document.indexState !== 'deleted')) throw new DomainError('KNOWLEDGE_CONTEXT_NOT_READY', '候选商品没有可用的已审核知识资料，索引就绪前不能生成内容', 409, { product_id: product.id, next_action: 'knowledge.asset.list' })
+  if (task.candidateOnly && !documents.some(document => document.indexState !== 'deleted')) return
   const blocker = durableKnowledgeBlocker(documents)
   if (blocker) throw new DomainError(blocker.code, blocker.message, 409, { ...blocker, product_id: product.id })
   const results = await repository.search({

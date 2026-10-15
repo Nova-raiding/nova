@@ -901,6 +901,7 @@ describe('API application wiring', () => {
     expect(((source + jobCreate).match(/await hydrateDurableKnowledgeForGeneration\(task\)/gu) ?? [])).toHaveLength(3)
     expect(source).toContain('service.setDurableKnowledgeDocuments(task.id')
     expect(source).toContain('productId: product.id')
+    expect(source).toContain("if (task.candidateOnly && !documents.some(document => document.indexState !== 'deleted')) return")
   })
 
   it('releases settled storage quota only after confirmed object deletion', async () => {
