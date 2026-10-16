@@ -43,4 +43,7 @@ CREATE TRIGGER asset_scan_bootstraps_no_truncate
 BEFORE TRUNCATE ON asset_scan_bootstraps
 FOR EACH STATEMENT EXECUTE FUNCTION reject_evidence_truncate();
 
+-- Owner default privileges may grant UPDATE on new tables. Reset them before
+-- granting the append-only runtime surface, as for asset_scan_redrives.
+REVOKE ALL ON TABLE asset_scan_bootstraps FROM PUBLIC, merchant_app, merchant_ops;
 GRANT SELECT, INSERT ON TABLE asset_scan_bootstraps TO merchant_app;

@@ -36,6 +36,15 @@ describe('scan bootstrap PostgreSQL concurrency', () => {
     const app = new Pool({ connectionString: appUrl.toString(), max: 3 })
     const workspaceId = `ws_bootstrap_${randomUUID().replaceAll('-', '')}`
     try {
+      // The fixture reruns role bootstrap after migrations; it must preserve
+      // the append-only ledger grant instead of restoring broad table DML.
+      const privileges = await admin.query(`SELECT
+        has_table_privilege('merchant_app','asset_scan_bootstraps','SELECT') AS can_select,
+        has_table_privilege('merchant_app','asset_scan_bootstraps','INSERT') AS can_insert,
+        has_table_privilege('merchant_app','asset_scan_bootstraps','UPDATE') AS can_update,
+        has_table_privilege('merchant_app','asset_scan_bootstraps','DELETE') AS can_delete,
+        has_table_privilege('merchant_app','asset_scan_bootstraps','TRUNCATE') AS can_truncate`)
+      expect(privileges.rows).toEqual([{ can_select: true, can_insert: true, can_update: false, can_delete: false, can_truncate: false }])
       await admin.query("INSERT INTO workspaces(id,status) VALUES ($1,'active')", [workspaceId])
       await admin.query('GRANT SELECT,INSERT,UPDATE ON business_entity_snapshots TO merchant_app')
       const assetIds = ['bootstrap_a', 'bootstrap_b']

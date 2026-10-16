@@ -94,8 +94,8 @@ describe('PostgreSQL 16 isolated execution through the release metadata migratio
       verifyPg16MigrationContainer(first, { id: containerId, name, runId, imageId, running: true })
       const hostPort = Number(first.ports['5432/tcp']?.[0]?.HostPort)
       const migrations = await loadMigrations()
-      const releaseMetadata = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { sourceMigrationVersion: number }
-      const targetVersion = releaseMetadata.sourceMigrationVersion
+      const releaseMetadata = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion: number }
+      const targetVersion = releaseMetadata.expectedMigrationVersion
       expect(Number.isSafeInteger(targetVersion) && targetVersion >= 258).toBe(true)
       expect(migrations).toHaveLength(targetVersion)
       expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: targetVersion }, (_, index) => index + 1))
@@ -123,6 +123,9 @@ describe('PostgreSQL 16 isolated execution through the release metadata migratio
       await pool.query(`CREATE ROLE merchant_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`)
       await pool.query(`CREATE ROLE merchant_ops LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`)
       await pool.query(`CREATE ROLE merchant_alert_receiver LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`)
+      // Migration 275 requires a separate, non-login ledger owner. Match the
+      // established bootstrap role without granting runtime membership.
+      await pool.query(`CREATE ROLE merchant_schema_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`)
       // Historical migrations alter defaults for the legacy owner role even
       // though application connections use merchant_app/merchant_ops.
       await pool.query(`CREATE ROLE merchant NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`)
@@ -137,7 +140,10 @@ describe('PostgreSQL 16 isolated execution through the release metadata migratio
       await pool.query('GRANT SELECT ON public.schema_migrations TO merchant_app, merchant_ops')
       await new MigrationRunner(pool, migrations.slice(0, 257)).run()
       const legacyBefore = await pool.query(`SELECT pg_get_functiondef('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text)'::regprocedure) AS definition`)
-      expect(await new MigrationRunner(pool, migrations).run()).toEqual(migrations.slice(257).map(migration => migration.version))
+      expect(await new MigrationRunner(pool, migrations.slice(0, 278)).run()).toEqual(migrations.slice(257, 278).map(migration => migration.version))
+      // Exercise the current demo's 278 -> candidate transition separately.
+      expect(await new MigrationRunner(pool, migrations).run()).toEqual(migrations.slice(278).map(migration => migration.version))
+      expect(await new MigrationRunner(pool, migrations).run()).toEqual([])
       const legacyAfter = await pool.query(`SELECT pg_get_functiondef('public.settle_knowledge_generation_claim(text,text,text,text,text,text,text)'::regprocedure) AS definition`)
       expect(legacyAfter.rows).toEqual(legacyBefore.rows)
 

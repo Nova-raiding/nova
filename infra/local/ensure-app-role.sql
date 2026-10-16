@@ -151,6 +151,10 @@ BEGIN
     EXECUTE 'REVOKE ALL ON TABLE asset_scan_redrives FROM merchant_app';
     EXECUTE 'GRANT SELECT, INSERT ON TABLE asset_scan_redrives TO merchant_app';
   END IF;
+  IF to_regclass('public.asset_scan_bootstraps') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE asset_scan_bootstraps FROM PUBLIC, merchant_app, merchant_ops';
+    EXECUTE 'GRANT SELECT, INSERT ON TABLE asset_scan_bootstraps TO merchant_app';
+  END IF;
   -- Migrations 067/068/079/218 each revoked DELETE from merchant_app on these
   -- tables and granted back only SELECT/INSERT/UPDATE, because they hold audit
   -- and control-plane records the runtime must not destroy: manual publish
