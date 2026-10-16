@@ -62,7 +62,7 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('const configurationBlockerRef = useRef<HTMLDivElement>(null)')
     expect(app).toContain('configurationBlockerRef.current?.focus()')
     expect(app).toContain('role="alert" tabIndex={-1} aria-labelledby="image-job-discovery-config-title"')
-    expect(app).toContain('系统不会读取、创建演示任务、生成或扣费。')
+    expect(app).toContain('系统不会读取、创建测试任务、生成或扣费。')
     expect(app).toContain('onClick={() => window.location.reload()}')
   })
 

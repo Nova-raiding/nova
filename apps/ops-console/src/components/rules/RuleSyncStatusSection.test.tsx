@@ -3,6 +3,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RuleSyncStatusSection } from "./RuleSyncStatusSection.js";
 
 describe("RuleSyncStatusSection", () => {
+  it("distinguishes an enabled rule from overdue source review", () => {
+    const html = renderToStaticMarkup(<RuleSyncStatusSection loading={false} onRefresh={() => undefined} statuses={[{
+      platform: "jd", label: "京东", officialUrl: "https://rule.jd.com/rule/list.action",
+      configured: true, machineReadable: false, latestVersion: "0.1",
+      sourceCheckedAt: "2026-10-06T00:00:00.000Z", ageHours: 240, stale: true, state: "ready",
+      reason: "规则来源已超过 168 小时未复核；已审核启用版本仍继续生效",
+    }]} />);
+    expect(html).toContain("已启用");
+    expect(html).toContain("来源待复核");
+    expect(html).not.toContain("新鲜");
+    expect(html).not.toContain("均在检查窗口内");
+  });
   it("shows stale platform evidence without presenting it as ready", () => {
     const html = renderToStaticMarkup(
       <RuleSyncStatusSection
@@ -24,7 +36,7 @@ describe("RuleSyncStatusSection", () => {
       />,
     );
 
-    expect(html).toContain("1 个平台未通过规则新鲜度门禁");
+    expect(html).toContain("1 个平台规则不可用");
     expect(html).toContain("已过期");
     expect(html).toContain("规则来源已超过 24 小时未检查");
   });

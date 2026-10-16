@@ -55,6 +55,8 @@ if (args[0] === 'plugin' && args[1] === 'marketplace' && args[2] === 'add') {
   process.stdout.write(JSON.stringify({ ok: true })); process.exit(0)
 }
 if (args.join(' ') === 'plugin add merchant-marketing@merchant-local --json') {
+  if (process.env.FAKE_EVICT_OLD_CACHES === '1') fs.rmSync(path.dirname(process.env.FAKE_INSTALLED), { recursive: true, force: true })
+  if (process.env.FAKE_FAIL_AFTER_EVICTION === '1') { process.stderr.write('simulated install failure after cache eviction'); process.exit(2) }
   fs.mkdirSync(path.dirname(process.env.FAKE_INSTALLED), { recursive: true })
   let pluginSource = process.env.FAKE_MARKETPLACE_PLUGIN
   if (fs.existsSync(process.env.FAKE_ACTIVE_MARKETPLACE)) {
@@ -124,6 +126,31 @@ describe('safe local plugin upgrade preflight', () => {
       expect(existsSync(fixture.installed)).toBe(false)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   })
+
+  it.each([false, true])('preserves older runtime files when Codex evicts caches (install failure=%s)', failAfterEviction => {
+    const fixture = setup()
+    const previous = resolve(fixture.installed, '..', '0.0.1+prior-runtime')
+    mkdirSync(resolve(previous, 'mcp'), { recursive: true })
+    const helper = resolve(previous, 'mcp/keychain-credential-helper')
+    const profile = resolve(previous, 'bundle-profile.json')
+    writeFileSync(helper, 'original-reviewed-helper-bytes')
+    chmodSync(helper, 0o700)
+    writeFileSync(profile, '{"schema_version":"1","profile":"qa-broker"}')
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.marketplaceRoot,
+        '--marketplace', 'merchant-local', '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home')], {
+        encoding: 'utf8', timeout: 150_000,
+        env: { ...fixture.env, FAKE_EVICT_OLD_CACHES: '1', ...(failAfterEviction ? { FAKE_FAIL_AFTER_EVICTION: '1' } : {}) },
+      })
+      expect(result.status, result.stderr).toBe(failAfterEviction ? 1 : 0)
+      if (failAfterEviction) expect(result.stderr).toContain('simulated install failure after cache eviction')
+      expect(existsSync(helper), 'old running bridges still need their native helper').toBe(true)
+      expect(readFileSync(helper, 'utf8')).toBe('original-reviewed-helper-bytes')
+      expect(readFileSync(profile, 'utf8')).toBe('{"schema_version":"1","profile":"qa-broker"}')
+      const plugins = resolve(fixture.root, 'codex-home/plugins')
+      expect(readdirSync(plugins).filter(name => name.startsWith('.storenova-previous-cache-'))).toEqual([])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 180_000)
 
   it('checks the local marketplace and complete source mirror before installing', () => {
     const fixture = setup()

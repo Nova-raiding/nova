@@ -20,7 +20,7 @@ export function ModelsPage({ model, onNavigate }: OpsDomainPageProps) {
       : modelStatusError
         ? "平台模型状态读取失败：" + modelStatusError + "。请先在平台总览重试模型状态读取。"
         : model.dataSource?.fixtureDataPresent === true
-          ? "当前模型状态含演示数据，不能作为中转就绪证据。请切换到真实服务数据源后再读取计费倍率。"
+          ? "当前模型状态含测试数据，不能作为中转就绪证据。请切换到真实服务数据源后再读取计费倍率。"
           : !model.modelStatus
             ? "尚未取得可验证的平台模型状态。请先在平台总览核实中转状态。"
             : model.modelStatus.state !== "ready"

@@ -21,6 +21,8 @@ export const NON_HERMETIC_TEST_FILES = [
   'apps/ops-console/src/components/finance/RefundSection.validation.browser.test.tsx',
   'apps/ops-console/src/components/users/WorkspaceGovernanceSection.browser.test.tsx',
   'apps/ops-console/src/components/users/UsersGovernanceDenied.browser.test.tsx',
+  'apps/ops-console/src/components/users/UserDirectorySection.invitation-authorization.browser.test.tsx',
+  'apps/ops-console/src/pages/CustomerDeliveryCreateAuthorization.e2e.test.ts',
   'packages/persistence/src/canonical-product-backfill.postgres.test.ts',
   'packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts',
   'packages/persistence/src/product-listing-cross-tenant-account-integrity.postgres.test.ts',
@@ -39,6 +41,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/private-trial-payment.release.postgres.test.ts',
   'packages/persistence/src/brand-profile-association.release.postgres.test.ts',
   'packages/persistence/src/asset-lifecycle-release.postgres.test.ts',
+  'packages/persistence/src/asset-scan-bootstrap-concurrency.postgres.test.ts',
   'packages/persistence/src/password-auth-repository.release.postgres.test.ts',
   'tests/mcp-oauth-commercial-payment.postgres.test.ts',
   'tests/postgres-rls-attack-matrix.postgres.test.ts',
@@ -77,6 +80,11 @@ export const NON_HERMETIC_TEST_FILES = [
   // it must not run from the default suite or the generic safe-test runner.
   'tests/ecs-pg16-migration-compatibility.isolated.test.ts',
   'apps/api/src/canonical-backfill-contract.test.ts',
+  // Requires the release-owned node image digest to be preloaded in Docker.
+  // It is a dedicated ECS candidate-map check, not a hermetic unit test.
+  'tests/ecs-bridge-candidate-map.test.ts',
+  'packages/persistence/src/creative-point-shared-action-owner.postgres.test.ts',
+  'packages/persistence/src/migration-247-ocr-rate.postgres.test.ts',
   // These two are `REDIS_URL` gated. They carry no default-suite assertion at
   // all when the variable is absent (`describe.skipIf` reports every test as
   // pending and the run stays green), so they are executed only through

@@ -275,12 +275,12 @@ export const MCP_POINT_CHARGED_ENABLED_METHODS = [
   'multimodal.image.edit',
   'content.generate',
   'content.draft.generate',
+  'ops.marketing.generation.retry',
   'multimodal.generate',
   'multimodal.video.request',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_CHARGED_DISABLED_METHODS = [
-  'ops.marketing.generation.retry',
   'campaign.batch.generate',
   'campaign.batch.retry_failed',
   'catalog.image.retry',
@@ -298,6 +298,7 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'creative.brief',
   'creative.preview',
   'ops.marketing.asset_scan.retry',
+  'ops.marketing.asset_scan.bootstrap',
   'ops.marketing.visual.review',
   'ops.marketing.publish.acknowledge',
   'ops.marketing.revision.create',

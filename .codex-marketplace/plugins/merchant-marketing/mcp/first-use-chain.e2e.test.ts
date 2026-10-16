@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { once } from 'node:events'
+import { createHash } from 'node:crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,7 +72,7 @@ describe('first-use plugin → API/MCP chain', () => {
     expect(tools).not.toContain('workspace.content_setup.confirm')
     expect(tools).not.toContain('platform.connect')
     expect(tools).not.toContain('platform.store.list')
-    expect(tools.some((name: string) => name.startsWith('ops.'))).toBe(false)
+    expect(tools.filter((name: string) => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
     const onboarding = await nextLine(child.stdout)
@@ -177,6 +178,113 @@ describe('first-use plugin → API/MCP chain', () => {
     })
     expect(foreignWorkspace.status).toBe(403)
     await expect(foreignWorkspace.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } })
+  }, 30_000)
+
+  it('carries a formal PKCE token through the stdio bridge to onboarding.status and rejects a foreign workspace', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'isolated-local-pkce-stdio-session-secret')
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const workspaceId = `ws_pkce_stdio_${Date.now()}`
+    const login = `pkce-stdio-${Date.now()}@example.test`
+    const password = 'PkceStdioChain1234!'
+    const account = await repository.createMerchantAccount({
+      login,
+      password,
+      enterpriseName: 'Isolated PKCE stdio merchant',
+      contactName: 'Owner',
+      workspaceIds: [workspaceId],
+      actorId: 'isolated-platform-operator',
+      reason: 'isolated PKCE to stdio onboarding contract',
+    })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: login, displayName: 'Owner', role: 'workspace_owner', status: 'active', invitedBy: 'pkce-stdio-chain-e2e' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: login, identityId: account.identityId })
+
+    const apiBase = await startApi()
+    vi.stubEnv('PUBLIC_APP_BASE_URL', apiBase)
+    const logged = await fetch(`${apiBase}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ login, password, account_type: 'merchant' }),
+    })
+    expect(logged.status).toBe(200)
+    const cookie = logged.headers.get('set-cookie')?.split(';', 1)[0]
+    expect(cookie).toBeTruthy()
+
+    const redirectUri = 'http://127.0.0.1:19876/merchant-mcp-callback'
+    const verifier = 'pkce-stdio-verifier-000000000000000000000000000000000000'
+    const challenge = createHash('sha256').update(verifier).digest('base64url')
+    const authorization = new URLSearchParams({
+      response_type: 'code',
+      client_id: 'local-desktop',
+      redirect_uri: redirectUri,
+      state: 'p'.repeat(43),
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      scope: 'merchant',
+      resource: `${apiBase}/mcp`,
+      workspace_id: workspaceId,
+    })
+    const approved = await fetch(`${apiBase}/v1/auth/local-plugin/authorize`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie: cookie!, origin: apiBase, 'content-type': 'application/x-www-form-urlencoded' },
+      body: authorization,
+    })
+    expect(approved.status).toBe(303)
+    const callback = new URL(approved.headers.get('location')!)
+    expect(callback.origin + callback.pathname).toBe(redirectUri)
+    expect(callback.searchParams.get('state')).toBe('p'.repeat(43))
+    const code = callback.searchParams.get('code')
+    expect(code).toBeTruthy()
+
+    const exchanged = await fetch(`${apiBase}/v1/auth/local-plugin/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: 'local-desktop', redirect_uri: redirectUri, code: code!, code_verifier: verifier, resource: `${apiBase}/mcp`, workspace_id: workspaceId }),
+    })
+    expect(exchanged.status).toBe(200)
+    const envelope = await exchanged.json() as { data?: { result?: { access_token?: string; workspace_id?: string; token_type?: string; account_login?: string } } & { access_token?: string; workspace_id?: string; token_type?: string; account_login?: string } }
+    const token = envelope.data?.result ?? envelope.data
+    expect(token).toMatchObject({ workspace_id: workspaceId, token_type: 'Bearer', account_login: login })
+    expect(typeof token?.access_token).toBe('string')
+
+    const runBridgeCall = async (boundWorkspaceId: string, id: number) => {
+      const bridge = spawn(process.execPath, [bridgePath], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          NODE_ENV: 'test',
+          DEPLOY_ENV: 'test',
+          MERCHANT_MCP_BASE_URL: apiBase,
+          MERCHANT_WORKSPACE_ID: boundWorkspaceId,
+          MERCHANT_MCP_TOKEN: token!.access_token!,
+          MERCHANT_MCP_TOKEN_SOURCE: 'environment',
+          MERCHANT_STRICT_AUTH: 'true',
+          MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+          MERCHANT_MCP_WRITE_ENABLED: 'false',
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      child = bridge
+      try {
+        bridge.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
+        return await nextLine(bridge.stdout)
+      } finally {
+        bridge.kill()
+        if (bridge.exitCode === null && bridge.signalCode === null) await once(bridge, 'exit')
+        if (child === bridge) child = undefined
+      }
+    }
+
+    const status = await runBridgeCall(workspaceId, 1)
+    expect(status.result.isError, JSON.stringify(status.result)).toBe(false)
+    expect(status.result.structuredContent).toMatchObject({ current_step: { id: 'provide_materials' }, initialization: { total: 4, legacy_store_setup: true } })
+    expect(JSON.stringify(status)).not.toContain(token!.access_token)
+
+    const foreign = await runBridgeCall(`${workspaceId}_foreign`, 2)
+    expect(foreign.result).toMatchObject({ isError: true, structuredContent: { code: 'FORBIDDEN' } })
   }, 30_000)
 
   it('reads customer-visible support replies through the real local stdio bridge and rejects missing scope', async () => {

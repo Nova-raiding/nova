@@ -20,6 +20,23 @@ function dependencies(overrides: Partial<BillingStatementDependencies> = {}): Bi
 }
 
 describe('billingReconciliationStatement manual attention history', () => {
+  it.each([
+    [{ PAYMENT_MODE: 'manual_transfer' }, 'manual_transfer', false],
+    [{ PAYMENT_MODE: '', COMMERCIAL_PAYMENT_PROVIDER: 'manual_transfer' }, 'manual_transfer', false],
+    [{ PAYMENT_MODE: ' PROVIDER ' }, 'provider', true],
+    [{ PAYMENT_MODE: 'fixture' }, 'fixture', false],
+  ] as const)('preserves runtime payment mode %j without inventing provider readiness', async (environment, mode, ready) => {
+    const original = { PAYMENT_MODE: process.env.PAYMENT_MODE, COMMERCIAL_PAYMENT_PROVIDER: process.env.COMMERCIAL_PAYMENT_PROVIDER };
+    try {
+      vi.stubEnv('COMMERCIAL_PAYMENT_PROVIDER', '');
+      for (const [key, value] of Object.entries(environment)) vi.stubEnv(key, value);
+      const result = await billingReconciliationStatement(dependencies());
+      expect(result.provider).toMatchObject({ mode, ready });
+    } finally {
+      for (const [key, value] of Object.entries(original)) vi.stubEnv(key, value);
+    }
+  });
+
   it('returns paged read-only action identifiers without billing or provider secrets', async () => {
     const nextCursor: ActionLedgerCursor = { createdAt: '2026-09-01T00:00:00.000Z', id: 'internal-id' }
     const deps = dependencies({

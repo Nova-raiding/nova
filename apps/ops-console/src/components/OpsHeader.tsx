@@ -73,7 +73,7 @@ export function OpsHeader({
     () => (merchantNotificationsEnabled ? notificationFeed(alerts, notifications) : []),
     [alerts, merchantNotificationsEnabled, notifications],
   );
-  const accountName = hasSession ? accountLabel(session) : (isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountName = hasSession ? accountLabel(session) : (isDemoSession ? "本机测试账号" : "平台运营账号");
   const accountDisplayName = accountName.length > 12 ? `${accountName.slice(0, 8)}…` : accountName;
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";

@@ -214,6 +214,30 @@ describe('API HTTP vertical slice', () => {
     }
   })
 
+  it('activates an operator invitation without granting commercial qualification', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'activation-operator@example.test', passwordHash: await hashPassword('ActivationOperator123!'), roles: ['platform_admin'] })
+    setPasswordAuthRepositoryForTests(auth)
+    const base = await start()
+    try {
+      const platform = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'activation-operator@example.test', password: 'ActivationOperator123!', account_type: 'platform' }) })
+      expect(platform.status).toBe(200)
+      const cookie = platform.headers.get('set-cookie')!.split(';', 1)[0]!
+      const invitation = await fetch(`${base}/v1/ops/merchant-accounts`, { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ login: 'activation-merchant@example.test', enterprise_name: '邀请企业', contact_name: '本人', workspace_ids: [], create_workspace: true, reason: '验证安全邀请激活', idempotency_key: 'activation-security-orthogonal' }) }).then(json)
+      expect(invitation.error).toBeNull()
+      expect(invitation.data).toMatchObject({ account: { status: 'merchant_pending' }, commercial_qualification_granted: false, capabilities_granted: [], invitation: { delivery_status: 'not_sent' } })
+      const token = new URL(invitation.data.invitation.activation_link).hash.slice('#token='.length)
+      const activate = (terms: boolean) => fetch(`${base}/v1/auth/merchant-activation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password: 'MerchantActivation123!', terms_agreed: terms }) })
+      expect((await activate(false)).status).toBe(400)
+      const activated = await activate(true)
+      expect(activated.status).toBe(200)
+      expect((await activated.json()).data).toMatchObject({ activated: true, login_required: true, commercial_qualification_granted: false })
+      expect((await activate(true)).status).toBe(400)
+      const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'activation-merchant@example.test', password: 'MerchantActivation123!', account_type: 'merchant' }) })
+      expect(logged.status).toBe(200)
+    } finally { setPasswordAuthRepositoryForTests() }
+  })
+
   it('closes the platform-provisioned merchant account and password-rotation HTTP loop', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await auth.ensurePlatformAccount({ login: 'platform-e2e@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_admin'] })
@@ -242,7 +266,6 @@ describe('API HTTP vertical slice', () => {
       }).then(json)
       expect(provision.error).toBeNull()
       expect(provision.data).toMatchObject({ account: { accountType: 'merchant', status: 'merchant_pending', workspaceIds: ['ws_http_provisioned'] } })
-      return
 
       const authorization = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -259,18 +282,7 @@ describe('API HTTP vertical slice', () => {
           reason: 'E2E 验证平台收款与商家全量权限开通',
         }),
       }).then(json)
-      expect(authorization.error).toBeNull()
-      expect(authorization.data).toMatchObject({
-        schema_version: 'merchant-account-authorization.v1',
-        login: 'merchant-provisioned-e2e@example.com',
-        workspace_id: 'ws_http_provisioned',
-        amount_fen: 500000,
-        payment_status: 'verified',
-        entitlement_status: 'granted',
-        member_role: 'merchant_admin',
-        member_status: 'active',
-        capabilities: expect.arrayContaining(['customer.content.update', 'customer.publish.execute', 'billing.workspace.read']),
-      })
+      expect(authorization.error).toMatchObject({ code: 'MERCHANT_LEGACY_AUTHORIZATION_DISABLED', details: { commercial_qualification_granted: false, payment_verified: false, order_created: false } })
       const authorizationReplay = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
         headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
@@ -286,7 +298,11 @@ describe('API HTTP vertical slice', () => {
           reason: 'E2E 验证平台收款与商家全量权限开通',
         }),
       }).then(json)
-      expect(authorizationReplay.data).toMatchObject({ replayed: true, amount_fen: 500000, payment_reference: 'wechat-trade-e2e-5000' })
+      expect(authorizationReplay.error).toMatchObject({ code: 'MERCHANT_LEGACY_AUTHORIZATION_DISABLED' })
+      const activationToken = new URL(provision.data.invitation.activation_link).hash.slice('#token='.length)
+      const activation = await fetch(`${base}/v1/auth/merchant-activation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: activationToken, password: 'MerchantInitial123', terms_agreed: true }) }).then(json)
+      expect(activation.error).toBeNull()
+      expect(activation.data).toMatchObject({ activated: true, login_required: true, commercial_qualification_granted: false })
 
       const merchantLogin = await fetch(`${base}/v1/auth/login`, {
         method: 'POST',
@@ -317,7 +333,7 @@ describe('API HTTP vertical slice', () => {
     }
   })
 
-  it('fails closed for pending payment, validates payment evidence, and blocks merchant callers', async () => {
+  it('rejects every legacy payment authorization payload and blocks merchant callers', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     const auth = new MemoryPasswordAuthRepository()
     await auth.ensurePlatformAccount({ login: 'platform-authz-negative@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
@@ -353,7 +369,6 @@ describe('API HTTP vertical slice', () => {
         }),
       }).then(json)
       expect(pending.error).toMatchObject({ code: 'MERCHANT_LEGACY_AUTHORIZATION_DISABLED' })
-      return
 
       const mismatchedAmount = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -368,7 +383,7 @@ describe('API HTTP vertical slice', () => {
           reason: '套餐金额不一致应被阻断',
         }),
       }).then(json)
-      expect(mismatchedAmount.error?.code).toBe('MERCHANT_PAYMENT_AMOUNT_MISMATCH')
+      expect(mismatchedAmount.error?.code).toBe('MERCHANT_LEGACY_AUTHORIZATION_DISABLED')
 
       const unknownSku = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -383,7 +398,7 @@ describe('API HTTP vertical slice', () => {
           reason: '未知套餐应被阻断',
         }),
       }).then(json)
-      expect(unknownSku.error?.code).toBe('MERCHANT_AUTHORIZATION_SKU_INVALID')
+      expect(unknownSku.error?.code).toBe('MERCHANT_LEGACY_AUTHORIZATION_DISABLED')
 
       const idempotencyConflict = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -398,7 +413,7 @@ describe('API HTTP vertical slice', () => {
           reason: '重复授权意图应被拒绝',
         }),
       }).then(json)
-      expect(idempotencyConflict.error?.code).toBe('MERCHANT_AUTHORIZATION_IDEMPOTENCY_CONFLICT')
+      expect(idempotencyConflict.error?.code).toBe('MERCHANT_LEGACY_AUTHORIZATION_DISABLED')
 
       const missingEvidence = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
         method: 'POST',
@@ -413,7 +428,7 @@ describe('API HTTP vertical slice', () => {
           reason: '缺少支付凭证不得开通',
         }),
       }).then(json)
-      expect(missingEvidence.error?.code).toBe('MERCHANT_PAYMENT_EVIDENCE_REQUIRED')
+      expect(missingEvidence.error?.code).toBe('MERCHANT_LEGACY_AUTHORIZATION_DISABLED')
 
       const merchantLogin = await fetch(`${base}/v1/auth/login`, {
         method: 'POST',
@@ -1000,6 +1015,19 @@ describe('API HTTP vertical slice', () => {
       expect.objectContaining({ id: 'connect_store', state: 'required' }),
       expect.objectContaining({ id: 'select_product', state: 'blocked' }),
     ]))
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const startCard = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'merchant.start', params: { workspace_id: workspaceId } }),
+    }).then(json)
+    expect(startCard.error).toBeNull()
+    const options = startCard.data?.result.platformOptions as Array<{ platform: string; state: string; mode: string }>
+    expect(options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ platform: 'taobao', state: 'demo', mode: '本地测试' }),
+    ]))
+    expect(options.map(option => option.mode).join(' ')).not.toMatch(/demo|演示/iu)
   })
 
   it('bootstraps a first-run workspace before the Codex plugin binds its workspace id', async () => {
@@ -2813,6 +2841,18 @@ describe('API HTTP vertical slice', () => {
     expect(created.error).toBeNull()
   })
 
+  it('fails closed for historical scan bootstrap when the durable recovery repository is absent', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'bootstrap-no-repository', method: 'ops.marketing.asset_scan.bootstrap', params: {
+        asset_id: 'asset_historical', expected_asset_revision: '1', idempotency_key: 'bootstrap-no-repository', reason: '核验恢复依赖缺失门禁',
+      } }),
+    }).then(json)
+    expect(response.error?.code).toBe('ASSET_SCAN_REDRIVE_REPOSITORY_UNAVAILABLE')
+    expect(response.data).toBeNull()
+  })
+
   it('serves the human-friendly category library over REST and MCP', async () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_catalog' }
@@ -2823,6 +2863,7 @@ describe('API HTTP vertical slice', () => {
       expect.objectContaining({
         code: '1312',
         name: '服装 / 防晒外套',
+        updatedAt: null,
         fields: expect.arrayContaining(['材质', '成分', '尺码', '颜色']),
         platforms: expect.arrayContaining(['taobao', 'jd', 'pinduoduo']),
         status: 'active',
@@ -2836,7 +2877,7 @@ describe('API HTTP vertical slice', () => {
     }).then(json)
     expect(mcp.error).toBeNull()
     expect((mcp.data as { result: Array<{ category_code: string; required_fields: string[] }> }).result).toEqual([
-      expect.objectContaining({ category_code: '1408', required_fields: expect.arrayContaining(['鞋面材质', '闭合方式']) }),
+      expect.objectContaining({ category_code: '1408', updatedAt: null, required_fields: expect.arrayContaining(['鞋面材质', '闭合方式']) }),
     ])
   })
 

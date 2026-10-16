@@ -410,6 +410,7 @@ export type StorageReconciliationSummary = {
 };
 export type UploadedAssetRisk = {
   id: string;
+  workspaceId?: string;
   name: string;
   mimeType: string;
   scanStatus: string;

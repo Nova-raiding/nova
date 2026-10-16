@@ -110,6 +110,37 @@ describe('local plugin installer and API integration', () => {
     expect(JSON.stringify(result)).not.toMatch(/access_token|refresh_token/u)
   })
 
+  it('renders a recovery page for a browser GET workspace mismatch while POST remains fail-closed', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+
+    const repository = new MemoryPasswordAuthRepository()
+    setPasswordAuthRepositoryForTests(repository)
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const ownedWorkspaceId = `ws_owned_${suffix}`
+    const requestedWorkspaceId = `ws_requested_${suffix}`
+    const login = `local-mismatch-${suffix}@example.test`
+    const password = 'LocalMismatch1234!'
+    const account = await repository.createMerchantAccount({ login, password, enterpriseName: 'Local Mismatch Integration', contactName: 'Owner', workspaceIds: [ownedWorkspaceId], actorId: 'platform-operator', reason: 'local plugin mismatch recovery integration test' })
+    await workspaceMembers.upsert({ workspaceId: ownedWorkspaceId, externalSubject: login, displayName: 'Owner', role: 'workspace_owner', status: 'active', invitedBy: 'local-plugin-mismatch-integration' })
+    await workspaceMembers.bindIdentity({ workspaceId: ownedWorkspaceId, externalSubject: login, identityId: account.identityId })
+
+    const baseUrl = await startApi()
+    const logged = await fetch(`${baseUrl}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password, account_type: 'merchant' }) })
+    const cookie = logged.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+    const authorization = new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: 'http://127.0.0.1:49191/merchant-mcp-callback', state: 's'.repeat(43), code_challenge: 'c'.repeat(43), code_challenge_method: 'S256', scope: 'merchant', resource: `${baseUrl}/mcp`, workspace_id: requestedWorkspaceId })
+
+    const browserResponse = await fetch(`${baseUrl}/v1/auth/local-plugin/authorize?${authorization}`, { headers: { cookie: cookie!, accept: 'text/html' } })
+    expect(browserResponse.status).toBe(409)
+    expect(browserResponse.headers.get('content-type')).toContain('application/json')
+    const browserError = await browserResponse.json()
+    expect(browserError).toMatchObject({ error: { code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' } })
+
+    const postResponse = await fetch(`${baseUrl}/v1/auth/local-plugin/authorize`, { method: 'POST', headers: { cookie: cookie!, origin: baseUrl, 'content-type': 'application/x-www-form-urlencoded' }, body: authorization })
+    expect(postResponse.status).toBe(409)
+    await expect(postResponse.json()).resolves.toMatchObject({ error: { code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' } })
+  })
   it('revokes a real late-arriving token family when cancellation wins before persistence', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')

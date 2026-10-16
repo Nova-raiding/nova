@@ -21,7 +21,7 @@ export function opsLoadWarningPresentation(error: string) {
   if (!match) return { summary: error, detail: undefined };
   const count = match[1].split("、").map((item) => item.trim()).filter(Boolean).length;
   return {
-    summary: `${count || "部分"} 个数据集刷新失败，页面已保留上次成功数据。`,
+    summary: `${count || "部分"} 个数据集读取失败；相关内容尚未取得或可能已过期。`,
     detail: error,
   };
 }

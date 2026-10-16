@@ -11,6 +11,10 @@ const DEFAULT_SHARD_COUNT = 8
 const MAX_SHARD_COUNT = 16
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const execFileAsync = promisify(execFile)
+type SignalEmitter = {
+  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown
+  off(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown
+}
 
 export async function listSafeTestFiles(source: NodeJS.ProcessEnv = process.env): Promise<string[]> {
   const environment = buildSafeTestEnvironment(source, join(tmpdir(), 'merchant-safe-test-discovery'))
@@ -58,13 +62,21 @@ export async function runSafeTestShards(
   runShard: typeof runSafeTests = runSafeTests,
   write: (message: string) => void = message => console.error(message),
   listFiles: (source: NodeJS.ProcessEnv) => Promise<string[]> = listSafeTestFiles,
+  signals: SignalEmitter = process,
 ): Promise<number> {
+  let cancelled: number | undefined
+  const interrupt = () => { cancelled ??= 130 }
+  const terminate = () => { cancelled ??= 143 }
+  signals.on('SIGINT', interrupt)
+  signals.on('SIGTERM', terminate)
+  try {
   // Explicit test-file filters stay a single isolated invocation. Appending
   // them to every repository shard accidentally runs the whole suite again
   // when developers expect a focused regression test.
   if (hasExplicitTestFileSelection(args)) {
     write('[safe-tests] explicit test-file selection; running one isolated invocation')
     const exitCode = await runShard([...args], source)
+    if (cancelled !== undefined) return cancelled
     write(`[safe-tests] explicit test-file selection ${exitCode === 0 ? 'passed' : `failed (exit ${exitCode})`}`)
     return exitCode
   }
@@ -77,6 +89,7 @@ export async function runSafeTestShards(
   const failures: Array<{ shard: number; exitCode: number }> = []
 
   for (const shard of selectedShards) {
+    if (cancelled !== undefined) return cancelled
     const startedAt = Date.now()
     write(`[safe-tests] shard ${shard}/${shardCount} started`)
     let exitCode: number
@@ -87,6 +100,10 @@ export async function runSafeTestShards(
       exitCode = 1
     }
     const elapsedSeconds = ((Date.now() - startedAt) / 1_000).toFixed(1)
+    if (cancelled !== undefined) {
+      write(`[safe-tests] cancelled during shard ${shard}/${shardCount}; no later shards started`)
+      return cancelled
+    }
     write(`[safe-tests] shard ${shard}/${shardCount} ${exitCode === 0 ? 'passed' : `failed (exit ${exitCode})`} in ${elapsedSeconds}s`)
     if (exitCode !== 0) failures.push({ shard, exitCode })
   }
@@ -99,6 +116,10 @@ export async function runSafeTestShards(
     ? `[safe-tests] all ${shardCount} shards passed`
     : `[safe-tests] selected shards passed: ${selectedShards.join(',')}/${shardCount}`)
   return 0
+  } finally {
+    signals.off('SIGINT', interrupt)
+    signals.off('SIGTERM', terminate)
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

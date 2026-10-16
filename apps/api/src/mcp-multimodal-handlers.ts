@@ -20,8 +20,8 @@ function publicVideoArtifactFields(workspaceId: string, rendering: { assetId?: s
     ...(deliveryReady ? { download_path: assetPath } : {}),
     ...(previewOnly ? { preview_path: assetPath, preview_only: true, publishable: false } : {}),
     ...(deliveryReady ? {} : { availability_warning: previewOnly
-      ? '演示模式下该视频尚未扫描，仅供当前工作区预览，不代表审核通过或可发布。'
-      : rendering.archiveState !== 'archived' ? '视频尚未完成归档，暂不能作为正式交付。' : scanStatus === 'unscanned' ? '该视频处于演示或未扫描状态，不能作为已通过扫描的正式交付。' : '视频扫描尚未确认通过，暂不能作为正式交付。' }),
+      ? '该视频尚未扫描，仅供当前工作区预览，不代表审核通过或可发布。'
+      : rendering.archiveState !== 'archived' ? '视频尚未完成归档，暂不能作为正式交付。' : scanStatus === 'unscanned' ? '该视频尚未扫描，不能作为已通过扫描的正式交付。' : '视频扫描尚未确认通过，暂不能作为正式交付。' }),
   }
 }
 

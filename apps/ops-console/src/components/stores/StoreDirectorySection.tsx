@@ -70,9 +70,12 @@ export function StoreDirectorySection({
   const errorRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<InputRef>(null);
   const hadDirectoryErrorRef = useRef(Boolean(error));
+  const directoryUnavailable = Boolean(loading || error);
+  const aliasPermissionValid = canManageStoreConnections && (!aliasTarget || !canManageStoreConnection || canManageStoreConnection(aliasTarget));
+  const directoryReadNotice = directoryUnavailable ? <Alert role="status" type="warning" showIcon title="店铺目录尚未确认" description="请取消关闭此窗口，刷新店铺目录后再修改。已确认的操作结果仍会保留。" /> : null;
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
-    if (!aliasTarget || alias.trim().length < 1) return;
+    if (directoryUnavailable || !aliasPermissionValid || !aliasTarget || alias.trim().length < 1) return;
     setSavingAlias(true);
     setAliasError("");
     try {
@@ -91,7 +94,7 @@ export function StoreDirectorySection({
     try { await onRevoke(store); } finally { setRevokingKey(undefined); }
   };
   const confirmRevoke = async () => {
-    if (!revokeTarget) return;
+    if (directoryUnavailable || !revokeTarget) return;
     setRevokeError("");
     if (!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(revokeTarget))) {
       setRevokeError("当前会话已无权撤销此店铺记录，请刷新权限后重试。");
@@ -110,7 +113,7 @@ export function StoreDirectorySection({
   const authorizationFilterLabel = (row: StoreDirectory) => row.authorization?.reauthorizationRequired
     ? "需重新授权"
     : row.dataMode === "fixture"
-      ? "演示授权"
+      ? "测试授权"
       : storeAuthorizationStateLabel(row.state);
   const visibleStores = storeDirectory.filter((row) => {
     const query = directorySearch.trim().toLocaleLowerCase();
@@ -123,6 +126,8 @@ export function StoreDirectorySection({
   const authorizationOptions = [...new Set(storeDirectory.map(authorizationFilterLabel))];
   const filtersActive = Boolean(directorySearch.trim() || platformFilter || authorizationFilter);
   const activeWorkspaces = workspaces.filter((item) => item.status === "active");
+  const selectedWorkspaceActive = activeWorkspaces.some(item => item.workspaceId === manualWorkspaceId);
+  const registrationAvailable = canManageStoreConnections && Boolean(onRegisterManualStore);
   const representedStoreCount = storeDirectory.reduce((total, store) => total + (store.aggregate === true && Number.isSafeInteger(store.count) && (store.count ?? 0) >= 0 ? store.count! : 1), 0);
   const resetManualForm = () => {
     setRegisterOpen(false); setManualWorkspaceId(""); setManualPlatform(undefined);
@@ -130,7 +135,7 @@ export function StoreDirectorySection({
     setManualStoreError("");
   };
   const submitManualStore = async () => {
-    if (!onRegisterManualStore || !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim()) return;
+    if (directoryUnavailable || !registrationAvailable || !selectedWorkspaceActive || !onRegisterManualStore || !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim()) return;
     setRegistering(true);
     setManualStoreError("");
     try {
@@ -144,15 +149,15 @@ export function StoreDirectorySection({
 
   useEffect(() => {
     if (error) {
-      errorRef.current?.focus({ preventScroll: true });
+      if (!registerOpen && !aliasTarget && !revokeTarget) errorRef.current?.focus({ preventScroll: true });
       hadDirectoryErrorRef.current = true;
     } else if (hadDirectoryErrorRef.current) {
       // The retry action disappears when the read recovers. Move focus to the
       // directory controls instead of letting it fall back to <body>.
-      searchInputRef.current?.focus();
+      if (!registerOpen && !aliasTarget && !revokeTarget) searchInputRef.current?.focus();
       hadDirectoryErrorRef.current = false;
     }
-  }, [error]);
+  }, [error, registerOpen, aliasTarget, revokeTarget]);
 
   useEffect(() => {
     setDirectoryPage(1);
@@ -166,7 +171,7 @@ export function StoreDirectorySection({
       extra={
         <Space>
           {canManageStoreConnections && onRegisterManualStore ? <>
-            <Button type="primary" disabled={activeWorkspaces.length === 0} onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button>
+            <Button type="primary" disabled={directoryUnavailable || activeWorkspaces.length === 0} onClick={() => { setManualStoreError(""); setManualStoreBoundaryApplicable(undefined); setRegisterOpen(true); }}>登记人工店铺</Button>
             {activeWorkspaces.length === 0 ? <Typography.Text type="secondary">没有可选的已启用商家工作区；请检查工作区目录权限或刷新后重试。</Typography.Text> : null}
           </> : null}
           <Tag color={representedStoreCount ? "blue" : "orange"}>{loading || error ? "状态待确认" : `${representedStoreCount} 个已登记店铺`}</Tag>
@@ -205,6 +210,19 @@ export function StoreDirectorySection({
         >清除筛选</Button>
         <Typography.Text role="status" aria-live="polite">显示 {visibleStores.length} / {storeDirectory.length} 条目录记录</Typography.Text>
       </Space>
+      {error ? (
+        <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby="store-directory-error-title" style={{ marginTop: 16 }}>
+          <Alert
+            type="error"
+            showIcon
+            title={<span id="store-directory-error-title">店铺目录读取失败</span>}
+            description={initialLoadFailed
+              ? "当前空列表不代表没有已登记店铺；请检查网络或工作区权限后重新加载。"
+              : "已保留上一次成功读取的店铺目录及已确认的变更；其他记录可能已过期，刷新成功前暂停修改。"}
+            action={onRetry ? <Button htmlType="button" style={{ minHeight: 44 }} aria-label="刷新店铺目录" onClick={onRetry}>刷新店铺目录</Button> : undefined}
+          />
+        </div>
+      ) : null}
       <Table
         rowKey={(row: StoreDirectory) => row.aggregate === true
           ? `summary:${row.platform}:${row.state}:${row.dataMode}:${Number(row.readable)}:${Number(row.writeEnabled)}`
@@ -246,6 +264,7 @@ export function StoreDirectorySection({
             render: (_: unknown, row: StoreDirectory) => (
               <Tag
                 color={
+                  error && row.state !== "revoked" ? "orange" :
                   row.authorization?.reauthorizationRequired ||
                   row.state === "revoked"
                     ? "red"
@@ -256,10 +275,11 @@ export function StoreDirectorySection({
                       : "orange"
                 }
               >
+                {error && row.state !== "revoked" ? "上次读取：" : ""}
                 {row.authorization?.reauthorizationRequired
                   ? "需重新授权"
                   : row.dataMode === "fixture"
-                    ? "演示授权"
+                    ? "测试授权"
                   : row.state === "connected"
                       ? "真实授权"
                   : storeAuthorizationStateLabel(row.state)}
@@ -274,7 +294,7 @@ export function StoreDirectorySection({
                 {value === "official_api"
                   ? "官方 API"
                   : value === "fixture"
-                    ? "fixture 演示"
+                    ? "测试记录（未核验）"
                     : value === "account_record_only"
                       ? "仅账号记录"
                       : value}
@@ -301,7 +321,7 @@ export function StoreDirectorySection({
                   <Button
                     type="link"
                     style={{ minHeight: 44 }}
-                    disabled={!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true}
+                    disabled={directoryUnavailable || !canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true}
                     onClick={() => { setAliasTarget(row); setAlias(row.alias ?? row.label); setAliasError(""); }}
                   >
                     改别名
@@ -311,7 +331,7 @@ export function StoreDirectorySection({
                     danger
                     style={{ minHeight: 44 }}
                     loading={revokingKey === `${row.platform}:${row.accountId}`}
-                    disabled={!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true || Boolean(revokingKey)}
+                    disabled={directoryUnavailable || !canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(row)) || row.aggregate === true || Boolean(revokingKey)}
                     onClick={() => { setRevokeError(""); setRevokeTarget(row); }}
                   >
                     {storeRevocationCopy(row).actionLabel}
@@ -322,19 +342,6 @@ export function StoreDirectorySection({
           },
         ]}
       />
-      {error ? (
-        <div ref={errorRef} tabIndex={-1} role="group" aria-labelledby="store-directory-error-title" style={{ marginTop: 16 }}>
-          <Alert
-            type="error"
-            showIcon
-            title={<span id="store-directory-error-title">店铺目录读取失败</span>}
-            description={initialLoadFailed
-              ? "当前空列表不代表没有已登记店铺；请检查网络或工作区权限后重新加载。"
-              : "已保留上一次成功读取的店铺目录；请检查网络或工作区权限后重新加载。"}
-            action={onRetry ? <Button htmlType="button" style={{ minHeight: 44 }} aria-label="刷新店铺目录" onClick={onRetry}>刷新店铺目录</Button> : undefined}
-          />
-        </div>
-      ) : null}
       <Typography.Text type="secondary">
         此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。
       </Typography.Text>
@@ -351,8 +358,11 @@ export function StoreDirectorySection({
         />
       ) : null}
       <Modal title="登记人工店铺" open={registerOpen} okText="确认登记" cancelText="取消" confirmLoading={registering}
-        okButtonProps={{ disabled: !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
+        okButtonProps={{ disabled: directoryUnavailable || !registrationAvailable || !selectedWorkspaceActive || !manualWorkspaceId || !manualPlatform || !manualAccountId.trim() || !manualReason.trim() }}
         onCancel={() => { if (!registering) resetManualForm(); }} onOk={() => void submitManualStore()}>
+        {directoryReadNotice}
+        {!registrationAvailable ? <Alert role="status" type="warning" showIcon title="人工店铺登记权限或能力已不可用" description="请取消关闭此窗口，重新核验当前授权后再登记。" /> : null}
+        {manualWorkspaceId && !selectedWorkspaceActive ? <Alert role="status" type="warning" showIcon title="所选工作区已不可用" description="当前工作区未启用或已不在可选目录中。请重新选择已启用工作区，或取消后刷新目录。" /> : null}
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text type="secondary" role="note">工作区、平台、店铺账号 ID 和登记理由为必填项。人工登记只保存账号记录，不会创建平台授权或连接凭证。</Typography.Text>
           {manualStoreError ? <Alert role="alert" type="error" showIcon title="人工店铺登记失败" description={manualStoreError} /> : null}
@@ -369,7 +379,9 @@ export function StoreDirectorySection({
           <Input.TextArea id="manual-store-reason" aria-required="true" placeholder="说明登记依据，便于后续审计" value={manualReason} onChange={event => setManualReason(event.target.value)} maxLength={500} showCount />
         </Space>
       </Modal>
-      <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: alias.trim().length < 1 || alias.trim() === (aliasTarget?.alias ?? aliasTarget?.label ?? "").trim() }} onCancel={closeAlias} onOk={() => void submitAlias()}>
+      <Modal title="修改店铺展示别名" open={Boolean(aliasTarget)} okText="保存别名" cancelText="取消" confirmLoading={savingAlias} okButtonProps={{ disabled: directoryUnavailable || !aliasPermissionValid || alias.trim().length < 1 || alias.trim() === (aliasTarget?.alias ?? aliasTarget?.label ?? "").trim() }} onCancel={closeAlias} onOk={() => void submitAlias()}>
+        {directoryReadNotice}
+        {aliasTarget && !aliasPermissionValid ? <Alert role="status" type="warning" showIcon title="店铺别名修改权限已失效" description="当前会话已无权修改此店铺；请取消关闭此窗口并重新核验授权。" /> : null}
         <Typography.Paragraph>仅修改运营后台展示名称，不会修改平台店铺真实名称。</Typography.Paragraph>
         {aliasError ? <Alert role="alert" type="error" showIcon title="别名保存失败" description={aliasError} /> : null}
         <label htmlFor="store-display-alias">店铺展示别名</label>
@@ -384,12 +396,13 @@ export function StoreDirectorySection({
         {...confirmPolicyPropsFor("store.revoke")}
         okButtonProps={{
           ...confirmPolicyPropsFor("store.revoke").okButtonProps,
-          disabled: !canManageStoreConnections || Boolean(revokeTarget && canManageStoreConnection && !canManageStoreConnection(revokeTarget)),
+          disabled: directoryUnavailable || !canManageStoreConnections || Boolean(revokeTarget && canManageStoreConnection && !canManageStoreConnection(revokeTarget)),
         }}
         confirmLoading={Boolean(revokingKey)}
         onCancel={() => { if (!revokingKey) { setRevokeTarget(undefined); setRevokeError(""); } }}
         onOk={() => void confirmRevoke()}
       >
+        {directoryReadNotice}
         {revokeTarget && (!canManageStoreConnections || (canManageStoreConnection && !canManageStoreConnection(revokeTarget)))
           ? <Alert role="status" type="warning" showIcon title="店铺撤销权限已失效" description="当前会话已无权撤销此店铺记录；请刷新权限后重试。" />
           : null}

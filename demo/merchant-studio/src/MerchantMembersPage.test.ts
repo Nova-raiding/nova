@@ -27,6 +27,8 @@ describe('merchant members scope and governance', () => {
   })
 
   it('keeps the invitation role inside the server assignable-role set', () => {
+    expect(preferredInviteRole({ ...session, assignable_roles: ['merchant_admin', 'operator', 'support'] })).toBe('operator')
+    expect(preferredInviteRole({ ...session, assignable_roles: ['merchant_admin', 'operator'] }, 'merchant_admin')).toBe('merchant_admin')
     expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'platform_ops'] }, 'operator')).toBe('finance')
     expect(preferredInviteRole({ ...session, assignable_roles: ['finance', 'operator'] }, 'operator')).toBe('operator')
     expect(preferredInviteRole({ ...session, assignable_roles: [] }, 'operator')).toBeNull()

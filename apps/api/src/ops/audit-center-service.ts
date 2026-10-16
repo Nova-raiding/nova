@@ -36,9 +36,10 @@ export class AuditCenterService {
     if (!principal.actorId.trim() || !isPlatformWide(principal)) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'platform audit permission is required')
     const query = parseAuditPlatformQuery(rawQuery)
     const authorized = [...new Set(workspaceIds.map(value => value.trim()).filter(Boolean))]
-    // Postgres can enforce platform scope once and execute this as one bulk
-    // query. This avoids opening two RLS transactions per tenant during page
-    // hydration. Memory repositories retain the bounded fan-out fallback.
+    // A specialized bulk reader must enforce its own authorized tenant scope.
+    // The PostgreSQL audit projection uses workspace-only RLS, so its regular
+    // reader deliberately uses the scoped fan-out below; a platform GUC alone
+    // cannot authorize that projection.
     if (this.repository.listPlatform) return this.repository.listPlatform(query, authorized)
     const pages: AuditCenterPage[] = []
     // Platform audit is a bounded read across all authorized tenants. The

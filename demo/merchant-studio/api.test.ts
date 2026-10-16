@@ -94,8 +94,8 @@ describe('merchant product response normalization', () => {
     expect(platforms?.flatMap((platform) => platform.stores)).toMatchObject([{
       id: 'fixture-store-ws_demo-taobao',
       name: '淘宝 Fixture 店',
-      dataModeLabel: '演示数据',
-      connectionLabel: '演示连接',
+      dataModeLabel: '测试数据',
+      connectionLabel: '测试连接',
       readable: true,
       realConnected: false,
     }])

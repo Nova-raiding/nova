@@ -39,6 +39,35 @@ function verifyProfileFixture(source: string, installed: string) {
 }
 
 describe('installed MCP bridge verification', () => {
+  it('accepts only the explicitly merchant-authorized generation retry ops tool', () => {
+    const fixture = makeProfileFixture('production')
+    try {
+      const checked = verifyProfileFixture(fixture.source, fixture.installed)
+      expect(checked.evidence.tools.forbidden).not.toContain('ops.marketing.generation.retry')
+      expect(checked.result.status, checked.result.stderr).toBe(0)
+    } finally { rmSync(fixture.directory, { recursive: true, force: true }) }
+  }, installationFixtureTimeoutMs)
+
+  it('still rejects other ops tools even when source and installed discovery agree', () => {
+    const fixture = makeProfileFixture('production')
+    try {
+      for (const root of [fixture.source, fixture.installed]) {
+        const bridge = resolve(root, 'mcp/bridge.mjs')
+        const source = readFileSync(bridge, 'utf8')
+        const modified = source.replace(
+          "const MERCHANT_VISIBLE_OPS_METHODS = new Set(['ops.marketing.generation.retry'])",
+          "const MERCHANT_VISIBLE_OPS_METHODS = new Set(['ops.marketing.generation.retry', 'ops.audit.list'])",
+        )
+        expect(modified).not.toBe(source)
+        writeFileSync(bridge, modified)
+      }
+      const checked = verifyProfileFixture(fixture.source, fixture.installed)
+      expect(checked.result.status).toBe(1)
+      expect(checked.evidence.tools.forbidden).toContain('ops.audit.list')
+      expect(checked.evidence.tools.forbidden).not.toContain('ops.marketing.generation.retry')
+    } finally { rmSync(fixture.directory, { recursive: true, force: true }) }
+  }, installationFixtureTimeoutMs)
+
   it('accepts the exact bundled Node startup transformation and runs its tool discovery', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-bundled-verify-'))
     const installed = resolve(directory, 'installed')

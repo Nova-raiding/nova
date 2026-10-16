@@ -1,44 +1,11 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
-import { createServer as createHttpServer, request as httpRequest } from 'node:http'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium, expect } from '@playwright/test'
 import { Pool } from 'pg'
 import { PostgresMembersRepository } from '../packages/persistence/src/members-repository.js'
 import { PostgresPasswordAuthRepository } from '../packages/persistence/src/password-auth-repository.js'
 import { runOpsE2e, type OpsE2eContext } from './run-ops-password-e2e.js'
-
-function merchantProxy(uiUpstream: string, apiUpstream: string) {
-  return createHttpServer((incoming, outgoing) => {
-    const apiRequest = incoming.url?.startsWith('/api/') || incoming.url === '/api'
-    const upstreamUrl = new URL(incoming.url ?? '/', apiRequest ? apiUpstream : uiUpstream)
-    if (apiRequest) upstreamUrl.pathname = upstreamUrl.pathname.replace(/^\/api(?=\/|$)/u, '') || '/'
-    const headers = { ...incoming.headers, host: upstreamUrl.host, 'x-forwarded-host': incoming.headers.host, 'x-forwarded-proto': 'http' }
-    const upstream = httpRequest(upstreamUrl, { method: incoming.method, headers }, response => { outgoing.writeHead(response.statusCode ?? 502, response.headers); response.pipe(outgoing) })
-    upstream.on('error', () => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end() })
-    incoming.pipe(upstream)
-  })
-}
-
-async function freePort() {
-  const server = createServer()
-  await new Promise<void>((resolveReady, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolveReady) })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('MERCHANT_MEMBERS_PORT_UNAVAILABLE')
-  await new Promise<void>((resolveClose) => server.close(() => resolveClose()))
-  return address.port
-}
-
-async function ready(url: string, process: ChildProcess) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (process.exitCode !== null || process.signalCode !== null) throw new Error('MERCHANT_MEMBERS_UI_EXITED')
-    try { if ((await fetch(url, { signal: AbortSignal.timeout(1_000) })).ok) return } catch { /* startup */ }
-    await new Promise(resolveWait => setTimeout(resolveWait, 100))
-  }
-  throw new Error('MERCHANT_MEMBERS_UI_NOT_READY')
-}
 
 async function verify(context: OpsE2eContext) {
   const { fixture, evidenceDir } = context
@@ -50,8 +17,6 @@ async function verify(context: OpsE2eContext) {
   // the browser API itself still runs under the restricted app/ops roles.
   const pool = new Pool({ connectionString: fixture.adminDatabaseUrl, max: 2 })
   const authPool = new Pool({ connectionString: fixture.opsDatabaseUrl, max: 1 })
-  let preview: ChildProcess | undefined
-  let gateway: ReturnType<typeof merchantProxy> | undefined
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
   try {
     const account = await new PostgresPasswordAuthRepository(authPool).createMerchantAccount({
@@ -62,17 +27,13 @@ async function verify(context: OpsE2eContext) {
     await members.upsert({ workspaceId: fixture.workspaceId, externalSubject: login, displayName: '隔离成员管理员', role: 'merchant_admin', status: 'active', invitedBy: 'isolated-browser-fixture' })
     if (account.identityId) await members.bindIdentity({ workspaceId: fixture.workspaceId, externalSubject: login, identityId: account.identityId })
 
-    const merchantDist = resolve(output, 'merchant-dist')
-    const childEnv = { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: process.env.HOME ?? '/tmp', LANG: 'C.UTF-8', NODE_ENV: 'production', VITE_API_BASE_URL: '/api' }
-    execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'demo/merchant-studio', '--config', 'demo/merchant-studio/vite.config.ts', '--outDir', merchantDist], { env: childEnv, stdio: 'ignore', timeout: 90_000 })
-    const previewPort = await freePort()
-    preview = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort', '--outDir', merchantDist], { env: childEnv, stdio: 'ignore' })
-    await ready(`http://127.0.0.1:${previewPort}/`, preview)
-    const runtime = JSON.parse(await readFile(resolve(evidenceDir, 'runtime.json'), 'utf8')) as { apiPort: number }
-    const gatewayPort = await freePort()
-    gateway = merchantProxy(`http://127.0.0.1:${previewPort}`, `http://127.0.0.1:${runtime.apiPort}`)
-    await new Promise<void>((resolveListen, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', resolveListen) })
-    const origin = `http://127.0.0.1:${gatewayPort}`
+    // Use the gateway owned by runOpsE2e: its origin is the API's fixed
+    // local-stdio issuer and is disposed by the same outer fixture lifecycle.
+    const merchantUrl = context.environment.MERCHANT_STUDIO_URL
+    if (!merchantUrl) throw new Error('MERCHANT_MEMBERS_RUNNER_UI_REQUIRED')
+    const endpoint = new URL(merchantUrl)
+    if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || endpoint.username || endpoint.password || endpoint.pathname !== '/') throw new Error('MERCHANT_MEMBERS_RUNNER_UI_INVALID')
+    const origin = endpoint.origin
     browser = await chromium.launch({ channel: 'chrome', headless: true })
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Shanghai' })
     const pageErrors: string[] = []
@@ -158,6 +119,11 @@ async function verify(context: OpsE2eContext) {
     await page.screenshot({ path: resolve(output, 'merchant-members-read.png'), fullPage: true })
 
     const invited = `invited-${randomUUID()}@fixture.invalid`
+    const inviteePassword = `A1${randomBytes(24).toString('hex')}`
+    await new PostgresPasswordAuthRepository(authPool).createMerchantAccount({
+      login: invited, password: inviteePassword, enterpriseName: '隔离成员验收企业', contactName: '隔离邀请成员',
+      workspaceIds: [fixture.workspaceId], actorId: 'isolated-browser-fixture', reason: 'owned account for invitation acceptance verification',
+    })
     const form = page.getByRole('form', { name: '邀请工作区成员' })
     const inviteAccount = form.getByLabel('成员登录账号')
     await expect(inviteAccount).toHaveAttribute('placeholder', '例如：member@example.com 或平台账号')
@@ -171,31 +137,124 @@ async function verify(context: OpsE2eContext) {
     const persisted = (await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)
     expect(persisted?.status).toBe('invited')
     expect(persisted?.role).toBe('operator')
+    const inviteeContext = await browser.newContext()
+    let invitationProbe: Record<string, unknown>
+    try {
+      const loginResult = await inviteeContext.request.post(`${origin}/api/v1/auth/login`, {
+        headers: { origin }, data: { login: invited, password: inviteePassword, account_type: 'merchant' },
+      })
+      expect(loginResult.status()).toBe(200)
+      const tokenResult = await inviteeContext.request.post(`${origin}/api/v1/auth/mcp-token`, {
+        headers: { origin }, data: { workspace_id: fixture.workspaceId },
+      })
+      const tokenBody = await tokenResult.json()
+      expect(tokenResult.status()).toBe(409)
+      expect(tokenBody.error?.code).toBe('MCP_OAUTH_WORKSPACE_AMBIGUOUS')
+      // Capture only response status/code. Generated session cookies and any
+      // access/refresh material remain inside this owned request context.
+      const invitationResult = await inviteeContext.request.post(`${origin}/api/mcp`, {
+        headers: { origin, 'x-workspace-id': fixture.workspaceId, 'x-ops-workbench': 'workspace' },
+        data: { jsonrpc: '2.0', id: 'owned-invitation-probe', method: 'workspace.invitations.list', params: {} },
+      })
+      const invitationBody = await invitationResult.json()
+      expect(invitationResult.status()).toBe(200)
+      expect(invitationBody.data?.result?.invitations).toEqual(expect.arrayContaining([expect.objectContaining({ workspace_id: fixture.workspaceId, status: 'invited' })]))
+      invitationProbe = { loginStatus: loginResult.status(), memberStatus: persisted?.status,
+        tokenStatus: tokenResult.status(), tokenCode: tokenBody.error?.code ?? null,
+        cookieMcpStatus: invitationResult.status(), cookieMcpCode: invitationBody.error?.code ?? null,
+        invitations: invitationBody.data?.result?.invitations ?? null }
+      await writeFile(resolve(output, 'invitation-entry-probe.json'), JSON.stringify(invitationProbe, null, 2), { mode: 0o600 })
+      const inviteePage = await inviteeContext.newPage()
+      await inviteePage.goto(`${origin}/merchant/members`, { waitUntil: 'domcontentloaded' })
+      await expect(inviteePage.getByRole('button', { name: '接受工作区邀请', exact: true })).toBeVisible({ timeout: 15_000 })
+      await inviteePage.screenshot({ path: resolve(output, 'invitation-before-accept.png'), fullPage: true })
+      const pendingRow = page.getByRole('row').filter({ hasText: '隔离邀请成员' })
+      await pendingRow.getByRole('button', { name: '调整 隔离邀请成员 的角色', exact: true }).click()
+      const pendingRoleForm = page.getByRole('form', { name: '成员变更' })
+      await pendingRoleForm.getByLabel('新角色').selectOption('finance')
+      await pendingRoleForm.getByLabel('操作原因').fill('验收邀请变更后的版本冲突保护')
+      await pendingRoleForm.getByRole('button', { name: '确认改角色', exact: true }).click()
+      await expect(pendingRow).toContainText('财务')
+      const staleResponse = inviteePage.waitForResponse(response => response.url().endsWith('/api/mcp') && response.request().postDataJSON()?.method === 'workspace.invitation.accept')
+      await inviteePage.getByRole('button', { name: '接受工作区邀请', exact: true }).click()
+      expect((await staleResponse).status()).toBe(409)
+      await expect(inviteePage.getByRole('alert')).toContainText('接受邀请失败')
+      await expect(inviteePage.getByRole('button', { name: '接受工作区邀请', exact: true })).toHaveCount(0)
+      await inviteePage.getByRole('button', { name: '刷新成员列表', exact: true }).click()
+      await expect(inviteePage.getByRole('region', { name: '待接受的工作区邀请' })).toContainText('邀请角色：财务')
+      await inviteePage.getByRole('button', { name: '接受工作区邀请', exact: true }).click()
+      await expect(inviteePage.getByText('已接受工作区邀请。', { exact: true })).toBeVisible()
+      expect((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)?.status).toBe('active')
+      await expect(inviteePage.getByRole('button', { name: '接受工作区邀请', exact: true })).toHaveCount(0)
+      await expect(inviteePage.getByRole('button', { name: '刷新成员列表', exact: true })).toBeEnabled({ timeout: 15_000 })
+      await expect(inviteePage.getByRole('status').filter({ hasText: '正在切换工作区' })).toHaveCount(0)
+      await expect(inviteePage.getByRole('form', { name: '邀请工作区成员' })).toHaveCount(0)
+      await inviteePage.screenshot({ path: resolve(output, 'invitation-accepted.png'), fullPage: true })
+      const repeated = await inviteeContext.request.post(`${origin}/api/mcp`, {
+        headers: { origin, 'x-workspace-id': fixture.workspaceId, 'x-ops-workbench': 'workspace' },
+        data: { jsonrpc: '2.0', id: 'owned-repeat-invitation', method: 'workspace.invitation.accept', params: { expected_revision: '2', reason: 'owned duplicate acceptance verification' } },
+      })
+      // Once active, this finance member no longer has the pending-invite
+      // exception. The authorization gate rejects repetition before dispatch.
+      expect(repeated.status()).toBe(403)
+      expect((await repeated.json()).error?.code).toBe('FORBIDDEN')
+      const acceptAudits = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM workspace_operation_audit WHERE workspace_id=$1 AND resource_id=$2 AND action='workspace.invitation.accept'", [fixture.workspaceId, invited])
+      expect(acceptAudits.rows).toEqual([{ count: 1 }])
+      invitationProbe.acceptedViaBrowser = true
+      invitationProbe.staleAcceptanceStatus = 409
+      invitationProbe.refreshedRole = 'finance'
+      invitationProbe.repeatAcceptanceStatus = repeated.status()
+      invitationProbe.acceptAuditCount = 1
+    } finally { await inviteeContext.close() }
+    await page.getByRole('button', { name: '刷新成员列表', exact: true }).click()
+    await expect(page.getByRole('row').filter({ hasText: '隔离邀请成员' })).toContainText('已激活')
     const invitedRow = page.getByRole('row').filter({ hasText: '隔离邀请成员' })
-    await invitedRow.getByRole('button', { name: '改角色' }).click()
+    await invitedRow.getByRole('button', { name: '调整 隔离邀请成员 的角色', exact: true }).click()
     const roleForm = page.getByRole('form', { name: '成员变更' })
     await roleForm.getByLabel('新角色').selectOption('support')
     await roleForm.getByLabel('操作原因').fill('隔离浏览器验收角色调整')
     await roleForm.getByRole('button', { name: '确认改角色' }).click()
     await expect(invitedRow).toContainText('支持', { timeout: 30_000 })
     expect((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)?.role).toBe('support')
-    await invitedRow.getByRole('button', { name: '停用' }).click()
+    const freshContext = await browser.newContext()
+    const freshLogin = await freshContext.request.post(`${origin}/api/v1/auth/login`, { headers: { origin }, data: { login: invited, password: inviteePassword, account_type: 'merchant' } })
+    expect(freshLogin.status()).toBe(200)
+    const freshToken = await freshContext.request.post(`${origin}/api/v1/auth/mcp-token`, { headers: { origin }, data: { workspace_id: fixture.workspaceId } })
+    expect(freshToken.status()).toBe(200)
+    const ownedAccessToken = (await freshToken.json()).data?.access_token as string
+    expect(typeof ownedAccessToken).toBe('string')
+    const ownCall = async (method: string, params = {}) => {
+      const response = await freshContext.request.post(`${origin}/api/mcp`, { headers: { origin, authorization: `Bearer ${ownedAccessToken}`, 'x-workspace-id': fixture.workspaceId }, data: { jsonrpc: '2.0', id: 'owned-member-lifecycle', method, params } })
+      const body = await response.json()
+      return { status: response.status(), code: body.error?.code ?? null, result: body.data?.result }
+    }
+    const freshSession = await ownCall('ops.session')
+    expect(freshSession.status).toBe(200)
+    expect(freshSession.result.capabilities.includes('workspace.member.manage')).toBe(false)
+    const escalation = await ownCall('ops.member.upsert', { external_subject: invited, role: 'merchant_admin', expected_revision: String((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)!.revision), reason: 'owned negative privilege escalation verification' })
+    expect(escalation.status).toBe(403)
+    expect((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)?.role).toBe('support')
+    await invitedRow.getByRole('button', { name: '停用 隔离邀请成员', exact: true }).click()
     const suspendForm = page.getByRole('form', { name: '成员变更' })
     await suspendForm.getByLabel('操作原因').fill('隔离浏览器验收停用')
     await suspendForm.getByRole('button', { name: '确认停用' }).click()
     await expect(invitedRow).toContainText('已停用', { timeout: 30_000 })
     expect((await members.list(fixture.workspaceId)).find(member => member.externalSubject === invited)?.status).toBe('suspended')
+    const revoked = await ownCall('ops.session')
+    expect([401, 403]).toContain(revoked.status)
+    const refusedToken = await freshContext.request.post(`${origin}/api/v1/auth/mcp-token`, { headers: { origin }, data: { workspace_id: fixture.workspaceId } })
+    expect(refusedToken.status()).toBe(409)
+    const memberLifecycle = { freshLoginStatus: freshLogin.status(), activeTokenStatus: freshToken.status(), manageCapability: false, escalationStatus: escalation.status, revokedBearerStatus: revoked.status, suspendedTokenStatus: refusedToken.status() }
+    await freshContext.close()
     expect(pageErrors).toEqual([])
     await page.screenshot({ path: resolve(output, 'merchant-members-invited.png'), fullPage: true })
-    await writeFile(resolve(output, 'result.json'), JSON.stringify({ status: 'passed', auth: 'real-isolated-merchant-password-and-scoped-mcp-bearer', workspaceId: fixture.workspaceId, readVisible: true, concurrentIssuance, invitePersisted: true, roleChangePersisted: true, suspendPersisted: true, browserErrors: pageErrors, productionBrowser: false }, null, 2), { mode: 0o600 })
+    await writeFile(resolve(output, 'result.json'), JSON.stringify({ status: 'passed', auth: 'real-isolated-merchant-password-and-scoped-mcp-bearer', workspaceId: fixture.workspaceId, readVisible: true, concurrentIssuance, invitationProbe, memberLifecycle, invitePersisted: true, roleChangePersisted: true, suspendPersisted: true, browserErrors: pageErrors, productionBrowser: false }, null, 2), { mode: 0o600 })
   } finally {
     await browser?.close().catch(() => undefined)
-    if (gateway?.listening) await new Promise<void>(resolveClose => gateway!.close(() => resolveClose()))
-    if (preview) { preview.kill('SIGTERM'); await new Promise<void>(resolveExit => preview!.once('exit', () => resolveExit())) }
     await pool.end()
     await authPool.end()
   }
 }
 
-runOpsE2e(['dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js'], process.env, verify)
+runOpsE2e(['dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js'], { ...process.env, OPS_E2E_MERCHANT_UI: 'true' }, verify)
   .then(code => { process.exitCode = code }, error => { console.error(error instanceof Error ? error.message : 'MERCHANT_MEMBERS_ISOLATED_FAILED'); process.exitCode = 1 })

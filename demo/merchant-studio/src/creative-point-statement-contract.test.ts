@@ -103,6 +103,36 @@ describe('the merchant client reads the real statement shape', () => {
     expect(page!.entries).toHaveLength(1)
     expect(page!.unreadableEntries).toBe(1)
   })
+
+  it.each([null, '', '   ', undefined, true, []].map(value => [value]))('rejects unknown or nonnumeric point deltas (%j) instead of displaying zero', async (pointsDelta) => {
+    const malformed = { ...entries[0]!, pointsDelta }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [entries[0]!, malformed], next_cursor: null })))
+    const page = await fetchCreativePointStatement('http://127.0.0.1:9')
+    expect(page?.entries).toHaveLength(1)
+    expect(page?.unreadableEntries).toBe(1)
+  })
+
+  it.each([0, '0', '-12', ' 42 '])('preserves a measured point delta (%j)', async (pointsDelta) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [{ ...entries[0]!, pointsDelta }], next_cursor: null })))
+    const page = await fetchCreativePointStatement('http://127.0.0.1:9')
+    expect(page?.entries[0]?.pointsDelta).toBe(Number(pointsDelta))
+    expect(page?.unreadableEntries).toBe(0)
+  })
+
+  it.each([null, '', '   ', undefined, true, []].map(value => [value]))('preserves unknown post-event balances (%j) without discarding a valid event', async (unknown) => {
+    const row = { ...entries[0]!, availableAfter: unknown, reservedAfter: unknown, settledAfter: unknown }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [row], next_cursor: null })))
+    const page = await fetchCreativePointStatement('http://127.0.0.1:9')
+    expect(page?.entries[0]).toMatchObject({ availableAfter: null, reservedAfter: null, settledAfter: null })
+    expect(page?.unreadableEntries).toBe(0)
+  })
+
+  it.each([0, '0', '25'])('preserves measured post-event balances (%j)', async (balance) => {
+    const row = { ...entries[0]!, availableAfter: balance, reservedAfter: balance, settledAfter: balance }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ entries: [row], next_cursor: null })))
+    const page = await fetchCreativePointStatement('http://127.0.0.1:9')
+    expect(page?.entries[0]).toMatchObject({ availableAfter: Number(balance), reservedAfter: Number(balance), settledAfter: Number(balance) })
+  })
 })
 
 describe('consumption drawn from the real shape reaches the chart', () => {

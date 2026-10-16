@@ -265,7 +265,7 @@ export function createPlatformWorkspaceRuntime(deps: {
       const realStore = stores.find(store => store.state === 'connected' && store.dataMode === 'official_api' && store.readable)
       const demoStore = stores.find(store => store.dataMode === 'fixture')
       const state = realStore ? 'connected' : demoStore ? 'demo' : readiness.ready ? 'available' : 'not_configured'
-      const mode = realStore ? '真实授权' : demoStore ? '本地演示' : readiness.ready ? '可授权' : '待配置'
+      const mode = realStore ? '真实授权' : demoStore ? '本地测试' : readiness.ready ? '可授权' : '待配置'
       return {
         platform,
         label: deps.platformLabels[platform],
@@ -304,7 +304,7 @@ export function createPlatformWorkspaceRuntime(deps: {
     const deliverableTasks = tasks.filter(task => deps.service.listContentVersions(workspaceId, task.id).some(version => version.state === 'approved' || version.state === 'delivered'))
     const steps = [
       { id: 'workspace', title: '工作区', summary: '当前工作区已建立，后续状态按工作区隔离', state: 'complete', entryMethod: 'workspace.health', nextMethod: 'workspace.health' },
-      { id: 'bind-store', title: manualOperations ? '确认运营店铺' : '连接店铺', summary: eligibleDirectory.length ? `已配置 ${eligibleDirectory.length} 家${manualOperations ? '人工运营' : '官方授权'}店铺` : manualOperations ? '请联系平台运营为当前商家建立不含凭据的店铺记录' : directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: eligibleDirectory.length ? 'complete' : 'required', entryMethod: manualOperations ? 'workspace.health' : 'platform.connect', nextMethod: manualOperations ? 'workspace.health' : 'platform.connect' },
+      { id: 'bind-store', title: manualOperations ? '确认运营店铺' : '连接店铺', summary: eligibleDirectory.length ? `已配置 ${eligibleDirectory.length} 家${manualOperations ? '人工运营' : '官方授权'}店铺` : manualOperations ? '请联系平台运营为当前商家建立不含凭据的店铺记录' : directory.length ? '当前只有测试店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: eligibleDirectory.length ? 'complete' : 'required', entryMethod: manualOperations ? 'workspace.health' : 'platform.connect', nextMethod: manualOperations ? 'workspace.health' : 'platform.connect' },
       { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : manualOperations ? '等待运营导入公开链接或商家提供的商品资料' : '绑定真实店铺后同步或导入商品', state: !eligibleDirectory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
       { id: 'add-assets', title: '上传素材与资料', summary: readyAssets.length ? `已确认 ${readyAssets.length} 份可用素材` : assets.length ? '素材已上传，仍需完成扫描、权益和事实确认' : '添加商品图片、品牌资料和知识库文件', state: !boundProducts.length ? 'blocked' : readyAssets.length ? 'complete' : assets.length ? 'next' : 'required', entryMethod: 'asset.upload', nextMethod: 'asset.upload' },
       { id: 'start-content', title: '生成并审核', summary: deliverableTasks.length ? `已有 ${deliverableTasks.length} 个内容交付` : confirmedProducts.length ? '商品事实已确认，可以开始文案、主图或视频分镜' : '先确认商品、价格、库存和图片事实', state: !boundProducts.length || !confirmedProducts.length ? 'blocked' : deliverableTasks.length ? 'complete' : 'next', entryMethod: 'task.understand', nextMethod: 'task.understand' },
@@ -346,7 +346,7 @@ export function createPlatformWorkspaceRuntime(deps: {
     if (card.id === 'first-value') return { method: 'merchant.first_value', arguments: { example: 'true' }, required_inputs: [], reason: '先查看安全示例预览；如需真实商品，请先选择 platform + account_id + product_id', blocked_by: [] as string[] }
     if (card.id === 'stores-products') {
       const realStoreCount = directory.filter(store => store.dataMode === 'official_api' && store.readable).length
-      if (!realStoreCount) return { method: 'platform.connect', arguments: {}, required_inputs: ['platform'], reason: directory.length ? '当前只有演示店铺，正式商品任务需要先连接真实店铺' : '先绑定一个平台店铺', blocked_by: [] as string[] }
+      if (!realStoreCount) return { method: 'platform.connect', arguments: {}, required_inputs: ['platform'], reason: directory.length ? '当前只有测试店铺，正式商品任务需要先连接真实店铺' : '先绑定一个平台店铺', blocked_by: [] as string[] }
       return { method: 'catalog.search', arguments: { scope: 'store' }, required_inputs: ['platform', 'account_id'], reason: '先选择具体平台和店铺，再查看商品', blocked_by: summary.products ? [] : ['product_sync_or_import'] }
     }
     if (card.id === 'knowledge-assets') {

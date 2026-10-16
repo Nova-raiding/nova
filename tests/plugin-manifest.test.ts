@@ -75,7 +75,7 @@ describe('Codex plugin package', () => {
     const marketplaceTools = await discoveredToolNames(marketplaceRoot)
     expect(sourceTools.length).toBeGreaterThan(0)
     expect(marketplaceTools).toEqual(sourceTools)
-    expect(sourceTools.some(name => name.startsWith('ops.'))).toBe(false)
+    expect(sourceTools.filter(name => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
     for (const name of ['platform.connect', 'catalog.sync', 'automation.scan', 'publish.confirm']) expect(sourceTools).not.toContain(name)
   }, 15_000)
 

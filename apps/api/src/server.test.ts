@@ -1390,7 +1390,7 @@ describe('API application wiring', () => {
   })
 
   it('labels local fallback output as simulated and provider output as executed', () => {
-    expect(executionContract('image', false)).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地演示图片，未调用图片模型' })
+    expect(executionContract('image', false)).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地测试图片，未调用图片模型' })
     expect(executionContract('ocr', false)).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false })
     expect(executionContract('content', true)).toMatchObject({ mode: 'provider', simulated: false, providerExecuted: true, label: '已由配置的内容模型生成' })
     expect(executionContract('video', true, 'text-relay')).toMatchObject({ mode: 'provider', providerKind: 'text-relay' })

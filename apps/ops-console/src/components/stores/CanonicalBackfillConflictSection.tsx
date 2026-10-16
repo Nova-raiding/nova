@@ -22,7 +22,15 @@ export function conflictEvidenceSummary(row: CanonicalBackfillConflict) {
   };
 }
 
-export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = false, brands = [], workspaces = [], workspaceId, onWorkspaceChange, onScan }: { enabled?: boolean; canUpdate?: boolean; brands?: BrandNavigationItem[]; workspaces?: Array<{ workspaceId: string; enterpriseName?: string }>; workspaceId?: string; onWorkspaceChange?: (workspaceId: string) => void; onScan?: (workspaceId: string) => Promise<void> | void }) {
+type ConflictSectionProps = { enabled?: boolean; canUpdate?: boolean; brands?: BrandNavigationItem[]; workspaces?: Array<{ workspaceId: string; enterpriseName?: string }>; workspaceId?: string; onWorkspaceChange?: (workspaceId: string) => void; onScan?: (workspaceId: string) => Promise<void> | void };
+
+export function CanonicalBackfillConflictSection(props: ConflictSectionProps) {
+  if (!props.enabled) return null;
+  // Queue, open resolutions and batch controls belong to one tenant scope.
+  return <CanonicalBackfillScopedSection key={props.workspaceId ?? ""} {...props} />;
+}
+
+function CanonicalBackfillScopedSection({ enabled = false, canUpdate = false, brands = [], workspaces = [], workspaceId, onWorkspaceChange, onScan }: ConflictSectionProps) {
   const [rows, setRows] = useState<CanonicalBackfillConflict[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -39,8 +47,30 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
   const [runError, setRunError] = useState("");
   const [runIdInput, setRunIdInput] = useState("");
   const operationInFlightRef = useRef(false);
+  const readSequence = useRef(0);
+  const mounted = useRef(true);
+  const [queueReadConfirmed, setQueueReadConfirmed] = useState(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; readSequence.current += 1; };
+  }, []);
   const scoped = (params: Record<string, string> = {}) => ({ workspace_id: workspaceId ?? "", ...params });
-  const load = async () => { if (!enabled || !workspaceId) { setRows([]); return; } setLoading(true); setError(""); try { setRows((await rpc<CanonicalBackfillConflict[]>("ops.canonical.backfill.conflicts.list", scoped({ limit: "100" }))) ?? []); } catch (cause) { setError(cause instanceof Error ? cause.message : "冲突队列读取失败"); } finally { setLoading(false); } };
+  const load = async () => {
+    if (!enabled || !workspaceId) { setRows([]); setQueueReadConfirmed(false); return false; }
+    const sequence = ++readSequence.current;
+    const current = () => mounted.current && sequence === readSequence.current;
+    setLoading(true); setError(""); setQueueReadConfirmed(false);
+    try {
+      const result = await rpc<CanonicalBackfillConflict[]>("ops.canonical.backfill.conflicts.list", scoped({ limit: "100" }));
+      if (!current()) return false;
+      if (!Array.isArray(result)) throw new Error("服务端未返回可确认的冲突队列，请重新读取。");
+      setRows(result); setQueueReadConfirmed(true);
+      return true;
+    } catch (cause) {
+      if (current()) setError(cause instanceof Error ? cause.message : "冲突队列读取失败");
+      return false;
+    } finally { if (current()) setLoading(false); }
+  };
   useEffect(() => { void load(); }, [enabled, workspaceId]);
   const claim = async (row: CanonicalBackfillConflict) => {
     if (operationInFlightRef.current) return;
@@ -83,8 +113,8 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
     setScanError("");
     try {
       await onScan(workspaceId);
-      await load();
-      setScanState("success");
+      if (await load()) setScanState("success");
+      else { setScanState("error"); setScanError("扫描后未能确认队列结果，请重新读取；不能据此判断没有冲突。"); }
     } catch (cause) {
       setScanState("error");
       setScanError(cause instanceof Error ? cause.message : "一致性扫描失败");
@@ -130,7 +160,7 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
     {scanState === "success" && <Alert type="success" showIcon role="status" title="一致性扫描已完成" description="队列已按最新服务端结果刷新；空结果不代表全量回填已完成。" style={{ marginBottom: 12 }} />}
     {scanState === "error" && <Alert type="error" showIcon role="alert" title="一致性扫描失败" description={scanError || "服务端未返回可验证结果，当前不应据此判断没有冲突。"} action={<Button size="small" onClick={() => void scan()}>重试扫描</Button>} style={{ marginBottom: 12 }} />}
     {error && <Alert role="alert" type="error" showIcon title="冲突队列操作失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
-    {rows.length === 0 && !loading ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理冲突；空结果不代表全量回填已完成" /> : <Table rowKey="id" loading={loading} size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={rows} columns={[
+    {!workspaceId ? null : rows.length === 0 && !loading ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={queueReadConfirmed ? "暂无待处理冲突；空结果不代表全量回填已完成" : "冲突队列尚未确认，请重新读取"} /> : <Table rowKey="id" loading={loading} size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={rows} columns={[
       { title: "旧商品", dataIndex: "legacyProductId", ellipsis: true },
       { title: "冲突码", dataIndex: "code", render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
       { title: "状态", dataIndex: "status", render: (value: CanonicalBackfillConflict["status"]) => <Tag color={statusMeta[value][1]}>{statusMeta[value][0]}</Tag> },

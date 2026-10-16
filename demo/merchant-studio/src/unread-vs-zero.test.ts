@@ -48,10 +48,15 @@ describe('unread reads are never rendered as measured values', () => {
     expect(html).toContain('店铺列表尚未从服务端读取')
   })
 
-  it('keeps the offline demo connections labelled as demo rows', () => {
+  it('keeps unavailable connections unread without inventing fixture stores or activity', () => {
     const html = overview(undefined)
-    expect(html).not.toContain('平台连接未读取')
-    expect(html).toContain('演示连接')
+    expect(html).toContain('平台连接未读取')
+    // Manual/unconfigured mode omits synchronization activity entirely; it
+    // must not render a misleading unread panel or fabricated activity.
+    expect(html).not.toContain('近期动态未读取')
+    expect(html).not.toContain('演示连接')
+    expect(html).not.toContain('云朵轻户外')
+    expect(html).not.toContain('轻云防晒外套')
   })
 
   it('still reports a successful read that returned no connections', () => {

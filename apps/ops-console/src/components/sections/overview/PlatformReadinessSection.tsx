@@ -36,7 +36,7 @@ export function platformAuthorizationPresentation(row: PlatformOperation) {
   if (isFixturePlatformRow(row)) {
     return {
       color: "gold" as const,
-      label: accountCount > 1 ? `${accountCount} 个演示店铺` : "演示授权",
+      label: accountCount > 1 ? `${accountCount} 个测试店铺` : "测试授权",
     };
   }
   if (row.state === "connected") {
@@ -56,7 +56,7 @@ export function platformAuthorizationPresentation(row: PlatformOperation) {
 
 export function platformReadPresentation(row: PlatformOperation) {
   if (isFixturePlatformRow(row)) {
-    return { color: "gold" as const, label: row.readEnabled ? "演示读取" : "演示未启用" };
+    return { color: "gold" as const, label: row.readEnabled ? "测试读取" : "测试未启用" };
   }
   return row.readEnabled
     ? { color: "green" as const, label: "已开启" }

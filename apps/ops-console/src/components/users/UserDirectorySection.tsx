@@ -125,6 +125,29 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
   const [provisionWorkspaceQuery, setProvisionWorkspaceQuery] = useState("");
   const [provisionWorkspaceQueryApplied, setProvisionWorkspaceQueryApplied] = useState<string>();
   const provisionWorkspaceRequestRef = useRef(0);
+  const invitationIdentityKey = JSON.stringify([model.opsSession?.actor_id ?? "", model.opsSession?.identity_id ?? "", model.opsSession?.session_id ?? "", [...(model.authorization.roles ?? [])].sort()]);
+  // Match POST /v1/ops/merchant-accounts' platform operations-role gate.
+  // Commercial/settings write capabilities are not account invitation rights.
+  const canInvite = canReadUserDirectory && model.opsSession?.workbench === "platform"
+    && (model.authorization.roles ?? []).some(role => ["platform_admin", "ops_admin", "platform_ops"].includes(role));
+  const invitationLifecycle = useRef({ identityKey: invitationIdentityKey, allowed: canInvite, generation: 0, mounted: true });
+  if (invitationLifecycle.current.identityKey !== invitationIdentityKey || invitationLifecycle.current.allowed !== canInvite) {
+    invitationLifecycle.current = { identityKey: invitationIdentityKey, allowed: canInvite, generation: invitationLifecycle.current.generation + 1, mounted: true };
+  }
+  const invitationIdentityAtOpen = useRef(invitationIdentityKey);
+  const invitationRequestIsCurrent = (generation: number) => invitationLifecycle.current.mounted && invitationLifecycle.current.allowed && invitationLifecycle.current.generation === generation;
+  useEffect(() => {
+    // An activation link is a one-time credential. A different operator or a
+    // revoked role must not inherit the previous operator's result or intent.
+    setProvisionOpen(false); setProvisionResult(undefined); setProvisionError(""); setProvisionUnknown(false); setProvisionSubmitting(false);
+    provisionIntentRef.current = undefined;
+    provisionWorkspaceRequestRef.current += 1;
+    setProvisionWorkspaceQuery(""); setProvisionWorkspaceQueryApplied(undefined);
+  }, [invitationIdentityKey, canInvite]);
+  useEffect(() => {
+    invitationLifecycle.current.mounted = true;
+    return () => { invitationLifecycle.current.mounted = false; invitationLifecycle.current.generation += 1; };
+  }, []);
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -196,7 +219,7 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     ...(governanceSections.map(({ key, label }) => ({ key, label }))),
     { key: "accountType", label: accountType === "platform" ? "返回全部账号" : "查看运营平台账号", disabled: !canReadUserDirectory },
     { key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !canExportUserDirectory(model.authorization) || model.userExporting },
-    { key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps },
+    { key: "provision", label: "开通商家账号", disabled: !canInvite },
   ];
   const handleGovernanceMenuClick: MenuProps["onClick"] = ({ key }) => {
     if (key === "accountType") {
@@ -207,6 +230,9 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     } else if (key === "export") {
       void model.exportUsers(form.getFieldsValue());
     } else if (key === "provision") {
+      if (!canInvite) return;
+      if (invitationIdentityAtOpen.current !== invitationIdentityKey) provisionForm.resetFields();
+      invitationIdentityAtOpen.current = invitationIdentityKey;
       // Invalidate any lookup started by a previous opening before exposing
       // this dialog. A late response must not make an old search selectable.
       provisionWorkspaceRequestRef.current += 1;
@@ -310,11 +336,11 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
     </Card>
     <Modal
       title="邀请客户激活登录账号"
-      open={provisionOpen}
+      open={provisionOpen && canInvite && invitationIdentityAtOpen.current === invitationIdentityKey}
       okText={provisionUnknown ? "查询原邀请结果" : "创建账号与安全邀请"}
       cancelText="关闭"
       confirmLoading={provisionSubmitting}
-      okButtonProps={{ disabled: Boolean(provisionResult) || !model.canPlatformOps }}
+      okButtonProps={{ disabled: Boolean(provisionResult) || !canInvite }}
       destroyOnHidden
       onCancel={() => { if (!provisionSubmitting) { provisionWorkspaceRequestRef.current += 1; setProvisionWorkspaceQueryApplied(undefined); setProvisionOpen(false); } }}
       onOk={() => void provisionForm.submit()}
@@ -325,7 +351,9 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         <Alert className="ops-inline-alert" showIcon type="success" title={provisionResult.invitation.status === "activated" ? "客户已激活登录" : "账号与邀请已登记，等待客户激活"} description={`账号：${provisionResult.account.login}；企业：${provisionResult.account.workspaceIds.join("、")}。激活仅开放登录，不代表开通费或套餐已支付。`} />
         <Typography.Paragraph>邀请有效至 {formatKnownDateTime(provisionResult.invitation.expires_at)}。系统没有发送邮件，请核对客户身份后通过安全渠道交付邀请链接。</Typography.Paragraph>
         {provisionResult.invitation.activation_link ? <Typography.Paragraph copyable={{ text: provisionResult.invitation.activation_link }}>一次性激活链接（仅本次显示；点击右侧复制后安全交付客户）</Typography.Paragraph> : provisionResult.invitation.status !== "activated" ? <Alert showIcon type="warning" title="原邀请记录已找到，原始链接不会再次返回" description="重新签发会立即使旧链接失效，不会重复创建账号或企业。" /> : null}
-        {provisionResult.invitation.status !== "activated" && <Button loading={provisionSubmitting} disabled={!model.canPlatformOps} onClick={async () => {
+        {provisionResult.invitation.status !== "activated" && <Button loading={provisionSubmitting} disabled={!canInvite} onClick={async () => {
+          const requestGeneration = invitationLifecycle.current.generation;
+          if (!invitationRequestIsCurrent(requestGeneration)) return;
           const values = provisionForm.getFieldsValue();
           const payload = { login: provisionResult.account.login, enterprise_name: values.enterpriseName, contact_name: values.contactName,
             workspace_ids: provisionResult.account.workspaceIds, create_workspace: false, reason: values.reason,
@@ -333,15 +361,17 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
           provisionIntentRef.current = payload; setProvisionSubmitting(true); setProvisionError("");
           try {
             const result = await opsRestPost<MerchantInvitationView>("/v1/ops/merchant-accounts", payload);
+            if (!invitationRequestIsCurrent(requestGeneration)) return;
             if (!result) throw new Error("原邀请结果尚未返回，请按原标识查询");
             setProvisionResult(result); setProvisionUnknown(false);
-          } catch (error) { setProvisionUnknown(true); setProvisionResult(undefined); setProvisionError(`${describeOpsError(error)}；请沿用原邀请意图查询，勿重新开户。`); }
-          finally { setProvisionSubmitting(false); }
+          } catch (error) { if (!invitationRequestIsCurrent(requestGeneration)) return; setProvisionUnknown(true); setProvisionResult(undefined); setProvisionError(`${describeOpsError(error)}；请沿用原邀请意图查询，勿重新开户。`); }
+          finally { if (invitationRequestIsCurrent(requestGeneration)) setProvisionSubmitting(false); }
         }}>重新签发邀请并使旧链接失效</Button>}
         <Typography.Paragraph>邀请标识：<Typography.Text copyable>{provisionResult.invitation.id}</Typography.Text></Typography.Paragraph>
       </section>}
-      <Form form={provisionForm} layout="vertical" requiredMark={false} disabled={provisionSubmitting || provisionUnknown || Boolean(provisionResult)} initialValues={{ workspaceMode: "new" }} onFinish={async (values) => {
-        if (!model.canPlatformOps) { setProvisionError("当前身份没有平台运营开户权限。"); return; }
+      <Form form={provisionForm} layout="vertical" requiredMark={false} disabled={!canInvite || provisionSubmitting || provisionUnknown || Boolean(provisionResult)} initialValues={{ workspaceMode: "new" }} onFinish={async (values) => {
+        const requestGeneration = invitationLifecycle.current.generation;
+        if (!invitationRequestIsCurrent(requestGeneration)) { setProvisionError("当前身份没有平台运营开户权限。"); return; }
         const payload = provisionUnknown && provisionIntentRef.current ? provisionIntentRef.current : {
           login: values.login.trim(), enterprise_name: values.enterpriseName.trim(), contact_name: values.contactName.trim(),
           workspace_ids: values.workspaceMode === "existing" && values.workspaceId ? [values.workspaceId] : [],
@@ -351,15 +381,17 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
         provisionIntentRef.current = payload; setProvisionSubmitting(true); setProvisionError("");
         try {
           const result = await opsRestPost<MerchantInvitationView>("/v1/ops/merchant-accounts", payload);
+          if (!invitationRequestIsCurrent(requestGeneration)) return;
           if (!result) throw new Error("邀请创建结果未返回，请查询原意图");
           setProvisionResult(result); setProvisionUnknown(false);
           await model.loadUsers({ page: 1 });
         } catch (error) {
+          if (!invitationRequestIsCurrent(requestGeneration)) return;
           const detail = error as { httpStatus?: number };
           const unknown = !detail.httpStatus || detail.httpStatus >= 500;
           setProvisionUnknown(unknown);
           setProvisionError(`${describeOpsError(error)}${unknown ? "；请查询原邀请结果，不要创建另一账号。" : ""}`);
-        } finally { setProvisionSubmitting(false); }
+        } finally { if (invitationRequestIsCurrent(requestGeneration)) setProvisionSubmitting(false); }
       }}>
         <Form.Item label="商家登录邮箱" name="login" rules={[{ required: true, type: "email", message: "请输入客户本人的邮箱" }]}><Input autoComplete="off" maxLength={128} placeholder="merchant@example.com" /></Form.Item>
         <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}><Input maxLength={200} /></Form.Item>
@@ -477,7 +509,8 @@ export function UserDirectorySection({ model, governanceSections = [], onSelectG
       <Alert showIcon type="warning" title="撤销后该认证会话将立即失效；用户的其他会话不受影响。" />
       <Typography.Paragraph>目标会话：<Typography.Text code>{sessionTarget?.id}</Typography.Text></Typography.Paragraph>
       <label htmlFor="identity-session-revoke-reason">撤销原因</label>
-      <Input.TextArea id="identity-session-revoke-reason" aria-label="撤销原因" rows={3} value={sessionReason} onChange={event => setSessionReason(event.target.value)} placeholder="填写工单号或撤销原因" />
+      <Input.TextArea id="identity-session-revoke-reason" aria-label="撤销原因" aria-describedby="identity-session-revoke-help" rows={3} value={sessionReason} onChange={event => setSessionReason(event.target.value)} placeholder="填写工单号或撤销原因" />
+      <Typography.Text id="identity-session-revoke-help" type="secondary">至少输入 4 个字符；可填写工单号和撤销依据。</Typography.Text>
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />

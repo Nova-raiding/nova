@@ -73,6 +73,7 @@ export function PlatformOpsLoginPage({
             layout="vertical"
             requiredMark={false}
             onFinish={(values) => void submit(values)}
+            scrollToFirstError={{ block: "center", focus: true }}
             disabled={submitting || loading}
             className="ops-login-form"
           >

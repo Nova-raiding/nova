@@ -64,3 +64,49 @@ describe('asset scan redrive terminal admission', () => {
     expect(client.statements.some(sql => /^(?:INSERT|UPDATE|DELETE)/u.test(sql))).toBe(false)
   })
 })
+
+describe('historical scan bootstrap recovery boundaries', () => {
+  it('lists a terminal bootstrap failure for the same recovery path as uploaded assets', async () => {
+    const client: SqlClient = {
+      async query<T = Record<string, unknown>>(sql: string, values?: readonly unknown[]) {
+        const allowed = values?.[1] as string[] | undefined
+        const rows = sql.includes('FROM outbox_events o JOIN') && allowed?.includes('asset.scan_bootstrap_requested')
+          ? [{ ...event, event_type: 'asset.scan_bootstrap_requested', asset_revision: 1, asset_payload: asset }] : []
+        return { rows: rows as T[] }
+      },
+      release() {},
+    }
+    const repo = new PostgresAssetScanRedriveRepository({ connect: async () => client })
+    await expect(repo.listRetryableFailures(input.workspaceId, { scanMaxAttempts: 12 })).resolves.toMatchObject([
+      { assetId: asset.id, event: { eventType: 'asset.scan_bootstrap_requested' }, failure: { retryable: true } },
+    ])
+  })
+
+  it('admits a bound terminal bootstrap event through the existing redrive checks', async () => {
+    const client = new ReadOnlyClient({ ...event, event_type: 'asset.scan_bootstrap_requested' })
+    const repo = new PostgresAssetScanRedriveRepository({ connect: async () => client })
+    // This read-only probe deliberately stops at the first write: it verifies
+    // event admission, not a committed SQL transaction or worker execution.
+    await expect(repo.redrive(input)).rejects.toThrow('invalid redrive attempted a write')
+    expect(client.statements.some(sql => sql.startsWith('UPDATE business_entity_snapshots'))).toBe(true)
+    expect(client.statements).toContain('ROLLBACK')
+  })
+
+  it.each([
+    ['missing auth', { authorizationSnapshot: undefined }],
+    ['wrong actor', { authorizationSnapshot: { ...input.authorizationSnapshot, actor_id: 'other' } }],
+    ['wrong context', { authorizationSnapshot: { ...input.authorizationSnapshot, context_id: 'workspace:foreign' } }],
+    ['invalid scope digest', { authorizationSnapshot: { ...input.authorizationSnapshot, scope_hash: 'invalid' } }],
+    ['missing decision', { authorizationSnapshot: { ...input.authorizationSnapshot, decision_id: '' } }],
+    ['invalid auth timestamp', { authorizationSnapshot: { ...input.authorizationSnapshot, decided_at: 'invalid' } }],
+    ['missing commercial', { commercialAccessSnapshot: undefined }],
+    ['unverified balance', { commercialAccessSnapshot: { ...input.commercialAccessSnapshot, balance_state: 'unknown' } }],
+    ['wrong commercial mode', { commercialAccessSnapshot: { ...input.commercialAccessSnapshot, access_mode: 'FREE' } }],
+    ['invalid entitlement digest', { commercialAccessSnapshot: { ...input.commercialAccessSnapshot, entitlement_snapshot_checksum: 'invalid' } }],
+  ])('rejects %s before opening a transaction', async (_name, patch) => {
+    let connections = 0
+    const repo = new PostgresAssetScanRedriveRepository({ connect: async () => { connections += 1; throw new Error('unexpected connection') } })
+    await expect(repo.bootstrapUnscanned({ ...input, ...patch } as unknown as Parameters<typeof repo.bootstrapUnscanned>[0])).rejects.toMatchObject({ code: 'ASSET_SCAN_BOOTSTRAP_INPUT_INVALID' })
+    expect(connections).toBe(0)
+  })
+})

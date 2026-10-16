@@ -5,7 +5,7 @@ import { StoreDirectorySection, storeAuthorizationStateLabel } from "./StoreDire
 const store = {
   platform: "taobao" as const,
   accountId: "store-1",
-  label: "淘宝演示店铺",
+  label: "淘宝测试店铺",
   state: "connected" as const,
   dataMode: "official_api" as const,
   readable: true,
@@ -67,14 +67,14 @@ describe("StoreDirectorySection", () => {
   it("keeps the last successful rows visible while a refresh is loading", () => {
     const markup = render({ loading: true });
 
-    expect(markup).toContain("淘宝演示店铺");
+    expect(markup).toContain("淘宝测试店铺");
     expect(markup).toContain('aria-busy="true"');
   });
 
   it("announces a stale-data error and exposes a keyboard recovery action", () => {
     const markup = render({ error: "workspace health unavailable" });
 
-    expect(markup).toContain("淘宝演示店铺");
+    expect(markup).toContain("淘宝测试店铺");
     expect(markup).toContain('role="alert"');
     expect(markup.match(/role="alert"/gu)).toHaveLength(1);
     expect(markup).toContain('role="group"');

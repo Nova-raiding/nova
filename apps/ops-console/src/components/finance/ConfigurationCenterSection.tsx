@@ -265,7 +265,7 @@ export function ConfigurationCenterSection({
                       const simulated = runtime?.simulated === true || runtime?.dataMode === "fixture";
                       const connected = runtime?.state === "connected" || (runtime?.connectedAccountCount ?? 0) > 0;
                       const status = simulated
-                        ? { color: "gold" as const, label: "演示连接" }
+                        ? { color: "gold" as const, label: "测试连接" }
                         : connected && runtime?.writeEnabled
                           ? { color: "green" as const, label: "已授权·可写" }
                           : connected && runtime?.readEnabled

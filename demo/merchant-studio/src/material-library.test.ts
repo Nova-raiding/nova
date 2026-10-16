@@ -147,7 +147,9 @@ describe('the library says which of the four states it is in', () => {
     const failed = resolveMaterialRead({ baseUrl: 'http://127.0.0.1:9', remote: null, error: '素材读取失败：HTTP 500' })
     expect(failed.state).toBe('error')
     expect(materialSummaryText(failed)).toContain('HTTP 500')
-    expect(materialEmptyCopy(failed).detail).toContain('不会用本地演示数据替代服务端素材')
+    expect(materialEmptyCopy(failed).detail).toContain('HTTP 500')
+    expect(materialEmptyCopy(failed).detail).toContain('重新读取素材')
+    expect(materialEmptyCopy(failed).detail).not.toMatch(/本地|演示|测试数据/u)
   })
 
   it('separates a completed empty read from an unread one', () => {

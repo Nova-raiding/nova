@@ -36,6 +36,7 @@ function literalSetFromBridge(source: string, name: string): Set<string> {
 const bridgeSource = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
 const merchantHiddenMethods = literalSetFromBridge(bridgeSource, 'MERCHANT_HIDDEN_METHODS')
 const commercialDisabledMethods = literalSetFromBridge(bridgeSource, 'COMMERCIAL_DISABLED_METHODS')
+const merchantVisibleOpsMethods = literalSetFromBridge(bridgeSource, 'MERCHANT_VISIBLE_OPS_METHODS')
 const safeWithoutInteractiveWrite = new Set<string>([
   ...literalSetFromBridge(bridgeSource, 'READ_ONLY_METHODS'),
   ...literalSetFromBridge(bridgeSource, 'SAFE_WITHOUT_INTERACTIVE_WRITE'),
@@ -45,7 +46,7 @@ const alwaysInteractiveWriteMethods = literalSetFromBridge(bridgeSource, 'ALWAYS
 const commercialRecoveryMethods = literalSetFromBridge(bridgeSource, 'COMMERCIAL_RECOVERY_METHODS')
 
 const declaredMerchantToolSurface = new Set(
-  MCP_METHODS.filter(method => !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method)),
+  MCP_METHODS.filter(method => (merchantVisibleOpsMethods.has(method) || !method.startsWith('ops.')) && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method)),
 )
 
 type RuntimeTool = { name: string; inputSchema: { properties?: Record<string, unknown> } }
@@ -172,7 +173,7 @@ describe('MCP surface coverage', () => {
     // tools/list returns. A stale hidden/disabled entry (or a missing one)
     // breaks this, so the merchant surface can never silently shrink or grow.
     expect([...runtimeNames].sort()).toEqual(declared)
-    expect(runtimeNames.some(name => name.startsWith('ops.'))).toBe(false)
+    expect(runtimeNames.filter(name => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
   })
 
   it('never declares a tools/list argument the authoritative contract would reject', async () => {

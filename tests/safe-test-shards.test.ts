@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { runSafeTestShards, safeTestShardCount, safeTestShardSelection } from '../scripts/run-safe-tests-sharded.js'
 
 describe('safe sharded test launcher', () => {
+  it.each([['SIGINT', 130], ['SIGTERM', 143]] as const)('does not start a later shard after parent %s cancellation', async (signal, code) => {
+    const signals = new EventEmitter()
+    const runShard = vi.fn(async () => { signals.emit(signal); return code })
+    await expect(runSafeTestShards([], { SAFE_TEST_SHARD_COUNT: '3' }, runShard, () => {}, async () => ['a.test.ts', 'b.test.ts', 'c.test.ts'], signals)).resolves.toBe(code)
+    expect(runShard).toHaveBeenCalledTimes(1)
+    expect(signals.listenerCount('SIGINT')).toBe(0)
+    expect(signals.listenerCount('SIGTERM')).toBe(0)
+  })
   it('runs an explicit test-file selection once without discovering the full suite', async () => {
     const runShard = vi.fn(async (_args: readonly string[], _source?: NodeJS.ProcessEnv) => 0)
     const messages: string[] = []

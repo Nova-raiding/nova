@@ -99,6 +99,27 @@ export function classifyIsolatedRedisPing(response: string): 'PONG' | 'NOAUTH' |
   return 'OTHER'
 }
 
+/** Only fixed classifications may enter evidence; library errors can contain
+ * generated credentials, connection URLs and SQL parameter values. */
+export function classifyIsolatedFixtureSetupError(error: unknown) {
+  const value = error && typeof error === 'object' ? error as { name?: unknown; message?: unknown; code?: unknown } : {}
+  const message = typeof value.message === 'string' ? value.message : ''
+  const code = typeof value.code === 'string' ? value.code : ''
+  const postgresCodes = new Set(['42501', '23502', '23503', '23505', '23514', '22P02', '42P01', '42703', '42883', '42804', '40001', '40P01', '53300', '53400', '53200', '57P01', '57P02', '57P03', '08001', '08003', '08004', '08006', '28P01', '28000', '55000'])
+  const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN'])
+  const businessCodes = new Set(['AUTH_ACCOUNT_PROVISIONING_INVALID', 'AUTH_WORKSPACE_NOT_FOUND', 'AUTH_LOGIN_ALREADY_EXISTS', 'AUTH_LOGIN_INVALID', 'AUTH_REGISTRATION_INVALID', 'AUTH_PASSWORD_POLICY_INVALID'])
+  return {
+    errorType: typeof value.name === 'string' && ['Error', 'TypeError', 'RangeError', 'AggregateError', 'SyntaxError'].includes(value.name) ? value.name : 'Unknown',
+    postgresCode: postgresCodes.has(code) ? code : null,
+    networkCode: networkCodes.has(code) ? code : null,
+    businessCode: businessCodes.has(code) ? code : null,
+    connectionTimeout: /(?:connection|connect|pool).*tim(?:e|ed)[ -]?out|timeout.*(?:connection|connect|pool)/iu.test(message),
+    connectionTerminated: /connection terminated|socket hang up|connection reset/iu.test(message),
+    poolExhausted: /remaining connection slots|too many clients|pool.*exhaust/iu.test(message),
+    passwordHashFailure: /argon2|memory allocation|PASSWORD_POLICY_INVALID/iu.test(message),
+  }
+}
+
 export function isolatedContainerRunArgs(input: { runId: string; kind: ContainerKind; image: string }): { name: string; args: string[] } {
   if (!/^[a-f0-9-]{36}$/u.test(input.runId) || !/^[a-z0-9/:._-]+@sha256:[a-f0-9]{64}$/u.test(input.image)) throw new Error('ISOLATED_FIXTURE_IDENTITY_INVALID')
   const name = `merchant-ops-fixture-${input.kind}-${input.runId}`
@@ -167,8 +188,13 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
   const dockerConfig = join(output, `docker-client-${runId}`)
   await mkdir(dockerConfig, { mode: 0o700 })
   const socket = await localDockerSocket()
+  const redisProbeDiagnostics: Array<{ stdoutLength: number; stderrLength: number; stdoutEmpty: boolean; stdoutAnsi: boolean; stderrAnsi: boolean; pongLine: boolean; loading: boolean; protectedMode: boolean; connectionRefused: boolean }> = []
   const docker = async (args: readonly string[], secrets: Record<string, string> = {}, timeoutMs = 30_000): Promise<string> => new Promise((resolveResult, reject) => {
-    execFile('docker', ['--host', `unix://${socket}`, '--config', dockerConfig, ...args], { env: isolatedFixtureSpawnEnvironment(secrets), timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout) => {
+    execFile('docker', ['--host', `unix://${socket}`, '--config', dockerConfig, ...args], { env: isolatedFixtureSpawnEnvironment(secrets), timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (args[0] === 'exec' && args.includes('redis-cli')) {
+        const combined = `${stdout}\n${stderr}`
+        redisProbeDiagnostics.push({ stdoutLength: stdout.length, stderrLength: stderr.length, stdoutEmpty: !stdout.trim(), stdoutAnsi: /\u001b\[/u.test(stdout), stderrAnsi: /\u001b\[/u.test(stderr), pongLine: /(?:^|\n)PONG\r?(?:\n|$)/u.test(stdout), loading: /\bLOADING\b/u.test(combined), protectedMode: /protected mode/iu.test(combined), connectionRefused: /connection refused/iu.test(combined) })
+      }
       // Native errors include command arguments and stderr: expose only the
       // action, never generated credentials or daemon configuration details.
       if (error) {
@@ -252,7 +278,7 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
       }
       if (attempt < 19) await new Promise(resolveWait => setTimeout(resolveWait, 250))
     }
-    await writeFile(join(output, `redis-readiness-${runId}.json`), JSON.stringify({ runId, id: redis.id, classifications: redisProbes }), { mode: 0o600, flag: 'wx' })
+    await writeFile(join(output, `redis-readiness-${runId}.json`), JSON.stringify({ runId, id: redis.id, classifications: redisProbes, diagnostics: redisProbeDiagnostics }), { mode: 0o600, flag: 'wx' })
     if (!redisReady) throw redisProbeError ?? new Error('ISOLATED_FIXTURE_REDIS_NOT_READY')
     const serverVersion = String((await admin.query('SHOW server_version')).rows[0]?.server_version ?? '')
     if (!serverVersion.startsWith('17.')) throw new Error('ISOLATED_FIXTURE_POSTGRES_MAJOR_MISMATCH')
@@ -355,7 +381,8 @@ export async function createIsolatedOpsFixture({ evidenceDir, authorizationSuper
     await ops?.end(); ops = undefined
     await admin?.end(); admin = undefined
     const cleanup = await dispose()
-    await writeFile(join(output, `fixture-failed-${runId}.json`), JSON.stringify({ runId, stage: setupStage, postgresCode: error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : null, error: error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error.message : 'ISOLATED_FIXTURE_SETUP_FAILED', cleanup }, null, 2), { mode: 0o600, flag: 'wx' })
+    const diagnostics = classifyIsolatedFixtureSetupError(error)
+    await writeFile(join(output, `fixture-failed-${runId}.json`), JSON.stringify({ runId, stage: setupStage, postgresCode: diagnostics.postgresCode, diagnostics, error: error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error.message : 'ISOLATED_FIXTURE_SETUP_FAILED', cleanup }, null, 2), { mode: 0o600, flag: 'wx' })
     throw error instanceof Error && /^ISOLATED_FIXTURE_[A-Z_]+$/u.test(error.message) ? error : new Error('ISOLATED_FIXTURE_SETUP_FAILED')
   }
 }

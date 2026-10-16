@@ -49,7 +49,9 @@ test('merchant can inspect a category template and return to its category card',
 
     await page.getByRole('tab', { name: /^规则库/u }).click()
     await expect(page.getByText('京东品类字段规则')).toBeVisible()
-    await expect(page.locator('[data-environment-state="demo"]')).toContainText('演示环境 · 不可上线')
+    const serviceStatus = page.locator('[data-environment-state="demo"]')
+    await expect(serviceStatus).toContainText('服务能力待核验')
+    await expect(serviceStatus).not.toContainText(/demo|演示环境/iu)
   } finally {
     await context.close()
     await browser.close()

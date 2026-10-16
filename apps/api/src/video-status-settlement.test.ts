@@ -7,7 +7,7 @@ import type { MultimodalMcpRuntime } from './server.js'
 describe('video.get settlement delivery boundary', () => {
   it.each([
     ['clean', { scan_status: 'clean', download_path: '/v1/assets/asset-generic/download' }, undefined],
-    ['unscanned', { scan_status: 'unscanned', preview_path: '/v1/assets/asset-generic/download', preview_only: true, publishable: false }, '演示模式下该视频尚未扫描'],
+    ['unscanned', { scan_status: 'unscanned', preview_path: '/v1/assets/asset-generic/download', preview_only: true, publishable: false }, '该视频尚未扫描'],
     ['pending', { scan_status: 'pending' }, '视频扫描尚未确认通过'],
   ] as const)('multimodal.generate exposes normalized %s archive readiness', async (scanStatus, expected, warning) => {
     const product = { id: 'product-a', workspaceId: 'workspace-a' }
@@ -239,7 +239,7 @@ describe('video.get settlement delivery boundary', () => {
     demo.assetForWorkspace.mockReturnValue({ scanStatus: 'unscanned' })
     const unscanned = await handleMultimodalMcpMethod('multimodal.video.get', { provider_job_id: 'job-a' }, demo.dependencies)
     expect(unscanned).toMatchObject({
-      asset_id: 'workspace-a-asset', archive_state: 'archived', scan_status: 'unscanned', availability_warning: expect.stringContaining('演示或未扫描'),
+      asset_id: 'workspace-a-asset', archive_state: 'archived', scan_status: 'unscanned', availability_warning: expect.stringContaining('尚未扫描'),
     })
     expect(unscanned).not.toHaveProperty('download_path')
     demo.assetForWorkspace.mockReturnValue({ scanStatus: 'unknown' })

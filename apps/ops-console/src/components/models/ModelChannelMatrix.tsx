@@ -42,7 +42,7 @@ interface ModelChannelMatrixProps {
 }
 
 export function ModelChannelMatrix({ status, fixtureDataPresent = false }: ModelChannelMatrixProps) {
-  const rows = modelChannelRows(status).map(row => fixtureDataPresent ? { ...row, ready: false, reasons: ["当前数据源含演示数据，真实 readiness 未验证"] } : row);
+  const rows = modelChannelRows(status).map(row => fixtureDataPresent ? { ...row, model: null, providerConfigured: false, ready: false, costEvidence: false, reasons: ["当前数据未经业务核验，请连接真实数据源后重试"] } : row);
   const groupEvidenceReady = rows.length > 0 && rows.every((row) => row.costEvidence);
 
   return (
@@ -50,7 +50,7 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
       <Alert
         type={!status ? "info" : groupEvidenceReady ? "success" : "warning"}
         showIcon
-        title={!status ? "暂无模型状态数据" : fixtureDataPresent ? "演示数据不可作为模型上线证据" : groupEvidenceReady ? "全部模态成本证据配置门禁已通过" : "部分模态成本证据配置门禁未通过"}
+        title={!status ? "暂无模型状态数据" : fixtureDataPresent ? "当前数据不可作为模型验收证据" : groupEvidenceReady ? "全部模态成本证据配置门禁已通过" : "部分模态成本证据配置门禁未通过"}
         description="控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。"
       />
       <Table<ModelChannelRow>

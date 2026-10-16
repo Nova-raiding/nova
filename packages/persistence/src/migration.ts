@@ -782,6 +782,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const outboxExecutionReservation = await readFile(new URL('./migrations/276_outbox_execution_reservation.sql', import.meta.url), 'utf8')
   const publishMediaEventNoopGuard = await readFile(new URL('./migrations/277_publish_media_event_noop_guard.sql', import.meta.url), 'utf8')
   const taskFeedbackIdempotency = await readFile(new URL('./migrations/278_task_feedback_idempotency.sql', import.meta.url), 'utf8')
+  const assetScanBootstrap = await readFile(new URL('./migrations/279_asset_scan_bootstrap.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -1061,6 +1062,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 276, name: 'outbox_execution_reservation', sql: outboxExecutionReservation },
     { version: 277, name: 'publish_media_event_noop_guard', sql: publishMediaEventNoopGuard },
     { version: 278, name: 'task_feedback_idempotency', sql: taskFeedbackIdempotency },
+    { version: 279, name: 'asset_scan_bootstrap', sql: assetScanBootstrap },
   ]
 }
 

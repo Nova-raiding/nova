@@ -26,6 +26,8 @@ test('password change blocks mismatched confirmation and preserves the form afte
   const page = await context.newPage()
   const externalRequests = []
   const passwordWrites = []
+  const formWarnings = []
+  page.on('console', message => { if (message.text().includes('useForm') && message.text().includes('not connected')) formWarnings.push(message.text()) })
 
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
@@ -100,6 +102,7 @@ test('password change blocks mismatched confirmation and preserves the form afte
     await expect(newPassword).toHaveValue('fixture-new-password-123')
     expect(passwordWrites).toEqual([{ current_password: 'fixture-old-password', new_password: 'fixture-new-password-123' }])
     expect(externalRequests).toEqual([])
+    expect(formWarnings).toEqual([])
   } finally {
     await context.close()
     await browser.close()

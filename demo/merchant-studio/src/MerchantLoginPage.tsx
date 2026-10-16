@@ -73,6 +73,7 @@ export function MerchantLoginPage({
             requiredMark={false}
             disabled={submitting || loading}
             onFinish={(values) => void submit(values)}
+            scrollToFirstError={{ block: 'center', focus: true }}
             aria-label="商家账号登录"
           >
             <Form.Item

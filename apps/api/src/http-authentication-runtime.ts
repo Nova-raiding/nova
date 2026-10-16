@@ -4,7 +4,10 @@ import { ERROR_CODES, type CapabilityId, type OpsWorkbench } from '../../../pack
 import type { MemberRole } from '../../../packages/persistence/src/index.js'
 import type { RequestPrincipal, AuthenticationRuntime } from './server.js'
 
-export async function authenticateRequest(req: IncomingMessage, dependencies: AuthenticationRuntime): Promise<void> {
+/** This context must come from the parsed request body, never caller headers. */
+export type InvitationAuthenticationContext = { method: string; workspaceId?: unknown }
+
+export async function authenticateRequest(req: IncomingMessage, dependencies: AuthenticationRuntime, invocation?: InvitationAuthenticationContext): Promise<void> {
   const {
     mcpIntegrationMode, isProduction, header, passwordAuthRepository, isTrustedPlatformBrowserOrigin,
     requestPrincipals, hydrateDurableAuthorizationContext, requiresStrictAuth, workspaceMemberRoles,
@@ -35,7 +38,21 @@ export async function authenticateRequest(req: IncomingMessage, dependencies: Au
         // transport, but not the same credential. A merchant browser session
         // must exchange for a short-lived local-desktop token; an authenticated
         // platform session remains usable by the desktop operations console.
-        if (mcpOAuthBoundary && !platform) {
+        const invitationCookie = mcpOAuthBoundary && !platform && !authorizationHeader && req.method === 'POST'
+          && (invocation?.method === 'workspace.invitations.list' || invocation?.method === 'workspace.invitation.accept')
+        if (invitationCookie) {
+          const requestOrigin = header(req, 'origin')?.trim()
+          if (!requestOrigin || requestOrigin !== localPluginTokenContext(req).issuer) throw new DomainError('AUTH_CSRF_ORIGIN_INVALID', '邀请操作来源无效，请从商家工作台发起', 403)
+          if (session.account.status !== 'active') throw new DomainError('AUTH_SESSION_INVALID', '商家登录会话已失效，请重新登录', 401)
+          const headerWorkspace = header(req, 'x-workspace-id')?.trim()
+          const requestedBodyWorkspace = invocation?.workspaceId
+          const bodyWorkspace = typeof requestedBodyWorkspace === 'string' ? requestedBodyWorkspace.trim() : undefined
+          if (requestedBodyWorkspace !== undefined && !bodyWorkspace) throw new DomainError(ERROR_CODES.FORBIDDEN, '邀请请求工作区无效', 403)
+          if (headerWorkspace && bodyWorkspace && headerWorkspace !== bodyWorkspace) throw new DomainError(ERROR_CODES.FORBIDDEN, '邀请请求工作区不一致', 403)
+          const workspaceId = headerWorkspace || bodyWorkspace || (session.account.workspaceIds.length === 1 ? session.account.workspaceIds[0] : undefined)
+          if (!workspaceId || !session.account.workspaceIds.includes(workspaceId)) throw new DomainError(ERROR_CODES.FORBIDDEN, '邀请工作区不属于当前商家账号', 403)
+        }
+        if (mcpOAuthBoundary && !platform && !invitationCookie) {
           if (!/^Bearer\s+[^\s]+$/iu.test(authorizationHeader)) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '商家插件 MCP 请求必须携带本地插件凭据', 401)
           // A browser session cookie is not the local plugin credential. The
           // previous branch only checked the Bearer shape, which let any

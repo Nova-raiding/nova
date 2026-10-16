@@ -49,6 +49,12 @@ describe('Ops browser acceptance isolation', () => {
     expect(source).toContain("const sessionHashSecret = randomBytes(32).toString('hex')")
     expect(readFileSync('apps/api/src/server.ts', 'utf8')).toContain('server.listen(port, process.env.API_BIND_HOST,')
   })
+  it('pins local stdio and the owned merchant origin for the invitation acceptance fixture', () => {
+    // This checks the launcher configuration only. The owned API/browser
+    // acceptance must separately execute the returned activation URL.
+    expect(source).toContain("MCP_INTEGRATION_MODE: 'local_stdio'")
+    expect(source).toContain("...(merchantBaseUrl ? { PUBLIC_APP_BASE_URL: merchantBaseUrl, PUBLIC_APP_API_PATH_PREFIX: '/api' } : {})")
+  })
   it('preserves the browser Host for same-origin merchant CSRF while rejecting a forged Origin', async () => {
     const ui = createServer((_request, response) => { response.writeHead(200); response.end('ui') })
     const api = createServer((request, response) => {

@@ -304,7 +304,12 @@ const forbiddenMerchantTools = new Set([
   'platform.settings.update', 'platform.revoke', 'platform.model.status', 'asset.scan',
   'content.codex.prepare', 'content.codex.commit', 'knowledge.rule.update',
 ])
-const forbiddenTools = toolNames.filter(name => name.startsWith('ops.') || forbiddenMerchantTools.has(name))
+// This legacy ops-named method is part of the merchant recovery contract.
+// Keep this independent, exact allowlist: matching source/install discovery
+// must never authorize arbitrary operations tools. API workspace checks remain
+// authoritative for this retry, including denial of platform_ops alone.
+const merchantRecoveryOpsTools = new Set(['ops.marketing.generation.retry'])
+const forbiddenTools = toolNames.filter(name => (name.startsWith('ops.') && !merchantRecoveryOpsTools.has(name)) || forbiddenMerchantTools.has(name))
 const missingTools = requiredTools.filter(name => !toolNames.includes(name))
 const mismatchedFiles = files.filter(file => !file.matches).map(file => file.path)
 const toolCacheDrift = mismatchedFiles.some(path => path === 'mcp/bridge.mjs' || path === '.mcp.json')

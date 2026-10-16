@@ -200,7 +200,7 @@ describe('local stdio bridge to loopback native MCP integration', () => {
       expect(bridgeBillingList?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(apiBillingList!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(bridgeBillingList!.description.length).toBeGreaterThan(0)
-      expect(bridgeTools.some(tool => tool.name.startsWith('ops.'))).toBe(false)
+      expect(bridgeTools.filter(tool => tool.name.startsWith('ops.')).map(tool => tool.name)).toEqual(['ops.marketing.generation.retry'])
 
       const read = await bridgeRequest(child, 'stdio-read', 'tools/call', { name: 'billing.recharge.list', arguments: {} })
       expect(read, JSON.stringify(read)).toMatchObject({

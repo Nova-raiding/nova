@@ -20,6 +20,9 @@ describe("manual store registration failure recovery", () => {
       root: resolve(dirname(fileURLToPath(import.meta.url)), "../../.."),
       cacheDir: cacheDirectory,
       logLevel: "error",
+      // Exercise real browser portal IDs instead of rc-util's test-id stub.
+      define: { "process.env.NODE_ENV": JSON.stringify("development") },
+      optimizeDeps: { rolldownOptions: { transform: { define: { "process.env.NODE_ENV": JSON.stringify("development") } } } },
       server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
       plugins: [{
         name: "isolated-store-register-error",
@@ -40,11 +43,18 @@ describe("manual store registration failure recovery", () => {
             function DirectoryFixture() {
               const [error, setError] = React.useState('');
               const [loading, setLoading] = React.useState(false);
+              const [canManage, setCanManage] = React.useState(true);
+              const [workspaceActive, setWorkspaceActive] = React.useState(true);
+              const [registrationAvailable, setRegistrationAvailable] = React.useState(true);
+              window.__setStoreRegisterPermission = setCanManage;
+              window.__setStoreWorkspaceActive = setWorkspaceActive;
+              window.__setStoreRegistrationAvailable = setRegistrationAvailable;
+              window.__setStoreRegisterReadError = failed => setError(failed ? '目录读取失败' : '');
               const retry = () => { setLoading(true); setTimeout(() => { setError(''); setLoading(false); }, 0); };
               return React.createElement(React.Fragment, null,
                 React.createElement('button', { type: 'button', onClick: () => setError('目录读取失败') }, '模拟目录读取失败'),
                 React.createElement(StoreDirectorySection, {
-                  storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canManageStoreConnections: true, workspaces, onRegisterManualStore: register,
+                  storeDirectory: [{ platform: 'taobao', accountId: 'isolated-store-1', label: '隔离店铺', state: 'connected', dataMode: 'official_api', readable: true, writeEnabled: false, revision: 1, alias: '隔离店铺' }], canManageStoreConnections: canManage, workspaces: workspaces.map(item => ({...item,status:workspaceActive ? 'active' : 'suspended'})), onRegisterManualStore: registrationAvailable ? register : undefined,
                   error, loading, onRetry: retry, onSaveAlias: async () => false, onRevoke: async () => undefined,
                 }));
             }
@@ -102,13 +112,45 @@ describe("manual store registration failure recovery", () => {
       expect(await dialog.getByLabel("登记理由", { exact: true }).inputValue()).toBe("为失败恢复回归保留的测试输入");
       expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(1);
 
-      await dialog.getByRole("button", { name: "确认登记", exact: true }).click();
+      await dialog.getByRole("button", { name: /确认登记$/u }).click();
       await page.waitForFunction(() => (window as any).__storeRegisterAttempts === 2);
       await dialog.waitFor({ state: "hidden" });
       expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(2);
       expect(pageErrors).toEqual([]);
     } finally { await page.close(); }
   }, 75_000);
+
+  for (const boundary of ["permission", "callback", "workspace", "directory"] as const) it(`pauses an open registration when ${boundary} becomes unavailable`, async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(5_000);
+    try {
+      await page.goto(`${baseUrl}/__store-register-error`);
+      await page.getByRole("button", { name: "登记人工店铺", exact: true }).click();
+      const dialog = dialogByTitle(page, "登记人工店铺");
+      await waitForDialog(page, dialog);
+      await dialog.locator("#manual-store-workspace").click();
+      await page.getByText("隔离测试企业 · ws_test", { exact: true }).click();
+      await dialog.locator("#manual-store-platform").click();
+      await page.getByText("淘宝", { exact: true }).click();
+      await page.locator(".ant-select-dropdown:visible").first().waitFor({ state: "hidden" });
+      await dialog.getByLabel("平台店铺账号 ID", { exact: true }).fill("isolated-store-1");
+      await dialog.getByLabel("登记理由", { exact: true }).fill("核对登记上下文中断");
+      const submit = dialog.getByRole("button", { name: "确认登记", exact: true });
+      expect(await submit.isEnabled()).toBe(true);
+      await page.evaluate(kind => {
+        if (kind === "permission") (window as any).__setStoreRegisterPermission(false);
+        if (kind === "callback") (window as any).__setStoreRegistrationAvailable(false);
+        if (kind === "workspace") (window as any).__setStoreWorkspaceActive(false);
+        if (kind === "directory") (window as any).__setStoreRegisterReadError(true);
+      }, boundary);
+      await dialog.getByRole("status").waitFor({ state: "visible" });
+      await expectDisabled(submit);
+      expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(0);
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => (window as any).__storeRegisterAttempts)).toBe(0);
+    } finally { await page.close(); }
+  }, 30_000);
 
   it("keeps manual registration and alias edit limits aligned with the 40-character server rule", async () => {
     const page = await browser!.newPage();

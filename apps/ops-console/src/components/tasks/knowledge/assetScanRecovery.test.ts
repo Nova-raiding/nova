@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { UploadedAssetRisk } from "../../../types/ops.js";
-import { assetScanRecoveryEvidence, assetScanRetryParams, createAssetScanRetryKey, parseAssetScanRetryResult } from "./assetScanRecovery.js";
+import { assetScanRecoveryEvidence, assetScanBootstrapEvidence, assetScanBootstrapParams, assetScanRetryParams, createAssetScanRetryKey, parseAssetScanRetryResult } from "./assetScanRecovery.js";
 
 const governanceSource = readFileSync(new URL("./UploadedAssetGovernance.tsx", import.meta.url), "utf8");
 
@@ -58,7 +58,7 @@ describe("asset scan dead-letter recovery", () => {
   });
 
   it("implements accessible async recovery without allowing duplicate submission or dismissal", () => {
-    expect(governanceSource).toContain('rpc("ops.marketing.asset_scan.retry", params)');
+    expect(governanceSource).toContain('rpc("ops.marketing.asset_scan.retry", scopedParams)');
     expect(governanceSource).toContain("scanRetryLockRef.current")
     expect(governanceSource).toContain('closable={!scanRetrySubmitting}')
     expect(governanceSource).toContain('keyboard={!scanRetrySubmitting}')
@@ -67,5 +67,19 @@ describe("asset scan dead-letter recovery", () => {
     expect(governanceSource).toContain('onBlur={() => setScanRetryReasonTouched(true)}')
     expect(governanceSource).toContain("旧失败事件与错误证据会原样保留")
     expect(governanceSource).toContain("不会把素材直接标记为 clean")
+  });
+});
+
+
+describe("historical asset scan enrollment", () => {
+  const ready = () => asset({ scanStatus: "unscanned", nextAction: { method: "ops.marketing.asset_scan.bootstrap", label: "申请首次扫描", requiredInputs: [] } });
+  it("requires explicit server enrollment eligibility and a current revision", () => {
+    expect(assetScanBootstrapEvidence(ready()).eligible).toBe(true);
+    for (const patch of [{ scanStatus: "clean" }, { scanStatus: "quarantined" }, { scanStatus: "blocked" }, { revision: 0 }, { nextAction: null }, { scanFailure: { eventId: "old" } }])
+      expect(assetScanBootstrapEvidence({ ...ready(), ...patch }).eligible).toBe(false);
+  });
+  it("builds first-scan parameters without fabricating a dead-letter event", () => {
+    expect(assetScanBootstrapParams({ evidence: assetScanBootstrapEvidence(ready()), reason: " 历史素材核验 ", idempotencyKey: "asset-scan:bootstrap:key" })).toEqual({ asset_id: "asset-1", expected_asset_revision: "3", reason: "历史素材核验", idempotency_key: "asset-scan:bootstrap:key" });
+    expect(() => assetScanBootstrapParams({ evidence: assetScanBootstrapEvidence(asset()), reason: "历史素材核验", idempotencyKey: "asset-scan:bootstrap:key" })).toThrow();
   });
 });

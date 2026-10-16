@@ -30,7 +30,7 @@ describe('local plugin connection entry', () => {
     expect(app).toContain('apiBaseUrl && account && <LocalPluginConnection apiBaseUrl={apiBaseUrl} account={account} activeWorkspaceId={activeWorkspaceId}')
     expect(component).toContain('wrapClassName="merchant-local-plugin-modal"')
     expect(component).not.toContain('getContainer={false}')
-    expect(app).toContain("event.target.closest('.merchant-local-plugin-modal')")
+    expect(app).toContain("event.target.closest('.merchant-local-plugin-modal, .ant-modal-root')")
   })
 
   it('presents a one-click entry with a gated local recovery path', () => {
@@ -38,7 +38,7 @@ describe('local plugin connection entry', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('安装与故障帮助')
-    expect(component).toContain('生产发布门禁尚未通过，暂不能启用一键连接')
+    expect(component).toContain('本地插件一键连接尚未开放，请联系平台管理员核对配置')
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
     expect(component).toContain('本地验证恢复路径')
     expect(component).toContain('loginCommand')

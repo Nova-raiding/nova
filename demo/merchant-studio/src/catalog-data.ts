@@ -40,7 +40,7 @@ export const catalogProductTone = (index: number): string => catalogProductTones
 /** The server's own `dataMode`, in merchant-facing words. Never a promotion. */
 export function catalogDataModeLabel(dataMode: string | undefined): string {
   const mode = String(dataMode ?? '').trim().toLowerCase()
-  if (mode === 'fixture') return '演示数据'
+  if (mode === 'fixture') return '测试数据'
   if (mode === 'official_api') return '官方 API 数据'
   if (mode === 'manual_upload') return '人工上传数据'
   if (mode === 'account_record_only') return '仅有账号记录'

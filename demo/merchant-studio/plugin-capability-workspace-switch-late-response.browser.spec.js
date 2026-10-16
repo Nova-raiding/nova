@@ -96,13 +96,13 @@ test('local plugin capability from workspace A cannot enable connection in works
     await page.getByRole('button', { name: '打开账号菜单', exact: true }).click()
     const connectButton = page.getByRole('button', { name: '连接 ChatGPT 本地插件', exact: true })
     await expect(connectButton).toBeVisible()
-    await expect(page.getByText('生产发布门禁尚未通过，暂不能启用一键连接。', { exact: true })).toBeVisible()
+    await expect(page.getByText('本地插件一键连接尚未开放，请联系平台管理员核对配置。', { exact: true })).toBeVisible()
     await expect.poll(() => capabilityReads.filter(workspace => workspace === workspaceB).length).toBeGreaterThan(0)
     await expect(connectButton).toBeDisabled()
 
     holdA = false
     for (const release of pendingAReleases) release()
-    await expect(page.getByText('生产发布门禁尚未通过，暂不能启用一键连接。', { exact: true })).toBeVisible()
+    await expect(page.getByText('本地插件一键连接尚未开放，请联系平台管理员核对配置。', { exact: true })).toBeVisible()
     await expect(connectButton).toBeDisabled()
     expect(capabilityReads).toContain(workspaceA)
     expect(capabilityReads).toContain(workspaceB)

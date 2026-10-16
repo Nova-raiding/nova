@@ -128,6 +128,8 @@ describe("CustomerDelivery controller create readback journey", () => {
       await page.getByRole("region", { name: "客户交付" }).waitFor({ state: "visible" });
       expect(calls.filter(call => call.method === "ops.customer-delivery.list")).toHaveLength(0);
       expect(await page.getByRole("button", { name: "新建客户" }).isDisabled()).toBe(true);
+      await page.getByText("客户交付档案尚未读取，请先选择目标企业。", { exact: true }).waitFor({ state: "visible" });
+      expect(await page.getByText("暂无客户交付档案；请先创建客户档案", { exact: true }).count()).toBe(0);
       await page.getByRole("combobox", { name: "客户交付目标企业工作区" }).click();
       await page.getByText("建档验收企业 · ws-delivery-create-route", { exact: true }).click();
       await page.getByRole("button", { name: "新建客户" }).click();

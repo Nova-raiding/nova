@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -31,8 +31,8 @@ const manifest = JSON.parse(readFileSync(resolve(sourceRoot, '.codex-plugin/plug
 const packageJson = JSON.parse(readFileSync(resolve(sourceRoot, 'package.json'), 'utf8'))
 const version = String(manifest.version ?? '')
 const requestedPackageProfile = args.get('package-profile') ?? null
-if (requestedPackageProfile && requestedPackageProfile !== 'qa-broker') {
-  throw new Error('upgrade package profile must be qa-broker when explicitly provided')
+if (requestedPackageProfile && !['production', 'qa-broker'].includes(requestedPackageProfile)) {
+  throw new Error('upgrade package profile must be production or qa-broker')
 }
 if (manifest.id !== plugin) throw new Error(`source plugin manifest id must be ${plugin}`)
 if (!/^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u.test(version)) throw new Error('source plugin version is missing or invalid')
@@ -68,6 +68,12 @@ if (marketplaceManifest.id !== plugin || marketplaceManifest.version !== version
   throw new Error(`local marketplace plugin manifest/package version must match source plugin ${plugin} ${version}`)
 }
 
+const marketplaceProfilePath = resolve(marketplacePluginRoot, 'bundle-profile.json')
+const marketplaceProfile = existsSync(marketplaceProfilePath) ? JSON.parse(readFileSync(marketplaceProfilePath, 'utf8')) : null
+if (marketplaceProfile?.profile === 'qa-broker' && requestedPackageProfile !== 'qa-broker') {
+  throw new Error('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN: QA credentials are process-memory only. Use native local source for durable Keychain credentials, or explicitly select --package-profile qa-broker for temporary QA.')
+}
+
 const marketplaceList = spawnSync(codex, ['plugin', 'marketplace', 'list', '--json'], { encoding: 'utf8', timeout: 10_000 })
 if (marketplaceList.error || marketplaceList.status !== 0) {
   throw new Error(marketplaceList.stderr?.trim() || 'cannot inspect configured local plugin sources')
@@ -93,7 +99,10 @@ if (configuredMarketplaceRoot !== canonicalMarketplaceRoot || configuredSourceRo
 
 function verifyRuntimeAgainst(installedRoot, label, enforceRequestedProfile = false) {
   const verifyArguments = [resolve(scriptDirectory, 'verify-installed-bridge.mjs'), '--source', sourceRoot, '--installed', installedRoot, '--expected-version', version]
-  if (enforceRequestedProfile && requestedPackageProfile) verifyArguments.push('--expected-package-profile', requestedPackageProfile)
+  if (enforceRequestedProfile && requestedPackageProfile
+    && (requestedPackageProfile === 'qa-broker' || existsSync(resolve(installedRoot, 'bundle-profile.json')))) {
+    verifyArguments.push('--expected-package-profile', requestedPackageProfile)
+  }
   const result = spawnSync(process.execPath, verifyArguments, {
     encoding: 'utf8',
     env: process.env,
@@ -146,7 +155,7 @@ const selector = `${plugin}@${marketplace}`
 // Codex accepts local marketplaces from the trusted checkout boundary. Keep
 // the staging sibling to the canonical marketplace, then remove it after the
 // canonical registration is restored.
-const stagingContainer = requestedPackageProfile ? mkdtempSync(resolve(dirname(canonicalMarketplaceRoot), '.storenova-qa-stage-')) : null
+const stagingContainer = requestedPackageProfile === 'qa-broker' ? mkdtempSync(resolve(dirname(canonicalMarketplaceRoot), '.storenova-qa-stage-')) : null
 const stagingMarketplace = stagingContainer
 let marketplaceMayHaveChanged = false
 function readRegisteredMarketplace() {
@@ -217,10 +226,44 @@ function restoreCanonicalMarketplace() {
   throw new Error(`QA_STAGE_REGISTRY_RECOVERY_FAILED: could not restore canonical marketplace ${canonicalMarketplaceRoot}; ${actualDescription}; last action=${lastAction}${lastCommandError ? ` (${lastCommandError})` : ''}. Manual recovery: run codex plugin marketplace remove ${marketplace} --json, then codex plugin marketplace add ${canonicalMarketplaceRoot} --json, and verify with codex plugin marketplace list --json.`)
 }
 
+// Codex may evict the whole plugin cache during add, even while an old
+// bridge still runs from it. Keep its original helper and profile available;
+// never rewrite an existing version or select it as the newly installed one.
+const preservedCaches = []
+let previousCacheBackup
+function preservePreviousCaches() {
+  const cacheRoot = dirname(installedRoot)
+  if (!existsSync(cacheRoot)) return
+  for (const entry of readdirSync(cacheRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u.test(entry.name)) continue
+    const original = resolve(cacheRoot, entry.name)
+    if (original === installedRoot) continue
+    if (!previousCacheBackup) {
+      // Keep the backup outside the subtree the CLI is allowed to evict.
+      const backupParent = resolve(codexHome, 'plugins')
+      mkdirSync(backupParent, { recursive: true })
+      previousCacheBackup = mkdtempSync(resolve(backupParent, '.storenova-previous-cache-'))
+    }
+    const backup = resolve(previousCacheBackup, entry.name)
+    cpSync(original, backup, { recursive: true })
+    preservedCaches.push({ original, backup })
+  }
+}
+function restorePreviousCaches() {
+  for (const { original, backup } of preservedCaches) {
+    if (existsSync(original)) continue
+    // Preserve concurrent installs unchanged. If copying fails, the recovery
+    // backup remains available and installation must not report success.
+    cpSync(backup, original, { recursive: true, force: false, errorOnExist: true })
+  }
+}
+
 let operationError
 let recoveryError
+let cacheRecoveryError
 let cleanupError
 try {
+  preservePreviousCaches()
   if (stagingMarketplace) {
     const stagedPlugin = resolve(stagingMarketplace, 'plugin')
     cpSync(marketplacePluginRoot, stagedPlugin, { recursive: true })
@@ -250,6 +293,14 @@ try {
 } catch (error) {
   operationError = error
 } finally {
+  try { restorePreviousCaches() }
+  catch (error) {
+    cacheRecoveryError = new Error(`PLUGIN_PREVIOUS_CACHE_RECOVERY_FAILED: previous runtime files could not be restored; backup remains at ${previousCacheBackup}: ${error instanceof Error ? error.message : 'copy failed'}`)
+  }
+  if (previousCacheBackup && !cacheRecoveryError) {
+    try { rmSync(previousCacheBackup, { recursive: true, force: true }) }
+    catch (error) { cleanupError = error }
+  }
   if (marketplaceMayHaveChanged) {
     try { restoreCanonicalMarketplace() }
     catch (error) { recoveryError = error }
@@ -259,8 +310,8 @@ try {
     catch (error) { cleanupError = error }
   }
 }
-if (operationError || recoveryError || cleanupError) {
-  const messages = [operationError, recoveryError, cleanupError].filter(Boolean).map(error => error instanceof Error ? error.message : String(error))
+if (operationError || recoveryError || cacheRecoveryError || cleanupError) {
+  const messages = [operationError, recoveryError, cacheRecoveryError, cleanupError].filter(Boolean).map(error => error instanceof Error ? error.message : String(error))
   throw new Error(messages.join('\nAdditional recovery status: '))
 }
 if (!existsSync(installedRoot)) {
@@ -279,6 +330,9 @@ if (process.platform === 'darwin') {
   if (helperBuild.error || helperBuild.status !== 0) {
     throw new Error(`installed macOS Keychain helper build failed: ${helperBuild.stderr?.trim() || helperBuild.error?.message || 'unknown error'}`)
   }
+}
+if (requestedPackageProfile === 'qa-broker') {
+  process.stderr.write('QA 测试模式：凭据仅保存在辅助进程内存中，进程退出后需要重新授权；日常使用请安装原生钥匙串模式。\n')
 }
 process.stdout.write(`${JSON.stringify(installedEvidence, null, 2)}\n`)
 process.stderr.write(`Verified ${selector} ${version}. Fully restart ChatGPT/Codex and open a new conversation.\n`)

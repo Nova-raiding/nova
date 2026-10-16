@@ -18,7 +18,11 @@ export async function acceptWorkspaceInvitation(input: { workspaceId: string; ac
   const expectedRevision = input.expectedRevision(input.params)
   if (expectedRevision === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '接受邀请必须提供 expected_revision', 400)
   if (expectedRevision !== member.revision) throw new DomainError('MEMBER_REVISION_CONFLICT', '邀请状态已变化，请重新查看邀请', 409)
-  const accepted = await input.members.changeStatusWithAudit({ workspaceId: input.workspaceId, externalSubject: member.externalSubject, targetStatus: 'active', expectedRevision, actorId: input.actorId, action: 'workspace.invitation.accept', reason: typeof input.params.reason === 'string' && input.params.reason.trim() ? input.params.reason.trim() : '用户接受工作区邀请' })
+  const accepted = await input.members.changeStatusWithAudit({ workspaceId: input.workspaceId, externalSubject: member.externalSubject, targetStatus: 'active', expectedRevision, actorId: input.actorId, action: 'workspace.invitation.accept', reason: typeof input.params.reason === 'string' && input.params.reason.trim() ? input.params.reason.trim() : '用户接受工作区邀请' }).catch(error => {
+    if (error instanceof Error && error.message === 'MEMBER_REVISION_CONFLICT') throw new DomainError('MEMBER_REVISION_CONFLICT', '邀请状态已变化，请重新查看邀请', 409)
+    if (error instanceof Error && error.message === 'MEMBER_NOT_FOUND') throw new DomainError('INVITATION_NOT_FOUND', '没有找到发给当前账号的待接受邀请', 404)
+    throw error
+  })
   return { accepted: true, member: accepted.member }
 }
 

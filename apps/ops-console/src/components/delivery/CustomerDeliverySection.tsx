@@ -320,6 +320,7 @@ export function CustomerDeliverySection({
   onFiltersChange,
   headerActions,
   emptyWorkspaceNotice,
+  emptyStateMessage,
 }: {
   readOnly?: boolean;
   disabled?: boolean;
@@ -366,6 +367,7 @@ export function CustomerDeliverySection({
   onFiltersChange?: (filters: CustomerDeliveryFilters) => void;
   headerActions?: ReactNode;
   emptyWorkspaceNotice?: ReactNode;
+  emptyStateMessage?: string;
 }) {
   const [selected, setSelected] = useState<CustomerDeliveryRecord>();
   const [detailsRecord, setDetailsRecord] = useState<CustomerDeliveryRecord>();
@@ -815,9 +817,10 @@ export function CustomerDeliverySection({
             onChange: onPageChange,
           }}
           locale={{
-            emptyText: (records?.length ?? 0) > 0
+            emptyText: emptyStateMessage ?? ((records?.length ?? 0) > 0
               ? "没有符合筛选条件的客户"
-              : archivedView ? "暂无已归档客户交付记录" : "暂无客户交付档案；请先创建客户档案",
+              : archivedView ? "暂无已归档客户交付记录"
+                : onCreate && !readOnly && !disabled ? "暂无客户交付档案；请先创建客户档案" : "当前工作区暂无客户交付档案。"),
           }}
         />
       </div>

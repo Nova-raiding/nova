@@ -144,9 +144,9 @@ describe('manual registration stays platform-operations only', () => {
 
   it('is filtered out of every merchant tools/list', () => {
     const bridge = read('apps/plugin/mcp/bridge.mjs')
-    // The merchant bridge admits only methods that do not start with `ops.`.
-    // Renaming the method out of that prefix would expose it to merchants.
-    expect(bridge).toContain("const isMerchantTool = name => !name.startsWith('ops.')")
+    // The merchant bridge admits only the explicitly documented recovery op.
+    // Renaming this method out of the prefix would expose it to merchants.
+    expect(bridge).toContain("const isMerchantTool = name => (MERCHANT_VISIBLE_OPS_METHODS.has(name) || !name.startsWith('ops.'))")
     expect(METHOD.startsWith('ops.')).toBe(true)
     const descriptor = sliceBetween(read('packages/contracts/src/mcp.ts'), `method: '${METHOD}'`, 'params: params(')
     expect(descriptor).toContain('Platform operations only.')

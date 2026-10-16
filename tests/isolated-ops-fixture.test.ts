@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { assertIsolatedMigrationChain, classifyIsolatedRedisPing, disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
+import { assertIsolatedMigrationChain, classifyIsolatedFixtureSetupError, classifyIsolatedRedisPing, disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
 
 const runId = '00000000-0000-4000-8000-000000000163'
 const plan = isolatedContainerRunArgs({ runId, kind: 'postgres', image: ISOLATED_POSTGRES_IMAGE })
@@ -142,5 +142,20 @@ describe('isolated Ops fixture safety boundary', () => {
     expect(() => assertIsolatedMigrationChain(current, 169)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
     expect(() => assertIsolatedMigrationChain(current.filter(item => item.version !== 170), 170)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
     expect(() => assertIsolatedMigrationChain(current, Number.NaN)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
+  })
+})
+
+
+describe('safe isolated fixture setup error diagnostics', () => {
+  it('records known connection and business classifications without retaining messages, names or arbitrary codes', () => {
+    const secret = 'generated-password-must-not-be-recorded'
+    const timeout = classifyIsolatedFixtureSetupError(new Error(`Connection terminated due to connection timeout ${secret}`))
+    expect(timeout).toMatchObject({ errorType: 'Error', connectionTimeout: true, connectionTerminated: true, postgresCode: null, businessCode: null })
+    expect(classifyIsolatedFixtureSetupError(Object.assign(new Error(secret), { code: 'AUTH_WORKSPACE_NOT_FOUND' }))).toMatchObject({ businessCode: 'AUTH_WORKSPACE_NOT_FOUND' })
+    expect(classifyIsolatedFixtureSetupError(Object.assign(new TypeError(secret), { code: '23505' }))).toMatchObject({ errorType: 'TypeError', postgresCode: '23505' })
+    const unknown = classifyIsolatedFixtureSetupError({ name: secret, message: secret, code: secret })
+    expect(unknown).toMatchObject({ errorType: 'Unknown', businessCode: null, postgresCode: null, networkCode: null })
+    expect(JSON.stringify([timeout, unknown])).not.toContain(secret)
+    expect(timeout).not.toHaveProperty('message')
   })
 })

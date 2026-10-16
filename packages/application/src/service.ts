@@ -2969,7 +2969,7 @@ export class MerchantService {
     })
     return [...new Set(selected.flatMap(sku => sku.sourceAssetIds ?? []))]
   }
-  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; size?: string; count?: number; idempotencyKey: string; marketingBrief?: { sellingPoints?: string[]; trafficKeywords?: string[]; promotionLabels?: string[]; marketingLabels?: string[]; headline?: string; subheadline?: string; cta?: string }; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
+  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; unboundCandidate?: boolean; direction?: string; size?: string; count?: number; idempotencyKey: string; marketingBrief?: { sellingPoints?: string[]; trafficKeywords?: string[]; promotionLabels?: string[]; marketingLabels?: string[]; headline?: string; subheadline?: string; cta?: string }; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
     if (input.size && !['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'].includes(input.size)) throw new DomainError('IMAGE_SIZE_INVALID', '图片画布尺寸不受支持', 400)
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
@@ -3070,23 +3070,26 @@ export class MerchantService {
       ...(brief?.priceExpression ? [brief.priceExpression] : []),
       ...(brief?.cta ? [brief.cta] : []),
     ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
-    const marketingLayer = hasExplicitMarketingBrief || logoAssetIds.length > 0 || promotionLabels.length > 0
+    const pureVisualUnboundLong = input.unboundCandidate === true && (input.size === '1024x3072' || input.size === '1024x4096')
+    const marketingLayer = !pureVisualUnboundLong && (hasExplicitMarketingBrief || logoAssetIds.length > 0 || promotionLabels.length > 0)
     const factLabels = [...new Set([
       ...verifiedAttributeLabels,
       ...confirmedSellingPoints.map(value => `卖点:${value}`),
     ].map(value => value.trim()).filter(Boolean))].slice(0, 12)
     const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
     const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${visualPlacement}`)
-    const defaultDetailSections = [
-      '首屏价值主张：商品与核心收益',
-      '痛点场景：用户为何需要',
-      `核心卖点：${confirmedSellingPoints.slice(0, 3).join('、') || '已确认卖点'}`,
-      '使用流程：步骤化说明',
-      '细节证据：材质、结构与工艺',
-      '参数规格：尺寸、容量与适配',
-      'SKU与套餐边界：包含与不包含',
-      '信任与行动：售后与克制 CTA',
-    ]
+    const defaultDetailSections = pureVisualUnboundLong
+      ? ['产品全景', '可见结构近景', '可见表面细节']
+      : [
+          '首屏价值主张：商品与核心收益',
+          '痛点场景：用户为何需要',
+          `核心卖点：${confirmedSellingPoints.slice(0, 3).join('、') || '已确认卖点'}`,
+          '使用流程：步骤化说明',
+          '细节证据：材质、结构与工艺',
+          '参数规格：尺寸、容量与适配',
+          'SKU与套餐边界：包含与不包含',
+          '信任与行动：售后与克制 CTA',
+        ]
     const selectedStructureSections = selectedDirection?.structure
       .split(/(?:→|；|;|\n)+/u)
       .map(section => section.trim())
@@ -3108,7 +3111,8 @@ export class MerchantService {
       ...(logoAssetIds.length ? { logoAssetIds } : {}),
       ...(marketingLabels.length ? { marketingLabels } : {}),
       marketingLayer,
-      ...(promotionLabels.length ? { promotionLabels } : {}),
+      ...(pureVisualUnboundLong ? { textPolicy: 'none' as const } : {}),
+      ...(promotionLabels.length && !pureVisualUnboundLong ? { promotionLabels } : {}),
       ...(detailPlacement || input.size === '1024x3072' || input.size === '1024x4096' ? {
         detailSections,
         ...(detailDirectionGuidance ? { detailDirectionGuidance } : {}),

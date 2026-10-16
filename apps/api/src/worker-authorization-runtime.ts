@@ -133,6 +133,7 @@ const workerEventOperations: Record<string, CriticalWorkerOperation> = {
   'asset.generated_quarantined': 'asset.scan.execute',
   'asset.video_quarantined': 'asset.scan.execute',
   'asset.scan_redrive_requested': 'asset.scan.execute',
+  'asset.scan_bootstrap_requested': 'asset.scan.execute',
   'asset.generation_continuations.ready': 'asset.continuation.execute',
 }
 

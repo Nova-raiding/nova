@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest, validateLocalPluginRedirectUri } from './local-plugin-auth.js'
+import { localPluginAuthorizationHtml, localPluginLoginRequiredHtml, localPluginWorkspaceMismatchHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest, validateLocalPluginRedirectUri } from './local-plugin-auth.js'
 
 const verifier = 'local-plugin-pkce-verifier-000000000000000000000000000000000000'
 const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -41,6 +41,21 @@ describe('local plugin PKCE contract', () => {
     expect(html).toContain(encodeURIComponent(redirectUri))
     expect(html).toContain(`state=${state}`)
     expect(html).toContain(`code_challenge=${challenge}`)
+    expect(html).not.toMatch(/password|access_token|refresh_token/u)
+  })
+
+  it('renders a safe recovery page when the signed-in merchant lacks the requested workspace', () => {
+    const request = parseLocalPluginAuthorizationRequest(new URLSearchParams({ response_type: 'code', client_id: 'local-desktop', redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256', scope: 'merchant', resource: 'https://yxsona.com/mcp', workspace_id: 'ws_store' }))
+    const html = localPluginWorkspaceMismatchHtml(request)
+    expect(html).toContain('当前账号无法连接此插件')
+    expect(html).toContain('未授权、未创建访问凭据')
+    expect(html).toContain('切换商家账号')
+    const loginLink = html.match(/href="\/\?plugin_authorize=([^"]+)"/u)
+    expect(loginLink?.[1]).toBeTruthy()
+    const returnUrl = new URL(decodeURIComponent(loginLink![1]!), 'https://example.test')
+    expect(returnUrl.pathname).toBe('/v1/auth/local-plugin/authorize')
+    expect(returnUrl.searchParams.get('workspace_id')).toBe('ws_store')
+    expect(returnUrl.searchParams.get('state')).toBe(state)
     expect(html).not.toMatch(/password|access_token|refresh_token/u)
   })
 

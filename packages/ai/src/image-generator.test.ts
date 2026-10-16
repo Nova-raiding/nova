@@ -410,6 +410,26 @@ describe('image generator', () => {
     expect(requestBody?.negative_prompt).toContain('乱码')
   })
 
+  it('keeps unbound long-page candidates purely visual and text-free', async () => {
+    let requestBody: { prompt: string; negative_prompt?: string } | undefined
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as { prompt: string; negative_prompt?: string }
+        return new Response(JSON.stringify({ usage: { output_image_count: 1 }, data: [{ b64_json: VALID_PNG }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '蓝色抽绳束口袋', direction: '纯视觉详情长图', count: 1, visualBrief: { size: '1024x4096', outputVariant: 'detail_long', textPolicy: 'none', detailSections: ['产品全景', '可见结构近景', '可见表面细节'] } })
+    expect(requestBody?.prompt).toContain('未绑定的纯视觉详情长图')
+    expect(requestBody?.prompt).toContain('绝对禁止可见文字')
+    expect(requestBody?.prompt).toContain('不得生成可读中文、英文、数字')
+    expect(requestBody?.prompt).not.toContain('首屏价值主张：商品与核心收益')
+    expect(requestBody?.prompt).not.toContain('已知规格信息')
+    expect(requestBody?.prompt).not.toContain('信息卡片只承载已确认文案')
+    expect(requestBody?.negative_prompt).toContain('拉链')
+    expect(requestBody?.negative_prompt).toContain('规格栏')
+  })
+
   it('turns a long-page request into an ordered conversion storyboard', async () => {
     let prompt = ''
     const generator = new OpenAICompatibleImageGenerator({

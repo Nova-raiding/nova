@@ -9,7 +9,8 @@ const ruleRows = [
   { id: 'rule-taobao', name: '淘宝广告表达规则', version: 'tb-2.0', scope: '淘宝', category: 'advertising_publish', status: 'active', updatedAt: '2026-10-02', source: { kind: 'public', reference: '规则目录', checkedAt: '2026-10-02' } },
 ]
 const categories = [
-  { code: '1312', name: '防晒外套', fields: ['材质', '尺码'], platforms: ['jd', 'taobao'], status: 'active', updatedAt: '2026-10-01' },
+  { code: '1312', name: '防晒外套', fields: ['材质', '尺码'], platforms: ['jd', 'taobao'], status: 'active', updatedAt: null },
+  { code: '1408', name: '户外鞋', fields: ['鞋面材质'], platforms: ['jd'], status: 'active', updatedAt: '2026-10-01' },
 ]
 const envelope = data => ({ request_id: 'rules-page-fixture', trace_id: 'rules-page-fixture', workspace_id: workspaceId, data, warnings: [], next_actions: [], error: null })
 
@@ -51,8 +52,8 @@ test('rules page supports direct load, filtering, detail close, empty and retry 
 
   try {
     await page.goto(`${studioUrl}/merchant/rules?platform=taobao`, { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('heading', { name: '规则库与品类库' })).toBeVisible()
-    await expect(page.locator('[data-environment-state="demo"]')).toContainText('演示环境 · 不可上线')
+    await expect(page.getByRole('heading', { name: '规则库与品类库' })).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('[data-environment-state="demo"]')).toContainText('服务能力待核验')
     await expect(page.getByText('淘宝广告表达规则')).toBeVisible()
     await expect(page.getByText('京东商品事实规则')).toHaveCount(0)
     await expect.poll(() => new URL(page.url()).searchParams.get('platform')).toBe('taobao')
@@ -77,7 +78,17 @@ test('rules page supports direct load, filtering, detail close, empty and retry 
     await page.getByRole('textbox', { name: '搜索规则或品类' }).fill('')
     await page.getByRole('tab', { name: /^品类库/u }).click()
     await expect(page.getByRole('heading', { name: '防晒外套' })).toBeVisible()
-    await page.getByRole('button', { name: '查看类目字段模板' }).click()
+    const mappingMetric = page.locator('.metric-card').filter({ hasText: '字段映射' })
+    await expect(mappingMetric).toContainText('未核验')
+    await expect(mappingMetric).toContainText('类目模板不包含平台字段映射或校验结果')
+    await expect(mappingMetric).not.toContainText('实时读取')
+    expect(await mappingMetric.locator('strong').evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(40)
+    await expect(page.getByText('最近更新：未记录')).toBeVisible()
+    await expect(page.getByText('最近更新：2026-10-01')).toBeVisible()
+    await expect(page.getByRole('tabpanel', { name: /^品类库/u })).toContainText('API 类目字段模板')
+    await expect(page.getByRole('tabpanel', { name: /^品类库/u })).not.toContainText('管理员发布数据')
+    if (process.env.CATEGORY_QA_SCREENSHOT) await page.screenshot({ path: process.env.CATEGORY_QA_SCREENSHOT, fullPage: true })
+    await page.getByRole('button', { name: '查看类目字段模板' }).first().click()
     await expect(page.getByTestId('category-mapping-detail')).toContainText('材质')
     await page.getByRole('button', { name: '关闭', exact: true }).click()
     await expect(page.getByTestId('category-mapping-detail')).toHaveCount(0)

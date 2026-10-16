@@ -67,7 +67,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     const args = process.argv.slice(2)
     if (process.platform !== 'darwin' || args.length !== 6 || args[0] !== '--base-url' || args[2] !== '--workspace' || args[4] !== '--account-id') fail()
-    assertKeychainHelperReady()
+    if (!isQaBrokerPackage()) assertKeychainHelperReady()
     const owner = { accountId: args[5], workspaceId: args[3] }
     const durableStore = installationIdentityStore(args[1], owner)
     let seededIdentity

@@ -48,7 +48,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('ImageGenerationJobDiscovery')
     expect(app).toContain('图片任务')
     expect(app).toContain('fetchImageGenerationJobs')
-    expect(app).toContain('不会自动创建演示任务')
+    expect(app).toContain('不会自动创建测试任务')
     expect(app).toContain('lastSuccessfulJobsRef')
     expect(app).toContain('图片任务自动刷新失败')
     expect(app).toContain('已保留上次成功数据')

@@ -134,6 +134,8 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  // A queue refresh cannot resolve an uncertain write or clear its feedback.
+  const [mutationError, setMutationError] = useState("");
   const [detailError, setDetailError] = useState<SupportDetailError>();
   const [detailRefreshError, setDetailRefreshError] = useState<SupportDetailRefreshError>();
   const [report, setReport] = useState<SupportSlaMonthlyReport>();
@@ -240,13 +242,14 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     const detailSelectionRequest = detailRequest.current;
     setMutating(true);
     setError("");
+    setMutationError("");
     setDetailRefreshError(undefined);
     let result: SupportMutationResult;
     try {
       result = await operation();
     } catch (cause) {
       if (isCurrentSupportRequest(request, mutationRequest.current, requestWorkspaceId, workspaceRef.current)) {
-        setError(errorMessage(cause));
+        setMutationError(errorMessage(cause));
         setMutating(false);
       }
       throw cause;
@@ -471,6 +474,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     setLoadingMore(false);
     setDetailLoading(false);
     setMutating(false);
+    setMutationError("");
     setReport(undefined);
     setReportLoading(false);
     setReportStale(false);
@@ -486,7 +490,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   }, [reload]);
 
   return {
-    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, detailError, detailRefreshError, report, reportLoading, reportStale, reportError,
+    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error: mutationError || error, detailError, detailRefreshError, report, reportLoading, reportStale, reportError,
     hasMore: Boolean(cursor), scanTruncated, setFilters, reload, loadMore, selectTicket,
     clearSelection: () => { detailRequest.current += 1; setSelected(undefined); setDetailError(undefined); setDetailRefreshError(undefined); },
     create, assign, transition, comment,

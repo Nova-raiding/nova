@@ -118,6 +118,6 @@ describe('the sync control keeps the four store-read states apart', () => {
     expect(resolveCatalogSyncControl({ ...base, syncableStores: 2 })).toEqual({ label: '同步全部店铺', hint: base.idleHint })
     expect(resolveCatalogSyncControl({ ...base, syncableStores: null, accountsLoading: true })).toEqual({ label: '正在发现店铺…', hint: base.idleHint })
     expect(resolveCatalogSyncControl({ ...base, syncableStores: 2, syncing: true })).toEqual({ label: '同步全部店铺…', hint: base.idleHint })
-    expect(resolveCatalogSyncControl({ ...base, baseUrl: undefined, syncableStores: 0 })).toEqual({ label: '演示数据', hint: base.idleHint })
+    expect(resolveCatalogSyncControl({ ...base, baseUrl: undefined, syncableStores: 0 })).toEqual({ label: '未连接服务', hint: base.idleHint })
   })
 })

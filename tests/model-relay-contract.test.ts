@@ -33,6 +33,7 @@ describe('production model relay contract', () => {
     expect(relayProbeFailureReason(new Error('provider said sk-secret'))).toBe('relay_probe_failed')
     expect(relayProbeFailureReason(Object.assign(new Error('relay pricing billing mode is unsupported'), { code: 'MODEL_PRICING_MODE_UNSUPPORTED' }))).toBe('relay_pricing_mode_unsupported')
     expect(relayProbeFailureReason(Object.assign(new Error('sensitive artifact path'), { code: 'EEXIST' }))).toBe('relay_evidence_path_exists')
+    expect(relayProbeFailureReason(Object.assign(new Error('sensitive artifact path'), { code: 'EACCES' }))).toBe('relay_evidence_path_not_writable')
   })
 
   it('requires non-empty OCR content and usable image references before canary success', () => {

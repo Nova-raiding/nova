@@ -144,6 +144,13 @@ export function TasksPage({ model }: TasksPageProps) {
     "ops.marketing.summary",
     "ops.tasks.summary",
   );
+  // Failed refreshes retain the previous hook value for recovery. It is not
+  // current workload evidence, and test data must never establish real totals.
+  const fixtureSummary = model.dataSource?.fixtureDataPresent === true;
+  const taskSummary = fixtureSummary || model.dataSetError("ops.tasks.summary")
+    ? undefined : model.platformTaskSummary;
+  const marketingSummary = fixtureSummary || model.dataSetError("ops.marketing.summary")
+    ? undefined : model.platformMarketingSummary;
   return (
     <OpsPage
       eyebrow="CONTENT OPERATIONS"
@@ -154,8 +161,10 @@ export function TasksPage({ model }: TasksPageProps) {
     >
       <div className="ops-tasks-page">
         <OpsPageError error={taskError ?? ""} onRetry={() => void model.load()} />
+        {fixtureSummary ? <Alert type="warning" showIcon title="任务汇总尚未核验" description="当前数据来源不能作为真实工作量依据，汇总数字暂不展示。请刷新并核实工作区数据源。" /> : null}
+        {!fixtureSummary && !model.loading && !taskError && (canReadPlatformTasks || canReadPlatformMarketing) && !taskSummary && !marketingSummary ? <Alert type="info" showIcon title="任务汇总尚未返回" description="当前没有可展示的有效汇总，不能据此判断没有任务。" action={<Button onClick={() => void model.load()}>重新读取汇总</Button>} /> : null}
         {storeFilterNotice ? <Alert className="ops-tasks-access-note" showIcon closable onClose={() => setStoreFilterNotice("")} type="warning" title="店铺筛选未应用" description={storeFilterNotice} role="status" /> : null}
-        {(canReadPlatformTasks && model.platformTaskSummary) || (canReadPlatformMarketing && model.platformMarketingSummary) ? (
+        {(canReadPlatformTasks && taskSummary) || (canReadPlatformMarketing && marketingSummary) ? (
           <section className="ops-tasks-overview" aria-labelledby="ops-tasks-overview-title">
             <div className="ops-tasks-section-heading">
               <div>
@@ -165,28 +174,28 @@ export function TasksPage({ model }: TasksPageProps) {
               <span className="ops-tasks-scope-note">汇总范围：当前授权企业主体</span>
             </div>
             <div className="ops-tasks-summary-grid">
-              {canReadPlatformTasks && model.platformTaskSummary ? (
+              {canReadPlatformTasks && taskSummary ? (
                 <Card className="ops-tasks-summary-card" title="任务处理量" size="small">
                   <Row gutter={[12, 12]}>
-                    <Col span={6}><Statistic title="企业主体" value={model.platformTaskSummary.workspaceCount} /></Col>
-                    <Col span={6}><Statistic title="全部任务" value={model.platformTaskSummary.taskCount} /></Col>
-                    <Col span={6}><Statistic title="生成中" value={model.platformTaskSummary.generationQueueCount} /></Col>
-                    <Col span={6}><Statistic title="待发布" value={model.platformTaskSummary.publishQueueCount} /></Col>
+                    <Col span={6}><Statistic title="企业主体" value={taskSummary.workspaceCount} /></Col>
+                    <Col span={6}><Statistic title="全部任务" value={taskSummary.taskCount} /></Col>
+                    <Col span={6}><Statistic title="生成中" value={taskSummary.generationQueueCount} /></Col>
+                    <Col span={6}><Statistic title="待发布" value={taskSummary.publishQueueCount} /></Col>
                   </Row>
-                  {model.platformTaskSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformTaskSummary.failedWorkspaceCount} 个企业主体任务数据暂未纳入汇总`} /> : null}
+                  {taskSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${taskSummary.failedWorkspaceCount} 个企业主体任务数据暂未纳入汇总`} /> : null}
                 </Card>
               ) : null}
-              {canReadPlatformMarketing && model.platformMarketingSummary ? (
+              {canReadPlatformMarketing && marketingSummary ? (
                 <Card className="ops-tasks-summary-card" title="内容治理量" size="small">
                   <Row gutter={[12, 12]}>
-                    <Col span={6}><Statistic title="待审视觉" value={model.platformMarketingSummary.visualReviewCount} /></Col>
-                    <Col span={6}><Statistic title="素材风险" value={model.platformMarketingSummary.assetRiskCount} /></Col>
-                    <Col span={6}><Statistic title="学习建议" value={model.platformMarketingSummary.learningSuggestionCount} /></Col>
-                    <Col span={6}><Statistic title="生成失败" value={model.platformMarketingSummary.generationByState.failed ?? 0} /></Col>
-                    <Col span={6}><Statistic title="视频待对账" value={model.platformMarketingSummary.videoPendingReconciliationCount} /></Col>
-                    <Col span={6}><Statistic title="视频归档风险" value={model.platformMarketingSummary.videoArchiveRiskCount} /></Col>
+                    <Col span={6}><Statistic title="待审视觉" value={marketingSummary.visualReviewCount} /></Col>
+                    <Col span={6}><Statistic title="素材风险" value={marketingSummary.assetRiskCount} /></Col>
+                    <Col span={6}><Statistic title="学习建议" value={marketingSummary.learningSuggestionCount} /></Col>
+                    <Col span={6}><Statistic title="生成失败" value={marketingSummary.generationByState.failed ?? 0} /></Col>
+                    <Col span={6}><Statistic title="视频待对账" value={marketingSummary.videoPendingReconciliationCount} /></Col>
+                    <Col span={6}><Statistic title="视频归档风险" value={marketingSummary.videoArchiveRiskCount} /></Col>
                   </Row>
-                  {model.platformMarketingSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformMarketingSummary.failedWorkspaceCount} 个企业主体营销数据暂未纳入汇总`} /> : null}
+                  {marketingSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${marketingSummary.failedWorkspaceCount} 个企业主体营销数据暂未纳入汇总`} /> : null}
                 </Card>
               ) : null}
             </div>

@@ -60,6 +60,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
   const restoreRequests = []
   const purgeRequests = []
   const cancelPurgeRequests = []
+  let failTrashReadback = false
   let assetListReadCount = 0
   let allowAssetListRecovery = false
   const trashRecord = (id, name, state = {}) => ({
@@ -137,6 +138,7 @@ test('downloads, decodes, and renders server-backed material previews in the rea
       })) })
     }
     if (path === '/api/v1/assets/trash') {
+      if (failTrashReadback) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TEMPORARY_UNAVAILABLE', message: '撤销后的列表暂时不可用' } }) })
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({
         items: trashRows,
         total: trashRows.length, limit: 50, offset: 0,
@@ -283,20 +285,26 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     await expect(recyclePreviewDialog).toBeVisible()
     await expect(recyclePreviewDialog).toBeFocused()
     await page.keyboard.press('Tab')
-    await expect(recyclePreviewDialog).toBeFocused()
+    await expect(recyclePreviewDialog.getByRole('button', { name: '关闭素材预览' })).toBeFocused()
     await page.keyboard.press('Shift+Tab')
-    await expect(recyclePreviewDialog).toBeFocused()
+    await expect(recyclePreviewDialog.getByRole('button', { name: '关闭素材预览' })).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(recyclePreviewDialog).toHaveCount(0)
     await expect(recyclePreviewTrigger).toBeFocused()
 
     await recycleBin.getByRole('button', { name: '选择已删除样图.png' }).click()
     await recycleBin.getByRole('button', { name: '选择恢复失败样图.png' }).click()
+    failTrashReadback = true
     await recycleBin.getByRole('button', { name: '恢复', exact: true }).click()
     await expect(recycleBin.locator('article').filter({ hasText: '已删除样图.png' })).toHaveCount(0)
     await expect(recycleBin.locator('article').filter({ hasText: '恢复失败样图.png' })).toBeVisible()
     await expect(recycleBin.getByRole('alert')).toContainText('版本已变化')
+    await expect(recycleBin.getByRole('alert')).toContainText('素材已恢复，但回收站刷新失败')
+    await expect(recycleBin.getByRole('button', { name: '恢复', exact: true })).toBeDisabled()
     expect(restoreRequests.sort()).toEqual([restoreFailureAssetId, trashedAssetId].sort())
+    failTrashReadback = false
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(recycleBin.getByRole('status')).toHaveCount(0)
 
     await recycleBin.getByRole('button', { name: '选择清理请求样图.png' }).click()
     const purgeTrigger = recycleBin.getByRole('button', { name: '彻底删除' })
@@ -328,10 +336,13 @@ test('downloads, decodes, and renders server-backed material previews in the rea
     await expect(submitPurge).toBeDisabled()
     await confirmationField.fill('彻底删除')
     await expect(submitPurge).toBeEnabled()
+    failTrashReadback = true
     await submitPurge.click()
     await expect(purgeDialog).toBeVisible()
     await expect(recycleBin.getByRole('alert')).toContainText('版本已变化')
-    await expect(recycleBin.locator('article').filter({ hasText: '对象存储清理处理中' })).toBeVisible()
+    await expect(recycleBin.getByRole('alert')).toContainText('清理请求已提交，但回收站刷新失败')
+    await expect(purgeDialog.getByRole('alert')).toContainText('请取消关闭此窗口')
+    await expect(submitPurge).toBeDisabled()
     await expect(recycleBin.getByRole('button', { name: '选择恢复失败样图.png' })).toHaveAttribute('aria-pressed', 'true')
     expect(purgeRequests).toHaveLength(2)
     expect(purgeRequests.find(({ assetId }) => assetId === purgeAssetId)).toMatchObject({ body: {
@@ -340,11 +351,41 @@ test('downloads, decodes, and renders server-backed material previews in the rea
 
     await cancelPurge.click()
     await expect(purgeDialog).toHaveCount(0)
-    await expect(purgeTrigger).toBeFocused()
+    await expect(recycleBin.getByRole('heading', { name: '已删除素材', exact: true })).toBeFocused()
     const purgeArticle = recycleBin.locator('article').filter({ hasText: '清理请求样图.png' })
+    failTrashReadback = false
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(purgeArticle.getByText('对象存储清理处理中')).toBeVisible()
+    failTrashReadback = true
     await purgeArticle.getByRole('button', { name: '撤销请求' }).click()
+    await expect(recycleBin.getByRole('alert')).toContainText('清理请求已撤销，但回收站刷新失败')
+    await expect(recycleBin.getByRole('alert')).not.toContainText('当前操作未确认完成')
+    await expect(purgeArticle.getByRole('button', { name: '撤销请求' })).toBeDisabled()
+    await expect(recycleBin.getByRole('status')).toContainText('请刷新回收站核对后再进行变更')
+    await expect(recycleBin.getByRole('button', { name: '恢复', exact: true })).toBeDisabled()
+    await expect(recycleBin.getByRole('button', { name: '彻底删除', exact: true })).toBeDisabled()
+    expect(cancelPurgeRequests).toEqual([purgeAssetId])
+    failTrashReadback = false
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
     await expect(purgeArticle.getByText('对象存储清理处理中')).toHaveCount(0)
     expect(cancelPurgeRequests).toEqual([purgeAssetId])
+
+    // No accepted request must be reported as submitted when every write fails.
+    await purgeTrigger.click()
+    await reasonField.fill('核对全部拒绝后的回读边界')
+    await confirmationField.fill('彻底删除')
+    failTrashReadback = true
+    await submitPurge.click()
+    await expect(purgeDialog.getByRole('alert')).toContainText('清理请求未确认提交')
+    await expect(purgeDialog.getByRole('alert')).toContainText('版本已变化')
+    await expect(submitPurge).toBeDisabled()
+    expect(purgeRequests).toHaveLength(3)
+    expect(purgeRequests[2].assetId).toBe(restoreFailureAssetId)
+    await cancelPurge.click()
+    await expect(recycleBin.getByRole('heading', { name: '已删除素材', exact: true })).toBeFocused()
+    failTrashReadback = false
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(recycleBin.getByRole('status')).toHaveCount(0)
 
     expect(downloads.map(({ assetId }) => assetId).sort()).toEqual([invalidAssetId, validAssetId].sort())
     expect(downloads.every(({ accept }) => accept === 'application/octet-stream')).toBe(true)

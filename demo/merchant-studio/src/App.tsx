@@ -399,78 +399,6 @@ const knowledgeSubItems: Array<{
 ]
 // Compatibility marker for deep links that still address id: 'knowledge'.
 
-const platforms: Array<{
-  name: Platform
-  platformId: PlatformId
-  shop: string
-  status: string
-  tone: string
-  sync: string
-  canSync: boolean
-  canReauthorize: boolean
-}> = [
-  {
-    name: '京东',
-    platformId: 'jd',
-    shop: '云朵轻户外旗舰店',
-    status: '演示连接',
-    tone: 'red',
-    sync: '演示数据',
-    canSync: false,
-    canReauthorize: false,
-  },
-  {
-    name: '淘宝',
-    platformId: 'taobao',
-    shop: '云朵轻户外',
-    status: '演示连接',
-    tone: 'orange',
-    sync: '演示数据',
-    canSync: false,
-    canReauthorize: false,
-  },
-  {
-    name: '天猫',
-    platformId: 'tmall',
-    shop: '云朵轻户外旗舰店',
-    status: '需授权',
-    tone: 'orange',
-    sync: '尚未同步',
-    canSync: false,
-    canReauthorize: false,
-  },
-  {
-    name: '拼多多',
-    platformId: 'pinduoduo',
-    shop: '云朵户外专营店',
-    status: '需重新授权',
-    tone: 'yellow',
-    sync: '2 天前',
-    canSync: false,
-    canReauthorize: false,
-  },
-  {
-    name: '小红书',
-    platformId: 'xiaohongshu',
-    shop: '云朵轻户外生活方式店',
-    status: '演示待授权',
-    tone: 'red',
-    sync: '尚未同步',
-    canSync: false,
-    canReauthorize: false,
-  },
-  {
-    name: '抖音',
-    platformId: 'douyin',
-    shop: '云朵轻户外旗舰店',
-    status: '演示待授权',
-    tone: 'orange',
-    sync: '尚未同步',
-    canSync: false,
-    canReauthorize: false,
-  },
-]
-
 const platformNames: Record<string, Platform> = {
   jd: '京东',
   taobao: '淘宝',
@@ -548,7 +476,7 @@ export function WorkspaceDataIntegrityNotice({ metrics }: { metrics: WorkspaceMe
           <span className="section-kicker">数据完整性</span>
           <h3 id="merchant-data-integrity-title">当前经营数据范围</h3>
         </div>
-        <StatusChip tone={partial ? 'amber' : 'blue'}>{partial ? '部分数据' : '演示数据'}</StatusChip>
+        <StatusChip tone={partial ? 'amber' : 'blue'}>{partial ? '部分数据' : '测试数据'}</StatusChip>
       </div>
       <div className="data-integrity-copy">
         {partial ? (
@@ -778,70 +706,6 @@ function FactsEditor({
     </div>
   )
 }
-
-const products = [
-  {
-    name: '轻云防晒外套 2026',
-    sku: '8 SKU',
-    platform: '淘宝',
-    source: '演示数据',
-    status: '事实已确认',
-    stock: 1286,
-    issue: 0,
-  },
-  {
-    name: '山系多袋冲锋衣',
-    sku: '12 SKU',
-    platform: '京东',
-    source: '演示数据',
-    status: '待确认 3 项',
-    stock: 642,
-    issue: 3,
-  },
-  {
-    name: '云感速干阔腿裤',
-    sku: '6 SKU',
-    platform: '拼多多',
-    source: '演示数据',
-    status: '同步已过期',
-    stock: 388,
-    issue: 2,
-  },
-  {
-    name: '城市轻徒步鞋',
-    sku: '10 SKU',
-    platform: '淘宝',
-    source: '演示数据',
-    status: '事实已确认',
-    stock: 907,
-    issue: 0,
-  },
-  {
-    name: '山野生活方式衬衫',
-    sku: '5 SKU',
-    platform: '小红书',
-    source: '演示数据',
-    status: '待确认 2 项',
-    stock: 264,
-    issue: 2,
-  },
-  {
-    name: '轻户外机能马甲',
-    sku: '7 SKU',
-    platform: '抖音',
-    source: '演示数据',
-    status: '待确认 1 项',
-    stock: 518,
-    issue: 1,
-  },
-]
-
-const activity = [
-  ['演示发布状态', '轻云防晒外套 · 淘宝', '演示数据'],
-  ['演示规则检查', '山系多袋冲锋衣 · 发现 3 项', '演示数据'],
-  ['演示商品同步', '京东 · 更新 24 件商品', '演示数据'],
-  ['演示版本状态', '轻云防晒外套 · 内容 v4', '演示数据'],
-]
 
 function BrandMark() {
   return <img className="brand-logo" src={storeNovaLogo} alt="Store Nova" />
@@ -1185,7 +1049,7 @@ function Topbar({
           placeholder="选择工作区"
           options={(account?.workspaceIds ?? []).map(id => ({ label: `工作区 ID · ${id}`, value: id }))}
           onChange={onWorkspaceChange}
-          style={{ minWidth: 190 }}
+          style={{ minWidth: 190, width: 'clamp(190px, 24vw, 320px)' }}
         />}
         <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} popupRender={() => notificationPanel}>
           <IssueNotificationBell state={issueRead} />
@@ -1211,7 +1075,7 @@ function Topbar({
                 <span className="account-dropdown-avatar" aria-hidden="true">{accountInitial}</span>
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{account?.login || '当前为离线演示账号'}</span>
+                  <span>{account?.login || '当前为离线测试账号'}</span>
                   <em><i />已登录</em>
                 </div>
               </div>
@@ -1232,7 +1096,6 @@ function Topbar({
                     type="button"
                     onClick={() => {
                       setPasswordError('')
-                      passwordForm.resetFields()
                       setPasswordModalOpen(true)
                     }}
                   >
@@ -1255,7 +1118,10 @@ function Topbar({
         confirmLoading={passwordSubmitting}
         destroyOnHidden
         onCancel={() => {
-          if (!passwordSubmitting) setPasswordModalOpen(false)
+          if (!passwordSubmitting) {
+            passwordForm.resetFields()
+            setPasswordModalOpen(false)
+          }
         }}
         onOk={() => void passwordForm.submit()}
       >
@@ -1263,6 +1129,7 @@ function Topbar({
         {passwordError ? <Alert type="error" showIcon title={passwordError} /> : null}
         <Form
           form={passwordForm}
+          clearOnDestroy
           layout="vertical"
           onFinish={async (values) => {
             if (!apiBaseUrl) return
@@ -1273,6 +1140,7 @@ function Topbar({
                 currentPassword: values.current_password,
                 newPassword: values.new_password,
               })
+              passwordForm.resetFields()
               setPasswordModalOpen(false)
               onPasswordChanged()
             } catch (cause) {
@@ -2073,9 +1941,9 @@ export function TodayDashboard({
             <div><h3>数据看板</h3><span>昨日经营摘要</span></div>
           </div>
           <div className="today-stat-grid">
-            <div><span>昨日完成任务</span><strong>{yesterdayCompletedTasks === null ? UNREAD_METRIC : yesterdayCompletedTasks.toLocaleString('zh-CN')}<small>次</small></strong></div>
-            <div><span>昨日使用创意点</span><strong>{yesterdayPoints === null ? UNREAD_METRIC : yesterdayPoints.toLocaleString('zh-CN')}<small>点</small></strong></div>
-            <div><span>当前剩余创意点</span><strong>{pointBalance === null ? UNREAD_METRIC : pointBalance.toLocaleString('zh-CN')}<small>点</small></strong></div>
+            <div><span>昨日完成任务</span><strong data-unread={yesterdayCompletedTasks === null || undefined}>{yesterdayCompletedTasks === null ? UNREAD_METRIC : yesterdayCompletedTasks.toLocaleString('zh-CN')}<small>次</small></strong></div>
+            <div><span>昨日使用创意点</span><strong data-unread={yesterdayPoints === null || undefined}>{yesterdayPoints === null ? UNREAD_METRIC : yesterdayPoints.toLocaleString('zh-CN')}<small>点</small></strong></div>
+            <div><span>当前剩余创意点</span><strong data-unread={pointBalance === null || undefined}>{pointBalance === null ? UNREAD_METRIC : pointBalance.toLocaleString('zh-CN')}<small>点</small></strong></div>
           </div>
         </article>
 
@@ -2085,9 +1953,9 @@ export function TodayDashboard({
             <div><h3>素材看板</h3><span>商品卡片与储存空间</span></div>
           </div>
           <div className="today-assets-summary" aria-label="素材概览">
-            <div><span>已连接</span><strong>{readableStoreCount === null ? UNREAD_METRIC : readableStoreCount}<small>家电商店铺</small></strong></div>
-            <div><span>已储存</span><strong>{productTotal === null ? UNREAD_METRIC : productTotal.toLocaleString('zh-CN')}<small>套商品卡片</small></strong></div>
-            <div><span>已上传素材</span><strong>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGbValue(storageUsedBytes)}<small>GB</small></strong></div>
+            <div><span>已连接</span><strong data-unread={readableStoreCount === null || undefined}>{readableStoreCount === null ? UNREAD_METRIC : readableStoreCount}<small>家电商店铺</small></strong></div>
+            <div><span>已储存</span><strong data-unread={productTotal === null || undefined}>{productTotal === null ? UNREAD_METRIC : productTotal.toLocaleString('zh-CN')}<small>套商品卡片</small></strong></div>
+            <div><span>已上传素材</span><strong data-unread={storageUsedBytes === null || undefined}>{storageUsedBytes === null ? UNREAD_METRIC : formatStorageGbValue(storageUsedBytes)}<small>GB</small></strong></div>
           </div>
           <div className="today-storage-heading">
             <span>储存空间</span><b>{storageKnown ? `${formatStorageGb(storageUsedBytes!)} / ${formatStorageGb(storageLimitBytes!)}` : UNREAD_METRIC}</b>
@@ -2121,7 +1989,7 @@ export function TodayDashboard({
           </div>
           <div className="today-rule-list" role="status" aria-live="polite">
             {ruleBoard.mode !== 'ready' ? (
-              <div className="today-rule-row">
+              <div className="today-rule-row" data-unverified>
                 <span className="today-rule-state"><i aria-hidden="true" />规则版本</span>
                 <small>{ruleBoard.message}</small>
               </div>
@@ -2186,9 +2054,9 @@ export function AccountDashboard({
           </div>
           <div className="account-platform-list">
             {connections === null ? (
-              <div className="account-platform-row"><strong>{UNREAD_METRIC}</strong><span className="account-connection-state pending"><i aria-hidden="true" />平台连接未读取</span></div>
+              <div className="account-platform-row account-platform-empty"><strong>{UNREAD_METRIC}</strong><span className="account-connection-state pending"><i aria-hidden="true" />平台连接未读取</span></div>
             ) : connections.length === 0 ? (
-              <div className="account-platform-row"><strong>暂无</strong><span className="account-connection-state pending"><i aria-hidden="true" />当前工作区没有平台连接记录</span></div>
+              <div className="account-platform-row account-platform-empty"><strong>暂无</strong><span className="account-connection-state pending"><i aria-hidden="true" />当前工作区没有平台连接记录</span></div>
             ) : connections.map((row) => (
               <div className="account-platform-row" key={row.key}>
                 <span className="account-platform-mark" aria-hidden="true">{row.mark}</span>
@@ -2203,7 +2071,7 @@ export function AccountDashboard({
 
         <div className="account-block account-store-block">
           <div className="account-block-heading">
-            <div><h3>已连接店铺 <strong>{stores === null ? UNREAD_METRIC : stores.length}</strong> 家</h3><span>当前可管理的店铺账号</span></div>
+            <div><h3>已连接店铺 <strong data-unread={stores === null || undefined}>{stores === null ? UNREAD_METRIC : stores.length}</strong>{stores !== null ? ' 家' : ''}</h3><span>当前可管理的店铺账号</span></div>
             <button type="button" className="account-block-link" onClick={onOpenConnections}>进入店铺连接 <ArrowRight size={14} aria-hidden="true" /></button>
           </div>
           <div className="connected-store-list">
@@ -2475,14 +2343,14 @@ export function Overview({
       .then((result) => {
         if (result.mode === 'fixture') {
           authorizationPopup.close()
-          if (!result.authorizationUrl) throw new Error('演示授权地址缺失，未完成授权。')
+          if (!result.authorizationUrl) throw new Error('测试授权地址缺失，未完成授权。')
           return completeFixtureAuthorization(
             baseUrl,
             platform,
             result.authorizationUrl,
           ).then(() => {
             setActionMessage(
-              `${platformNames[platform]} 已完成演示授权，首轮同步已排队。`,
+              `${platformNames[platform]} 已完成测试授权，首轮同步已排队。`,
             )
             loadAccounts()
           })
@@ -2603,25 +2471,10 @@ export function Overview({
       account.storeName ??
       (account.accountId ? `店铺（${account.accountId}）` : '尚未绑定店铺'),
   }))
-  const rows =
-    apiRows ??
-    (baseUrl
-      ? []
-      : platforms.map((platform) => ({
-          ...platform,
-          platform: platform.name,
-          accountId: undefined,
-        })))
+  const rows = apiRows ?? []
   const connectedStoreCount = metrics
-    ? String(
-        metrics.stores.filter((store) => isRealReadableStore(store.connection)).length,
-      )
-    : baseUrl
-      ? '—'
-      : String(
-          platforms.filter((platform) => platform.status === '演示连接')
-            .length,
-        )
+    ? String(metrics.stores.filter((store) => isRealReadableStore(store.connection)).length)
+    : '—'
   // Mirror the notification panel: only actionable risks belonging to a real
   // bound store are merchant-facing; unbound and fixture rows are excluded.
   const overviewIssues = metrics
@@ -2644,7 +2497,7 @@ export function Overview({
     ? metrics.riskItems.filter((item) => item.severity === 'high').length
     : 0
   const workflowStatus = !baseUrl
-    ? '离线演示'
+    ? '未连接服务'
     : metricsError
       ? '业务数据读取失败'
       : metrics
@@ -2670,7 +2523,7 @@ export function Overview({
     ({
       unverified: '未验证',
       documented: '已记录',
-      fixture_verified: '演示通过',
+      fixture_verified: '测试结果（未核验）',
       test_e2e: 'E2E 通过',
       production_canary: '生产 canary',
     })[state] ?? state
@@ -2725,9 +2578,9 @@ export function Overview({
           // would let the dashboard claim 「当前工作区没有平台连接记录」 while
           // the read is still pending or has errored. Mirror the `stores` prop:
           // pass `null` so the panel's explicit unread branch is reachable. The
-          // offline demo keeps its labelled 「演示连接」 fixture rows.
+          // Missing service data remains unread; no example connections are shown.
           connections={
-            apiRows || !baseUrl
+            apiRows
               ? rows.map((row) => ({
                   key: `${row.platformId}-${row.accountId ?? 'unbound'}`,
                   name: row.name,
@@ -2769,8 +2622,8 @@ export function Overview({
               <h3>平台连接</h3>
               <p className="panel-hint">
                 {baseUrl
-                  ? '仅显示当前工作区的店铺身份；“演示连接”是本地 Fixture，不代表真实平台已授权。'
-                  : '离线演示不会访问真实店铺；连接 API 后可发起官方授权。'}
+                  ? '仅展示当前工作区返回的店铺记录；连接与权限以服务端核验结果为准。'
+                  : '尚未连接工作区服务，平台与店铺状态未读取。'}
               </p>
             </div>
             <button className="text-button" onClick={() => goProducts('products')}>
@@ -2793,6 +2646,7 @@ export function Overview({
             </div>
           )}
           <div className="platform-list">
+            {!baseUrl && <div className="empty-state" role="status">尚未连接工作区服务，店铺记录未读取。</div>}
             {rows.map((platform) => (
               <div
                 className="platform-row"
@@ -2876,7 +2730,7 @@ export function Overview({
             ))}
           </div>
         </article>
-        <article className="panel activity-panel">
+        {shouldDiscoverPlatformAccounts(baseUrl, apiMode) && <article className="panel activity-panel">
           <div className="panel-heading">
             <div>
               <span className="section-kicker">近期动态</span>
@@ -2887,20 +2741,8 @@ export function Overview({
             </button>
           </div>
           <div className="activity-list">
-            {!baseUrl &&
-              activity.map(([title, detail, time], index) => (
-                <div className="activity-row" key={title}>
-                  <span className={`activity-symbol a${index}`}>
-                    <Check size={14} />
-                  </span>
-                  <div>
-                    <b>{title}</b>
-                    <span>{detail}</span>
-                  </div>
-                  <time>{time}</time>
-                </div>
-              ))}
-            {baseUrl && syncJobs === null && (
+            {!baseUrl && <div className="empty-state" role="status">尚未连接工作区服务，近期动态未读取。</div>}
+            {shouldDiscoverPlatformAccounts(baseUrl, apiMode) && syncJobs === null && (
               <LoadingState label="正在读取真实同步动态…" />
             )}
             {baseUrl &&
@@ -2935,9 +2777,9 @@ export function Overview({
               />
             )}
           </div>
-        </article>
+        </article>}
       </section>
-      {baseUrl && (
+      {shouldDiscoverPlatformAccounts(baseUrl, apiMode) && (
         <section className="panel sync-failures-panel">
           <div className="panel-heading">
             <div>
@@ -3329,16 +3171,16 @@ export function FinanceOverview({ baseUrl, billing, billingLoading = false, bill
   return (
     <section className="page finance-overview-page" aria-label="财务概况">
       <div className="finance-hero">
-        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p><button className="secondary" type="button" onClick={retryFinanceReads} disabled={billingLoading}>重新读取财务数据</button>{billingError && <p role="alert">账户余额读取失败：{billingError}</p>}</div>
+        <div><span className="section-kicker">ACCOUNT &amp; BILLING</span><h2>财务与资源</h2><p>统一查看创意点、储存空间和账号版本。</p><button className="secondary" type="button" onClick={retryFinanceReads} disabled={!baseUrl || billingLoading}>重新读取财务数据</button>{billingError && <p role="alert">账户余额读取失败：{billingError}</p>}</div>
         <section className="today-current-plan" aria-label="账号版本与有效期">
           <span>当前账号版本</span>
-          <strong>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : entitlementError ? '读取失败' : currentEntitlement === null ? '正在读取…' : '服务端未确认当前账号版本'}</strong>
-          <small>{entitlementError ? `版本信息读取失败：${entitlementError}` : `有效期至 ${currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : currentEntitlement === null ? '正在读取…' : '服务端未确认有效期'}`}</small>
+          <strong>{currentEntitlement?.status === 'available' ? (currentEntitlement.plan === 'growth' ? '成长版' : currentEntitlement.plan) : entitlementError ? '读取失败' : currentEntitlement === null ? (baseUrl ? '正在读取…' : '未读取') : '服务端未确认当前账号版本'}</strong>
+          <small>{entitlementError ? `版本信息读取失败：${entitlementError}` : `有效期至 ${currentEntitlement?.status === 'available' ? new Date(currentEntitlement.period.end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : currentEntitlement === null ? (baseUrl ? '正在读取…' : '未读取') : '服务端未确认有效期'}`}</small>
         </section>
       </div>
       <div className="finance-summary-grid">
-        <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong>{pointBalance === null ? (billingLoading ? '正在读取…' : UNREAD_METRIC) : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" onClick={() => setPricingDialog('points')}>充值创意点</button></article>
-        <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? (storageError ? '读取失败' : UNREAD_METRIC) : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageError ? `储存配额读取失败：${storageError}` : storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : storageRead ? '服务端未返回储存配额，当前不显示用量。' : '正在读取储存配额…'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
+        <article className="finance-balance-card accent"><div className="finance-card-icon"><Sparkles size={20} /></div><div className="finance-inline-metric"><span>当前剩余创意点</span><strong data-unread={pointBalance === null || undefined}>{pointBalance === null ? (billingLoading ? '正在读取…' : UNREAD_METRIC) : `${pointBalance.toLocaleString('zh-CN')} 点`}</strong></div><div className="finance-inline-metric subtle"><span>截止今日总消耗</span><strong>{totalSettledConsumption === null ? UNREAD_METRIC : `${totalSettledConsumption.toLocaleString('zh-CN')} 点`}</strong></div><button className="primary" type="button" disabled={!baseUrl || !account || !activeWorkspaceId} onClick={() => setPricingDialog('points')}>充值创意点</button></article>
+        <article className="finance-balance-card"><div className="finance-card-icon"><Boxes size={20} /></div><div className="finance-inline-metric"><span>储存空间剩余</span><strong>{storageAvailableBytes === null ? (storageError ? '读取失败' : UNREAD_METRIC) : formatStorageGb(storageAvailableBytes)}</strong></div><div className="finance-storage-summary"><p>{storageError ? `储存配额读取失败：${storageError}` : storageKnown ? `已使用 ${formatStorageGb(storageUsedBytes!)} / 共 ${formatStorageGb(storageLimitBytes!)}` : storageRead ? '服务端未返回储存配额，当前不显示用量。' : baseUrl ? '正在读取储存配额…' : '未连接服务，储存配额未读取。'}</p>{storageKnown && <div className="finance-storage-track" role="progressbar" aria-label="储存空间已用" aria-valuemin={0} aria-valuemax={Math.round(storageLimitBytes!)} aria-valuenow={Math.min(Math.round(storageLimitBytes!), Math.max(0, Math.round(storageUsedBytes!)))}><i style={{ width: `${Math.min(100, (storageUsedBytes! / storageLimitBytes!) * 100).toFixed(1)}%` }} /></div>}</div><button className="primary" type="button" disabled={!baseUrl || !account || !activeWorkspaceId} onClick={() => setPricingDialog('storage')}>购买储存空间</button></article>
       </div>
       <CommercialPurchaseCenter key={`${account?.id ?? 'unbound'}:${activeWorkspaceId ?? 'unselected'}`} baseUrl={baseUrl} workspaceKey={account ? `${account.id}:${account.workspaceIds.join(',')}` : 'unbound'} workspaceId={activeWorkspaceId ?? ''} onOpenSupport={onOpenSupport} notificationTarget={notificationTarget} />
       <CommercialPointLedger entries={statementEntries} unavailableMessage={statementNote} partial={statementTruncated || statementUnreadable > 0} />
@@ -3390,7 +3232,7 @@ const productSourceLabel = (source: string) =>
   source === 'official_api'
     ? '官方 API'
     : source === 'fixture' || source === 'example'
-      ? '演示数据'
+      ? '测试数据'
       : source === 'local_import' || source === 'merchant_import'
         ? '商家导入'
         : '服务端数据'
@@ -6139,7 +5981,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
             counts come from /v1/platform-accounts, and 「已连接」 is only claimed
             for a real (non-fixture) readable account — the same rule the
             overview uses. Before the read answers the page says so. */}
-        <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '电商平台' : '个电商平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
+        <div className="catalog-hero-summary"><div><strong>{platforms === null ? UNREAD_METRIC : platforms.length}</strong><span>{platforms === null ? '已登记平台' : '个已登记平台'}</span></div><small>{platforms === null ? catalogReadNote : `${catalogStores.length} 家店铺 · ${realConnectedStores} 家已连接`}</small></div>
       </section>
       {baseUrl && (catalogReadNote.startsWith('平台与店铺读取失败：') || productsNote.startsWith('商品读取失败：')) && (
         <div className="catalog-read-errors" aria-label="商品目录读取错误">
@@ -6664,6 +6506,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [recycleError, setRecycleError] = useState('')
+  const [snapshotStale, setSnapshotStale] = useState(false)
   const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
   const [purgeConfirmation, setPurgeConfirmation] = useState('')
   const [purgeReason, setPurgeReason] = useState('')
@@ -6756,7 +6599,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('keydown', handlePurgeDialogKeydown, true)
       window.requestAnimationFrame(() => {
-        if (purgeTriggerRef.current?.isConnected) purgeTriggerRef.current.focus({ preventScroll: true })
+        if (purgeTriggerRef.current?.isConnected && !purgeTriggerRef.current.disabled) purgeTriggerRef.current.focus({ preventScroll: true })
         else recycleHeadingRef.current?.focus({ preventScroll: true })
       })
     }
@@ -6766,6 +6609,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
     let active = true
     setSelectedIds([])
     setPreviewId(null)
+    setSnapshotStale(false)
     setRecycleError('')
     if (!baseUrl) { setReadState('unread'); setItems([]); return () => { active = false } }
     setReadState('loading')
@@ -6777,15 +6621,16 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       if (!active) return
       setItems([])
       setReadState('error')
-      setRecycleError(describeApiError(error))
+      setRecycleError(describeApiError(error, { operation: 'read' }))
     })
     return () => { active = false }
   }, [baseUrl])
 
   const restoreFromRecycleBin = async (ids: string[]) => {
-    if (!baseUrl || busy || !ids.length) return
+    if (!baseUrl || busy || snapshotStale || !ids.length) return
     setBusy(true)
     setRecycleError('')
+    const errors: string[] = []
     const settled = await Promise.allSettled(ids.map((id) => restoreAsset(baseUrl, id)))
     const restored = new Set(ids.filter((_, index) => settled[index]?.status === 'fulfilled'))
     if (restored.size) {
@@ -6795,18 +6640,21 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       try {
         setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer))
       } catch (error) {
-        setRecycleError('素材已恢复，但回收站刷新失败：' + describeApiError(error))
+        setSnapshotStale(true)
+        errors.push(`${restored.size} 项素材已恢复，但回收站刷新失败：${describeApiError(error, { operation: 'read' })}`)
       }
     }
     const failure = settled.find((result) => result.status === 'rejected')
-    if (failure?.status === 'rejected') setRecycleError(describeApiError(failure.reason))
+    if (failure?.status === 'rejected') errors.push(describeApiError(failure.reason))
+    setRecycleError(errors.join('；'))
     setBusy(false)
   }
 
   const requestPurgeForSelected = async () => {
-    if (!baseUrl || busy || !selectedItems.length || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()) return
+    if (!baseUrl || busy || snapshotStale || !selectedItems.length || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()) return
     setBusy(true)
     setRecycleError('')
+    const errors: string[] = []
     const settled = await Promise.allSettled(selectedItems.map((item) => requestAssetPurge(baseUrl, {
       assetId: item.assetId ?? item.id,
       assetName: item.name,
@@ -6820,19 +6668,24 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
     if (outcome.clearConfirmation) setPurgeConfirmation('')
     if (outcome.clearReason) setPurgeReason('')
     try { setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer)) }
-    catch (error) { setRecycleError('删除请求已提交，但回收站刷新失败：' + describeApiError(error)) }
+    catch (error) {
+      setSnapshotStale(true)
+      errors.push(`${accepted.size ? `${accepted.size} 项清理请求已提交` : '清理请求未确认提交'}，但回收站刷新失败：${describeApiError(error, { operation: 'read' })}请取消关闭此窗口，再点击“刷新回收站”核对最新状态。`)
+    }
     const failure = settled.find((result) => result.status === 'rejected')
-    if (failure?.status === 'rejected') setRecycleError(describeApiError(failure.reason))
+    if (failure?.status === 'rejected') errors.push(describeApiError(failure.reason))
+    setRecycleError(errors.join('；'))
     setBusy(false)
   }
 
   const cancelPurgeRequest = async (item: RecycleMaterialItem) => {
-    if (!baseUrl || busy || !item.purgeRequestedAt) return
+    if (!baseUrl || busy || snapshotStale || !item.purgeRequestedAt) return
     setBusy(true)
     setRecycleError('')
     try {
       await cancelAssetPurge(baseUrl, item.assetId ?? item.id, item.revision)
-      setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer))
+      try { setItems((await fetchTrashedAssets(baseUrl)).map(recycleMaterialFromServer)) }
+      catch (error) { setSnapshotStale(true); setRecycleError('清理请求已撤销，但回收站刷新失败：' + describeApiError(error, { operation: 'read' })) }
     } catch (error) { setRecycleError(describeApiError(error)) }
     setBusy(false)
   }
@@ -6845,11 +6698,13 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       const rows = await fetchTrashedAssets(baseUrl)
       const nextItems = rows.map(recycleMaterialFromServer)
       setItems(nextItems)
+      setSnapshotStale(false)
       setSelectedIds((current) => current.filter((id) => nextItems.some((item) => item.id === id)))
       setReadState('ready')
     } catch (error) {
-      // A failed refresh must not replace a usable last-known list with an empty state.
-      setRecycleError(`回收站刷新失败：${describeApiError(error)}`)
+      // Keep the last-known list for reading, but disable mutations until refreshed.
+      setSnapshotStale(true)
+      setRecycleError(`回收站刷新失败：${describeApiError(error, { operation: 'read' })}`)
     } finally {
       setRefreshing(false)
     }
@@ -6860,7 +6715,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
       <section className="material-recycle-hero">
         {/* Retention is server-owned; the page displays its returned expiry date. */}
         <div><span className="section-kicker">RECYCLE BIN</span><h1>回收站</h1><p>显示当前工作区由服务端记录的已移除素材，保留期限按服务端策略处理。</p></div>
-        <div className="material-recycle-summary"><strong>{readState === 'ready' ? items.length : '—'}</strong><span>项待处理素材</span><small>保留期限由服务端返回</small></div>
+        <div className="material-recycle-summary"><strong>{readState === 'ready' && !snapshotStale ? items.length : '—'}</strong><span>项待处理素材</span><small>保留期限由服务端返回</small></div>
       </section>
       <section className="material-recycle-workspace">
         <div className="material-recycle-toolbar">
@@ -6868,11 +6723,12 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
           <div className="material-recycle-actions">
             <span>已选 <strong>{selectedItems.length}</strong> 项</span>
             <button type="button" disabled={!baseUrl || readState === 'loading' || busy || refreshing || purgeDialogOpen} onClick={() => void refreshRecycleBin()}>{refreshing ? '正在刷新…' : '刷新回收站'}</button>
-            <button type="button" disabled={readState !== 'ready' || busy || refreshing || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
-            <button type="button" disabled={!selectedItems.length || busy || refreshing || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
-            <button ref={purgeTriggerRef} type="button" className="danger" disabled={!selectedItems.length || busy || refreshing || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={(event) => { purgeTriggerRef.current = event.currentTarget; setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
+            <button type="button" disabled={readState !== 'ready' || snapshotStale || busy || refreshing || !items.length} onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}>{allSelected ? '取消全选' : '全选'}</button>
+            <button type="button" disabled={snapshotStale || !selectedItems.length || busy || refreshing || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={() => void restoreFromRecycleBin(selectedIds)}><Undo2 size={14} />恢复</button>
+            <button ref={purgeTriggerRef} type="button" className="danger" disabled={snapshotStale || !selectedItems.length || busy || refreshing || selectedItems.some(item => Boolean(item.purgeRequestedAt))} onClick={(event) => { purgeTriggerRef.current = event.currentTarget; setPurgeConfirmation(''); setPurgeReason(''); setPurgeDialogOpen(true) }}><Trash2 size={14} />彻底删除</button>
           </div>
         </div>
+        {snapshotStale && <p role="status">当前回收站状态未能确认，以下保留上次列表；请刷新回收站核对后再进行变更。</p>}
         {readState === 'loading' ? <div className="material-empty" role="status"><RefreshCw size={25} /><strong>正在读取服务端回收站</strong><span>读取完成前不会显示记录数量。</span></div>
           : readState === 'unread' ? <div className="material-empty" role="status"><Trash2 size={30} /><strong>回收站尚未读取</strong><span>当前没有可用的服务端 API 地址。</span></div>
           : readState === 'error' ? <div className="material-empty" role="alert"><AlertCircle size={30} /><strong>服务端回收站读取失败</strong><span>{recycleError || '请稍后重试。'}</span><button type="button" onClick={() => {
@@ -6880,20 +6736,21 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
             setReadState('loading'); setRecycleError('')
             void fetchTrashedAssets(baseUrl).then((rows) => {
               setItems(rows.map(recycleMaterialFromServer))
+              setSnapshotStale(false)
               setReadState('ready')
-            }).catch((error: unknown) => { setReadState('error'); setRecycleError(describeApiError(error)) })
+            }).catch((error: unknown) => { setReadState('error'); setRecycleError(describeApiError(error, { operation: 'read' })) })
           }}>重试</button></div>
           : items.length ? <div className="material-recycle-grid">{items.map((item) => {
           const selected = selectedIds.includes(item.id)
           return <article className={selected ? 'selected' : ''} key={item.id}>
             <div className="material-recycle-preview">
               <button type="button" className="material-recycle-open" aria-label={`放大${item.name}`} onClick={(event) => { previewTriggerRef.current = event.currentTarget; setPreviewId(item.id) }}>{item.previewUrl && item.format !== 'MP4' ? <img src={item.previewUrl} alt="" /> : item.category === '商品视频' ? <Play size={34} fill="currentColor" /> : <ImageIcon size={34} />}</button>
-              <button type="button" className="material-recycle-select" aria-label={`选择${item.name}`} aria-pressed={selected} disabled={busy || refreshing} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
+              <button type="button" className="material-recycle-select" aria-label={`选择${item.name}`} aria-pressed={selected} disabled={snapshotStale || busy || refreshing} onClick={() => setSelectedIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}>{selected && <Check size={14} />}</button>
               <span>{item.category}</span>
             </div>
             <div className="material-recycle-copy"><strong title={item.name}>{item.name}</strong><span>{item.series} · {item.sizeLabel} · {item.format}</span><small>服务端素材</small></div>
             <div className="material-recycle-expiry"><Clock3 size={13} /><span>{item.purgeRequestedAt ? '已提交提前清理请求' : recycleExpiryLabel(item.expiresAt)}</span><small>{new Date(item.deletedAt).toLocaleDateString('zh-CN')} 删除</small></div>
-            {item.purgeRequestedAt && <div className="material-recycle-purge-status"><span>{item.purgeError ? `清理遇到阻碍：${String(item.purgeError.code ?? '请稍后重试')}` : '对象存储清理处理中'}</span><button type="button" disabled={busy || refreshing} onClick={() => void cancelPurgeRequest(item)}>撤销请求</button></div>}
+            {item.purgeRequestedAt && <div className="material-recycle-purge-status"><span>{snapshotStale ? '上次读取状态：' : ''}{item.purgeError ? `清理遇到阻碍：${String(item.purgeError.code ?? '请稍后重试')}` : '对象存储清理处理中'}</span><button type="button" disabled={snapshotStale || busy || refreshing} onClick={() => void cancelPurgeRequest(item)}>撤销请求</button></div>}
           </article>
         })}</div> : <RecycleBinEmptyState />}
       </section>
@@ -6904,7 +6761,7 @@ export function MaterialRecycleBinWorkspace({ baseUrl }: { baseUrl?: string }) {
         {recycleError && <p role="alert">{recycleError}</p>}
         <label>删除原因<textarea value={purgeReason} maxLength={500} disabled={busy} onChange={event => setPurgeReason(event.target.value)} placeholder="说明提前删除原因" /></label>
         <label>输入“彻底删除”确认<input value={purgeConfirmation} disabled={busy} onChange={event => setPurgeConfirmation(event.target.value)} /></label>
-        <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
+        <div><button type="button" disabled={busy} onClick={() => setPurgeDialogOpen(false)}>取消</button><button type="button" className="danger" disabled={snapshotStale || busy || purgeConfirmation.trim() !== '彻底删除' || !purgeReason.trim()} onClick={() => void requestPurgeForSelected()}><Trash2 size={14} />提交清理请求</button></div>
       </section></div>}
       {previewItem && <div ref={previewDialogRef} className="material-upload-lightbox" role="dialog" aria-modal="true" aria-label={`素材预览：${previewItem.name}`} tabIndex={-1} onClick={closePreview}><button type="button" className="material-recycle-preview-close" aria-label="关闭素材预览" onClick={(event) => { event.stopPropagation(); closePreview() }}>关闭预览</button><span>{previewItem.previewUrl && previewItem.format !== 'MP4' ? <img src={previewItem.previewUrl} alt={previewItem.name} /> : <span className="material-recycle-large-preview"><ImageIcon size={70} /></span>}<strong>{previewItem.name}</strong><small>按 Escape 返回</small></span></div>}
       {recycleError && readState !== 'error' && !purgeDialogOpen && <p role="alert">{recycleError}</p>}
@@ -7502,8 +7359,8 @@ export function MaterialLibraryWorkspace({
       const settings: ScopedBrandSettings = {
         schemaVersion: 1,
         global: { enabled: globalBrandEnabled, values: scopedBrandValues(globalBrand, usableAssetIds) },
-        stores: Object.fromEntries(Object.entries(storeBrands).filter(([accountId]) => stores.some((store) => store.id === accountId)).map(([accountId, value]) => [accountId, { enabled: storeBrandEnabled[accountId] ?? true, values: scopedBrandValues(value, usableAssetIds) }])),
-        series: {}, images: {},
+        stores: { ...Object.fromEntries(Object.entries(scopedBrandRead.settings.stores ?? {}).filter(([accountId]) => !stores.some((store) => store.id === accountId))), ...Object.fromEntries(Object.entries(storeBrands).filter(([accountId]) => stores.some((store) => store.id === accountId)).map(([accountId, value]) => [accountId, { enabled: storeBrandEnabled[accountId] ?? true, values: scopedBrandValues(value, usableAssetIds) }])) },
+        series: Object.fromEntries(Object.entries(scopedBrandRead.settings.series ?? {}).filter(([accountId]) => !stores.some((store) => store.id === accountId))), images: {},
       }
       for (const [key, value] of Object.entries(seriesBrands)) {
         const separator = key.indexOf('::')
@@ -8100,7 +7957,7 @@ export function resolveCatalogSyncControl({
     : accountsLoading
       ? '正在发现店铺…'
       : !baseUrl
-        ? '演示数据'
+        ? '未连接服务'
         : syncableStores === 0
           ? '等待店铺连接'
           : syncableStores === null
@@ -8386,22 +8243,7 @@ export function Products({
         listingId: product.canonical_scope?.listing_id ?? undefined,
         canonicalProductId: product.canonical_scope?.canonical_product_id ?? undefined,
       }))
-    : baseUrl
-      ? []
-      : products.map((product, index) => ({
-          ...product,
-          id: `prod_fixture_${index + 1}`,
-          platformId: (Object.entries(platformLabel).find(
-            ([, label]) => label === product.platform,
-          )?.[0] ?? 'taobao') as PlatformId,
-          title: product.name,
-          remoteId: undefined,
-          accountId: undefined,
-          storeName: '离线演示店铺',
-          sourceAssetIds: [],
-          factsConfirmed: true,
-          canonicalScope: undefined,
-        }))
+    : []
   const visible = useMemo(
     () =>
       rows.filter((p) => {
@@ -8900,16 +8742,16 @@ export function Products({
       {!baseUrl && (
         <div className="info-notice" role="status">
           <CircleHelp size={16} />
-          当前为离线演示，配置 <code>VITE_API_BASE_URL</code>{' '}
+          当前为离线测试，配置 <code>VITE_API_BASE_URL</code>{' '}
           后可读取真实商品并执行同步。
         </div>
       )}
       {baseUrl &&
         visible.length > 0 &&
-        visible.every((product) => product.source === '演示数据') && (
+        visible.every((product) => product.source === '测试数据') && (
           <div className="info-notice" role="status">
             <CircleHelp size={16} />
-            当前商品均来自演示数据，不属于你的店铺，也不会发布到真实平台；请先完成真实店铺授权和同步。
+            当前商品均来自测试数据，不属于你的店铺，也不会发布到真实平台；请先完成真实店铺授权和同步。
           </div>
         )}
       {accountsError && (
@@ -9098,7 +8940,7 @@ export function Products({
             <div className="empty-state" data-testid="products-unavailable">
               <AlertCircle size={22} />
               <b>商品列表暂不可用</b>
-              <span>当前未展示任何演示商品。请先重试并读取真实商品。</span>
+              <span>当前未展示任何测试商品。请先重试并读取真实商品。</span>
             </div>
           ) : visible.length ? (
             <table>
@@ -9762,6 +9604,8 @@ function ProductDetailPreview({
   const attributes = Object.entries(product?.attributes ?? {})
     .filter(([, value]) => value.trim())
     .slice(0, 8)
+  const skuCount = product?.skuCount
+  const skuCountKnown = typeof skuCount === 'number' && Number.isInteger(skuCount) && skuCount >= 0
   const colors = [
     ...new Set(
       (product?.skus ?? [])
@@ -9911,7 +9755,7 @@ function ProductDetailPreview({
           )}
           <div className="storefront-benefits">
             <span>库存 {product?.stock?.toLocaleString() ?? '待确认'}</span>
-            <span>{product?.skuCount ?? 0} 个 SKU</span>
+            <span>{skuCountKnown ? `${skuCount} 个 SKU` : 'SKU 数量待确认'}</span>
             <span>发布前需人工审核</span>
           </div>
         </div>
@@ -10056,7 +9900,7 @@ function ProductDetailPreview({
           <ShieldCheck size={15} />
           <span>
             {demoMode
-              ? '离线演示规则：待确认事实不得写成确定性卖点；不可用于真实发布。'
+              ? '离线测试规则：待确认事实不得写成确定性卖点；不可用于真实发布。'
               : content?.ruleVersionIds.length
                 ? `服务端内容版本规则：${content.ruleVersionIds.join('、')}`
                 : '服务端当前内容版本尚未返回规则版本。'}
@@ -10124,15 +9968,15 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
   const stateLabels: Record<string, string> = { queued: '排队中', running: '处理中', succeeded: '生成完成，等待审查', failed: '生成失败', pending: '归档中，等待安全扫描', partial: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账', provider_reserved: imageGenerationExecutionLabel('provider_reserved'), provider_dispatching: imageGenerationExecutionLabel('provider_dispatching'), provider_started: imageGenerationExecutionLabel('provider_started'), outcome_unknown: imageGenerationExecutionLabel('outcome_unknown') }
   if (!baseUrl) return <div ref={configurationBlockerRef} className="error-notice image-generation-discovery-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-discovery-config-title" aria-describedby="image-job-discovery-config-description">
     <strong id="image-job-discovery-config-title">图片任务发现暂不可用</strong>
-    <span id="image-job-discovery-config-description">尚未配置商家 API 或模型中转，系统不会读取、创建演示任务、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。</span>
+    <span id="image-job-discovery-config-description">尚未配置商家 API 或模型中转，系统不会读取、创建测试任务、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。</span>
     <button className="secondary-button" type="button" onClick={() => window.location.reload()}>刷新页面</button>
   </div>
   const listReady = !loading && jobs !== null
   return <section className="panel image-generation-discovery" aria-labelledby="image-job-discovery-title" aria-busy={loading}>
-    <div className="detail-section-head"><div><span className="section-kicker">图片任务</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>
+    <div className="detail-section-head"><div><span className="section-kicker">图片任务</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : initialError || jobs === null ? UNREAD_METRIC : `${jobs.length} 个任务`}</StatusChip></div>
     {initialError && !loading && <ErrorNotice message={`图片任务列表读取失败：${initialError}`} onRetry={() => setReload(value => value + 1)} />}
     {refreshError && listReady && <ErrorNotice message={`图片任务自动刷新失败：${refreshError}。已保留上次成功数据。`} onRetry={() => setReload(value => value + 1)} />}
-    {listReady && !initialError && jobs?.length === 0 && <div className="empty-state"><ImageIcon size={22} /><b>暂无图片任务</b><span>从商品任务进入图片生成；系统不会自动创建演示任务。</span></div>}
+    {listReady && !initialError && jobs?.length === 0 && <div className="empty-state"><ImageIcon size={22} /><b>暂无图片任务</b><span>从商品任务进入图片生成；系统不会自动创建测试任务。</span></div>}
     {listReady && !initialError && Boolean(jobs?.length) && <div className="image-generation-job-list">{jobs?.map(job => <div className="image-generation-job-row" key={job.jobId}>
       <div><b>{job.productTitle ?? `商品 ${job.productId}`}</b><span>{job.platform ?? '平台待恢复'} · {job.storeName ?? '店铺身份待恢复'} · {stateLabels[job.executionState ?? (job.archiveState !== 'archived' ? job.archiveState : job.state)] ?? '状态待确认'} · {job.candidateCount} 张候选</span></div>
       <StatusChip tone={job.executionState === 'outcome_unknown' || job.state === 'failed' || job.archiveState === 'external_unarchived' ? 'amber' : job.state === 'succeeded' && job.archiveState === 'archived' ? 'green' : 'blue'}>{stateLabels[job.executionState ?? (job.archiveState !== 'archived' ? job.archiveState : job.state)] ?? '状态待确认'}</StatusChip>
@@ -10395,25 +10239,26 @@ function TaskWorkspace({
   const contentReviewRequests = useRef(new LatestRequestSequence())
   const [direction, setDirection] = useState(0)
   const [version, setVersion] = useState<'v4' | 'diff'>('v4')
-  const [approved, setApproved] = useState(false)
+  const [approvalRecorded, setApproved] = useState(false)
   const [exportMessage, setExportMessage] = useState('')
   const [task, setTask] = useState<Task | null>(null)
   const [content, setContent] = useState<ContentVersion | null>(null)
-  const [contentVersions, setRawContentVersions] = useState<ContentVersion[]>(
+  // A late approval or download belongs to the exact task/version that
+  // started it. Navigation may keep this component mounted, or mount a new
+  // instance for another task in the same workspace.
+  const taskMutationScope = JSON.stringify([baseUrl, workspaceId, target?.taskId, target?.productId, task?.id, content?.id])
+  const taskMutationContext = useRef({ scope: taskMutationScope, revision: 0 })
+  if (taskMutationContext.current.scope !== taskMutationScope) {
+    taskMutationContext.current = { scope: taskMutationScope, revision: taskMutationContext.current.revision + 1 }
+  }
+  useEffect(() => () => { taskMutationContext.current.revision += 1 }, [])
+  const approved = approvalRecorded && Boolean(
+    task && content && task.contentVersionId === content.id && content.state === 'approved'
+      && ['approved', 'publish_prepared', 'publishing', 'delivered'].includes(task.state),
+  )
+  const [contentVersions, setContentVersions] = useState<ContentVersion[]>(
     [],
   )
-  const setContentVersions: React.Dispatch<
-    React.SetStateAction<ContentVersion[]>
-  > = (next) =>
-    setRawContentVersions((current) => {
-      const resolved = typeof next === 'function' ? next(current) : next
-      return resolved.map((version) => ({
-        ...version,
-        state: contentVersionStateLabel(
-          version.state,
-        ) as ContentVersion['state'],
-      }))
-    })
   const [reviewTab, setReviewTab] = useState<'findings' | 'versions'>(
     'findings',
   )
@@ -10518,7 +10363,7 @@ function TaskWorkspace({
     baseUrl && targetProductId && taskComposerReadyScope !== taskComposerScope,
   )
   const isTaskComposerBusy = Boolean(operation)
-  const targetTitle = target?.title ?? '轻云防晒外套 2026'
+  const targetTitle = target?.title ?? product?.title ?? '尚未选择商品'
   const factProofBlockers = productFactConfirmationBlockers(product?.sellingPoints)
   const topLevelDraft = evidenceSafeTopLevelContent(content?.body)
   const directionsData = resolveTaskDirections({
@@ -10538,6 +10383,8 @@ function TaskWorkspace({
     hasContent: Boolean(content),
     reviewStatus,
     blockingFindings,
+    taskState: task?.state,
+    alreadyApproved: approved,
   })
   const approvalControlEnabled = canApproveReviewedContent({
     hasContent: Boolean(content),
@@ -10546,13 +10393,16 @@ function TaskWorkspace({
     operationActive: Boolean(operation),
     loading,
     alreadyApproved: approved,
+    taskState: task?.state,
   })
-  const reviewScore =
+  const reviewCheckStatus =
     !content || reviewStatus !== 'succeeded'
-      ? '—'
+      ? reviewStatus === 'loading' ? '检查中' : '待确认'
       : blockingFindings
-        ? '—'
-        : '100'
+        ? '有阻断'
+        : warningFindings
+          ? '有建议'
+          : '无阻断'
   const taskRuleVersionIds = (content?.ruleVersionIds ?? []).map(
     (_, index) => `服务端规则版本已绑定 ${index + 1}`,
   )
@@ -10636,10 +10486,10 @@ function TaskWorkspace({
     onContext(null)
     const restore = async () => {
       const current = target.taskId
-        ? (target.resolvedTask ?? (await fetchTask(baseUrl, target.taskId)))
+        ? ((taskContextReloadKey === 0 ? target.resolvedTask : undefined) ?? (await fetchTask(baseUrl, target.taskId)))
         : null
       const selectedProduct = assertProductTargetIdentity(
-        target.resolvedProduct ??
+        (taskContextReloadKey === 0 ? target.resolvedProduct : undefined) ??
           (await fetchProduct(baseUrl, targetProductId)),
         {
           productId: target.productId,
@@ -10747,10 +10597,14 @@ function TaskWorkspace({
         setContentVersions(
           versions.slice().sort((left, right) => right.version - left.version),
         )
-        const restored =
-          versions
+        const restored = current.contentVersionId
+          ? versions.find((item) => item.id === current.contentVersionId) ?? null
+          : versions
             .slice()
             .sort((left, right) => right.version - left.version)[0] ?? null
+        if (current.contentVersionId && !restored) {
+          throw new Error('任务关联的内容版本未返回，请重新加载任务。')
+        }
         if (!restored) return null
         setContent(restored)
         onContext({ task: current, version: restored })
@@ -10965,6 +10819,8 @@ function TaskWorkspace({
       .finally(() => setOperation(''))
   }
   const viewVersion = (item: ContentVersion) => {
+    taskMutationContext.current.revision += 1
+    setExportMessage('')
     setContent(item)
     setVersion('v4')
     setReviewTab('findings')
@@ -10975,7 +10831,8 @@ function TaskWorkspace({
     setReviewError('')
     setFindings([])
     setReviewCategories([])
-    setApproved(false)
+    setApproved(Boolean(task && task.contentVersionId === item.id && item.state === 'approved'
+      && ['approved', 'publish_prepared', 'publishing', 'delivered'].includes(task.state)))
     const reviewRequestId = contentReviewRequests.current.begin()
     reviewContent(baseUrl, item.id)
       .then((result) => {
@@ -10995,15 +10852,14 @@ function TaskWorkspace({
       })
   }
   const approve = (checked: boolean) => {
-    if (reviewStatus !== 'succeeded' || blockingFindings > 0) return
-    if (!checked || !baseUrl || !task || !content) {
-      setApproved(checked)
-      return
-    }
+    if (!approvalControlEnabled || !checked || !baseUrl || !task || !content) return
+    const mutationRevision = taskMutationContext.current.revision
+    const isCurrent = () => taskMutationContext.current.revision === mutationRevision
     setOperation('批准中…')
     setError('')
     approveContent(baseUrl, task.id, content.id)
       .then((result) => {
+        if (!isCurrent()) return
         setTask(result.task)
         setContent(result.version)
         setContentVersions((current) => [
@@ -11015,16 +10871,19 @@ function TaskWorkspace({
         setReviewTab('findings')
         onContext({ task: result.task, version: result.version })
       })
-      .catch((cause) => setError(describeApiError(cause)))
-      .finally(() => setOperation(''))
+      .catch((cause) => { if (isCurrent()) setError(describeApiError(cause)) })
+      .finally(() => { if (isCurrent()) setOperation('') })
   }
 
   const exportApprovedContent = async () => {
     if (!baseUrl || !content || !approved || reviewStatus !== 'succeeded') return
+    const mutationRevision = taskMutationContext.current.revision
+    const isCurrent = () => taskMutationContext.current.revision === mutationRevision
     setOperation('导出交付包中…')
     setExportMessage('')
     try {
       const artifact = await downloadContentExport(baseUrl, content.id, 'bundle')
+      if (!isCurrent()) return
       const url = URL.createObjectURL(artifact.blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -11033,9 +10892,9 @@ function TaskWorkspace({
       window.setTimeout(() => URL.revokeObjectURL(url), 0)
       setExportMessage(artifact.verified === false ? '导出已生成，但服务端未提供有效性确认，请勿直接交付。' : `导出已生成：${artifact.filename}${artifact.sha256 ? `（SHA-256 ${artifact.sha256.slice(0, 12)}…）` : ''}`)
     } catch (error) {
-      setExportMessage(describeContentExportError(error))
+      if (isCurrent()) setExportMessage(describeContentExportError(error))
     } finally {
-      setOperation('')
+      if (isCurrent()) setOperation('')
     }
   }
   const sendFeedback = (rating: FeedbackRating) => {
@@ -11323,6 +11182,10 @@ function TaskWorkspace({
       .finally(() => setOperation(''))
   }
   const recoverTaskError = () => {
+    if (taskErrorRecovery === 'context') {
+      setTaskContextReloadKey((current) => current + 1)
+      return
+    }
     if (task) {
       reloadExistingTask()
       return
@@ -11540,6 +11403,14 @@ function TaskWorkspace({
   // recovery card as the single source of truth instead of showing the normal
   // conversation thread with a contradictory “待分析需求” status behind it.
   const taskContextBlocked = Boolean(error) || taskStateBlocked
+  const newestContentVersion = contentVersions.reduce<ContentVersion | null>(
+    (newest, item) => !newest || item.version > newest.version ? item : newest,
+    null,
+  )
+  const contentVersionSummary = content
+    ? `内容版本 v${content.version}`
+    : loading ? '内容版本读取中'
+      : error ? '内容版本未确认' : '内容版本尚未生成'
   useEffect(() => {
     if (taskStateBlocked && !error)
       setError('任务状态暂时无法确认，已暂停当前操作。请重新读取任务状态。')
@@ -11595,7 +11466,9 @@ function TaskWorkspace({
             <p>从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。</p>
           </div>
           <StatusChip tone="blue">
-            {taskListLoading
+            {!baseUrl
+              ? '尚未读取'
+              : taskListLoading
               ? '读取中…'
               : taskListError
                 ? '读取失败'
@@ -11781,16 +11654,7 @@ function TaskWorkspace({
                 >
                   下一页
                 </button>
-                <button
-                  className="secondary wide"
-                  type="button"
-                  disabled={!approved || Boolean(operation) || !content || reviewStatus !== 'succeeded'}
-                  onClick={() => void exportApprovedContent()}
-                >
-                  <Download size={16} />
-                  {operation === '导出交付包中…' ? '生成导出包…' : '导出已审核交付包'}
-                </button>
-                {exportMessage && <div className="info-notice" role="status">{exportMessage}</div>}
+
               </div>
             </div>
           </section>
@@ -12049,7 +11913,7 @@ function TaskWorkspace({
             </StatusChip>
             <span>{task?.candidateOnly === true ? '候选任务 · 不可发布' : target.accountId ? '店铺账号已确认' : '店铺身份缺失'}</span>
             <span>
-              {task ? `内容版本 v${content?.version ?? 0}` : '内容版本尚未创建'}
+              {contentVersionSummary}
             </span>
             <span>
               {operation || (taskCreationUnconfirmed ? '未保存成功' : '已保存')}
@@ -12181,7 +12045,7 @@ function TaskWorkspace({
                           ? `进行中 · ${taskStateLabel(task.state)}`
                           : baseUrl
                             ? '待分析需求'
-                            : '离线演示')}
+                            : '离线测试')}
                 </StatusChip>
               </div>
             </div>
@@ -12290,14 +12154,22 @@ function TaskWorkspace({
                 aria-label="内容结果状态"
               >
                 <span className="message-marker" aria-hidden="true">
-                  <CheckCircle2 size={13} />
+                  {reviewStatus === 'succeeded' && !blockingFindings ? <CheckCircle2 size={13} /> : <CircleHelp size={13} />}
                 </span>
                 <div>
                   <b>内容结果 · 版本 v{content.version}</b>
                   <p>
-                    {approved
-                      ? '已批准；下一步只需在发布确认中提交。'
-                      : '已完成服务端检查；下一步请在下方审核区批准。'}
+                    {reviewStatus === 'loading'
+                      ? '内容已生成，正在读取检查结果。'
+                      : reviewStatus !== 'succeeded'
+                        ? '内容已生成，检查结果尚未确认；请在下方重新读取检查结果。'
+                        : blockingFindings
+                          ? '检查发现阻断项；请先在下方审核区处理，再进行人工确认。'
+                          : approved
+                            ? '已批准；下一步只需在发布确认中提交。'
+                            : task?.state !== 'review_required'
+                              ? '当前任务不在待审核阶段，请先重新读取任务状态。'
+                            : '已完成服务端检查；下一步请在下方审核区批准。'}
                   </p>
                 </div>
               </div>
@@ -12706,9 +12578,9 @@ function TaskWorkspace({
                 <div className="subhead">
                   <b>约束与规则</b>
                   <span>
-                    {baseUrl
+                    {baseUrl && content && Array.isArray(content.ruleVersionIds)
                       ? `${taskRuleVersionIds.length} 个服务端版本`
-                      : '2 条 · 离线演示'}
+                      : '尚未读取'}
                   </span>
                 </div>
                 {baseUrl ? (
@@ -12727,26 +12599,11 @@ function TaskWorkspace({
                       className="empty-inline"
                       data-testid="task-rules-empty"
                     >
-                      服务端当前任务尚未返回规则版本；未展示任何演示规则。
+                      当前任务尚未返回规则版本，暂不可作为内容依据。
                     </div>
                   )
                 ) : (
-                  <>
-                    <div className="constraint">
-                      <ShieldCheck size={16} />
-                      <div>
-                        <b>演示规则：不得表述“100% 防晒”</b>
-                        <span>离线演示规则包 · 不可用于真实发布</span>
-                      </div>
-                    </div>
-                    <div className="constraint">
-                      <PackageSearch size={16} />
-                      <div>
-                        <b>演示约束：不修改价格与库存</b>
-                        <span>离线演示任务范围</span>
-                      </div>
-                    </div>
-                  </>
+                  <div className="empty-inline">尚未连接工作区服务，无法核对当前任务规则。</div>
                 )}
               </div>
               <div className="context-section" data-testid="task-knowledge-consumption">
@@ -12754,7 +12611,9 @@ function TaskWorkspace({
                   <b>工作区知识消费</b>
                   <span>
                     {content
-                      ? `${consumedKnowledgeRuleCount + consumedKnowledgeAssetCount + consumedLearningCount} 条已冻结`
+                      ? consumedKnowledge
+                        ? `${consumedKnowledgeRuleCount + consumedKnowledgeAssetCount + consumedLearningCount} 条已冻结`
+                        : '未返回记录'
                       : '生成后显示'}
                   </span>
                 </div>
@@ -12791,7 +12650,7 @@ function TaskWorkspace({
                     ))}
                   </>
                 ) : (
-                  <div className="empty-inline">本次生成没有返回已确认的工作区知识；未将演示数据冒充为消费记录。</div>
+                  <div className="empty-inline">本次生成没有返回已确认的工作区知识；未将测试数据冒充为消费记录。</div>
                 )}
               </div>
             </aside>
@@ -12805,8 +12664,8 @@ function TaskWorkspace({
                   <div>
                     <span className="section-kicker">创意方向</span>
                     <h3>
-                      {directionsData.mode === 'offline_demo'
-                        ? `${directions.length} 个离线演示方向`
+                      {directionsData.mode === 'unconfigured'
+                        ? '尚未连接创意服务'
                         : directionsData.mode === 'api_ready'
                           ? `${directions.length} 个服务端方向`
                           : '服务端创意方向'}
@@ -12838,6 +12697,9 @@ function TaskWorkspace({
                         : '确认制作方案并生成'}
                   </button>
                 </div>
+                {directionsData.mode === 'unconfigured' && (
+                  <div className="empty-state" role="status"><b>尚未连接创意服务</b><span>连接工作区服务后，才能读取当前任务的创意方向。</span></div>
+                )}
                 {directionsData.mode === 'loading' && (
                   <LoadingState label="正在读取服务端创意方向…" />
                 )}
@@ -12855,7 +12717,7 @@ function TaskWorkspace({
                     <Sparkles size={20} />
                     <b>服务端尚未生成创意方向</b>
                     <span>
-                      当前未展示任何演示方向；请先完成服务端要求的任务步骤。
+                      请先完成当前任务要求的步骤，再读取创意方向。
                     </span>
                   </div>
                 )}
@@ -12873,7 +12735,7 @@ function TaskWorkspace({
                         disabled={
                           Boolean(operation) ||
                           Boolean(content) ||
-                          directionsData.mode === 'offline_demo'
+                          directionsData.mode === 'unconfigured'
                         }
                       >
                         <div>
@@ -12919,8 +12781,9 @@ function TaskWorkspace({
                     <button
                       className={version === 'v4' ? 'active' : ''}
                       onClick={() => setVersion('v4')}
+                      disabled={!content}
                     >
-                      v{content?.version ?? 0} 当前版
+                      {content ? `v${content.version} 正在查看` : '尚无内容版本'}
                     </button>
                     <button
                       className="text-button"
@@ -13019,17 +12882,11 @@ function TaskWorkspace({
 
             <aside className="review-panel">
               <div className="review-score">
-                <div
-                  className="score-ring"
-                  style={{
-                    background: `conic-gradient(var(--green) 0 ${content && reviewStatus === 'succeeded' && !blockingFindings ? 100 : 0}%,#e3e8e4 ${content && reviewStatus === 'succeeded' && !blockingFindings ? 100 : 0}%)`,
-                  }}
-                >
-                  <strong>{reviewScore}</strong>
-                  <span>/100</span>
-                </div>
+                <strong className={`review-check-status ${reviewStatus !== 'succeeded' ? 'pending' : blockingFindings ? 'blocking' : warningFindings ? 'warning' : 'passed'}`}>
+                  {reviewCheckStatus}
+                </strong>
                 <div>
-                  <span className="section-kicker">审核评分</span>
+                  <span className="section-kicker">规则检查</span>
                   <h3>
                     {!content
                       ? '等待内容版本'
@@ -13041,6 +12898,8 @@ function TaskWorkspace({
                             ? '存在阻断项'
                             : approved
                               ? '内容已批准，等待发布确认'
+                              : task?.state !== 'review_required'
+                                ? '任务状态待确认'
                               : loading || operation
                                 ? '审核已通过，正在完成操作'
                                 : '可以进入人工确认'}
@@ -13204,10 +13063,14 @@ function TaskWorkspace({
                     })
                   ) : (
                     <div className="empty-state">
-                      <CheckCircle2 size={18} />
-                      {content
-                        ? '服务端检查通过，暂无发现项'
-                        : '生成内容后显示检查结果'}
+                      {content && reviewStatus === 'succeeded' ? <CheckCircle2 size={18} /> : <CircleHelp size={18} />}
+                      {!content
+                        ? '生成内容后显示检查结果'
+                        : reviewStatus === 'loading'
+                          ? '正在读取检查结果'
+                          : reviewStatus !== 'succeeded'
+                            ? '检查结果尚未确认，请重新读取'
+                            : '服务端检查通过，暂无发现项'}
                     </div>
                   )}
                 </div>
@@ -13228,8 +13091,10 @@ function TaskWorkspace({
                         <div>
                           <b>内容版本 v{item.version}</b>
                           <span>
-                            {item.id === content?.id ? '当前版本' : '历史版本'}{' '}
-                            · {item.state} · 引用事实{' '}
+                            {item.id === newestContentVersion?.id ? '最新版本' : '历史版本'}
+                            {item.id === task?.contentVersionId ? ' · 任务关联版本' : ''}
+                            {item.id === content?.id ? ' · 正在查看' : ''}{' '}
+                            · {contentVersionStateLabel(item.state)} · 引用事实{' '}
                             {item.factVersionIds.length} 条 · 规则{' '}
                             {item.ruleVersionIds.length} 条
                           </span>
@@ -13341,6 +13206,16 @@ function TaskWorkspace({
                   </span>
                 </label>
                 <button
+                  className="secondary wide"
+                  type="button"
+                  disabled={!approved || Boolean(operation) || !content || reviewStatus !== 'succeeded'}
+                  onClick={() => void exportApprovedContent()}
+                >
+                  <Download size={16} />
+                  {operation === '导出交付包中…' ? '生成导出包…' : '导出已审核交付包'}
+                </button>
+                {exportMessage && <div className="info-notice" role="status">{exportMessage}</div>}
+                <button
                   className="primary wide"
                   disabled={
                     !approved ||
@@ -13440,74 +13315,26 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
       cancelled = true
     }
   }, [baseUrl, categoriesReloadKey])
-  const fallbackRows: RulePack[] = [
-    ['中国电商广告表达', 'cn-commerce-1.0.0', '全平台', '今天'],
-    ['服装鞋包事实完整性', 'apparel-1.0.0', '全平台', '2 天前'],
-    ['淘宝/天猫字段映射', 'tmall-apparel-1.0.0', '淘宝/天猫', '5 天前'],
-    ['京东商品写入策略', 'jd-apparel-write-1.0.0', '京东', '7 天前'],
-  ].map((row, index) => ({
-    id: String(index),
-    name: row[0],
-    version: row[1],
-    scope: row[2],
-    status: 'active',
-    updatedAt: row[3],
-  }))
-  const fallbackCategories: CatalogCategory[] = [
-    {
-      name: '服装 / 防晒外套',
-      code: '1312',
-      fields: ['材质、成分、重量、尺码、颜色、功能依据'],
-      platforms: [
-        'jd',
-        'taobao',
-        'tmall',
-        'pinduoduo',
-        'xiaohongshu',
-        'douyin',
-      ],
-      status: 'active',
-      updatedAt: '今天',
-    },
-    {
-      name: '鞋靴 / 户外鞋',
-      code: '1408',
-      fields: ['鞋面材质、闭合方式、适用场景、尺码'],
-      platforms: ['jd', 'taobao', 'pinduoduo'],
-      status: 'active',
-      updatedAt: '昨天',
-    },
-    {
-      name: '运动 / 速干裤装',
-      code: '1503',
-      fields: ['面料、版型、弹性、洗护、尺码'],
-      platforms: ['taobao', 'tmall'],
-      status: 'active',
-      updatedAt: '3 天前',
-    },
-  ]
   const rulesData = resolveLibraryData({
     baseUrl,
     remote: rulePacks,
     error: rulesError,
-    fixtures: fallbackRows,
   })
   const categoriesData = resolveLibraryData({
     baseUrl,
     remote: remoteCategories,
     error: categoriesError,
-    fixtures: fallbackCategories,
   })
   const rows = rulesData.items
   const categories = categoriesData.items
-  const ruleSource = `${({ offline_demo: '离线演示规则', loading: '正在读取 API 规则', api_error: 'API 规则读取失败', api_empty: 'API 已连接 · 暂无规则数据', api_ready: '已连接 API · 管理员发布数据' } as const)[rulesData.mode]} · 当前规则平台：${platform === 'all' ? '全部平台' : platformNames[platform]}${target ? ` · 商品所属店铺：${platformNames[target.platform]} · ${target.storeName && target.accountId ? `${target.storeName} · 身份已确认` : '店铺身份待确认'}` : ''}`
+  const ruleSource = `${({ unconfigured: '规则服务未连接', loading: '正在读取 API 规则', api_error: 'API 规则读取失败', api_empty: 'API 已连接 · 暂无规则数据', api_ready: '已连接 API · 管理员发布数据' } as const)[rulesData.mode]} · 当前规则平台：${platform === 'all' ? '全部平台' : platformNames[platform]}${target ? ` · 商品所属店铺：${platformNames[target.platform]} · ${target.storeName && target.accountId ? `${target.storeName} · 身份已确认` : '店铺身份待确认'}` : ''}`
   const categorySource = (
     {
-      offline_demo: '离线演示类目',
+      unconfigured: '类目服务未连接',
       loading: '正在读取 API 类目',
       api_error: 'API 类目读取失败',
       api_empty: 'API 已连接 · 暂无类目数据',
-      api_ready: '已连接 API · 管理员发布数据',
+      api_ready: '已连接 API · API 类目字段模板；发布来源尚未核验',
     } as const
   )[categoriesData.mode]
   const platformRows =
@@ -13533,27 +13360,20 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
   const attributeTemplateCount = new Set(
     categories.flatMap((category) => category.fields),
   ).size
-  const mappingStatus = (
-    {
-      offline_demo: '离线演示',
-      loading: '读取中',
-      api_error: '读取失败',
-      api_empty: '暂无数据',
-      api_ready: '实时读取',
-    } as const
-  )[categoriesData.mode]
-  const ruleMetric = ['loading', 'api_error'].includes(rulesData.mode)
+  const ruleMetric = rulesData.mode === 'unconfigured' || ['loading', 'api_error'].includes(rulesData.mode)
     ? '—'
     : String(rows.filter((row) => resolveRuleExecutionState(row) === 'executable').length)
-  const categoryMetric = ['loading', 'api_error'].includes(categoriesData.mode)
+  const categoryMetric = categoriesData.mode === 'unconfigured' || ['loading', 'api_error'].includes(categoriesData.mode)
     ? '—'
     : String(categories.length)
-  const attributeMetric = ['loading', 'api_error'].includes(categoriesData.mode)
+  const attributeMetric = categoriesData.mode === 'unconfigured' || ['loading', 'api_error'].includes(categoriesData.mode)
     ? '—'
     : String(attributeTemplateCount)
   const rulesContent = (
     <>
-      {rulesData.mode === 'loading' ? (
+      {rulesData.mode === 'unconfigured' ? (
+        <div className="empty-state" role="status"><ShieldCheck size={20} /><b>尚未连接规则服务</b><span>连接工作区服务后，才能读取已生效规则；当前不展示规则和数量。</span></div>
+      ) : rulesData.mode === 'loading' ? (
         <LoadingState label="正在读取规则库…" />
       ) : rulesData.mode === 'api_error' ? (
         <ErrorNotice
@@ -13564,7 +13384,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
         <div className="empty-state" data-testid="rules-api-empty">
           <ShieldCheck size={20} />
           <b>API 暂无生效规则包</b>
-          <span>服务已成功返回空数据；未混入任何演示规则。</span>
+          <span>已读取当前工作区，尚无生效规则包。</span>
         </div>
       ) : filteredRules.length ? (
         filteredRules.map((row) => (
@@ -13581,10 +13401,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             <StatusChip tone={resolveRuleExecutionState(row) === 'executable' ? 'neutral' : resolveRuleExecutionState(row) === 'blocked' ? 'red' : 'amber'}>{row.scope}</StatusChip>
             <span>{resolveRuleExecutionState(row) === 'executable' ? '可作为生成依据' : resolveRuleExecutionState(row) === 'blocked' ? '已阻断，不可执行' : '来源未验证，仅供核对'}</span>
             <span className="rule-audit-meta">
-              {row.source?.reference ??
-                (rulesData.mode === 'offline_demo'
-                  ? '演示数据'
-                  : 'API 规则包')}{' '}
+              {row.source?.reference ?? 'API 规则包'}{' '}
               · {row.source?.checkedAt ?? row.updatedAt}
             </span>
           </div>
@@ -13615,7 +13432,9 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
     </>
   )
   const categoriesContent =
-    categoriesData.mode === 'loading' ? (
+    categoriesData.mode === 'unconfigured' ? (
+      <div className="empty-state" role="status"><Boxes size={20} /><b>尚未连接类目服务</b><span>连接工作区服务后，才能读取类目和属性模板；当前不展示类目和数量。</span></div>
+    ) : categoriesData.mode === 'loading' ? (
       <LoadingState label="正在读取品类库…" />
     ) : categoriesData.mode === 'api_error' ? (
       <ErrorNotice
@@ -13626,7 +13445,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
       <div className="empty-state" data-testid="categories-api-empty">
         <Boxes size={20} />
         <b>API 暂无类目数据</b>
-        <span>服务已成功返回空数据；未混入任何演示类目。</span>
+        <span>已读取当前工作区，尚无类目数据。</span>
       </div>
     ) : filteredCategories.length ? (
       filteredCategories.map((category) => (
@@ -13656,7 +13475,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             </span>
           </div>
           <div className="category-card-foot">
-            <span>最近更新：{category.updatedAt}</span>
+            <span>最近更新：{category.updatedAt?.trim() || '未记录'}</span>
             <button
               className="text-button"
               onClick={(event) => {
@@ -13693,9 +13512,9 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
       </section>
       <div className="info-notice" role="status">
         <ShieldCheck size={16} />
-        规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。
+        规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读；规则版本由管理员统一发布，类目模板来源以读取说明为准。
       </div>
-      <section className="metric-grid">
+      <section className="metric-grid rules-metrics">
         <MetricCard
           icon={ShieldCheck}
           label="生效规则包"
@@ -13720,8 +13539,8 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
         <MetricCard
           icon={CheckCircle2}
           label="字段映射"
-          value={mappingStatus}
-          detail="不伪造校验比例"
+          value="未核验"
+          detail="类目模板不包含平台字段映射或校验结果"
           tone="violet"
         />
       </section>
@@ -13745,7 +13564,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             tabIndex={tab === 'rules' ? 0 : -1}
           >
             <ShieldCheck size={15} />
-            规则库 <span>{rows.length}</span>
+            规则库 <span>{rulesData.mode === 'unconfigured' || ['loading', 'api_error'].includes(rulesData.mode) ? '—' : filteredRules.length}</span>
           </button>
           <button
             id="library-categories-tab"
@@ -13765,7 +13584,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
             tabIndex={tab === 'categories' ? 0 : -1}
           >
             <Boxes size={15} />
-            品类库 <span>{['loading', 'api_error'].includes(categoriesData.mode) ? '—' : filteredCategories.length}</span>
+            品类库 <span>{categoriesData.mode === 'unconfigured' || ['loading', 'api_error'].includes(categoriesData.mode) ? '—' : filteredCategories.length}</span>
           </button>
         </div>
         <label className="library-platform-filter">
@@ -13837,9 +13656,11 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
               <h3>生效规则包</h3>
             </div>
             <StatusChip
-              tone={rulesData.mode === 'api_error' ? 'amber' : 'green'}
+              tone={rulesData.mode === 'api_ready' || rulesData.mode === 'api_empty' ? 'green' : 'amber'}
             >
-              {rulesData.mode === 'loading'
+              {rulesData.mode === 'unconfigured'
+                ? '尚未读取'
+                : rulesData.mode === 'loading'
                 ? '读取中…'
                 : rulesData.mode === 'api_error'
                   ? '读取失败'
@@ -13872,7 +13693,7 @@ function Rules({ baseUrl, target, rulesPlatform, onRulesPlatformChange }: { base
         <section
           className="panel category-mapping-detail"
           data-testid="category-mapping-detail"
-          aria-label="字段映射详情"
+          aria-label="类目字段模板详情"
         >
           <div className="panel-heading">
             <div>
@@ -14189,7 +14010,26 @@ function PublishModal({
 }
 
 export default function App() {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
+  if (!apiBaseUrl) return (
+    <main className="merchant-login-page" aria-labelledby="merchant-service-connection-title">
+      <section className="merchant-login-form-panel">
+        <Card className="merchant-login-card" variant="borderless">
+          <div className="merchant-login-card-heading">
+            <img className="merchant-login-logo" src={storeNovaLogo} alt="Store Nova" />
+            <Typography.Title id="merchant-service-connection-title" level={2}>工作区服务尚未连接</Typography.Title>
+            <Typography.Paragraph role="status">请联系平台管理员完成服务连接配置，再重新检查连接。</Typography.Paragraph>
+          </div>
+          <Alert type="info" showIcon title="登录与工作区权限尚未核验" description="连接恢复后，系统会先核验商家账号，再读取已授权工作区的资料。" />
+          <Button type="primary" block size="large" style={{ marginTop: 24 }} onClick={() => window.location.reload()}>重新检查连接</Button>
+        </Card>
+      </section>
+    </main>
+  )
+  return <ConnectedMerchantApp apiBaseUrl={apiBaseUrl} />
+}
+
+function ConnectedMerchantApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const initialRoute = useRef<MerchantRoute>(
     merchantRouteFromLocation(window.location),
   ).current
@@ -14223,7 +14063,7 @@ export default function App() {
   const [routeReloadKey, setRouteReloadKey] = useState(0)
   const [workspaceNavigationKey, setWorkspaceNavigationKey] = useState(0)
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'signed_out' | 'error'>(
-    apiBaseUrl ? 'loading' : 'authenticated',
+    'loading',
   )
   const [authAccount, setAuthAccount] = useState<MerchantAuthAccount | null>(null)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() => getMerchantWorkspaceScope().activeWorkspaceId)
@@ -14559,7 +14399,7 @@ export default function App() {
       return
     }
     if (!apiBaseUrl) {
-      showToast('未配置 API，离线演示不会创建或伪造发布任务。', 'error')
+      showToast('未配置 API，离线测试不会创建或伪造发布任务。', 'error')
       return
     }
     const currentIdentityError =
@@ -14605,7 +14445,7 @@ export default function App() {
   }
   const submitPublish = async () => {
     if (!apiBaseUrl)
-      throw new Error('未配置 API，离线演示不会创建或伪造发布任务。')
+      throw new Error('未配置 API，离线测试不会创建或伪造发布任务。')
     if (!taskContext?.task || !taskContext.version || !target)
       throw new Error(
         '请先完成目标商品的内容审核，并确认完整店铺身份后再进入发布。',
@@ -14878,7 +14718,7 @@ export default function App() {
                   routeTargetError.includes('没有权限') ||
                   routeTargetError.includes('无权访问')) && (
                   <p className="muted">
-                    服务端拒绝了当前身份对任务或商品事实的读取请求，页面不会用演示数据替代。请切换到有权访问该工作区的商家账号后重试。
+                    服务端拒绝了当前身份对任务或商品事实的读取请求，页面不会用测试数据替代。请切换到有权访问该工作区的商家账号后重试。
                   </p>
                 )}
                 <button
@@ -14905,6 +14745,7 @@ export default function App() {
                   />
                 )}
                 {page === 'finance' && <FinanceOverview baseUrl={apiBaseUrl ?? ''} billing={accountBilling} billingLoading={accountBillingLoading} billingError={accountBillingError} onRetryBilling={() => setBillingRetryKey(value => value + 1)} account={authAccount} activeWorkspaceId={activeWorkspaceId} notificationTarget={commercialNotificationTarget} onOpenSupport={() => openUtility('support')} />}
+                {page === 'members' && !authAccount && <section className="empty-state" role="status"><h2>成员与权限尚未读取</h2><p>请先连接工作区服务并登录已授权账号，再查看成员或调整权限。</p><button className="secondary" onClick={() => openUtility('support')}>联系管理员</button></section>}
                 {page === 'members' && authAccount && <MerchantMembersPage baseUrl={apiBaseUrl ?? ''} account={authAccount} activeWorkspaceId={activeWorkspaceId} onWorkspaceChange={switchMerchantWorkspace} />}
                 {page === 'products' && (
                   activeEntry === 'products' ? (

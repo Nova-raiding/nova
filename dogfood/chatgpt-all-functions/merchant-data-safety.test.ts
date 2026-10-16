@@ -15,8 +15,8 @@ describe('Merchant Studio server-owned task evidence', () => {
 
   it('keeps demo directions explicit and offline-only', () => {
     const result = resolveTaskDirections({ baseUrl: undefined, remote: null, error: '' })
-    expect(result.mode).toBe('offline_demo')
-    expect(result.items.every(item => item.id.startsWith('DEMO-') && item.name.startsWith('演示 ·'))).toBe(true)
+    expect(result.mode).toBe('unconfigured')
+    expect(result.items).toEqual([])
   })
 
   it('derives workflow progress from the server task state', () => {
@@ -36,10 +36,7 @@ describe('Merchant Studio rule and category data isolation', () => {
   const remote = [{ id: 'api' }]
 
   it('uses fixtures only when no API base URL is configured', () => {
-    expect(resolveLibraryData({ baseUrl: undefined, remote: null, error: '', fixtures })).toEqual({
-      mode: 'offline_demo',
-      items: fixtures,
-    })
+    expect(resolveLibraryData({ baseUrl: undefined, remote: null, error: '', fixtures })).toEqual({ mode: 'unconfigured', items: [] })
   })
 
   it('does not expose fixtures while an API request is loading or failed', () => {

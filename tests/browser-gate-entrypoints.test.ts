@@ -261,9 +261,21 @@ describe('browser gate entrypoints', () => {
 
     const browserRunner = readFileSync(resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs'), 'utf8')
     const runnerFiles = [...browserRunner.matchAll(/^\s+"(src\/[^\"]+)"/gm)].map(([, file]) => file).sort()
+    const delegatedHarnesses: Record<string, string> = {
+      'src/components/stores/CanonicalBackfillConflictSection.scope.browser.test.tsx': '../../../scripts/verify-canonical-conflict-scope.mjs',
+    }
     for (const file of chromiumFiles) {
       expect(runnerFiles, `${file} must run in the Chromium gate`).toContain(file)
-      expect(readFileSync(resolve(root, 'apps/ops-console', file), 'utf8')).toMatch(/from ['"]playwright['"]/u)
+      const source = readFileSync(resolve(root, 'apps/ops-console', file), 'utf8')
+      const delegated = delegatedHarnesses[file]
+      if (delegated) {
+        expect(source).toContain(`new URL("${delegated}", import.meta.url)`)
+        expect(source).toContain('spawn(process.execPath, [script]')
+        expect(source).toContain('expect(result.code, result.output).toBe(0)')
+        const harness = readFileSync(resolve(root, 'apps/ops-console/scripts/verify-canonical-conflict-scope.mjs'), 'utf8')
+        expect(harness).toMatch(/from ['"]playwright['"]/u)
+        expect(harness).toContain('chromium.launch(')
+      } else expect(source).toMatch(/from ['"]playwright['"]/u)
     }
     expect(chromiumFiles.length, 'the scan must find the Ops Chromium-backed tests').toBeGreaterThan(0)
   })
@@ -477,6 +489,10 @@ describe('browser gate entrypoints', () => {
     expect(runner).toContain("runOpsE2e(['dogfood/chatgpt-all-functions/ops-members-global-isolated.spec.js']")
     expect(runner).toContain('fixture.adminDatabaseUrl')
     expect(runner).toContain('productionBrowser: false')
+    expect(runner).toContain('context.environment.MERCHANT_STUDIO_URL')
+    expect(runner).toContain("OPS_E2E_MERCHANT_UI: 'true'")
+    expect(runner).not.toContain('function merchantProxy(')
+    expect(runner).not.toContain("'merchant-dist'")
   })
 
   it('runs the isolated template download browser acceptance from its dedicated entrypoint', () => {

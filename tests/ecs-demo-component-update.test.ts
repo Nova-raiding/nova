@@ -274,14 +274,15 @@ describe('Demo UI mixed-component publication identity', () => {
     reseal(input, (_compose, manifest) => { manifest.services.api.source_sha256 = sha('other source') })
     expect(() => prepare(input)).toThrow(/source digest differs/)
   })
-  it('accepts complete unchanged 270-row or 278-row chains and rejects incomplete or divergent chains', async () => {
+  it('accepts complete unchanged 270-row or 279-row chains and rejects incomplete or divergent chains', async () => {
     const sourceRows = (await loadMigrations()).map(migration => ({ version: migration.version, name: migration.name, checksum: migrationChecksum(migration.sql) }))
     const rows = sourceRows.slice(0, 270)
-    expect(sourceRows).toHaveLength(278)
-    expect(sourceRows.at(-1)).toMatchObject({ version: 278, name: 'task_feedback_idempotency' })
-    expect(sourceRows.slice(-2).map(({ version, name }) => ({ version, name }))).toEqual([
+    expect(sourceRows).toHaveLength(279)
+    expect(sourceRows.at(-1)).toMatchObject({ version: 279, name: 'asset_scan_bootstrap' })
+    expect(sourceRows.slice(-3).map(({ version, name }) => ({ version, name }))).toEqual([
       { version: 277, name: 'publish_media_event_noop_guard' },
       { version: 278, name: 'task_feedback_idempotency' },
+      { version: 279, name: 'asset_scan_bootstrap' },
     ])
     expect(rows).toHaveLength(270)
     expect(rows[99]?.name).toBe('operation_alert_notifications')
@@ -294,7 +295,7 @@ describe('Demo UI mixed-component publication identity', () => {
     expect(JSON.parse(prepare(input).manifest_text).migration_chain_sha256).toBe(chain)
 
     input.target_migrations = sourceRows
-    expect(() => prepare(input)).toThrow(/complete 278-row chain/)
+    expect(() => prepare(input)).toThrow(/complete 279-row chain/)
 
     const current = fixture()
     current.baseline.migrations = structuredClone(sourceRows)
@@ -305,9 +306,9 @@ describe('Demo UI mixed-component publication identity', () => {
       manifest.migration_chain_sha256 = currentChain
     })
     const result = prepare(current)
-    expect(JSON.parse(result.manifest_text)).toMatchObject({ migration_source_version: 278, migration_version: 278, migration_change_required: false, migration_chain_sha256: currentChain })
-    expect(result.review).toMatchObject({ migration_version: 278, migration_chain_sha256: currentChain })
-    expect(JSON.parse(result.manifest_text).rollback_policy).toContain('same-278')
+    expect(JSON.parse(result.manifest_text)).toMatchObject({ migration_source_version: 279, migration_version: 279, migration_change_required: false, migration_chain_sha256: currentChain })
+    expect(result.review).toMatchObject({ migration_version: 279, migration_chain_sha256: currentChain })
+    expect(JSON.parse(result.manifest_text).rollback_policy).toContain('same-279')
 
     for (const field of ['name', 'checksum'] as const) {
       const divergent = fixture()

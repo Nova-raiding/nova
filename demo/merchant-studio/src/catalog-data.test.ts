@@ -94,8 +94,8 @@ describe('the store page renders the server catalogue', () => {
       platformId: 'taobao',
       platform: '淘宝',
       mark: '淘',
-      dataModeLabel: '演示数据',
-      connectionLabel: '演示连接',
+      dataModeLabel: '测试数据',
+      connectionLabel: '测试连接',
       readable: true,
       // The fixture account is readable but is not a real connected store, so it
       // may not be counted as 「已连接」 — the same rule the overview uses.

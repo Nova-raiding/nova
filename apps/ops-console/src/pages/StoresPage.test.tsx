@@ -276,6 +276,17 @@ describe("StoresPage", () => {
     expect(markup).not.toContain("0 个已登记店铺");
   });
 
+  it("marks cached store rows as old data when their directory refresh fails", () => {
+    const markup = renderToStaticMarkup(<StoresPage model={model({
+      dataSetError: vi.fn((...methods: string[]) => methods.includes("rule.list") ? undefined : methods.includes("store.directory") || methods.includes("ops.stores.list") || methods.includes("workspace.health") ? "目录刷新失败" : undefined),
+      storeDirectory: [{ platform: "taobao", accountId: "store-cached", label: "缓存店铺", state: "connected", dataMode: "official_api", readable: true, writeEnabled: false, revision: 3 }],
+    })} onNavigate={vi.fn()} />);
+    expect(markup).toContain("店铺目录读取失败");
+    expect(markup).toContain("上次读取：");
+    expect(markup).toContain("刷新店铺目录");
+    expect(markup).not.toContain("1 个已登记店铺");
+  });
+
   it("does not leak an unrelated operations-domain failure into store sections", () => {
     const markup = renderToStaticMarkup(<StoresPage model={model({
       error: "审计中心仓储不可用",

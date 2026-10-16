@@ -124,7 +124,7 @@ describe("Ops Overview page read-only journey", () => {
       await expect.poll(() => refresh.isDisabled()).toBe(true);
       expect(await page.evaluate(() => window.__overviewCalls.loads)).toBe(1);
       await page.evaluate(() => window.__overviewCalls.releaseLoad?.());
-      expect(await refresh.isEnabled()).toBe(true);
+      await expect.poll(() => refresh.isEnabled()).toBe(true);
     } finally {
       await page.close();
     }

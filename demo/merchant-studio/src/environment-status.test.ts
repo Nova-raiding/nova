@@ -33,8 +33,8 @@ describe('resolveMerchantEnvironmentStatus', () => {
       },
     }))
 
-    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '演示环境' })
-    expect(result.detail).toContain('当前是本地演示模式')
+    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '服务待核验' })
+    expect(result.detail).toContain('当前使用样例数据')
     expect(result.facts.join('；')).not.toContain('人工运营')
     expect(result.actions.join('；')).not.toMatch(/授权|同步|OAuth/iu)
   })
@@ -47,12 +47,13 @@ describe('resolveMerchantEnvironmentStatus', () => {
       },
     }))
 
-    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '演示环境' })
-    expect(result.detail).toContain('当前是演示模式')
-    expect(result.actions.join('；')).toContain('唯一 Demo 环境')
+    expect(result).toMatchObject({ state: 'demo', tone: 'warning', topbarLabel: '服务待核验' })
+    expect(result.detail).toContain('当前服务能力尚未完成核验')
+    expect(result.actions.join('；')).toContain('当前环境的验收证据')
     expect(result.actions.join('；')).not.toContain('切换到生产环境')
-    expect(result.facts).toContain('唯一 Demo 验收：待核验；发布身份：未核验')
-    expect(result.title).toBe('唯一 Demo · 验收待核验')
+    expect(result.facts).toContain('环境验收：待核验；发布身份：未核验')
+    expect(result.title).toBe('服务能力待核验')
+    expect(JSON.stringify({ ...result, state: undefined })).not.toMatch(/demo|演示/iu)
     expect(result.detail).not.toContain('生产上线门禁')
     expect(result.detail).toContain('配置就绪不等于实际调用')
     expect(result.facts.join('；')).not.toContain('生产门禁：已通过')

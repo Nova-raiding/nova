@@ -43,6 +43,7 @@ test('recycle bin retries failed reads and restores the selected server asset in
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   await context.addCookies([{ name: 'recycle-auth-fixture', value: 'same-origin-session', domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }])
   const page = await context.newPage()
+  await page.clock.setFixedTime(new Date('2026-10-10T00:00:00.000Z'))
   let trashReads = 0
   let failTrashRefresh = false
   const restoreRequests = []
@@ -85,15 +86,15 @@ test('recycle bin retries failed reads and restores the selected server asset in
     if (path === '/api/v1/assets/trash' && request.method() === 'GET') {
       trashReads += 1
       // React StrictMode runs the mount effect twice in this dev fixture.
-      // Keep both initial reads unavailable so the user-facing retry state is
-      // observable, then let the explicit retry return the list.
-      if (trashReads <= 2) {
+      // Keep the two mount reads and a toolbar retry unavailable; the
+      // following inline retry returns the list to exercise stale recovery.
+      if (trashReads <= 3) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
           request_id: 'recycle-bin-first-read-failure',
           error: { code: 'FIXTURE_UNAVAILABLE', message: 'fixture read unavailable' },
         }) })
       }
-      if (failTrashRefresh && trashReads === 4) {
+      if (failTrashRefresh && trashReads === 5) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({
           request_id: 'recycle-bin-refresh-failure',
           error: { code: 'FIXTURE_UNAVAILABLE', message: 'fixture refresh unavailable' },
@@ -135,14 +136,21 @@ test('recycle bin retries failed reads and restores the selected server asset in
     await expect(recycleBin.getByRole('alert')).toContainText('服务端回收站读取失败')
     expect(trashReads).toBe(2)
 
+    // A second failed read through the toolbar marks the snapshot stale.
+    // The inline retry must remove that flag once it obtains a fresh list.
+    await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
+    await expect(recycleBin.getByRole('alert')).toContainText('回收站刷新失败')
+    expect(trashReads).toBe(3)
     await recycleBin.getByRole('button', { name: '重试' }).click()
     const row = recycleBin.locator('article').filter({ hasText: '待恢复春季主图.png' })
     await expect(row).toBeVisible()
+    await expect(recycleBin.locator('.material-recycle-summary strong')).toHaveText('1')
+    await expect(row.getByRole('button', { name: '选择待恢复春季主图.png' })).toBeEnabled()
     await expect(row).toContainText('未分类 · 未读取 · PNG')
     await expect(row).toContainText('服务端素材')
     await expect(row).toContainText('保留至 2026/11/7（剩余 28 天）')
     await expect(row).toContainText('2026/10/8 删除')
-    expect(trashReads).toBe(3)
+    expect(trashReads).toBe(4)
 
     const previewTrigger = row.getByRole('button', { name: '放大待恢复春季主图.png' })
     await previewTrigger.click()
@@ -159,17 +167,25 @@ test('recycle bin retries failed reads and restores the selected server asset in
     await expect(previewDialog).toHaveCount(0)
     await expect(previewTrigger).toBeFocused()
 
+    await row.getByRole('button', { name: '选择待恢复春季主图.png' }).click()
+    await expect(recycleBin.getByRole('button', { name: '恢复', exact: true })).toBeEnabled()
     failTrashRefresh = true
     await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
     await expect(recycleBin.getByRole('alert')).toContainText('回收站刷新失败')
     await expect(row).toBeVisible()
-    expect(trashReads).toBe(4)
+    await expect(recycleBin.getByRole('button', { name: '恢复', exact: true })).toBeDisabled()
+    await expect(recycleBin.getByRole('button', { name: '彻底删除', exact: true })).toBeDisabled()
+    await expect(row.getByRole('button', { name: '选择待恢复春季主图.png' })).toBeDisabled()
+    await expect(recycleBin.locator('.material-recycle-summary strong')).toHaveText('—')
+    expect(trashReads).toBe(5)
 
     failTrashRefresh = false
     await recycleBin.getByRole('button', { name: '刷新回收站' }).click()
     await expect(recycleBin.getByRole('alert')).toHaveCount(0)
     await expect(row).toBeVisible()
-    expect(trashReads).toBe(5)
+    expect(trashReads).toBe(6)
+    await expect(recycleBin.getByRole('button', { name: '恢复', exact: true })).toBeEnabled()
+    await row.getByRole('button', { name: '选择待恢复春季主图.png' }).click()
 
     const restoreButton = recycleBin.getByRole('button', { name: '恢复', exact: true })
     await expect(restoreButton).toBeDisabled()
@@ -180,7 +196,7 @@ test('recycle bin retries failed reads and restores the selected server asset in
 
     await expect.poll(() => restoreRequests.length).toBe(1)
     expect(restoreRequests).toEqual([{ assetId, workspaceId, method: 'POST' }])
-    await expect.poll(() => trashReads).toBe(6)
+    await expect.poll(() => trashReads).toBe(7)
     await expect(row).toHaveCount(0)
     await expect(recycleBin.getByText('回收站为空')).toBeVisible()
   } finally {

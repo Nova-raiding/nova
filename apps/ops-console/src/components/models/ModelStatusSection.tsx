@@ -14,16 +14,16 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   const fixtureData = model.dataSource?.fixtureDataPresent === true;
   // The hook retains the last value after a failed refresh, but readiness is
   // a launch gate: stale data must not be presented as current evidence.
-  const displayStatus = modelError ? undefined : modelStatus;
+  const displayStatus = modelError || fixtureData ? undefined : modelStatus;
   const environment = model.dataSetError("workspace.health") ? undefined : model.dataSource?.environment?.trim().toLowerCase();
   const demoEnvironment = environment === "demo";
   const productionEnvironment = environment === "production";
-  const releaseScope = demoEnvironment ? "唯一 Demo 验收" : productionEnvironment ? "生产发布" : "环境与发布";
+  const releaseScope = demoEnvironment ? "当前环境验收" : productionEnvironment ? "生产发布" : "环境与发布";
   const releaseBoundary = demoEnvironment
-    ? "唯一 Demo 验收与发布身份尚未由本页核验。"
+    ? "当前环境验收与发布身份尚未由本页核验。"
     : productionEnvironment ? "全局生产发布状态尚未由本页核验。" : "运行环境未核验，验收与发布状态保持未确认。";
   const errorRef = useRef<HTMLDivElement>(null);
-  const statusLabel = displayStatus ? modelStateLabel(displayStatus.state) : modelStatusLoading ? "加载中" : "不可用";
+  const statusLabel = fixtureData ? "待核验" : displayStatus ? modelStateLabel(displayStatus.state) : modelStatusLoading ? "加载中" : "不可用";
   // `platform.model.status` is a model-service diagnostic. Even when it says
   // ready, it does not carry the immutable identity returned by `/api/releasez`.
   // Blue means this endpoint reports model runtime ready; green is reserved
@@ -50,13 +50,13 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
         </div>
       ) : null}
       {!modelStatusLoading ? <>
-      {fixtureData ? <Alert type="warning" showIcon title="当前含演示数据，模型 readiness 不可视为真实验收通过" description="请先切换到无 fixture 的真实 API/数据源；本页面不会把演示配置标记为可用。" /> : null}
+      {fixtureData ? <Alert type="warning" showIcon title="当前含样例数据，模型 readiness 不可视为真实验收通过" description="请先切换到无 fixture 的真实 API/数据源；本页面不会把样例配置标记为可用。" /> : null}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <Statistic title="模型归属" value="平台统一" />
         </Col>
         <Col xs={24} sm={12} xl={6}>
-            <Statistic title="平台中转站" value={fixtureData ? "演示数据" : !displayStatus ? "未核实" : displayStatus.relay?.configured ? "已配置" : "未配置"} />
+            <Statistic title="平台中转站" value={fixtureData ? "样例数据" : !displayStatus ? "未核实" : displayStatus.relay?.configured ? "已配置" : "未配置"} />
         </Col>
         <Col xs={24} sm={12} xl={6}>
             <Statistic title="文案模型" value={displayStatus?.text_model ?? "-"} />
@@ -106,7 +106,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
           />
         </div>
       ) : null}
-      {!modelError ? (
+      {!modelError && !fixtureData ? (
         !modelStatus ? (
           <Alert
             type="info"

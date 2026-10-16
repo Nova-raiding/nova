@@ -5,10 +5,17 @@ import { CanonicalBackfillConflictSection, canSubmitConflictResolution, conflict
 import type { CanonicalBackfillConflict } from "../../types/ops.js";
 
 describe("CanonicalBackfillConflictSection", () => {
-  it("renders an explicit queue empty state in the desktop ops surface", () => {
+  it("does not claim an empty queue before selecting a workspace", () => {
     const markup = renderToStaticMarkup(<CanonicalBackfillConflictSection enabled />);
     expect(markup).toContain("Canonical 回填人工冲突队列");
-    expect(markup).toContain("空结果不代表全量回填已完成");
+    expect(markup).toContain("请选择商家工作区");
+    expect(markup).not.toContain("暂无待处理冲突");
+  });
+
+  it("does not claim an empty queue before the selected workspace has been read", () => {
+    const markup = renderToStaticMarkup(<CanonicalBackfillConflictSection enabled workspaceId="ws-1" />);
+    expect(markup).toContain("冲突队列尚未确认，请重新读取");
+    expect(markup).not.toContain("暂无待处理冲突");
   });
 
   it("does not render customer conflict controls when capability is absent", () => {

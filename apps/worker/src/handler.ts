@@ -297,11 +297,11 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       }
     }
 
-    if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT].includes(event.eventType) && options.scanRequested) {
+    if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', 'asset.scan_bootstrap_requested', CUSTOMER_DELIVERY_SCAN_EVENT].includes(event.eventType) && options.scanRequested) {
       try {
         if (event.eventType === CUSTOMER_DELIVERY_SCAN_EVENT) {
           await deliveryScanAdmission.assertAdmitted(event, signal)
-        } else if (event.eventType === 'asset.scan_redrive_requested') {
+        } else if ((event.eventType === 'asset.scan_redrive_requested' || event.eventType === 'asset.scan_bootstrap_requested')) {
           // Redrives have an explicit persisted authorization snapshot. Keep
           // its live check first so a malformed/expired authorization envelope
           // fails with the authorization error before any commercial lookup.

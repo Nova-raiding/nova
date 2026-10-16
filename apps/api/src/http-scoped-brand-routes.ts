@@ -57,13 +57,19 @@ export async function routeScopedBrandHttp(req: IncomingMessage, res: ServerResp
     for (const key of ['stores', 'series']) {
       const candidate = entries(settings[key])
       const prior = entries(previous[key])
-      for (const [accountId, value] of Object.entries(candidate)) {
-        if (!isDeepStrictEqual(value, prior[accountId])) changedStores.add(accountId)
+      // This endpoint replaces the complete document. Omitted prior keys are
+      // deletions and require the same store authorization as edited values.
+      for (const accountId of new Set([...Object.keys(prior), ...Object.keys(candidate)])) {
+        if (!isDeepStrictEqual(candidate[accountId], prior[accountId])) changedStores.add(accountId)
       }
     }
-    for (const [assetId, value] of Object.entries(entries(settings.images))) {
-      if (isDeepStrictEqual(value, entries(previous.images)[assetId])) continue
-      await dependencies.assertAssetActive?.(workspaceId, assetId)
+    const candidateImages = entries(settings.images)
+    const priorImages = entries(previous.images)
+    for (const assetId of new Set([...Object.keys(priorImages), ...Object.keys(candidateImages)])) {
+      if (isDeepStrictEqual(candidateImages[assetId], priorImages[assetId])) continue
+      // Deleting stale image settings is legitimate even after the asset was
+      // removed, but it must still authorize the owning store when assigned.
+      if (Object.hasOwn(candidateImages, assetId)) await dependencies.assertAssetActive?.(workspaceId, assetId)
       const assignment = await repository.getAssetAssignment(workspaceId, assetId)
       if (assignment) changedStores.add(assignment.accountId)
     }

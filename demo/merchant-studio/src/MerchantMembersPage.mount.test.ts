@@ -92,6 +92,13 @@ describe('MerchantMembersPage workspace loading', () => {
     const runtimeErrors: string[] = []
     const calls: Array<{ method: string; workspaceId: string | undefined }> = []
     let failNextMemberWrite = false
+    let heldWorkspace = ''
+    let sessionHold = Promise.resolve()
+    let releaseSession = () => {}
+    const holdSession = (workspaceId: string) => {
+      heldWorkspace = workspaceId
+      sessionHold = new Promise<void>(resolve => { releaseSession = resolve })
+    }
     page.on('pageerror', error => runtimeErrors.push(error.message))
     page.on('console', message => { if (message.type() === 'error') runtimeErrors.push(message.text()) })
     try {
@@ -127,7 +134,7 @@ describe('MerchantMembersPage workspace loading', () => {
           else throw new Error(`Unexpected MCP method: ${method}`)
           data = { result: data }
         } else return route.continue()
-        await new Promise(resolve => setTimeout(resolve, workspaceId === 'ws_b' && method === 'ops.session' ? 150 : 5))
+        if (method === 'ops.session' && workspaceId === heldWorkspace) await sessionHold
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ request_id: 'fixture-request', trace_id: 'fixture-trace', workspace_id: workspaceId ?? '', data, warnings: [], next_actions: [], error: null }) })
       })
       await page.goto(`${baseUrl}/__merchant-members-test`, { waitUntil: 'commit' })
@@ -138,10 +145,13 @@ describe('MerchantMembersPage workspace loading', () => {
       await page.getByLabel('邀请原因').fill('当前工作区邀请')
       await page.getByRole('button', { name: '邀请成员' }).click()
       expect(await page.locator('.success-notice').innerText()).toContain('已邀请 draft@example.com')
+      holdSession('ws_b')
       await page.getByRole('button', { name: '切换到 ws_b' }).click()
       expect(await page.getByText('成员 ws_a').count()).toBe(0)
       expect(await page.locator('.success-notice').count()).toBe(0)
       await page.getByRole('status').filter({ hasText: '正在切换工作区' }).waitFor({ state: 'visible' })
+      releaseSession()
+      heldWorkspace = ''
       await page.getByText('成员 ws_b').waitFor()
       expect(await page.getByLabel('成员登录账号').inputValue()).toBe('')
       expect(await page.getByLabel('邀请原因').inputValue()).toBe('')
@@ -149,12 +159,15 @@ describe('MerchantMembersPage workspace loading', () => {
       await page.getByLabel('成员登录账号').fill('retry@example.com')
       await page.getByLabel('邀请原因').fill('当前工作区再次邀请')
       await page.getByRole('button', { name: '邀请成员' }).click()
-      expect(await page.getByRole('alert').innerText()).toContain('成员操作失败')
+      expect(await page.getByRole('alert').innerText()).toContain('成员操作未确认完成')
       expect(await page.getByLabel('成员登录账号').inputValue()).toBe('retry@example.com')
+      holdSession('ws_a')
       await page.getByRole('button', { name: '切换到 ws_a' }).click()
       expect(await page.getByRole('alert').count()).toBe(0)
       expect(await page.locator('.success-notice').count()).toBe(0)
       await page.getByRole('status').filter({ hasText: '正在切换工作区' }).waitFor({ state: 'visible' })
+      releaseSession()
+      heldWorkspace = ''
       await page.getByText('成员 ws_a').waitFor()
 
       expect(calls).toEqual([
@@ -171,6 +184,6 @@ describe('MerchantMembersPage workspace loading', () => {
       ])
       expect(runtimeErrors.filter(error => !error.includes('503 (Service Unavailable)'))).toEqual([])
       expect(runtimeErrors.filter(error => error.includes('503 (Service Unavailable)'))).toHaveLength(1)
-    } finally { await page.close() }
+    } finally { releaseSession(); await page.close() }
   }, 30_000)
 })

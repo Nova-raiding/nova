@@ -8,7 +8,6 @@ describe('asset snapshot lifecycle repair migration 267', () => {
     const sql = await readFile(new URL('./migrations/267_asset_snapshot_lifecycle_repair.sql', import.meta.url), 'utf8')
     expect(migrations.find(row => row.version === 267)).toEqual({ version: 267, name: 'asset_snapshot_lifecycle_repair', sql })
     expect(migrations.slice(-12).map(({ version, name }) => ({ version, name }))).toEqual([
-      { version: 267, name: 'asset_snapshot_lifecycle_repair' },
       { version: 268, name: 'demo_evaluation_regrant_guard' },
       { version: 269, name: 'merchant_activation_status_acl' },
       { version: 270, name: 'catalog_batch_import_idempotency' },
@@ -20,6 +19,7 @@ describe('asset snapshot lifecycle repair migration 267', () => {
       { version: 276, name: 'outbox_execution_reservation' },
       { version: 277, name: 'publish_media_event_noop_guard' },
       { version: 278, name: 'task_feedback_idempotency' },
+      { version: 279, name: 'asset_scan_bootstrap' },
     ])
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS snapshot_entity_type')
     expect(sql).toContain('merchant_asset_lifecycle_asset_snapshot_fk')

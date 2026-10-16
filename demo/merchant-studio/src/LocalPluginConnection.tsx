@@ -155,7 +155,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   const oneClickAvailable = oneClickState === 'available'
   const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
   const oneClickUnavailableReason = oneClickState === 'release_gate'
-    ? '生产发布门禁尚未通过，暂不能启用一键连接。'
+    ? '本地插件一键连接尚未开放，请联系平台管理员核对配置。'
     : oneClickState === 'unsupported_platform'
       ? '一键连接目前仅支持 macOS 桌面端。'
       : oneClickState === 'workspace_required'

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ describe("StoragePage controller route recovery journey", () => {
       import React from 'react';
       import { createRoot } from 'react-dom/client';
       import { OpsConsoleController } from '/src/pages/OpsConsoleController.tsx';
+      import '/src/styles.css';
       localStorage.setItem('ops_connection_config_v1', JSON.stringify({apiBase: '/api', workspaceId: '', workbench: 'platform', token: 'storage-token', actorId: 'storage-operator'}));
       createRoot(document.getElementById('root')).render(React.createElement(OpsConsoleController));
     `, { flag: "wx" });
@@ -120,6 +121,9 @@ describe("StoragePage controller route recovery journey", () => {
       expect(await retry.count()).toBe(1);
       await retry.click();
       await page.getByText("workspace 对账列表（1）", { exact: true }).waitFor({ state: "visible" });
+      await page.getByText("工作区列表已读取", { exact: true }).waitFor({ state: "visible" });
+      expect(await page.getByText("暂无可验证的对象清单对账结果", { exact: true }).count()).toBe(0);
+      expect(await page.getByText("配额上限", { exact: true }).count()).toBe(0);
       await page.getByText("对账结果加载失败", { exact: true }).waitFor({ state: "detached" });
       expect(reconciliationReads).toBe(2);
       const storageCalls = calls.filter(call => call.method === "ops.storage.reconciliation.list");
@@ -135,6 +139,12 @@ describe("StoragePage controller route recovery journey", () => {
       expect(workspaceText).toContain("正常");
       expect(unexpectedRequests).toEqual([]);
       expect(browserErrors).toEqual([]);
+      if (process.env.STORAGE_SCOPE_ARTIFACTS) {
+        const directory = resolve(process.env.STORAGE_SCOPE_ARTIFACTS);
+        await mkdir(directory, { recursive: true });
+        await page.screenshot({ path: resolve(directory, "page.png"), fullPage: true });
+        await writeFile(resolve(directory, "evidence.json"), JSON.stringify({ reconciliationReads, storageCalls, unexpectedRequests, browserErrors, bodyText: await page.locator("body").innerText() }, null, 2));
+      }
     } finally { await page.close(); }
   }, 60_000);
 });

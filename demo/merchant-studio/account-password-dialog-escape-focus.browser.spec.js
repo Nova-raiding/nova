@@ -26,6 +26,8 @@ test('Escape cancels password change and restores focus through the account menu
   const page = await context.newPage()
   const externalRequests = []
   const passwordWrites = []
+  const formWarnings = []
+  page.on('console', message => { if (message.text().includes('useForm') && message.text().includes('not connected')) formWarnings.push(message.text()) })
 
   await page.route('**/*', async route => {
     const url = new URL(route.request().url())
@@ -67,9 +69,21 @@ test('Escape cancels password change and restores focus through the account menu
     await changePassword.click()
     const dialog = page.getByRole('dialog', { name: '修改商家账号密码' })
     await expect(dialog).toBeVisible()
+    await dialog.getByLabel('当前密码').fill('fixture-cancelled-password')
+    await dialog.locator('#new_password').fill('fixture-cancelled-new-password')
+    await dialog.locator('#confirm_password').fill('fixture-cancelled-new-password')
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
     await expect(accountPanel).toBeVisible()
+    await expect(changePassword).toBeFocused()
+
+    await changePassword.click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel('当前密码')).toHaveValue('')
+    await expect(dialog.locator('#new_password')).toHaveValue('')
+    await expect(dialog.locator('#confirm_password')).toHaveValue('')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
     await expect(changePassword).toBeFocused()
 
     await page.keyboard.press('Escape')
@@ -77,6 +91,7 @@ test('Escape cancels password change and restores focus through the account menu
     await expect(accountTrigger).toBeFocused()
     expect(passwordWrites).toEqual([])
     expect(externalRequests).toEqual([])
+    expect(formWarnings).toEqual([])
   } finally {
     await context.close()
     await browser.close()

@@ -16,9 +16,9 @@ vi.mock("antd", () => ({
 import { BrandGovernanceSummary } from "./BrandGovernanceSummary.js";
 
 describe("BrandGovernanceSummary", () => {
-  it("does not claim platform brand data exists when the summary is absent or all zero", () => {
+  it("distinguishes an absent brand summary from successfully returned zeros", () => {
     expect(renderToStaticMarkup(<BrandGovernanceSummary />)).toContain("尚未取得平台品牌聚合数据");
-    expect(renderToStaticMarkup(<BrandGovernanceSummary summary={{ brandCount: 0, boundStoreCount: 0, unboundBrandCount: 0, canonicalProductCount: 0, listingCount: 0 } as any} />)).toContain("尚未取得平台品牌聚合数据");
+    expect(renderToStaticMarkup(<BrandGovernanceSummary summary={{ brandCount: 0, boundStoreCount: 0, unboundBrandCount: 0, canonicalProductCount: 0, listingCount: 0 } as any} />)).toContain("品牌数0");
   });
 
   it("renders only aggregate counts and the platform-level redaction notice", () => {

@@ -178,6 +178,29 @@ describe('commercial Ops read model', () => {
     expect(rate).toMatchObject({ id: 'rate_1', action_code: 'image.generate.standard', unit_label: 'image', points_rule: '1 点/image', approval_state: 'approved', blocking_reason: null })
   })
 
+  it.each([
+    [{ unit: 'month', count: 1 }, null, '1 个月'],
+    [{ unit: 'day', count: 30 }, null, '30 天'],
+    [undefined, 30, '30 天'],
+    [undefined, null, null],
+    [{ unit: 'month' }, null, null],
+    [{ unit: 'week', count: 2 }, null, null],
+    [{ unit: 'month', count: '2' }, null, null],
+    [{ unit: 'month', count: 0 }, null, null],
+    [{ unit: 'day', count: -1 }, null, null],
+    [{ unit: 'month', count: 1.5 }, null, null],
+    [[], 30, null],
+    [undefined, 0, null],
+  ])('keeps unresolved catalog cycle evidence unknown (%j, %j)', (cycle, durationDays, expected) => {
+    const item: Parameters<typeof projectCommercialCatalogItem>[0] = {
+      id: 'sku_cycle', code: 'cycle_fixture', kind: 'monthly', visibility: 'public', requiredCapability: null,
+      versionId: 'cycle_fixture_v1', version: 1, lifecycle: 'draft', executable: false,
+      priceFen: 200_000, currency: 'CNY', priceMode: 'fixed', durationDays: durationDays as number | null,
+      payload: { ...(cycle === undefined ? {} : { cycle }) }, checksum: 'fixture_cycle', effectiveAt: null, benefits: [],
+    }
+    expect(projectCommercialCatalogItem(item).cycle_label).toBe(expected)
+  })
+
   it('projects persisted access decisions and marks a block resolved only after a later allow', () => {
     const decisions = [
       { id: 'allow_2', workspaceId: 'ws_1', requestId: 'req_2', operationKey: 'payment.grant.commit', accessClass: 'RECOVERY_CONTROL' as const, balanceState: 'known' as const, availablePoints: 500, reservedPoints: 0, quotedPoints: null, accessRevision: 2, rateCardVersion: null, allowed: true, code: 'OK' as const, nextActions: [], decidedAt: '2026-09-02T01:00:00.000Z' },

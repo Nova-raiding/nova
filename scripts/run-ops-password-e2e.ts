@@ -534,6 +534,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
         } }),
       } : {}),
       ...(manualOperationsMode ? { PLATFORM_OPERATIONS_MODE: 'manual' } : {}),
+      MCP_INTEGRATION_MODE: 'local_stdio',
+      ...(merchantBaseUrl ? { PUBLIC_APP_BASE_URL: merchantBaseUrl, PUBLIC_APP_API_PATH_PREFIX: '/api' } : {}),
       ALLOWED_ORIGINS: [baseUrl, merchantBaseUrl].filter(Boolean).join(','), ...(unmatchedReadonlyMode ? {} : { PUBLIC_OPS_BASE_URL: baseUrl }), ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
       ...scanEnvironment?.apiEnvironment,
       ...commercialLease?.env,

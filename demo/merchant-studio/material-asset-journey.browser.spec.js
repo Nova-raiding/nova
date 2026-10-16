@@ -48,6 +48,9 @@ test('one workspace can upload and preview an image, then import a product table
   const tableAsset = {
     id: tableAssetId, workspaceId, name: 'journey-products.csv', mimeType: 'text/csv', sizeBytes: 84,
     sha256: 'b'.repeat(64), scanStatus: 'clean', rightsStatus: 'approved', source: 'merchant_upload',
+    // Synthetic scanner receipt required by the current import contract.
+    scanVerdict: 'clean', scanReceiptId: 'fixture-journey-table-scan', scanReceiptDigest: 'c'.repeat(64),
+    storageKey: `clean/${workspaceId}/${tableAssetId}/journey-products.csv`,
     parseStatus: 'succeeded', extractedFacts: { format: 'csv', rows: [
       { platform: '平台', title: '商品名称', account_id: '店铺账号', asset_ids: '素材ID' },
       { platform: '淘宝', title: '旅程关联商品', account_id: 'taobao-journey', asset_ids: imageAssetId },
@@ -145,7 +148,10 @@ test('one workspace can upload and preview an image, then import a product table
       name: tableAsset.name, mimeType: 'text/csv',
       buffer: Buffer.from(`平台,商品名称,店铺账号,素材ID\n淘宝,旅程关联商品,taobao-journey,${imageAssetId}`),
     })
-    await expect(importer.getByText('旅程关联商品', { exact: true })).toBeVisible()
+    await expect(importer.getByText('旅程关联商品', { exact: true })).toBeVisible().catch(async error => {
+      console.error('JOURNEY_IMPORT_DIAGNOSTIC ' + JSON.stringify({ text: await importer.innerText(), apiCalls, unexpectedRequests, browserErrors }))
+      throw error
+    })
     await importer.getByRole('button', { name: '确认并创建草稿' }).click()
     await expect(importer.getByText('已创建 1 个草稿商品；不可同步或发布。', { exact: true })).toBeVisible()
 

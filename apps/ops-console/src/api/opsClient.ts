@@ -36,9 +36,9 @@ export function describeOpsError(error: unknown): string {
     case "INTERNAL_ERROR":
       return "运营服务暂时不可用。请先重试；若持续失败，请检查 API 和数据库状态。";
     case "API_NOT_CONFIGURED":
-      return "运营 API 未配置。请设置 VITE_API_BASE 后重新启动运营台；当前页面不会把演示页面误当作 API。";
+      return "尚未连接运营服务，请联系管理员检查服务地址后重试。";
     case "OPS_WORKSPACE_REQUIRED":
-      return "请先输入真实工作区 ID，再读取运营数据。页面不会默认使用演示工作区。";
+      return "请先输入真实工作区 ID，再读取运营数据。页面不会默认使用测试工作区。";
     case "OPS_CONFIG_INVALID":
       return error instanceof Error && error.message
         ? `${error.message}。请修正连接配置后重试。`

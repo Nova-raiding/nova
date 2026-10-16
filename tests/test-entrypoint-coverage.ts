@@ -198,6 +198,10 @@ export const UNCOLLECTED_VITEST_TEST_FILES: readonly UncollectedTestFile[] = [
     file: 'demo/merchant-studio/scripts/verify-production-copy.test.mjs',
     reason: 'This is a Node built-in test, not a Vitest suite. The merchant-studio package exposes test:production-copy-guard and CI invokes that named script directly; it is listed here so the Vitest-only coverage scanner does not mistake the Node test for an orphan.',
   },
+  {
+    file: 'tests/ecs-bridge-candidate-map.test.ts',
+    reason: 'Dedicated ECS candidate-map acceptance requires the release-owned fixed Docker image digest and is intentionally excluded from the hermetic default suite; run it through the ECS release acceptance launcher when that image is loaded.',
+  },
 ]
 
 /** Browser specs no Playwright project or runner argument schedules. */

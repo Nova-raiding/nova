@@ -58,7 +58,7 @@ export function RefundSection({ model }: RefundSectionProps) {
         style={{ marginBottom: 16 }}
         type="info"
         showIcon
-        title="演示支付模式不支持真实退款"
+        title="测试支付模式不支持真实退款"
         description="当前运行环境未确认使用真实支付服务商，退款表单已禁用。"
       /> : null}
       {paymentReadiness.mode === "provider" && !paymentReadiness.ready ? <Alert

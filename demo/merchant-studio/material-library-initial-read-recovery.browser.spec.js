@@ -86,7 +86,7 @@ test('material library distinguishes a failed initial read from empty and recove
     const workspace = page.getByTestId('material-library-workspace')
     await expect(workspace).toBeVisible()
     await expect(workspace.getByRole('alert')).toContainText('素材读取失败')
-    await expect(workspace.getByText('本页不会用本地演示数据替代服务端素材。')).toBeVisible()
+    await expect(workspace.getByText('请点击“重新读取素材”重试。')).toBeVisible()
     await expect(workspace.locator('article')).toHaveCount(0)
     expect(assetReads.length).toBeGreaterThan(0)
     expect(assetReads.every((read) => read.method === 'GET' && read.workspaceId === workspaceId)).toBe(true)

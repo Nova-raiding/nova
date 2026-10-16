@@ -59,7 +59,7 @@ describe('product image review API', () => {
       headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'catalog.image.generate', params: { product_id: 'prod_fixture_1', count: '2', direction: '白底主图' } }),
     }).then(value => value.json()) as { data: { result: { job_id: string; execution: { mode: string; simulated: boolean; providerExecuted: boolean; label: string }; product_protection: { policy: string; allowed: boolean; immutableAttributes: string[]; safeModifications: string[] }; job: { state: string; artifactRole: string; archiveState: string; candidates: Array<{ visualRef: string; assetId: string; scanStatus: string }> }; product: { images?: string[] }; images?: string[]; review?: unknown[] } } }
-    expect(response.data.result.execution).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地演示图片，未调用图片模型' })
+    expect(response.data.result.execution).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地测试图片，未调用图片模型' })
     expect(response.data.result.job.state).toBe('succeeded')
     expect(response.data.result.job).toMatchObject({ artifactRole: 'candidate', archiveState: 'archived' })
     expect(response.data.result.job.candidates).toEqual(expect.arrayContaining([expect.objectContaining({ assetId: expect.any(String), scanStatus: 'quarantined' })]))

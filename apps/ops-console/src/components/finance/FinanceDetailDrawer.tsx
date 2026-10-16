@@ -31,7 +31,7 @@ const attributeValues: Record<string, Record<string, string>> = {
   payment_provider: { owner_attested_cash: "现金收款（负责人核验）", alipay: "支付宝" },
   channel: { alipay: "支付宝" },
   billing_cycle: { monthly: "月度", yearly: "年度" },
-  payment_mode: { fixture: "演示记录" },
+  payment_mode: { fixture: "测试记录" },
 };
 export const financeDetailAttributeLabel = (key: string) => attributeLabels[key] ?? key;
 export const financeDetailAttributeValue = (key: string, value: string | number | boolean | null) => {
@@ -44,6 +44,9 @@ export const financeDetailAttributeValue = (key: string, value: string | number 
 
 export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry, onClose }: FinanceDetailDrawerProps) {
   const errorRef = useRef<HTMLDivElement>(null);
+  const detailMatchesSelection = Boolean(selected && detail
+    && selected.id === detail.id && selected.kind === detail.kind
+    && selected.workspaceId === detail.workspaceId);
 
   useEffect(() => {
     if (error) errorRef.current?.focus({ preventScroll: true });
@@ -63,8 +66,8 @@ export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry,
       {!loading && error && <div ref={errorRef} tabIndex={-1} role="group" aria-label="财务详情错误摘要">
         <Alert type="error" showIcon title="详情加载失败" description={error} action={<Button htmlType="button" onClick={onRetry} aria-label="重试财务详情" style={{ minHeight: 44 }}>重试详情</Button>} />
       </div>}
-      {!loading && !error && !detail && <Empty description="没有可显示的财务详情" />}
-      {!loading && detail && (
+      {!loading && !error && !detailMatchesSelection && <Empty description="当前记录详情尚未返回"><Button onClick={onRetry}>重试详情</Button></Empty>}
+      {!loading && !error && detailMatchesSelection && detail && (
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
           <Descriptions.Item label="记录类型"><Tag>{detail.label}</Tag></Descriptions.Item>
           <Descriptions.Item label="状态"><Tag>{readableStatus(detail.status)}</Tag></Descriptions.Item>

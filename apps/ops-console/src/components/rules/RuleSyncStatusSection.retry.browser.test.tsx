@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,11 +32,12 @@ describe("rule sync failure recovery in the browser", () => {
             import React from 'react';
             import { createRoot } from 'react-dom/client';
             import { RuleSyncStatusSection } from '/src/components/rules/RuleSyncStatusSection.tsx';
+            import '/src/styles.css';
             window.__ruleSyncCalls = 0;
             createRoot(document.getElementById('root')).render(
               React.createElement(RuleSyncStatusSection, {
                 loading: false,
-                statuses: [],
+                statuses: [{ platform:'jd',label:'京东',officialUrl:'https://rule.jd.com/rule/list.action',configured:true,machineReadable:false,latestVersion:'0.1',sourceCheckedAt:'2026-10-06T00:00:00.000Z',ageHours:240,stale:true,state:'ready',reason:'规则来源已超过168小时未复核；已审核启用版本仍继续生效' }],
                 canSync: true,
                 onRefresh: () => undefined,
                 onSyncNow: async () => { window.__ruleSyncCalls += 1; return false; },
@@ -73,8 +74,17 @@ describe("rule sync failure recovery in the browser", () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    const externalRequests: string[] = [];
+    await page.route("**/*", route => {
+      if (new URL(route.request().url()).origin === baseUrl) return route.fallback();
+      externalRequests.push(route.request().url());
+      return route.abort();
+    });
     try {
       await page.goto(`${baseUrl}/__rule-sync-retry-test`);
+      await expectText(page, "已启用");
+      await page.getByText("来源待复核", { exact: true }).waitFor();
+      expect(await page.getByText("新鲜", { exact: true }).count()).toBe(0);
       const syncButton = page.getByRole("button", { name: "立即更新平台规则" });
       await syncButton.click();
       const failure = page.getByRole("alert").filter({ hasText: "规则同步未完成" });
@@ -86,6 +96,13 @@ describe("rule sync failure recovery in the browser", () => {
       const calls = await page.evaluate(() => (window as any).__ruleSyncCalls);
       expect(calls).toBe(2);
       expect(pageErrors).toEqual([]);
+      expect(externalRequests).toEqual([]);
+      if (process.env.RULE_STATUS_ARTIFACTS) {
+        const directory = resolve(process.env.RULE_STATUS_ARTIFACTS);
+        await mkdir(directory, { recursive: true });
+        await page.screenshot({ path: resolve(directory, "page.png"), fullPage: true });
+        await writeFile(resolve(directory, "evidence.json"), JSON.stringify({ calls, pageErrors, externalRequests, bodyText: await page.locator("body").innerText() }, null, 2));
+      }
     } finally {
       await page.close();
     }

@@ -17,6 +17,16 @@ describe('workspace invitation MCP handlers', () => {
     expect(await listWorkspaceInvitations({ workspaceId, subjects, members })).toMatchObject({ unread_count: 0, invitations: [] })
   })
 
+  it('normalizes a revision race after invitation lookup into a conflict', async () => {
+    const members = new MemoryMembersRepository()
+    const workspaceId = 'ws_invitation_race'
+    const subject = 'racing@example.test'
+    await members.upsert({ workspaceId, externalSubject: subject, displayName: '受邀成员', role: 'operator', status: 'invited', invitedBy: 'owner' })
+    vi.spyOn(members, 'changeStatusWithAudit').mockRejectedValue(new Error('MEMBER_REVISION_CONFLICT'))
+    await expect(acceptWorkspaceInvitation({ workspaceId, actorId: subject, subjects: new Set([subject]), params: { expected_revision: '1' }, members, expectedRevision: params => Number(params.expected_revision) })).rejects.toMatchObject({ code: 'MEMBER_REVISION_CONFLICT', status: 409 })
+    expect((await members.list(workspaceId))[0]?.status).toBe('invited')
+  })
+
   it('refuses an invitation addressed to another subject', async () => {
     const members = new MemoryMembersRepository()
     const workspaceId = 'ws_invitation_other'

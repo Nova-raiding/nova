@@ -28,8 +28,8 @@ interface MerchantEnvironmentInput {
 }
 
 const modeLabels: Record<string, string> = {
-  fixture: '本地演示',
-  demo: '演示',
+  fixture: '样例数据',
+  demo: '当前服务',
   test: '测试',
   local: '本地开发',
   production: '生产',
@@ -57,8 +57,8 @@ export function resolveMerchantEnvironmentStatus({
     return {
       state: 'offline',
       tone: 'warning',
-      topbarLabel: '离线演示',
-      title: '离线演示 · 不可上线',
+      topbarLabel: '未连接服务',
+      title: '尚未连接工作区服务',
       detail: '未配置工作区 API，不会读取或写入真实店铺数据。',
       facts: ['API 连通：未配置', '发布身份：未核验', modelFact(modelStatus, modelStatusRead)],
       actions: ['配置工作区 API 后重新检查上线状态。'],
@@ -109,7 +109,7 @@ export function resolveMerchantEnvironmentStatus({
     && modelReady
   const blockers: string[] = []
 
-  if (isDemo) blockers.push(`当前是${modeLabel}模式`)
+  if (isDemo) blockers.push(mode === 'fixture' ? '当前使用样例数据，不能作为业务证据' : '当前服务能力尚未完成核验')
   else if (mode !== 'production') blockers.push('运行环境未核验')
   if (!manualPlatformOperations && !officialApiPlatformOperations) blockers.push('未返回可识别的平台运营模式')
   if (platformOperationsReady === false) blockers.push('平台运营未就绪')
@@ -122,7 +122,7 @@ export function resolveMerchantEnvironmentStatus({
     if (productionGate === false) blockers.push('生产上线门禁未通过')
     else if (productionGate !== true) blockers.push('未返回生产上线门禁证据')
   }
-  if (isDemo) blockers.push('唯一 Demo 验收与发布身份未核验')
+  if (isDemo) blockers.push('当前环境验收与发布身份未核验')
   if (!modelStatusRead) blockers.push('模型中转状态仍在读取')
   else if (!modelReady) blockers.push('模型中转未就绪')
 
@@ -131,14 +131,14 @@ export function resolveMerchantEnvironmentStatus({
     `运行模式：${modeLabel}`,
     ...(manualPlatformOperations ? [] : [`平台运营：${officialApiPlatformOperations ? '官方接口' : '未确认'}`]),
     `自动平台写入：${automatedWritesEnabled === true ? '已开放' : automatedWritesEnabled === false ? '已关闭' : '未确认'}`,
-    isDemo ? '唯一 Demo 验收：待核验；发布身份：未核验'
+    isDemo ? '环境验收：待核验；发布身份：未核验'
       : mode === 'production' ? `生产门禁：${productionGate === true ? '已通过' : productionGate === false ? '未通过' : '未确认'}`
         : '运行环境与发布身份：未核验',
     modelFact(modelStatus, modelStatusRead),
   ]
   const actions: string[] = []
   if (isDemo)
-    actions.push('当前项目只配置唯一 Demo 环境；此状态不代表或切换到独立生产环境。')
+    actions.push('请在运营后台核对当前环境的验收证据与发布身份。')
   if (officialApiPlatformOperations && (writesEnabled !== true || automatedWritesEnabled !== true))
     actions.push('请管理员检查官方接口写入能力；当前页面不会提交真实平台写入。')
   if (mode === 'production' && productionGate !== true)
@@ -165,8 +165,8 @@ export function resolveMerchantEnvironmentStatus({
   return {
     state: isDemo ? 'demo' : 'blocked',
     tone: 'warning',
-    topbarLabel: isDemo ? '演示环境' : '不可上线',
-    title: isDemo ? '唯一 Demo · 验收待核验' : '当前环境不可上线',
+    topbarLabel: isDemo ? '服务待核验' : '不可上线',
+    title: isDemo ? '服务能力待核验' : '当前环境不可上线',
     detail: `${blockers.join('；')}。${modelDetail}`,
     facts,
     actions,

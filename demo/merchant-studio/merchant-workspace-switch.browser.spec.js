@@ -79,13 +79,23 @@ test('merchant workspace selector binds A to B to A requests and clears old tena
   await expect(memberTable).toContainText('A 工作区专属成员', { timeout: 30_000 })
   await expect(memberTable).not.toContainText('B 工作区专属成员')
 
+  const titleLayout = await page.locator('.topbar h1').evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const text = document.createRange()
+    text.selectNodeContents(element)
+    const search = document.querySelector('.topbar-search').getBoundingClientRect()
+    return { textLines: text.getClientRects().length, right: rect.right, searchLeft: search.left }
+  })
+  expect(titleLayout.textLines).toBe(1)
+  expect(titleLayout.right).toBeLessThanOrEqual(titleLayout.searchLeft)
+
   // Route state is tenant UI state too. Switch while a search route and a
   // workspace-specific dialog are open; neither may survive the transition.
   await openRoute(page, '/merchant/products?section=products&q=old-workspace-search-marker')
   await expect(page).toHaveURL(/old-workspace-search-marker/u)
   await openRoute(page, '/merchant/members')
   const aMemberRow = page.getByRole('row').filter({ hasText: 'A 工作区专属成员' })
-  await aMemberRow.getByRole('button', { name: '改角色' }).click()
+  await aMemberRow.getByRole('button', { name: '调整 A 工作区专属成员 的角色', exact: true }).click()
   await expect(page.getByRole('form', { name: '成员变更' })).toBeVisible()
   await chooseWorkspace(page, '按工作区 ID 切换当前商家工作区', workspaceB)
   await expect(page).toHaveURL(/\/merchant\/overview$/u)

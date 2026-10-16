@@ -225,7 +225,7 @@ export function materialEmptyCopy(outcome: MaterialReadOutcome): { title: string
     case 'loading':
       return { title: '正在读取素材', detail: '素材列表来自服务端，读取完成后才会显示数量与卡片。' }
     case 'error':
-      return { title: '素材读取失败', detail: `${outcome.error}；本页不会用本地演示数据替代服务端素材。` }
+      return { title: '素材读取失败', detail: `${outcome.error}；请点击“重新读取素材”重试。` }
     case 'unread':
       return { title: `未配置 API，素材${MATERIAL_UNREAD}`, detail: '配置 API 后，本页显示服务端真实素材；没有素材时会如实显示为空。' }
     default:

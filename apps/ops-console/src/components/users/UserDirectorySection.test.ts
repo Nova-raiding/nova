@@ -220,7 +220,7 @@ describe("UserDirectorySection directory behavior", () => {
 
   it("retains account provisioning and authorized directory export actions in the secondary menu", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
-    expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !model.canPlatformOps }');
+    expect(source).toContain('{ key: "provision", label: "开通商家账号", disabled: !canInvite }');
     expect(source).toContain('{ key: "export", label: "导出商户成员", disabled: accountType !== "merchant" || !canExportUserDirectory(model.authorization) || model.userExporting }');
     expect(source).toContain('initialValues={{ status: "", accountType: "merchant" }}');
     expect(source).toContain('disabled: !canReadUserDirectory');

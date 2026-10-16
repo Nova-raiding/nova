@@ -136,12 +136,15 @@ describe("Ops search and pagination pending states", () => {
   it("resets support-directory pagination when a new search is submitted", async () => {
     const page = await open();
     try {
-      const search = page.locator(".ant-input").first();
+      const search = page.getByRole("textbox", { name: "搜索支持企业" });
       await search.fill("Alpha");
       await page.getByRole("button", { name: "读取授权企业目录" }).click();
       await page.getByRole("button", { name: "下一页企业" }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: "下一页企业" }).click();
       await page.waitForFunction(() => window.__directoryCalls?.length === 2);
+      // The call ledger records dispatch before the fixture's asynchronous
+      // response. Wait for that response before submitting the next query.
+      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.includes('读取授权企业目录') && !button.classList.contains('ant-btn-loading')));
       await search.fill("Beta");
       expect(await page.getByRole("button", { name: "下一页企业" }).isDisabled()).toBe(true);
       await page.getByRole("button", { name: "读取授权企业目录" }).click();

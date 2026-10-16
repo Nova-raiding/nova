@@ -48,6 +48,9 @@ test('canonical merchant URLs render directly and preserve product section searc
   const observedRuleRequests = []
   const observedProductReads = []
   const consoleErrors = []
+  const expectedReadErrors = []
+  let imageListUnavailable = true
+  let imageListFailures = 0
   const pageErrors = []
   const readOnlyMcpMethods = new Set([
     'billing.transactions',
@@ -68,7 +71,11 @@ test('canonical merchant URLs render directly and preserve product section searc
     if (new URL(request.url()).origin !== studioUrl) externalRequests.push(request.url())
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
-  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return
+    if (imageListFailures > 0 && message.text() === 'Failed to load resource: the server responded with a status of 503 (Service Unavailable)') expectedReadErrors.push(message.text())
+    else consoleErrors.push(message.text())
+  })
 
   // This catch-all allows only this test's loopback Vite origin. The specific
   // /api route below is registered afterwards and handles every API request.
@@ -145,6 +152,10 @@ test('canonical merchant URLs render directly and preserve product section searc
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) })
     }
     if (path === '/api/v1/image-generation-jobs' || path === '/api/v1/publish-jobs') {
+      if (path === '/api/v1/image-generation-jobs' && imageListUnavailable) {
+        imageListFailures += 1
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ...envelope(null), error: { code: 'TEMPORARY_UNAVAILABLE', message: 'Image list read fixture is unavailable' } }) })
+      }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) })
     }
     const publishJobMatch = /^\/api\/v1\/publish-jobs\/([^/]+)$/u.exec(path)
@@ -212,6 +223,17 @@ test('canonical merchant URLs render directly and preserve product section searc
   })
 
   try {
+    await page.goto(`${studioUrl}/merchant/tasks`, { waitUntil: 'domcontentloaded' })
+    const discovery = page.getByRole('region', { name: '图片任务', exact: true })
+    await expect(discovery.getByRole('alert')).toContainText('图片任务列表读取失败')
+    await expect(discovery.locator('.status-chip')).toHaveText('未读取')
+    await expect(discovery.getByText('暂无图片任务', { exact: true })).toHaveCount(0)
+    imageListUnavailable = false
+    await discovery.getByRole('button', { name: '重新读取', exact: true }).click()
+    await expect(discovery.getByRole('alert')).toHaveCount(0)
+    await expect(discovery.locator('.status-chip')).toHaveText('0 个任务')
+    await expect(discovery.getByText('暂无图片任务', { exact: true })).toBeVisible()
+
     const routeCases = [
       ['/merchant/overview', '/merchant/overview', '事务看板'],
       ['/merchant/products', '/merchant/products?section=knowledge', '素材库'],
@@ -244,6 +266,11 @@ test('canonical merchant URLs render directly and preserve product section searc
           : page.locator('main').getByRole('heading', { name: heading }).first()
       await expect(renderedHeading, `${path} should render ${heading}; write attempts: ${JSON.stringify(writeAttempts)}; page errors: ${JSON.stringify(pageErrors)}; console errors: ${JSON.stringify(consoleErrors)}`).toBeVisible({ timeout: 15_000 })
       await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}${new URL(page.url()).hash}`).toBe(canonicalPath)
+      if (heading === '路由矩阵商品') {
+        const rules = page.getByTestId('task-rule-evidence')
+        await expect(rules).toContainText('尚未读取')
+        await expect(rules).not.toContainText('0 个服务端版本')
+      }
       console.log(`ROUTE_OK ${path} -> ${canonicalPath}`)
     }
 
@@ -317,6 +344,7 @@ test('canonical merchant URLs render directly and preserve product section searc
     expect(writeAttempts).toEqual([])
     expect(pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
+    expect(expectedReadErrors.length).toBeLessThanOrEqual(imageListFailures)
   } finally {
     await context.close()
     await browser.close()

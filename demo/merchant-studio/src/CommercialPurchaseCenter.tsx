@@ -11,6 +11,11 @@ const planNames: Record<string, string> = { basic: '基础版', growth: '成长�
 export const commercialMoney = (fen: number) => `¥${(fen / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 export const commercialDate = (instant: string) => new Date(instant).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
 export const commercialState = (state: string) => ({ active: '立即生效', scheduled: '未来待生效', pending: '待付款', paid: '已支付', awaiting_dependency: '待开通依赖', paid_pending_grant: '已支付待授予', paid_pending_resolution: '已收款待处置', reconciliation_required: '待对账', closed: '已关闭', refunded: '已退款', expired: '已到期' }[state] ?? state)
+
+export function commercialWriteOutcomeUnknown(error: Pick<ApiError, 'code' | 'status'> | undefined) {
+  if (error?.code === 'NEW_WRITES_CLOSED') return false
+  return error?.code === 'API_REQUEST_TIMEOUT' || error?.code === 'MCP_TRANSPORT_CLOSED' || error?.status === 503 || !error?.status
+}
 export function commercialPurchaseAction(portfolio: CommercialSubscriptionPortfolio, target: CommercialCatalogItem): { kind: 'purchase' | 'point_pack' | 'onboarding_once' | 'upgrade' | null; label: string; reason: string } {
   if (target.type === 'onboarding') return { kind: portfolio.onboarding_qualified ? null : 'onboarding_once', label: portfolio.onboarding_qualified ? '已开通' : '开通账户', reason: portfolio.onboarding_qualified ? '已获得开通资格，无需重复收费。' : '' }
   if (target.type === 'point_pack') return { kind: 'point_pack', label: '购买权益包', reason: '' }
@@ -204,7 +209,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
     const businessReason = typeof error.details?.business_reason === 'string' ? error.details.business_reason : error.code && /^(COMMERCIAL_|ONBOARDING_|UPGRADE_|PAYMENT_)/u.test(error.code) ? error.message : ''
     setWriteError(businessReason || describeApiError(cause, { operation })); setRequestRef(error.requestId ?? ''); setTraceRef(error.traceId ?? '')
     if (typeof error.details?.order_id === 'string') setRecoverOrderId(error.details.order_id)
-    const uncertain = error.code === 'API_REQUEST_TIMEOUT' || error.code === 'MCP_TRANSPORT_CLOSED' || error.status === 503 || !error.status
+    const uncertain = commercialWriteOutcomeUnknown(error)
     if (operation === 'write') setResultUnknown(uncertain)
   }
   const prepare = async () => {
@@ -302,7 +307,7 @@ export function CommercialPurchaseCenter({ baseUrl, workspaceKey, workspaceId, o
       if (workspaceScopeRef.current === scopeKey) {
         reportError(cause)
         const error = cause as ApiError
-        setPaymentRequestUnknown(error.code === 'API_REQUEST_TIMEOUT' || error.code === 'MCP_TRANSPORT_CLOSED' || error.status === 503 || !error.status)
+        setPaymentRequestUnknown(commercialWriteOutcomeUnknown(error))
       }
     } finally { if (workspaceScopeRef.current === scopeKey) setBusy(false) }
   }

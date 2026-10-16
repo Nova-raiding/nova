@@ -23,7 +23,7 @@ describe("ops error presentation", () => {
 
   it("keeps partial refresh failures distinct from an empty successful dataset", () => {
     expect(opsLoadWarningPresentation("部分数据集刷新失败（用户、任务）")).toEqual({
-      summary: "2 个数据集刷新失败，页面已保留上次成功数据。",
+      summary: "2 个数据集读取失败；相关内容尚未取得或可能已过期。",
       detail: "部分数据集刷新失败（用户、任务）",
     });
     expect(opsLoadWarningPresentation("没有可识别的错误")).toEqual({ summary: "没有可识别的错误", detail: undefined });

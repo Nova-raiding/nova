@@ -62,11 +62,12 @@ describe("ModelStatusSection", () => {
         dataSource: { fixtureDataPresent: false, environment },
         dataSetError: () => undefined, load: async () => undefined } as unknown as OpsConsoleModel,
     }));
-    expect(markup).toContain(environment === "demo" ? "唯一 Demo 验收" : "运行环境未核验");
+    expect(markup).toContain(environment === "demo" ? "当前环境验收" : "运行环境未核验");
     expect(markup).toContain("发布身份未核验");
     expect(markup).toContain("不等于实际调用通过");
     expect(markup).not.toContain("生产发布");
     expect(markup).not.toContain("生产门禁");
+    expect(markup).not.toMatch(/demo|演示/iu);
   });
 
   it("does not infer success from an empty next-actions list when model state is blocked", () => {

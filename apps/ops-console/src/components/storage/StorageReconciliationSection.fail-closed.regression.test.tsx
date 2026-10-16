@@ -34,7 +34,7 @@ describe("storage reconciliation fail-closed display regressions", () => {
     ]} />);
 
     expect(html).toContain("对象存储状态不可视为真实就绪");
-    expect(html).toContain("演示数据，未验证");
+    expect(html).toContain("测试数据，未验证");
     expect(html).not.toContain(">正常<");
   });
 

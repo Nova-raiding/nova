@@ -4,6 +4,12 @@ import { DomainError } from '../../../packages/application/src/service.js'
 import type { PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 
 export const merchantActivationPath = '/v1/auth/merchant-activation'
+export function merchantPublicApiPathPrefix(configured: string | undefined): '/api' | '' | undefined {
+  if (configured === undefined) return undefined
+  if (configured === '' || configured === '/api') return configured
+  throw new DomainError('AUTH_ACTIVATION_ORIGIN_UNAVAILABLE', '商家邀请 API 路径配置无效', 503)
+}
+
 export interface MerchantAccountInvitationDependencies {
   repository: PasswordAuthRepository
   requireOperationsRole: (request: IncomingMessage, roles: readonly string[]) => string

@@ -52,7 +52,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
   ]
 
   return <Card aria-busy={controller.loading} styles={{ body: { overflow: 'hidden' } }}>
-    {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含演示数据，审计状态不可视为真实生产事实" description="请先切换到无 fixture 的真实 API/审计仓储；详情和导出仍保持服务端权限控制。" /> : null}
+    {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含测试数据，审计状态不可视为真实生产事实" description="请先切换到无 fixture 的真实 API/审计仓储；详情和导出仍保持服务端权限控制。" /> : null}
     <Flex vertical={compact} gap={12} justify="space-between" align={compact ? 'stretch' : 'center'} style={{ marginBottom: 16 }}>
       <div>
         <Typography.Title level={3} style={{ margin: 0 }}>不可变审计记录</Typography.Title>
@@ -83,7 +83,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
         action={<Button onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>重试导出</Button>} />
     </div> : null}
     {controller.exportNotice ? <Alert type={controller.exportNotice.truncated ? 'warning' : 'success'} showIcon role="status" aria-live="polite" title={controller.exportNotice.message} /> : null}
-    {!initialLoadFailed && !controller.loading ? <Alert type={staleRecords ? "warning" : controller.truncated ? "info" : "success"} showIcon title={staleRecords ? `读取失败，以下为上次结果（${controller.records.length} 条）` : controller.truncated ? `已加载 ${controller.records.length} / ${controller.totalRecords} 条审计记录` : `已加载全部 ${controller.totalRecords} 条审计记录`} description={staleRecords ? "本次刷新未成功；旧记录可能已过期，不代表当前筛选条件下的完整审计事实。请成功刷新后再导出或据此判断。" : controller.truncated ? platformScope ? "平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。" : "当前结果按服务端游标分页，点击“加载更多”继续查看；总量来自同一租户和筛选条件。" : "当前结果已完整覆盖同一租户和筛选条件，记录内容为服务端脱敏投影。"} /> : null}
+    {!initialLoadFailed && !controller.loading ? <Alert type={staleRecords ? "warning" : controller.truncated ? "info" : "success"} showIcon title={staleRecords ? `读取失败，以下为上次结果（${controller.records.length} 条）` : controller.truncated ? `已加载 ${controller.records.length} / ${controller.totalRecords} 条审计记录` : `已加载全部 ${controller.totalRecords} 条审计记录`} description={staleRecords ? "本次刷新未成功；旧记录可能已过期，不代表当前筛选条件下的完整审计事实。请成功刷新后再导出或据此判断。" : controller.truncated ? platformScope ? "平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。" : "当前结果按服务端游标分页，点击“加载更多”继续查看；总量来自同一租户和筛选条件。" : platformScope ? "当前记录来自本次平台聚合查询，受已授权企业主体和筛选条件限制，均为服务端脱敏投影。" : "当前记录来自已选择企业主体和筛选条件的查询，均为服务端脱敏投影。"} /> : null}
     <div aria-live="polite" aria-atomic="true" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
       {controller.loading ? '正在加载审计记录' : initialLoadFailed ? '审计记录不可用，当前空列表不代表没有审计事件' : staleRecords ? `读取失败，保留上次 ${controller.records.length} 条审计记录；当前结果不可视为完整` : controller.truncated ? `已加载 ${controller.records.length} 条，共 ${controller.totalRecords} 条，仍有未加载记录` : `已加载全部 ${controller.totalRecords} 条审计记录`}
     </div>

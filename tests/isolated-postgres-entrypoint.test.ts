@@ -31,8 +31,9 @@ describe('isolated PostgreSQL entrypoint', () => {
   })
 
   it('selects exactly the audited PostgreSQL files by default', async () => {
-    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(62)
-    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(62)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toHaveLength(66)
+    expect(new Set(ISOLATED_POSTGRES_TEST_FILES).size).toBe(66)
+    expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/asset-scan-bootstrap-concurrency.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/commercial-receipt-read-rls.regression.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/catalog-batch-import-idempotency.postgres.test.ts')
     expect(ISOLATED_POSTGRES_TEST_FILES).toContain('packages/persistence/src/creative-point-reversal-concurrency.regression.postgres.test.ts')

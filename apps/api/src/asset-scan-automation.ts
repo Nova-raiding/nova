@@ -32,7 +32,7 @@ export function localAssetScanFixture(
     mode: 'local_fixture',
     evidenceRef: `fixture://local-asset-scan/v1/${receipt}`,
     productionEvidence: false,
-    label: '本地演示扫描，不代表生产安全扫描',
+    label: '本地测试扫描，不代表生产安全扫描',
   }
 }
 

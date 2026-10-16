@@ -134,8 +134,9 @@ export async function handleSyncRuleMcpMethod(method: string, req: IncomingMessa
     }
     case 'rule.sync.now': {
       requirePlatformRuleReviewer(req)
-      const sync = await syncSignedPlatformRules(workspaceId, { force: true })
-      return result({ sync, statuses: await trustedPlatformRuleSyncStatuses(workspaceId) })
+      const platformRuleWorkspaceId = '__platform_rules__'
+      const sync = await syncSignedPlatformRules(platformRuleWorkspaceId, { force: true })
+      return result({ sync, statuses: await trustedPlatformRuleSyncStatuses(platformRuleWorkspaceId, undefined, true) })
     }
     case 'rule.history': {
       const packId = required(params, 'pack_id')

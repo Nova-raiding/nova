@@ -41,7 +41,7 @@ describe("platform rule activation form validation", () => {
                 source: { kind: 'official', trust: 'verified', reference: 'https://rule.jd.com/rule/list.action', checkedAt: '2026-10-01T00:00:00.000Z', createdBy: 'signed-rule-sync' },
                 createdBy: 'signed-rule-sync',
               }],
-              updateRuleStatus: async (row, status) => { window.__ruleStatusUpdates.push({ packId: row.packId, status }); return true; },
+              updateRuleStatus: async (row, status) => { window.__ruleStatusUpdates.push({ packId: row.packId, status }); return !location.search.includes('fail-once') || window.__ruleStatusUpdates.length > 1; },
               publishRuleDraft: async () => true,
             };
             createRoot(document.getElementById('root')).render(React.createElement(App, null,
@@ -129,6 +129,29 @@ describe("platform rule activation form validation", () => {
       expect(pageErrors).toEqual([]);
     } finally { await page.close(); }
   }, 60_000);
+
+  for (const action of [{ label: "停用", status: "inactive" }, { label: "标记过期", status: "expired" }]) it(`keeps failed ${action.status} confirmation open for explicit retry`, async () => {
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(5_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.message));
+    try {
+      await page.goto(`${baseUrl}/__rule-activation-validation-test?fail-once`);
+      await page.getByRole("button", { name: action.label, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: `确认${action.label}？` });
+      await dialog.getByRole("button", { name: new RegExp(`确认${action.label}$`, "u") }).click();
+      await page.waitForFunction(() => window.__ruleStatusUpdates?.length === 1);
+      await dialog.getByRole("alert").waitFor({ state: "visible" });
+      expect(await dialog.isVisible()).toBe(true);
+      expect(await dialog.innerText()).toContain("未确认规则状态变更");
+      await dialog.getByRole("button", { name: new RegExp(`确认${action.label}$`, "u") }).click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => window.__ruleStatusUpdates)).toEqual([
+        { packId: "jd-pack", status: action.status }, { packId: "jd-pack", status: action.status },
+      ]);
+      expect(pageErrors).toEqual([]);
+    } finally { await page.close(); }
+  }, 30_000);
 
   it("identifies workspace scope in the lifecycle confirmation", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });

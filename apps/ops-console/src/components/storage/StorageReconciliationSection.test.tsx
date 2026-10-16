@@ -3,6 +3,26 @@ import { describe, expect, it, vi } from "vitest";
 import { StorageReconciliationSection } from "./StorageReconciliationSection.js";
 
 describe("StorageReconciliationSection accessibility states", () => {
+  it("shows returned workspace results without claiming the whole platform has no reconciliation evidence", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection summaries={[
+      { workspaceId: "ws-a", status: "clean", runStatus: "succeeded", freshness: "fresh", lastRunAt: "2026-10-16T03:17:09Z" },
+      { workspaceId: "ws-b", status: "attention_required", runStatus: "succeeded", freshness: "fresh", lastRunAt: "2026-10-16T03:17:10Z" },
+    ]} />);
+    expect(html).toContain("工作区列表已读取");
+    expect(html).toContain("未返回单一工作区的容量摘要");
+    expect(html).not.toContain("暂无可验证的对象清单对账结果");
+    expect(html).not.toContain("最近对账：暂无");
+    expect(html).not.toContain("配额上限");
+    expect(html).toContain("需处理");
+  });
+  it("does not expose cached platform rows when the caller says this session cannot read the list", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection unavailableReason="本次平台列表读取未执行，无读取权限" summaries={[
+      { workspaceId: "ws-cached-no-access", status: "clean", runStatus: "succeeded", freshness: "fresh", lastRunAt: "2026-10-16T03:17:09Z" },
+    ]} />);
+    expect(html).toContain("当前会话无法读取平台对账列表");
+    expect(html).not.toContain("ws-cached-no-access");
+    expect(html).not.toContain("工作区列表已读取");
+  });
   it("paginates workspace reconciliation rows at twenty per page", () => {
     const summaries = Array.from({ length: 21 }, (_, index) => ({ workspaceId: `ws-${index + 1}`, status: "clean" as const, lastRunAt: "2026-08-29T10:00:00Z", freshness: "fresh" as const }));
     const html = renderToStaticMarkup(<StorageReconciliationSection summaries={summaries} />);

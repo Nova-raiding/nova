@@ -11,9 +11,11 @@ import { assertRelayEvidence } from './relay-evidence.mjs'
 import { loadManagedToken, managedTokenSource, validatedRotatedCredential, withManagedRefreshLock } from './managed-token.mjs'
 import { createManagedCredentialLoader } from './managed-credential-state.mjs'
 import { restoreLaunchdEnvironment } from './launchd-environment.mjs'
-import { writeKeychainCredential } from './keychain-credential.mjs'
+import * as keychainCredentials from './keychain-credential.mjs'
 import { writeWindowsCredential } from './windows-credential.mjs'
 import { restoreWindowsSession } from './windows-session-env.mjs'
+
+const { writeKeychainCredential } = keychainCredentials
 
 // ChatGPT/Codex may launch the JavaScript entrypoint with a bundled Node binary.
 // On macOS, recover only missing configuration from launchd;
@@ -36,12 +38,26 @@ const managedCredentialLoader = createManagedCredentialLoader({
 })
 const ensureManagedCredential = () => managedCredentialLoader.ensure()
 
+function withQaCredentialGuidance(presentation) {
+  if (managedTokenSource(process.env) !== 'keychain' || keychainCredentials.isQaBrokerPackage?.() !== true) return presentation
+  return {
+    ...presentation,
+    text: `${presentation.text} 当前运行的是临时 QA 安装包，工作区授权仅保存在辅助进程内存中，进程退出后不会保留；若需要重启或重新打包后仍保留授权，请先安装使用原生凭据存储的本地插件包，再完成本地登录。`,
+    recovery: {
+      ...presentation.recovery,
+      credential_persistence: { package_profile: 'qa-broker', storage: 'process_memory', survives_process_exit: false },
+      resume_message: '安装原生凭据模式并完成本地登录后重试',
+      next_action: { ...presentation.recovery.next_action, label: '先安装使用原生凭据存储的本地插件包，再完成本地登录' },
+    },
+  }
+}
+
 function managedCredentialError() {
   const configuredWorkspace = process.env.MERCHANT_WORKSPACE_ID?.trim()
   const workspaceId = configuredWorkspace && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(configuredWorkspace)
     ? configuredWorkspace
     : undefined
-  return {
+  const failure = {
     code: 'MCP_CREDENTIAL_SOURCE_INVALID',
     message: `本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问${workspaceId ? `目标工作区 ${workspaceId}` : '目标工作区'}，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。`,
     recovery: {
@@ -56,6 +72,8 @@ function managedCredentialError() {
       },
     },
   }
+  const presentation = withQaCredentialGuidance({ text: failure.message, recovery: failure.recovery })
+  return { ...failure, message: presentation.text, recovery: presentation.recovery }
 }
 
 function managedCredentialTemporaryError() {
@@ -302,10 +320,6 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get',
   'ops.commercial.model-markup.update',
   'subscription.order.create', 'subscription.change',
-  // Image generation/editing stay visible to the merchant bridge. The API
-  // performs the authoritative entitlement, relay, cost and rights gates;
-  // hiding them here makes a configured local/relay workflow impossible.
-  'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed',
   'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
@@ -374,7 +388,8 @@ const MERCHANT_HIDDEN_METHODS = new Set([
 // registry-enabled; the API remains authoritative for workspace, rights,
 // provider, and cost gates.
 MERCHANT_HIDDEN_METHODS.delete('multimodal.video.get')
-const isMerchantTool = name => !name.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(name)
+const MERCHANT_VISIBLE_OPS_METHODS = new Set(['ops.marketing.generation.retry'])
+const isMerchantTool = name => (MERCHANT_VISIBLE_OPS_METHODS.has(name) || !name.startsWith('ops.')) && !MERCHANT_HIDDEN_METHODS.has(name)
 const boundedString = (maxLength, minLength = 1, description) => ({ type: 'string', minLength, maxLength, ...(description ? { description } : {}) })
 const positiveIntegerString = { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 }
 const pageLimit100 = { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$', maxLength: 3 }
@@ -1248,8 +1263,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { modality: { type: 'string', enum: ['text', 'image', 'video'] }, prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['modality', 'prompt', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.request': {
-    description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。每个新渲染意图生成新的随机 idempotency_key；同一请求重试必须复用原 key，修改请求意图必须换新 key。',
-    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { ...idempotencyKeyProperty, description: '视频成片渲染必填；重试同一请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], oneOf: [{ properties: { output: { enum: ['script', 'storyboard'] } }, required: ['output'] }, { properties: { output: { enum: ['rendering'] } }, required: ['output', 'idempotency_key'] }], additionalProperties: false },
+    description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；每个新渲染意图生成新的随机 idempotency_key，同一请求重试必须复用原 key，修改请求意图必须换新 key；返回结果区分计划请求与 provider 实际执行。',
+    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { ...idempotencyKeyProperty, description: '渲染请求必填；重试同一请求时保持不变，避免重复渲染和计费' }, confirmation_ticket_nonce_hash: sha256HashProperty, confirmation_ticket_intent_hash: sha256HashProperty }, required: ['prompt', 'output', 'context_json'], oneOf: [{ properties: { output: { enum: ['script', 'storyboard'] } }, required: ['output'] }, { properties: { output: { enum: ['rendering'] } }, required: ['output', 'idempotency_key'] }], additionalProperties: false },
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',
@@ -1852,7 +1867,7 @@ function userFacingToolText(method, result) {
       const downloadPath = video.downloadPath ?? video.download_path
       const previewPath = video.previewPath ?? video.preview_path
       if ((video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'clean' && typeof assetId === 'string' && typeof downloadPath === 'string') return '视频已归档并通过自动安全检查，视频文件已附在本条结果中。'
-      if ((video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'unscanned' && video.preview_only === true && typeof assetId === 'string' && typeof previewPath === 'string') return '视频候选已归档。演示模式尚未扫描，所附文件仅供当前工作区预览，不代表审核通过或可发布。'
+      if ((video.archiveState ?? video.archive_state) === 'archived' && scanStatus === 'unscanned' && video.preview_only === true && typeof assetId === 'string' && typeof previewPath === 'string') return '视频候选已归档。该视频尚未扫描，所附文件仅供当前工作区预览，不代表审核通过或可发布。'
       return '视频已生成，文件或安全检查尚未全部确认。'
     }
   }
@@ -1875,7 +1890,7 @@ function userFacingToolText(method, result) {
     return [summary, question].filter(Boolean).join('\n')
   }
   if (['catalog.image.get', 'catalog.image.generate'].includes(method) && result.candidate_state) {
-    if (result.candidate_state.scan_status === 'unscanned') return [merchantVisibleText(result.completed_summary, '候选已归档（演示模式，未扫描），未批准、不可发布。'), pointsText].filter(Boolean).join('\n')
+    if (result.candidate_state.scan_status === 'unscanned') return [merchantVisibleText(result.completed_summary, '候选已归档（未扫描），未批准、不可发布。'), pointsText].filter(Boolean).join('\n')
     if (result.candidate_state.presentation === 'component') return ['主图候选已准备好。', pointsText].filter(Boolean).join('\n')
     if (typeof result.question === 'string' && result.question.trim()) return [merchantVisibleText(result.question, '请查看主图候选状态。'), pointsText].filter(Boolean).join('\n')
     return [typeof result.completed_summary === 'string' && result.completed_summary.trim()
@@ -2063,7 +2078,7 @@ function toolErrorPresentation(method, args, code, details) {
     }
   }
   if (code === 'MCP_AUTH_REQUIRED' || code === 'UNAUTHENTICATED') {
-    return {
+    return withQaCredentialGuidance({
       text: '当前插件没有可用的 Store Nova 工作区登录凭据，可能尚未登录或凭据已失效。本次未完成请求；请联系平台管理员确认分配给你的 ws_... 工作区 ID，在插件安装目录运行 macOS 的 login.sh --workspace ws_... 或 Windows 的 login.cmd --workspace ws_...，按提示完成登录后重启 ChatGPT。此操作只登录当前工作区，不会连接店铺、扣费或发布。',
       recovery: {
         state: 'authentication_required',
@@ -2072,7 +2087,7 @@ function toolErrorPresentation(method, args, code, details) {
         resume_message: '本地登录完成后继续',
         next_action: { label: '运行插件安装目录中的本地登录脚本', target: 'local_plugin_login', workspace_id_format: 'ws_...' },
       },
-    }
+    })
   }
   if (method === 'platform.connect' && code === 'NOT_CONFIGURED') {
     const platform = merchantPlatformLabel(args?.platform) || '当前平台'
@@ -2523,7 +2538,7 @@ function merchantContextMetadata(result, explicitContext = {}) {
     schema_version: '1',
     surface: 'merchant_codex_app',
     data_status: simulated ? 'demo' : 'real_or_server_reported',
-    data_status_label: simulated ? '演示数据' : '服务端数据',
+    data_status_label: simulated ? '测试数据' : '服务端数据',
     context_bar: {
       order: ['workspace', 'business_unit', 'platform', 'store'],
       labels: { workspace: '工作区', business_unit: '品', platform: '平台', store: '店铺' },
@@ -2655,7 +2670,7 @@ function merchantConversationProjection(method, result, args = {}) {
   const storeOptions = stores.map((store, index) => {
     const simulated = store.dataMode === 'fixture' || store.state === 'fixture'
     const status = simulated
-      ? { label: '演示店铺', explanation: '仅用于演示，不代表真实店铺' }
+      ? { label: '测试店铺', explanation: '仅用于测试，不代表真实店铺' }
       : store.state === 'revoked'
         ? { label: '已撤销', explanation: '目前无法读取该店铺商品' }
         : store.state === 'refresh_required'
@@ -2670,19 +2685,19 @@ function merchantConversationProjection(method, result, args = {}) {
       account_id: store.accountId ?? null,
       status: status.label,
       explanation: status.explanation,
-      data_source: simulated ? '演示数据' : store.dataMode === 'official_api' ? '官方 API' : '账号记录',
+      data_source: simulated ? '测试数据' : store.dataMode === 'official_api' ? '官方 API' : '账号记录',
       selectable: Boolean(store.platform && store.accountId && store.readable && !simulated),
       ...(store.platform && store.accountId ? { action: { method: 'catalog.search', arguments: { scope: 'store', platform: store.platform, account_id: store.accountId } } } : {}),
     }
   })
-  const demoOnlyStores = stores.length > 0 && storeOptions.every(store => store.selectable === false && store.status === '演示店铺')
+  const demoOnlyStores = stores.length > 0 && storeOptions.every(store => store.selectable === false && store.status === '测试店铺')
   const expectedInput = workspaceUnavailable
     ? { kind: 'none', user_action_required: false }
     : merchantConversationInput(method, stage, action.method, explicitContext, stores.length)
   const question = workspaceUnavailable
     ? undefined
     : demoOnlyStores
-      ? '当前仅检测到演示店铺，不能作为真实商品来源。请提供公开商品链接、商品资料或图片。'
+      ? '当前仅检测到测试店铺，不能作为真实商品来源。请提供公开商品链接、商品资料或图片。'
     : merchantConversationQuestion(method, stage, expectedInput, explicitContext, result, action.label)
   const rawPrimaryAction = canonicalStep && typeof canonicalStep === 'object' && !Array.isArray(canonicalStep) && canonicalStep.primary_action && typeof canonicalStep.primary_action === 'object' && !Array.isArray(canonicalStep.primary_action)
     ? canonicalStep.primary_action
@@ -2703,7 +2718,7 @@ function merchantConversationProjection(method, result, args = {}) {
     : scanning
       ? '图片已收到，正在自动检查。通过后会等待你的确认再继续生成。'
       : method === 'workspace.health'
-        ? demoOnlyStores ? `当前检测到 ${stores.length} 家演示店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `当前列出 ${stores.length} 条店铺连接记录。` : '当前还没有可用店铺。'
+        ? demoOnlyStores ? `当前检测到 ${stores.length} 家测试店铺；它们不代表真实授权，也不能用于读取商品或发布。` : stores.length ? `当前列出 ${stores.length} 条店铺连接记录。` : '当前还没有可用店铺。'
         : explicitContext.platform
           ? `已锁定${merchantPlatformLabel(explicitContext.platform)}。`
           : typeof result?.summary === 'string' && result.summary.trim()
@@ -2876,7 +2891,7 @@ function merchantUiMetadata(method, result, args = {}) {
       state_label: '知识状态待服务端核验',
       summary: 'merchant.start 不声明知识已恢复；生成前由服务端按工作区、平台、店铺和商品重新校验规则与知识上下文。',
       scope: { workspace_id: result?.workspace?.id ?? result?.workspace_id ?? null, platform: result?.platform ?? null, account_id: result?.account_id ?? result?.accountId ?? null },
-      data_source: simulated ? '演示数据（未作为知识就绪证据）' : '服务端待核验',
+      data_source: simulated ? '测试数据（未作为知识就绪证据）' : '服务端待核验',
       blocks_generation: true,
       next_actions: [{ label: '查看工作区规则与知识状态', tool: 'workspace.health', required_inputs: [] }, { label: '选择平台和店铺商品', tool: 'catalog.search', required_inputs: ['platform', 'account_id', 'product_id'] }],
     }
@@ -3123,7 +3138,7 @@ async function materializeVideoArtifact(result, signal) {
       uri: pathToFileURL(file).href,
       mimeType: contentType,
       size: bytes.length,
-      description: descriptor.previewOnly ? '演示模式未扫描的视频候选，仅供当前工作区预览，不可作为正式交付或发布。' : '已完成扫描和归档的视频候选；仍需按商品工作流进行人工审核。',
+      description: descriptor.previewOnly ? '尚未扫描的视频候选，仅供当前工作区预览，不可作为正式交付或发布。' : '已完成扫描和归档的视频候选；仍需按商品工作流进行人工审核。',
       annotations: { audience: ['user'] },
     },
   }
@@ -3973,7 +3988,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
           : 'processing'
   const detailPreviewLabel = detailLongImage ? '详情长图预览' : '详情套图预览'
   const nextAction = demoUnscannedDelivery
-    ? { type: 'none', label: '演示预览·未扫描', allowed: false }
+    ? { type: 'none', label: '测试预览·未扫描', allowed: false }
     : candidateLifecycle === 'blocked'
       ? { type: 'none', label: '安全检查未通过', allowed: false }
       : candidateLifecycle === 'needs_review'
@@ -4024,7 +4039,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     },
     ...(demoUnscannedDelivery ? { image_delivery_policy: { mode: 'demo_unscanned', scan_verified: false, publishable: false } } : {}),
     completed_summary: demoUnscannedDelivery
-      ? '候选已归档（演示模式，未扫描），未批准、不可发布。'
+      ? '候选已归档（未扫描），未批准、不可发布。'
       : detailPageImage && images.length
       ? `${detailLongImage ? '详情长图' : '详情套图'}已准备，共 ${images.length} 张；请检查商品事实、文案和画面后再继续。`
       : bannerImage && images.length
@@ -4420,7 +4435,7 @@ async function handle(request, signal) {
     // MCP CallToolRequest.arguments is optional; omission is an empty object.
     // Preserve explicit null/scalar/array values so the shape guard rejects them.
     const args = request.params?.arguments === undefined ? {} : request.params.arguments
-    if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
+    if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name] || !Object.hasOwn(METHODS, name)) return jsonRpcError(id, -32602, `当前插件没有此工具：${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return toolArgumentError(id, '工具参数必须是对象')
     const missingConfiguration = prepareInitialConnectionConfiguration(name)
     if (missingConfiguration.length) {

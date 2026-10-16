@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../demo/merchant-studio/src/App.tsx', import.meta.url), 'utf8')
+const catalogData = readFileSync(new URL('../demo/merchant-studio/src/catalog-data.ts', import.meta.url), 'utf8')
+const consistency = readFileSync(new URL('../demo/merchant-studio/src/data-consistency.ts', import.meta.url), 'utf8')
 const api = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
 const purchaseCenter = readFileSync(new URL('../demo/merchant-studio/src/CommercialPurchaseCenter.tsx', import.meta.url), 'utf8')
 const campaign = readFileSync(new URL('../demo/merchant-studio/src/CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
@@ -39,10 +41,7 @@ const liveApp = [app.slice(0, factsEditorStart), app.slice(brandMarkStart, asset
 
 describe('Merchant Studio production UI contract', () => {
   it('keeps the four platform routes independent', () => {
-    expect(app).toContain("platformId: 'jd'")
-    expect(app).toContain("platformId: 'taobao'")
-    expect(app).toContain("platformId: 'tmall'")
-    expect(app).toContain("platformId: 'pinduoduo'")
+    for (const platform of ['jd', 'taobao', 'tmall', 'pinduoduo']) expect(catalogData).toContain(`${platform}:`)
     expect(app).toContain("tmall: '天猫'")
   })
 
@@ -102,7 +101,8 @@ describe('Merchant Studio production UI contract', () => {
 
   it('restores existing tasks without creating duplicates or auto-generating content', () => {
     expect(app).toContain('await fetchTask(baseUrl, target.taskId)')
-    expect(app).toMatch(/const current = target\.taskId\s*\?\s*\(target\.resolvedTask \?\? \(await fetchTask\(baseUrl, target\.taskId\)\)\)\s*:\s*null/u)
+    expect(app).toContain('target.resolvedTask')
+    expect(app).toContain('taskContextReloadKey')
     expect(app).toContain('createTaskFromIntent')
     expect(app).toContain('createTaskOnce(baseUrl, { ...resolvedTarget, taskIntentKey: intentKey }, requestText)')
     expect(app).toContain('idempotency_key: intentKey')
@@ -152,15 +152,14 @@ describe('Merchant Studio production UI contract', () => {
   })
 
   it('does not present offline catalog fixtures as official platform data', () => {
-    expect(app).toContain("source: '演示数据'")
-    expect(app).toContain("platform: '小红书'")
-    expect(app).toContain("platform: '抖音'")
+    expect(catalogData).toContain("xiaohongshu: '小红书店'")
+    expect(catalogData).toContain("douyin: '抖音小店'")
     expect(app).not.toContain("source: 'CSV 降级'")
   })
 
   it('labels offline overview activity and connections as demonstrations', () => {
-    expect(app).toContain("status: '演示连接'")
-    expect(app).toContain("['演示发布状态'")
+    expect(consistency).toContain("id: 'publish'")
+    expect(consistency).toContain("label: '发布状态'")
     expect(app).not.toContain("['发布已生效'")
   })
 

@@ -291,7 +291,7 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let job: ReturnType<typeof service.enqueueImageGeneration>
       try {
-        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(taskId ? { taskId } : {}), ...(contentVersionId ? { contentVersionId } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
+        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(unboundCandidate ? { unboundCandidate: true } : {}), ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(taskId ? { taskId } : {}), ...(contentVersionId ? { contentVersionId } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
       } catch (error) {
         await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务创建失败', creativeReservation)
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片任务创建失败' })

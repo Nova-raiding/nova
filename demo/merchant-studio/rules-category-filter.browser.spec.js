@@ -100,20 +100,26 @@ test('merchant rules category filter narrows and restores rule rows without refe
     await expect(panel).toContainText('广告发布规则')
     await expect(page).toHaveURL(`${studioUrl}/merchant/rules?platform=jd`)
 
-    // A native select must remain operable without a pointer. Home and End
-    // select the first and last category options and announce their results.
-    await categoryFilter.focus()
-    await categoryFilter.press('End')
+    // Verify the real tab path separately from native popup selection.
+    // Playwright supports selectOption for the OS-owned select popup; raw
+    // Home/End did not change even a plain HTML select in macOS Chrome.
+    const searchInput = page.getByRole('textbox', { name: '搜索规则或品类' })
+    await expect(searchInput).toBeFocused()
+    await searchInput.press('Shift+Tab')
+    await expect(categoryFilter).toBeFocused()
+    await categoryFilter.selectOption('advertising_publish')
     await expect(categoryFilter).toHaveValue('advertising_publish')
     await expect(panel).toContainText('广告发布规则')
     await expect(panel).not.toContainText('平台事实规则')
     await expect(categoryFilter).toBeFocused()
-    await categoryFilter.press('Home')
+    await categoryFilter.selectOption('all')
     await expect(categoryFilter).toHaveValue('all')
     await expect(panel).toContainText('平台事实规则')
     await expect(panel).toContainText('广告发布规则')
     await expect(page).toHaveURL(`${studioUrl}/merchant/rules?platform=jd`)
 
+    await categoryFilter.press('Tab')
+    await expect(searchInput).toBeFocused()
     expect(ruleReads).toHaveLength(initialRuleReadCount)
     expect(mutations).toEqual([])
     expect(externalRequests).toEqual([])

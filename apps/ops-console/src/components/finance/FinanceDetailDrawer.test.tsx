@@ -62,7 +62,7 @@ describe("FinanceDetailDrawer", () => {
   it("renders safe, human-readable attributes and redacts null values", () => {
     expect(financeDetailAttributeLabel("payment_mode")).toBe("支付模式");
     expect(financeDetailAttributeLabel("unknown_field")).toBe("unknown_field");
-    expect(financeDetailAttributeValue("payment_mode", "fixture")).toBe("演示记录 · fixture");
+    expect(financeDetailAttributeValue("payment_mode", "fixture")).toBe("测试记录 · fixture");
     expect(financeDetailAttributeValue("refunded", false)).toBe("否");
     expect(financeDetailAttributeValue("order_id", null)).toBe("—");
   });
@@ -71,7 +71,7 @@ describe("FinanceDetailDrawer", () => {
     const html = renderToStaticMarkup(<FinanceDetailDrawer selected={selected} detail={detail} loading={false} onRetry={vi.fn()} onClose={vi.fn()} />);
     expect(html).toContain("财务详情 · 模型用量");
     expect(html).toContain("¥0.000123");
-    expect(html).toContain("演示记录 · fixture");
+    expect(html).toContain("测试记录 · fixture");
     expect(html).toContain("演示企业");
 
     const errorHtml = renderToStaticMarkup(<FinanceDetailDrawer selected={selected} loading={false} error="详情服务不可用" onRetry={vi.fn()} onClose={vi.fn()} />);

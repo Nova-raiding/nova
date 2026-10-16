@@ -251,6 +251,7 @@ export const MCP_METHODS = [
   'ops.marketing.generation.retry',
   'ops.marketing.generation.no_delivery.refund',
   'ops.marketing.asset_scan.retry',
+  'ops.marketing.asset_scan.bootstrap',
   'ops.marketing.publish.acknowledge',
   'ops.marketing.revision.create',
   'ops.member.upsert',
@@ -1037,6 +1038,16 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
       reason: reasonProperty,
     }, ['asset_id', 'event_id', 'expected_asset_revision', 'idempotency_key', 'reason']),
   },
+  {
+    method: 'ops.marketing.asset_scan.bootstrap',
+    description: 'Safely enroll one historical unscanned quarantine asset into the normal signed scan queue. This never marks an asset clean or bypasses the scanner.',
+    params: params({
+      asset_id: boundedString(200, 1),
+      expected_asset_revision: { type: 'string', pattern: '^[1-9][0-9]*$' },
+      idempotency_key: boundedString(255, 8),
+      reason: reasonProperty,
+    }, ['asset_id', 'expected_asset_revision', 'idempotency_key', 'reason']),
+  },
   { method: 'ops.marketing.publish.acknowledge', description: 'Acknowledge a rejected or unknown publish job. Requires an active workspace role or explicitly granted support role; platform_ops alone is denied.', params: params({ publish_job_id: { type: 'string' }, reason: { type: 'string' } }, ['publish_job_id', 'reason']) },
   { method: 'ops.marketing.revision.create', description: 'Create a review-required content revision from a rejected publish version. Requires an active workspace role or explicitly granted support role; platform_ops alone is denied.', params: params({ publish_job_id: { type: 'string' }, changes_json: { type: 'string' }, locked_fields_json: { type: 'string' }, reason: { type: 'string' }, expected_revision: { type: 'string' } }, ['publish_job_id', 'changes_json', 'reason']) },
   { method: 'ops.member.upsert', description: 'Create or update a workspace member role and status; updates use the caller-observed revision.', params: params({ external_subject: boundedString(256), display_name: boundedString(256), role: { type: 'string', enum: ['workspace_owner', 'merchant_admin', 'operator', 'support', 'finance', 'platform_ops'] }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, expected_revision: positiveIntegerString, reason: boundedString(1_000, 3) }, ['external_subject', 'role', 'reason']) },
@@ -1164,7 +1175,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.categories',
-    description: 'List workspace-visible category templates with platform mappings and required attributes.',
+    description: 'List workspace-visible category field templates, supported platforms and required attributes. This does not return platform field mappings or preflight validation evidence.',
     params: params({ query: { type: 'string' } }),
   },
   {
@@ -1777,8 +1788,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'multimodal.video.request',
-    description: 'Create a one-sentence video script/storyboard request or render a video through the platform-owned relay; the response distinguishes a planned request from provider execution.',
-    params: params({ prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '重试同一视频请求时保持不变，避免重复渲染和重复计费' }, confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, ['prompt', 'output', 'context_json']),
+    description: 'Create a one-sentence video script/storyboard request or render a video through the platform-owned relay; every request requires a stable idempotency key, and the response distinguishes a planned request from provider execution.',
+    params: params({ prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string', description: '渲染请求必须提供；脚本或分镜请求可省略；重试同一请求时保持不变，避免重复生成、渲染和计费' }, confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, ['prompt', 'output', 'context_json']),
   },
   {
     method: 'multimodal.video.get',

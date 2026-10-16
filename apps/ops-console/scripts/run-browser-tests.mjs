@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 const vitest = fileURLToPath(new URL("../../../node_modules/vitest/vitest.mjs", import.meta.url));
 const opsRoot = fileURLToPath(new URL("../", import.meta.url));
 const files = [
+  "src/components/users/UserDirectorySection.invitation-authorization.browser.test.tsx",
+  "src/pages/CustomerDeliveryCreateAuthorization.e2e.test.ts",
+  "src/components/tasks/knowledge/UploadedAssetGovernance.bootstrap.browser.test.tsx",
+  "src/components/stores/CanonicalBackfillConflictSection.scope.browser.test.tsx",
   "src/pages/OverviewPage.browser.test.tsx",
+  "src/components/PlatformOpsLoginPage.browser.test.tsx",
+  "src/components/finance/ReconciliationSection.context.browser.test.tsx",
   "src/pages/OverviewPage.controller-route.browser.test.tsx",
   "src/pages/KnowledgePage.controller-route-recovery.browser.test.tsx",
   "src/components/support/SupportQueueSection.empty-filter.browser.test.tsx",

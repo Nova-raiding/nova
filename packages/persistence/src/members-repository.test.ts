@@ -228,7 +228,7 @@ describe('PostgresMembersRepository platform reads', () => {
     expect(found).toMatchObject({ total: 7, workspaceCount: 2, identityCount: 6, itemsFrom: 4 })
     expect(found.items[0]).not.toHaveProperty('__itemsFrom')
     expect(calls.map(call => call.sql)).toEqual([
-      'BEGIN READ ONLY',
+      'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY',
       "SELECT set_config('app.platform_scope', 'platform_ops', true)",
       expect.stringContaining('count(DISTINCT'),
       expect.stringContaining('bounds'),
@@ -268,5 +268,17 @@ describe('PostgresMembersRepository platform reads', () => {
     const repository = new PostgresMembersRepository(mock(() => ({ rows: [] })).pool)
     expect(repository.searchWindow).toBeUndefined()
     expect(repository.findBySubject).toBeUndefined()
+  })
+})
+
+
+describe('active workspace owner governance', () => {
+  it('rejects removing the last owner while allowing an explicit platform override', async () => {
+    const repository = new MemoryMembersRepository()
+    const owner = await repository.upsert({ workspaceId: 'ws_owner_guard', externalSubject: 'owner', displayName: 'Owner', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
+    const input = { workspaceId: owner.workspaceId, externalSubject: owner.externalSubject, targetStatus: 'suspended' as const, expectedRevision: owner.revision, actorId: 'platform', action: 'member.suspend', reason: 'owner governance test', preserveActiveOwner: true }
+    await expect(repository.changeStatusWithAudit(input)).rejects.toThrow('LAST_WORKSPACE_OWNER_REQUIRED')
+    await expect(repository.upsertWithAudit({ ...input, displayName: 'Owner', role: 'operator', status: 'active' })).rejects.toThrow('LAST_WORKSPACE_OWNER_REQUIRED')
+    await expect(repository.changeStatusWithAudit({ ...input, preserveActiveOwner: false })).resolves.toMatchObject({ member: { status: 'suspended' } })
   })
 })

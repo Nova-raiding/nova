@@ -10,6 +10,7 @@ describe('worker system-delivery authorization boundary', () => {
 
   it('retains actor authorization for manual redrive and other worker operations', () => {
     expect(requiresWorkerActorAuthorization('asset.scan_redrive_requested', 'asset.scan.execute')).toBe(true)
+    expect(requiresWorkerActorAuthorization('asset.scan_bootstrap_requested', 'asset.scan.execute')).toBe(true)
     expect(requiresWorkerActorAuthorization('generation.requested', 'generation.execute')).toBe(true)
     expect(requiresWorkerActorAuthorization('sync.requested', 'catalog.sync.execute')).toBe(true)
   })

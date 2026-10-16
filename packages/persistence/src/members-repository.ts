@@ -6,8 +6,8 @@ export type MemberRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'su
 export type MemberStatus = 'invited' | 'active' | 'suspended'
 export interface WorkspaceMember { id: string; workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string; identityId?: string; revision: number; createdAt: string; updatedAt: string }
 export interface WorkspaceMemberPage { items: WorkspaceMember[]; total: number; offset: number; limit: number; hasMore: boolean; activeOwnerCount: number }
-export interface MemberStatusAuditInput { workspaceId: string; externalSubject: string; targetStatus: MemberStatus; expectedRevision: number; actorId: string; action: string; reason: string }
-export interface MemberUpsertAuditInput { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; expectedRevision?: number; actorId: string; action: string; reason: string }
+export interface MemberStatusAuditInput { workspaceId: string; externalSubject: string; targetStatus: MemberStatus; expectedRevision: number; actorId: string; action: string; reason: string; preserveActiveOwner?: boolean }
+export interface MemberUpsertAuditInput { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; expectedRevision?: number; actorId: string; action: string; reason: string; preserveActiveOwner?: boolean }
 /**
  * Placeholder shown by the Ops console for a workspace whose enterprise has no
  * usable name. The platform user directory and this repository's `query`
@@ -192,6 +192,7 @@ export class MemoryMembersRepository implements MembersRepository {
     const current = this.rows.get(key)
     if (current && input.expectedRevision !== current.revision) throw new Error('MEMBER_REVISION_CONFLICT')
     if (!current && input.expectedRevision !== undefined) throw new Error('MEMBER_REVISION_CONFLICT')
+    assertActiveOwnerPreserved(current, input.role, input.status, input.preserveActiveOwner, [...this.rows.values()].filter(row => row.workspaceId === input.workspaceId && row.role === 'workspace_owner' && row.status === 'active').length)
     const member = await this.upsert({ workspaceId: input.workspaceId, externalSubject: input.externalSubject, displayName: input.displayName, role: input.role, status: input.status, invitedBy: input.actorId })
     const audit: OperationAudit = { id: `audit_${randomUUID()}`, workspaceId: input.workspaceId, actorId: input.actorId, action: input.action, resourceType: 'workspace_member', resourceId: input.externalSubject, before: (current ?? {}) as Record<string, unknown>, after: member as unknown as Record<string, unknown>, reason: input.reason, createdAt: member.updatedAt }
     return { member, audit }
@@ -201,6 +202,7 @@ export class MemoryMembersRepository implements MembersRepository {
     const current = this.rows.get(key)
     if (!current) throw new Error('MEMBER_NOT_FOUND')
     if (current.revision !== input.expectedRevision) throw new Error('MEMBER_REVISION_CONFLICT')
+    assertActiveOwnerPreserved(current, current.role, input.targetStatus, input.preserveActiveOwner, [...this.rows.values()].filter(row => row.workspaceId === input.workspaceId && row.role === 'workspace_owner' && row.status === 'active').length)
     const createdAt = new Date().toISOString()
     const member = { ...current, status: input.targetStatus, revision: current.revision + 1, updatedAt: createdAt }
     const audit: OperationAudit = { id: `audit_${randomUUID()}`, workspaceId: input.workspaceId, actorId: input.actorId, action: input.action, resourceType: 'workspace_member', resourceId: input.externalSubject, before: current as unknown as Record<string, unknown>, after: member as unknown as Record<string, unknown>, reason: input.reason, createdAt }
@@ -317,19 +319,21 @@ function memberWindowSql(filter: MemberFilterSql, lowIndex: number, highIndex: n
 }
 
 /**
- * Reads the platform user directory with the isolated operations role, whose
+ * Reads a member page on one snapshot. Tenant pages set only their workspace
+ * scope; platform directory callers use the isolated operations role, whose
  * `app.platform_scope = 'platform_ops'` grant is the only way to see
  * `workspace_members` outside a single tenant scope (migration 091). `READ ONLY`
  * because every caller is a read path, and the explicit workspace list keeps the
  * result identical whether the connection is the operations role or a
  * superuser, instead of depending on which of the two RLS lets through.
  */
-async function withPlatformRead<T>(pool: SqlPool, work: (client: SqlClient) => Promise<T>): Promise<T> {
+async function withMemberRead<T>(pool: SqlPool, work: (client: SqlClient) => Promise<T>, workspaceId?: string): Promise<T> {
   const client = await pool.connect()
   let committed = false
   try {
-    await client.query('BEGIN READ ONLY')
-    await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    if (workspaceId) await client.query("SELECT set_config('app.workspace_id', $1, true)", [requireWorkspaceScope(workspaceId)])
+    else await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
     const result = await work(client)
     await client.query('COMMIT')
     committed = true
@@ -346,6 +350,20 @@ async function withPlatformRead<T>(pool: SqlPool, work: (client: SqlClient) => P
 
 function scopedWorkspaceIds(workspaceIds: readonly string[]): string[] {
   return [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))]
+}
+
+function assertActiveOwnerPreserved(current: WorkspaceMember | undefined, role: MemberRole, status: MemberStatus, preserve: boolean | undefined, ownerCount: number) {
+  if (preserve && current?.role === 'workspace_owner' && current.status === 'active' && (role !== 'workspace_owner' || status !== 'active') && ownerCount <= 1) throw new Error('LAST_WORKSPACE_OWNER_REQUIRED')
+}
+
+async function lockOwnerGovernance(client: SqlClient, workspaceId: string, preserve: boolean | undefined) {
+  if (preserve) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['workspace-member-governance', workspaceId])])
+}
+
+async function checkActiveOwnerPreserved(client: SqlClient, current: WorkspaceMember | undefined, role: MemberRole, status: MemberStatus, preserve: boolean | undefined) {
+  if (!preserve || current?.role !== 'workspace_owner' || current.status !== 'active' || (role === 'workspace_owner' && status === 'active')) return
+  const count = await client.query<{ count: string }>("SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1 AND role='workspace_owner' AND status='active'", [current.workspaceId])
+  assertActiveOwnerPreserved(current, role, status, preserve, Number(count.rows[0]?.count ?? 0))
 }
 
 export class PostgresMembersRepository implements MembersRepository {
@@ -369,7 +387,7 @@ export class PostgresMembersRepository implements MembersRepository {
       // One read-only platform transaction for both statements: the counts and
       // the window then describe the same snapshot, which is what makes `total`
       // and the page consistent with each other.
-      return withPlatformRead(platformPool, async client => {
+      return withMemberRead(platformPool, async client => {
         const filter = memberFilterSql(input, workspaceIds)
         const totals = await client.query<{ total: string; workspaceCount: string; identityCount: string }>(
           memberCountsSql(filter),
@@ -392,7 +410,7 @@ export class PostgresMembersRepository implements MembersRepository {
       // it is dropped rather than sent as a value PostgreSQL rejects with a raw
       // type error instead of an empty result.
       const identityId = input.identityId && UUID_PATTERN.test(input.identityId) ? input.identityId : null
-      return withPlatformRead(platformPool, async client => {
+      return withMemberRead(platformPool, async client => {
         const result = await client.query<WorkspaceMemberRow>(
           `SELECT ${memberProjection} FROM workspace_members m
             WHERE m.workspace_id = ANY($1) AND (m.identity_id = $2 OR m.external_subject = $3)
@@ -419,15 +437,13 @@ export class PostgresMembersRepository implements MembersRepository {
   async listPage(workspaceId: string, input: { offset: number; limit: number }): Promise<WorkspaceMemberPage> {
     requireWorkspaceScope(workspaceId)
     const offset = Math.max(0, Math.floor(input.offset)); const limit = Math.min(100, Math.max(1, Math.floor(input.limit)))
-    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const [rows, count, owners] = await Promise.all([
-        client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", identity_id AS "identityId", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`, [workspaceId, limit, offset]),
-        client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1`, [workspaceId]),
-        client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1 AND role='workspace_owner' AND status='active'`, [workspaceId]),
-      ])
+    return withMemberRead(this.pool, async client => {
+      const rows = await client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", identity_id AS "identityId", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`, [workspaceId, limit, offset])
+      const count = await client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1`, [workspaceId])
+      const owners = await client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1 AND role='workspace_owner' AND status='active'`, [workspaceId])
       const total = Number(count.rows[0]?.count ?? 0)
       return { items: rows.rows.map(memberFromRow), total, offset, limit, hasMore: offset + limit < total, activeOwnerCount: Number(owners.rows[0]?.count ?? 0) }
-    })
+    }, workspaceId)
   }
   async listMany(workspaceIds: readonly string[]) {
     const uniqueIds = [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))]
@@ -454,10 +470,12 @@ export class PostgresMembersRepository implements MembersRepository {
   async upsertWithAudit(input: MemberUpsertAuditInput) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      await lockOwnerGovernance(client, input.workspaceId, input.preserveActiveOwner)
       const beforeResult = await client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 AND external_subject=$2 FOR UPDATE`, [input.workspaceId, input.externalSubject])
       const before = beforeResult.rows[0] ? memberFromRow(beforeResult.rows[0]) : undefined
       if (before && input.expectedRevision !== before.revision) throw new Error('MEMBER_REVISION_CONFLICT')
       if (!before && input.expectedRevision !== undefined) throw new Error('MEMBER_REVISION_CONFLICT')
+      await checkActiveOwnerPreserved(client, before, input.role, input.status, input.preserveActiveOwner)
       const memberResult = await client.query<WorkspaceMemberRow>(`INSERT INTO workspace_members (id, workspace_id, external_subject, display_name, role, status, invited_by) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (workspace_id, external_subject) DO UPDATE SET display_name=$4, role=$5, status=$6, invited_by=$7, revision=workspace_members.revision+1, updated_at=now() WHERE workspace_members.revision=$8 RETURNING id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [randomUUID(), input.workspaceId, input.externalSubject, input.displayName, input.role, input.status, input.actorId, input.expectedRevision ?? 0])
       if (!memberResult.rows[0]) throw new Error('MEMBER_REVISION_CONFLICT')
       const member = memberFromRow(memberResult.rows[0])
@@ -468,10 +486,12 @@ export class PostgresMembersRepository implements MembersRepository {
   async changeStatusWithAudit(input: MemberStatusAuditInput) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      await lockOwnerGovernance(client, input.workspaceId, input.preserveActiveOwner)
       const beforeResult = await client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 AND external_subject=$2 FOR UPDATE`, [input.workspaceId, input.externalSubject])
       if (!beforeResult.rows[0]) throw new Error('MEMBER_NOT_FOUND')
       const before = memberFromRow(beforeResult.rows[0])
       if (before.revision !== input.expectedRevision) throw new Error('MEMBER_REVISION_CONFLICT')
+      await checkActiveOwnerPreserved(client, before, before.role, input.targetStatus, input.preserveActiveOwner)
       const memberResult = await client.query<WorkspaceMemberRow>(`UPDATE workspace_members SET status=$3, revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND external_subject=$2 AND revision=$4 RETURNING id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.workspaceId, input.externalSubject, input.targetStatus, input.expectedRevision])
       if (!memberResult.rows[0]) throw new Error('MEMBER_REVISION_CONFLICT')
       const member = memberFromRow(memberResult.rows[0])

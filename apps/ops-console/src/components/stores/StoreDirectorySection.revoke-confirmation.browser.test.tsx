@@ -36,11 +36,15 @@ describe("store authorization revoke confirmation", () => {
             function Harness() {
               const [canManage, setCanManage] = React.useState(true);
               const [scopeAllowed, setScopeAllowed] = React.useState(true);
+              const [directoryError, setDirectoryError] = React.useState(location.search.includes('stale') ? '目录读取失败' : undefined);
+              window.__setStoreDirectoryError = failed => setDirectoryError(failed ? '目录读取失败' : undefined);
+              window.__storeAliasSaves ??= 0;
               window.__setRevokePermission = allowed => setScopeAllowed(allowed);
               return React.createElement(App, null, React.createElement(StoreDirectorySection, {
                 storeDirectory: [store, revokedStore], canManageStoreConnections: canManage,
                 canManageStoreConnection: () => scopeAllowed,
-                onSaveAlias: async () => true,
+                error: directoryError, onRetry: () => setDirectoryError(undefined),
+                onSaveAlias: async () => { window.__storeAliasSaves += 1; return true; },
                 onRevoke: async () => { const response = await fetch('/__store-revoke', { method: 'POST' }); if (!response.ok) throw new Error('revoke failed'); },
               }));
             }
@@ -179,6 +183,66 @@ describe("store authorization revoke confirmation", () => {
     } finally { await context.close(); }
   }, 45_000);
 
+  it("labels cached rows and blocks changes until the directory recovers", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(5_000);
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm?stale`);
+      await page.getByText("上次读取：真实授权", { exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "撤销", exact: true }).isDisabled()).toBe(true);
+      expect(await page.getByRole("button", { name: "改别名", exact: true }).isDisabled()).toBe(true);
+      expect(await page.getByText("状态待确认", { exact: true }).count()).toBe(1);
+      await page.getByRole("button", { name: "刷新店铺目录", exact: true }).click();
+      await page.getByText("真实授权", { exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "撤销", exact: true }).isEnabled()).toBe(true);
+    } finally { await page.close(); }
+  }, 30_000);
+
+  it("pauses open revoke and alias dialogs if their directory becomes unavailable", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(5_000);
+    let writes = 0;
+    await page.route("**/__store-revoke", async route => { writes += 1; await route.fulfill({ body: "{}" }); });
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      await page.getByRole("button", { name: "撤销", exact: true }).click();
+      const dialog = dialogByTitle(page, "确认撤销平台授权？");
+      await page.evaluate(() => window.__setStoreDirectoryError(true));
+      await dialog.getByText("店铺目录尚未确认", { exact: true }).waitFor();
+      expect(await dialog.getByRole("button", { name: "确认撤销", exact: true }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      expect(writes).toBe(0);
+      await page.getByRole("button", { name: "刷新店铺目录", exact: true }).click();
+      await page.getByRole("button", { name: "改别名", exact: true }).click();
+      const alias = page.getByRole("dialog").filter({ hasText: "修改店铺展示别名" });
+      await alias.getByLabel("店铺展示别名").fill("核对后的新别名");
+      await page.evaluate(() => window.__setStoreDirectoryError(true));
+      await alias.getByText("店铺目录尚未确认", { exact: true }).waitFor();
+      expect(await alias.getByRole("button", { name: "保存别名", exact: true }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      await alias.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => window.__storeAliasSaves)).toBe(0);
+    } finally { await page.close(); }
+  }, 30_000);
+
+  it("pauses an open alias edit when its account permission is withdrawn", async () => {
+    const page = await browser!.newPage();
+    page.setDefaultTimeout(5_000);
+    try {
+      await page.goto(`${baseUrl}/__store-revoke-confirm`);
+      await page.getByRole("button", { name: "改别名", exact: true }).click();
+      const dialog = dialogByTitle(page, "修改店铺展示别名");
+      await dialog.getByLabel("店铺展示别名").fill("待保存的新别名");
+      await page.evaluate(() => window.__setRevokePermission(false));
+      await dialog.getByText("店铺别名修改权限已失效", { exact: true }).waitFor();
+      expect(await dialog.getByRole("button", { name: "保存别名", exact: true }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => window.__storeAliasSaves)).toBe(0);
+    } finally { await page.close(); }
+  }, 30_000);
+
   it("keeps the target and explains a failed revoke so the operator can retry", async () => {
     const context = await browser!.newContext();
     const page = await context.newPage();
@@ -214,5 +278,7 @@ function dialogByTitle(page: import("playwright").Page, title: string) {
 declare global {
   interface Window {
     __setRevokePermission: (allowed: boolean) => void;
+    __setStoreDirectoryError: (failed: boolean) => void;
+    __storeAliasSaves: number;
   }
 }

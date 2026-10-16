@@ -672,7 +672,7 @@ export function UnmatchedCashOperationsPanel({ controller }: { controller: Comme
   if(!permissions.canReadUnmatchedReceipts && !permissions.canRecordUnmatchedReceipts && !permissions.canMatchUnmatchedReceipts)return null;
   return <section aria-label="全局待匹配真实收款"><Space orientation="vertical" size="middle" className="full-width">
     <Typography.Title level={4}>全局待匹配银行收款</Typography.Title>
-    <Alert type="info" showIcon title="归属未知先入受限待匹配队列" description="核实真实到账后登记，企业归属保持未知；不得创建演示企业、假已付订单或提前授予。匹配必须核对 active 客户及其 active 企业，并留归属证据。" />
+    <Alert type="info" showIcon title="归属未知先入受限待匹配队列" description="核实真实到账后登记，企业归属保持未知；不得创建测试企业、假已付订单或提前授予。匹配必须核对 active 客户及其 active 企业，并留归属证据。" />
     <Space wrap><Button disabled={!permissions.canReadUnmatchedReceipts || busy || Boolean(pending)&&!unknown} onClick={()=>void loadPage()}>从首页读取待匹配收款</Button><Button disabled={!permissions.canReadUnmatchedReceipts || !cursor || busy || Boolean(pending)&&!unknown} onClick={()=>{if(cursor)void loadPage(cursor);}}>读取下一页待匹配收款</Button><Typography.Text>每页最多50条；当前页 {fresh?rows.length:"尚未核实"} 条，{cursor?"还有下一页":"以服务端分页结果为准"}</Typography.Text></Space>
     {error?<Alert role="alert" type="error" showIcon title={unknown?"原结果待确认":"读取或操作未完成"} description={error}/>:null}{result?<Alert role="status" type="info" title={result}/>:null}
     {fresh?<Table rowKey="id" pagination={false} size="small" dataSource={rows} scroll={{x:1100}} columns={[{title:"原收款",dataIndex:"id"},{title:"真实银行流水",dataIndex:"externalTradeId"},{title:"收款账户",dataIndex:"receivingAccountRef"},{title:"原付款方",dataIndex:"payerRef"},{title:"实收",dataIndex:"amountFen",render:cashLabel},{title:"已返/冻结",render:(_:unknown,row:UnmatchedCashReceipt)=>`${cashLabel(row.returnedFen)} / ${cashLabel(row.frozenReturnFen)}`},{title:"可用余款",dataIndex:"availableFen",render:cashLabel},{title:"实际到账",dataIndex:"receivedAt",render:time}]} locale={{emptyText:"此页没有未匹配收款（真实服务器查询结果）"}}/>:<Typography.Text>尚未读取真实队列，不代表队列为空。</Typography.Text>}
@@ -777,7 +777,7 @@ export function CashReceiptOperationsPanel({ controller }: { controller: Commerc
   return <section aria-label="指定企业收款与分配"><Space orientation="vertical" size="middle" className="full-width">
     <Typography.Title level={4}>真实收款、订单分配与余款处置</Typography.Title>
     <Alert type="info" showIcon title="收款事实与订单分别记录" description="核实真实人民币银行流水后登记；部分到账、等待开通依赖、未来待生效及待处置分别显示。收款截图不能自动开通，不要重复转账。" />
-    {!workspace ? <Alert type="warning" showIcon title="请先选择目标企业 Workspace" description="只读取所选企业获授权的收款和订单；不会默认演示企业。" /> : <>
+    {!workspace ? <Alert type="warning" showIcon title="请先选择目标企业 Workspace" description="只读取所选企业获授权的收款和订单；不会默认测试企业。" /> : <>
     <Space wrap><Typography.Text strong>企业：{workspace}</Typography.Text><Button disabled={busy || !controller.permissions.canReadOrders} onClick={() => void load()}>读取收款、订单与返款</Button></Space>
     {error ? <Alert role="alert" type="error" showIcon title={unknown ? "结果待确认" : "操作未完成"} description={error} /> : null}
     {result ? <Alert role="status" type="info" title={result} /> : null}

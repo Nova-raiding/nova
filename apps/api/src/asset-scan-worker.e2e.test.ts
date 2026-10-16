@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_SCAN_RECEIPT_SCHEMA, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
-import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, server, service, signedAssetScanCallbackRequired, workspaceMembers } from './server.js'
+import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, enableCommercialFixtureHarnessForTests, grantContinuousFeatureEntitlementForTests, server, service, persistAssetSnapshotAndEvent, signedAssetScanCallbackRequired, workspaceMembers } from './server.js'
 
 type Envelope<T> = { data: T; error: { code: string } | null }
 
@@ -111,6 +111,23 @@ describe('automatic platform asset scanner boundary', () => {
     expect(result.status, await result.clone().text()).toBe(200)
     expect((await result.json() as Envelope<{ scan_status: string }>).data.scan_status).toBe('clean')
     expect((await fetch(`${base}/v1/assets/${encodeURIComponent(asset.id)}/download`, { headers: { 'x-workspace-id': workspaceId } })).status).toBe(200)
+  })
+
+  it('accepts a signed callback bound to a historical bootstrap event', async () => {
+    const uploaded = await upload('historical-bootstrap.png')
+    const current = service.assets.get(uploaded.id)!
+    const asset = { ...current, revision: current.revision + 1, sourceRevision: (current.sourceRevision ?? 1) + 1 }
+    service.assets.set(asset.id, asset)
+    // Controlled memory event fixture; this does not prove SQL enrollment.
+    await persistAssetSnapshotAndEvent(workspaceId, asset, 'asset.scan_bootstrap_requested', {
+      asset_id: asset.id, storage_key: asset.storageKey, sha256: asset.sha256, size_bytes: asset.sizeBytes,
+      mime_type: asset.mimeType, source_revision: asset.sourceRevision,
+    }, asset as unknown as Record<string, unknown>)
+    const path = `/v1/internal/assets/${encodeURIComponent(asset.id)}/scan-result`
+    const body = JSON.stringify(signedReceipt(asset, 'clean', { scanJobId: assetScanJobIdForTests(workspaceId, asset.id, 'asset.scan_bootstrap_requested') }))
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...scannerHeaders('POST', path, body) }, body })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect((await response.json() as Envelope<{ scan_status: string }>).data.scan_status).toBe('clean')
   })
 
   it('keeps a malicious object out of clean storage and marks it blocked', async () => {

@@ -45,6 +45,7 @@ test('image task detail recovers from a failed status read using its explicit re
   const page = await context.newPage()
   const detailResponses = []
   const pageErrors = []
+  let selectionCommitted = false
   const visualSelectionRequests = []
   let allowJobRead = false
   let visualSelectionOutcomeUnknown = true
@@ -85,7 +86,7 @@ test('image task detail recovers from a failed status read using its explicit re
         },
       ], total: 2, limit: 50, offset: 0 }
     } else if (path === `/v1/tasks/${job.task_id}`) {
-      data = { id: job.task_id, workspaceId, productId: job.product_id, platform: 'taobao', accountId: 'store_task_detail_status', state: 'draft', version: 4, createdAt: job.created_at, contentVersionId: job.content_version_id }
+      data = { id: job.task_id, workspaceId, productId: job.product_id, platform: 'taobao', accountId: 'store_task_detail_status', state: selectionCommitted ? 'review_required' : 'draft', version: selectionCommitted ? 5 : 4, createdAt: job.created_at, contentVersionId: selectionCommitted ? 'content_task_detail_selected' : job.content_version_id }
     } else if (path === `/v1/products/${job.product_id}`) {
       data = { id: job.product_id, workspaceId, platform: 'taobao', accountId: 'store_task_detail_status', storeName: '任务状态恢复店', title: '任务审核版本', skuCount: 1, stock: 5, factsConfirmed: true, source: 'browser_fixture', version: 3 }
     } else if (path === `/v1/tasks/${job.task_id}/feedback`) {
@@ -98,6 +99,9 @@ test('image task detail recovers from a failed status read using its explicit re
       const method = request.postDataJSON()?.method
       if (method === 'content.visual.select') {
         visualSelectionRequests.push(request.postDataJSON().params)
+        // A committed selection advances the authoritative task pointer even
+        // when its response is lost; mirror MerchantService.selectVisuals.
+        selectionCommitted = true
         if (visualSelectionOutcomeUnknown) {
           visualSelectionOutcomeUnknown = false
           return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null, { code: 'CONTENT_VISUAL_SELECT_OUTCOME_UNKNOWN', message: '选择结果待确认' })) })
@@ -105,7 +109,7 @@ test('image task detail recovers from a failed status read using its explicit re
         data = { result: {
           content_version_id: 'content_task_detail_selected',
           parent_content_version_id: job.content_version_id,
-          version: 5, revision: 5, state: 'review_required',
+          version: 5, revision: 1, state: 'review_required',
           visualSelection: { state: 'selected', count: 1, items: [{ visualRef: 'visual_task_detail_status', ordinal: 1, reviewStatus: 'passed', publishable: true }] },
           reviewRequired: true, approvalRequired: true,
         } }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 /** Merchant browser specs currently owned by this isolated candidate runner. */
 const MERCHANT_UI_REGRESSION_SPECS = [
+  "demo/merchant-studio/task-late-mutation-response.browser.spec.js",
   "demo/merchant-studio/account-password-change.browser.spec.js",
   "demo/merchant-studio/brand-assets-workspace-switch.browser.spec.js",
   "demo/merchant-studio/brand-global-toggle-readback.browser.spec.js",
@@ -33,6 +34,7 @@ const MERCHANT_UI_REGRESSION_SPECS = [
   "demo/merchant-studio/commercial-notification-read.browser.spec.js",
   "demo/merchant-studio/commercial-notification-workspace-switch.browser.spec.js",
   "demo/merchant-studio/commercial-purchase-payment-readback.browser.spec.js",
+  "demo/merchant-studio/commercial-purchase-write-closed.browser.spec.js",
   "demo/merchant-studio/finance-combined-range.browser.spec.js",
   "demo/merchant-studio/finance-empty-point-ledger.browser.spec.js",
   "demo/merchant-studio/finance-ledger-workspace-switch.browser.spec.js",
@@ -54,6 +56,7 @@ const MERCHANT_UI_REGRESSION_SPECS = [
   "demo/merchant-studio/member-invite-unknown-outcome-recovery.browser.spec.js",
   "demo/merchant-studio/member-list-pagination.browser.spec.js",
   "demo/merchant-studio/member-list-read-recovery.browser.spec.js",
+  "demo/merchant-studio/member-session-read-recovery.browser.spec.js",
   "demo/merchant-studio/member-read-only-permission.browser.spec.js",
   "demo/merchant-studio/member-role-denial-recovery.browser.spec.js",
   "demo/merchant-studio/member-workspace-switch-late-response.browser.spec.js",
@@ -69,6 +72,7 @@ const MERCHANT_UI_REGRESSION_SPECS = [
   "demo/merchant-studio/overview-platform-account-workspace-switch.browser.spec.js",
   "demo/merchant-studio/overview-revoke-denial.browser.spec.js",
   "demo/merchant-studio/overview-storage-workspace-switch.browser.spec.js",
+  "demo/merchant-studio/overview-storage-read-retry.browser.spec.js",
   "demo/merchant-studio/overview-yesterday-metrics-workspace-switch.browser.spec.js",
   "demo/merchant-studio/plugin-capability-read-retry.browser.spec.js",
   "demo/merchant-studio/plugin-capability-workspace-switch-late-response.browser.spec.js",

@@ -4,7 +4,7 @@ export function assertRelayEvidence(method, result, { environment, fixtureFallba
   if ((!relayMethods.has(method) && !asyncCompletionMethods.has(method)) || !['production', 'staging', 'preview'].includes(environment) || fixtureFallback) return
   const execution = result && typeof result === 'object' && !Array.isArray(result) && result.execution && typeof result.execution === 'object' ? result.execution : {}
   const pending = isPendingRelayResult(result)
-  if (pending) return
+  if (pending && !hasRelayDelivery(result)) return
   const simulated = execution.simulated === true || result?.simulated === true || result?.mode === 'fixture'
   const providerRequestId = execution.providerRequestId ?? execution.provider_request_id ?? result?.providerRequestId ?? result?.provider_request_id
   const usage = execution.usage ?? result?.usage
@@ -28,6 +28,27 @@ export function assertRelayEvidence(method, result, { environment, fixtureFallba
     error.details = { operation_status: 'blocked', missing: [...new Set(missing)] }
     throw error
   }
+}
+
+function hasRelayDelivery(result) {
+  const hasValue = value => {
+    if (typeof value === 'string') return value.trim().length > 0
+    if (Array.isArray(value)) return value.some(hasValue)
+    if (value && typeof value === 'object') return Object.values(value).some(hasValue)
+    return false
+  }
+  return [
+    result?.body,
+    result?.contentPreview?.body,
+    result?.content,
+    result?.plan,
+    result?.images,
+    result?.image_urls,
+    result?.download_urls,
+    result?.download_path,
+    result?.preview_path,
+    result?.rendering?.videoUrl,
+  ].some(hasValue)
 }
 
 export function isPendingRelayResult(result) {

@@ -54,3 +54,15 @@ describe('merchant invitation and public activation boundaries', () => {
     expect(await authorizeMerchantAccount(request(), dependencies)).toEqual({ status: 200, data: { idempotency_key: 'legacy-key-1', order_id: 'old-legal-order', replayed: true, read_only: true } })
   })
 })
+
+
+describe('merchant public API path configuration', () => {
+  it.each([undefined, '', '/api'] as const)('preserves the exact allowed prefix %s', async value => {
+    const { merchantPublicApiPathPrefix } = await import('./http-merchant-activation-routes.js')
+    expect(merchantPublicApiPathPrefix(value)).toBe(value)
+  })
+  it.each(['//evil', '/api/..', '/api?x', 'https://evil.invalid', ' api ', '/'])('rejects unsafe prefix %s', async value => {
+    const { merchantPublicApiPathPrefix } = await import('./http-merchant-activation-routes.js')
+    expect(() => merchantPublicApiPathPrefix(value)).toThrow()
+  })
+})

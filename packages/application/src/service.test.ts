@@ -3019,6 +3019,18 @@ it('builds a consistent detail-page image set brief from a suite request', () =>
   })
 })
 
+it('uses a text-free visual brief for an unbound long-page candidate', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({
+    workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '纯视觉详情长图',
+    size: '1024x4096', count: 1, idempotencyKey: 'unbound-pure-visual-long-page', unboundCandidate: true,
+  })
+
+  expect(job.visualBrief).toMatchObject({ size: '1024x4096', outputVariant: 'detail_long', textPolicy: 'none', marketingLayer: false })
+  expect(job.visualBrief?.detailSections).toEqual(['产品全景', '可见结构近景', '可见表面细节'])
+  expect(job.visualBrief?.detailSections).not.toContain('SKU与套餐边界：包含与不包含')
+})
+
 it('freezes the confirmed creative direction into one long-page brief without inventing copy', () => {
   const service = new MerchantService({ fixtureMode: true })
   const product = service.products.get('prod_fixture_1')!

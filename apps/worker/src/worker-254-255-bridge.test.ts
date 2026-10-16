@@ -7,7 +7,7 @@ describe('worker schema bridge readiness', () => {
   it('accepts only complete, checksummed prefixes approved by each bridge mode', async () => {
     const migrations = await loadMigrations()
     const latestMigration = migrations.at(-1)!
-    expect(latestMigration).toMatchObject({ version: 278, name: 'task_feedback_idempotency' })
+    expect(latestMigration).toMatchObject({ version: 279, name: 'asset_scan_bootstrap' })
     expect(migrations.map(migration => migration.version)).toEqual(
       Array.from({ length: latestMigration.version }, (_, index) => index + 1),
     )

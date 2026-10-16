@@ -11,7 +11,7 @@ describe('asset scan automation policy', () => {
       LOCAL_COMPOSE: 'true',
       ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'true',
     })
-    expect(decision).toMatchObject({ mode: 'local_fixture', productionEvidence: false, label: '本地演示扫描，不代表生产安全扫描' })
+    expect(decision).toMatchObject({ mode: 'local_fixture', productionEvidence: false, label: '本地测试扫描，不代表生产安全扫描' })
     expect(decision?.evidenceRef).toMatch(/^fixture:\/\/local-asset-scan\/v1\/[a-f0-9]{64}$/u)
   })
 

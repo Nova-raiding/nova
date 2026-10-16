@@ -289,7 +289,7 @@ export interface CatalogCategory {
   fields: string[]
   platforms: PlatformId[]
   status: string
-  updatedAt: string
+  updatedAt: string | null
 }
 
 export interface ApiError extends Error {
@@ -1206,6 +1206,7 @@ export function describeApiError(error: unknown, options: { operation?: 'read' |
   if (code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED') return '该账号尚未绑定可用商家工作区，请联系平台管理员完成审核和工作区授权。'
   if (code === 'GENERATION_JOB_NOT_FOUND' || code === 'IMAGE_GENERATION_JOB_NOT_FOUND') return '找不到这条图片任务，可能已过期或链接无效；请返回任务列表重新选择。'
   if (code === 'API_REQUEST_TIMEOUT') return 'API 请求超时。请检查 API、数据库和网关状态后重试。'
+  if (code === 'NEW_WRITES_CLOSED') return '当前环境的新商业写入已关闭；本次没有创建订单、发起付款或扣费。请等待运营完成验收并开启写入后再试。'
   if (code === 'CANONICAL_TASK_READ_UNAVAILABLE' && message) return message
   if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return 'Store Nova连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
   if (code === 'MODEL_RELAY_NO_CHANNEL') return '当前模型没有可用的中转通道。当前操作未确认完成；请切换到已验证可用的模型并新建会话。'
@@ -1340,6 +1341,16 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
     ...(bearer ? { headers: { authorization: `Bearer ${bearer}`, ...(scopedWorkspace ? { 'x-workspace-id': scopedWorkspace } : {}) } } : {}),
     body: JSON.stringify({ jsonrpc: '2.0', id: `studio-${Date.now()}`, method, params }),
   })
+  // Invitees cannot obtain an active-member bearer yet. These two existing
+  // server-authorized operations use the same-origin HttpOnly workspace
+  // session; every other operation retains its normal bearer exchange.
+  if (baseUrl.startsWith('/') && !baseUrl.startsWith('//') && !runtimeConfig('VITE_API_TOKEN')
+    && (method === 'workspace.invitations.list' || method === 'workspace.invitation.accept')) {
+    return (await requestApi<{ result: T }>(baseUrl, '/mcp', {
+      method: 'POST', headers: { 'x-ops-workbench': 'workspace' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `invitation-${Date.now()}`, method, params }),
+    }, scopedWorkspace)).result
+  }
   if (runtimeEnv.MODE === 'test') return (await invoke()).result
   let session = merchantMcpSession
   if (scopedWorkspace) {
@@ -1695,14 +1706,20 @@ export interface CreativePointStatementEntry {
 function normalizeCreativePointStatementEntry(raw: unknown): CreativePointStatementEntry | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const entry = raw as Record<string, unknown>
-  const delta = Number(entry.pointsDelta)
+  // JSON null, blank strings and booleans are not measurements. Preserve
+  // numeric-string compatibility without Number(null)/Number('') inventing 0.
+  const optionalNumber = (value: unknown): number | null => {
+    if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const delta = optionalNumber(entry.pointsDelta)
   const createdAt = typeof entry.createdAt === 'string' ? entry.createdAt : ''
   // A row the client cannot read is dropped — never coerced into a 0-点 row.
-  if (!Number.isFinite(delta) || !createdAt || Number.isNaN(Date.parse(createdAt))) return null
+  if (delta === null || !createdAt || Number.isNaN(Date.parse(createdAt))) return null
   const intent = entry.intent && typeof entry.intent === 'object' && !Array.isArray(entry.intent) ? entry.intent as Record<string, unknown> : null
   const actualPoints = intent?.actual_points
   if (entry.eventType === 'settled' && (typeof actualPoints !== 'number' || !Number.isSafeInteger(actualPoints) || actualPoints < 0)) return null
-  const optionalNumber = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null
   return {
     id: typeof entry.id === 'string' ? entry.id : `${createdAt}:${delta}`,
     workspaceId: typeof entry.workspaceId === 'string' ? entry.workspaceId : '',

@@ -29,10 +29,11 @@ describe('repository release metadata gate', () => {
     const declaredCount = snapshot.declared.merchantBridgeToolCount
     if (typeof declaredCount !== 'number') throw new Error('release metadata merchant bridge tool count is missing')
     expect(names).toHaveLength(declaredCount)
+    expect(names).toHaveLength(snapshot.actualMerchantBridgeToolCount)
     expect(new Set(names).size).toBe(names.length)
     expect(names).not.toContain('rule.sync.now')
     expect(names).toContain('rule.list')
-    expect(names.some(name => name.startsWith('ops.'))).toBe(false)
+    expect(names.filter(name => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
   })
 
   it('rejects version, plugin, MCP and migration drift', () => {

@@ -29,10 +29,15 @@ describe('migration 109 asset scan redrive', () => {
     expect(sql).toContain("workspace_id = current_setting('app.workspace_id', true)")
     expect(sql).toContain('asset scan redrive evidence is immutable and cannot be deleted')
     expect(sql).toContain('BEFORE TRUNCATE ON asset_scan_redrives')
-    expect(repository.match(/FOR UPDATE/gu)).toHaveLength(2)
+    const redriveSource = repository.slice(repository.indexOf('async redrive('), repository.indexOf('async bootstrapUnscanned('))
+    expect(redriveSource.match(/FOR UPDATE/gu)).toHaveLength(2)
     expect(repository).toContain("'asset.scan.recovery_requested'")
     expect(repository).toContain("'asset.scan_redrive_requested'")
-    expect(repository).toContain("const SCAN_EVENT_TYPES = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'])")
+    // New scan origins can join the shared recovery path. Preserve every
+    // original event without requiring the current set to stop at migration109.
+    const scanEventSet = repository.match(/const SCAN_EVENT_TYPES = new Set\(\[([^\]]+)\]\)/u)?.[1] ?? ''
+    const scanEventTypes = [...scanEventSet.matchAll(/'([^']+)'/gu)].map(match => match[1])
+    expect(scanEventTypes).toEqual(expect.arrayContaining(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested']))
     expect(repository).toContain('authorization_snapshot: input.authorizationSnapshot')
     expect(repository).toContain('commercial_access_snapshot: input.commercialAccessSnapshot')
     expect(repository).toContain('mime_type: mimeType')

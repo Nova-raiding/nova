@@ -42,11 +42,11 @@ describe("Ops /ops/users merchant account provisioning", () => {
               if (!window.__requests) window.__requests = [];
               const [directory, setDirectory] = useState({items: [], offset: 0, limit: 100, hasMore: false});
               const model = {
-                authorization: {can: capability => capability === 'identity.read', canAny: () => false, roles: [], scope: {kind: 'platform'}},
+                authorization: {can: capability => capability === 'identity.read', canAny: () => false, roles: ['ops_admin'], scope: {kind: 'platform'}},
                 userDirectory: {items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false},
                 userDirectoryLoading: false, userDirectoryError: '', userExporting: false,
                 canPlatformOps: true, canUserGovernance: false, userDetail: undefined, userDetailLoading: false,
-                opsSession: {actor_id: 'fixture-operator'}, error: undefined, load: async () => undefined,
+                opsSession: {actor_id: 'fixture-operator', workbench: 'platform'}, error: undefined, load: async () => undefined,
                 loadUsers: async () => undefined, cancelUserRequests: () => undefined,
                 workspaceDirectoryLoading: false, workspaceDirectoryError: '',
                 get workspaceDirectory() { return directory; },

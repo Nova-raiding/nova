@@ -22,6 +22,22 @@ describe('canonical password identity and local plugin authentication', () => {
     vi.unstubAllEnvs()
   })
 
+  it('reports inactive workspace membership as a recoverable local-token conflict', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')
+    const repository = new MemoryPasswordAuthRepository()
+    const login = `pending-${randomUUID()}@fixture.invalid`
+    await repository.createMerchantAccount({ login, password: 'PendingFixture123!', enterpriseName: 'Owned pending fixture', contactName: 'Pending', workspaceIds: ['ws_pending_fixture'], actorId: 'owned-test', reason: 'pending membership error classification' })
+    vi.spyOn(repository, 'issueMcpAuthorizationCode').mockRejectedValue(Object.assign(new Error('MCP_OAUTH_WORKSPACE_AMBIGUOUS'), { code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' }))
+    setPasswordAuthRepositoryForTests(repository)
+    const base = await start()
+    const logged = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login, password: 'PendingFixture123!' }) })
+    expect(logged.status).toBe(200)
+    const response = await fetch(`${base}/v1/auth/mcp-token`, { method: 'POST', headers: { cookie: logged.headers.get('set-cookie')!, origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: 'ws_pending_fixture' }) })
+    expect(response.status).toBe(409)
+    expect((await response.json()).error.code).toBe('MCP_OAUTH_WORKSPACE_AMBIGUOUS')
+  })
+
   it('lets an operator-provisioned workspace-less merchant bootstrap once before issuing a local stdio token', async () => {
     vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
     vi.stubEnv('MCP_INTEGRATION_MODE', 'local_stdio')

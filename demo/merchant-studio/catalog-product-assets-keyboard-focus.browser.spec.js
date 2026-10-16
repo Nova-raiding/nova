@@ -113,12 +113,10 @@ test('product asset dialog supports keyboard entry, Escape close, and trigger fo
     await page.keyboard.press('Space')
     await expect(page.getByTestId('catalog-manage-product-assets')).toBeVisible()
     await page.getByRole('button', { name: '返回商品列表' }).click()
-    await productCheckbox.click()
-    await expect(productCheckbox).toBeChecked()
-    await expect(page.getByTestId('catalog-manage-product-assets')).toHaveCount(0)
-    await productCheckbox.focus()
-    await page.keyboard.press('Space')
-    await expect(productCheckbox).not.toBeChecked()
+    // Unsupported bulk actions were removed; entering product detail remains
+    // a real button action with both Space and Enter keyboard coverage.
+    await expect(productCheckbox).toHaveCount(0)
+    await expect(page.locator('.catalog-batch-operation-card')).toHaveCount(0)
     await expect(page.getByTestId('catalog-manage-product-assets')).toHaveCount(0)
     await openProduct.focus()
     await page.keyboard.press('Enter')

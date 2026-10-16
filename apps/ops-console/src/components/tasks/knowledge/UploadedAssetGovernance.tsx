@@ -5,6 +5,8 @@ import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { UploadedAssetRisk } from "../../../types/ops";
 import {
   assetScanRecoveryEvidence,
+  assetScanBootstrapEvidence,
+  assetScanBootstrapParams,
   assetScanRetryParams,
   createAssetScanRetryKey,
   parseAssetScanRetryResult,
@@ -44,11 +46,13 @@ export function UploadedAssetGovernance({
   const [reason, setReason] = useState("运营审核补录");
   const [submitting, setSubmitting] = useState(false);
   const [scanRetryTarget, setScanRetryTarget] = useState<{ asset: UploadedAssetRisk; evidence: AssetScanRecoveryEvidence; idempotencyKey: string }>();
+  const [scanBootstrap, setScanBootstrap] = useState(false);
   const [scanRetryReason, setScanRetryReason] = useState("");
   const [scanRetryReasonTouched, setScanRetryReasonTouched] = useState(false);
   const [scanRetrySubmitting, setScanRetrySubmitting] = useState(false);
   const [scanRetryError, setScanRetryError] = useState("");
   const [queuedEventId, setQueuedEventId] = useState("");
+  const [detachedScanReceipt, setDetachedScanReceipt] = useState("");
   const scanRetryLockRef = useRef(false);
   const scanRetryErrorRef = useRef<HTMLDivElement>(null);
   const scanRetryResultRef = useRef<HTMLDivElement>(null);
@@ -65,8 +69,9 @@ export function UploadedAssetGovernance({
   };
   const failureFor = (asset: UploadedAssetRisk) =>
     assetScanRecoveryEvidence(asset, marketingQueue.assetScanFailures);
-  const openScanRetry = (asset: UploadedAssetRisk) => {
-    const evidence = failureFor(asset);
+  const openScanRetry = (asset: UploadedAssetRisk, bootstrap = false) => {
+    const evidence = bootstrap ? assetScanBootstrapEvidence(asset) : failureFor(asset);
+    setScanBootstrap(bootstrap);
     if (!canQueue || !evidence.eligible || !evidence.assetRevision) return;
     setScanRetryTarget({
       asset,
@@ -77,6 +82,7 @@ export function UploadedAssetGovernance({
     setScanRetryReasonTouched(false);
     setScanRetryError("");
     setQueuedEventId("");
+    setDetachedScanReceipt("");
   };
   const closeScanRetry = () => {
     if (scanRetrySubmitting) return;
@@ -85,7 +91,13 @@ export function UploadedAssetGovernance({
     setScanRetryReasonTouched(false);
     setScanRetryError("");
     setQueuedEventId("");
+    setDetachedScanReceipt("");
   };
+  const currentScanAsset = scanRetryTarget && marketingQueue.uploadedAssetRisks.find(row => row.id === scanRetryTarget.asset.id && row.workspaceId === scanRetryTarget.asset.workspaceId);
+  const currentScanEvidence = currentScanAsset && (scanBootstrap ? assetScanBootstrapEvidence(currentScanAsset) : failureFor(currentScanAsset));
+  const scanContextValid = Boolean(canQueue && currentScanEvidence?.eligible && currentScanAsset?.revision === scanRetryTarget?.asset.revision);
+  const scanContextValidRef = useRef(scanContextValid);
+  scanContextValidRef.current = scanContextValid;
   const submitScanRetry = async () => {
     if (queuedEventId) {
       closeScanRetry();
@@ -96,16 +108,25 @@ export function UploadedAssetGovernance({
       setScanRetryReasonTouched(true);
       return;
     }
+    if (!scanContextValid) {
+      setScanRetryError("素材范围、版本或权限已变化，请取消后刷新列表");
+      return;
+    }
     scanRetryLockRef.current = true;
     setScanRetrySubmitting(true);
     setScanRetryError("");
     try {
-      const params = assetScanRetryParams({
+      const params = (scanBootstrap ? assetScanBootstrapParams : assetScanRetryParams)({
         evidence: scanRetryTarget.evidence,
         reason: scanRetryReason,
         idempotencyKey: scanRetryTarget.idempotencyKey,
       });
-      const result = parseAssetScanRetryResult(await rpc("ops.marketing.asset_scan.retry", params));
+      const scopedParams = { ...params, ...(scanRetryTarget.asset.workspaceId ? { workspace_id: scanRetryTarget.asset.workspaceId } : {}) };
+      const result = parseAssetScanRetryResult(await (scanBootstrap ? rpc("ops.marketing.asset_scan.bootstrap", scopedParams) : rpc("ops.marketing.asset_scan.retry", scopedParams)));
+      if (!scanContextValidRef.current) {
+        setDetachedScanReceipt(`原工作区扫描请求已接受，事件 ${result.newEventId}；当前素材范围、版本或权限已变化，请返回原工作区核对。不会刷新当前工作区。`);
+        return;
+      }
       setQueuedEventId(result.newEventId);
       message.success(`扫描已重新排队，新事件 ${result.newEventId}`);
       await load();
@@ -176,6 +197,7 @@ export function UploadedAssetGovernance({
             title: "操作",
             render: (_: unknown, row: UploadedAssetRisk) => {
               const evidence = failureFor(row);
+              if (assetScanBootstrapEvidence(row).eligible) return <Button type="link" disabled={!canQueue} onClick={() => openScanRetry(row, true)}>申请首次安全扫描</Button>;
               if (evidence.eventId) {
                 if (evidence.eligible && canQueue) return (
                   <Button type="link" onClick={() => openScanRetry(row)} aria-label={`重新排队扫描素材 ${row.name}`}>
@@ -214,12 +236,12 @@ export function UploadedAssetGovernance({
         {scanRetrySubmitting ? "正在重新排队素材安全扫描" : queuedEventId ? `素材安全扫描已排队，新事件 ${queuedEventId}` : ""}
       </div>
       <Modal
-        title={queuedEventId ? "扫描已重新排队" : `重新排队素材扫描 · ${scanRetryTarget?.asset.name ?? ""}`}
+        title={queuedEventId ? "扫描已进入队列" : `${scanBootstrap ? "首次扫描" : "重新排队素材扫描"} · ${scanRetryTarget?.asset.name ?? ""}`}
         open={Boolean(scanRetryTarget)}
         okText={queuedEventId ? "完成" : "确认重新排队"}
         cancelText="取消"
         confirmLoading={scanRetrySubmitting}
-        okButtonProps={{ disabled: scanRetrySubmitting || (!queuedEventId && scanRetryReason.trim().length < 3) }}
+        okButtonProps={{ disabled: scanRetrySubmitting || (!queuedEventId && (!scanContextValid || scanRetryReason.trim().length < 3)) }}
         cancelButtonProps={{ disabled: scanRetrySubmitting, style: queuedEventId ? { display: "none" } : undefined }}
         closable={!scanRetrySubmitting}
         keyboard={!scanRetrySubmitting}
@@ -230,17 +252,19 @@ export function UploadedAssetGovernance({
       >
         {scanRetryTarget && (
           <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+            {detachedScanReceipt && <Alert type="warning" showIcon title="原工作区请求已接受" description={detachedScanReceipt} />}
+            {!queuedEventId && !scanContextValid && <Alert type="warning" showIcon title="当前恢复条件已变化" description="素材范围、版本或权限已变化，请取消后刷新列表。当前不能提交。" />}
             <Alert
               type="warning"
               showIcon
-              title="这是重新排队，不是人工放行"
-              description="旧失败事件与错误证据会原样保留；系统将创建一个新事件。此操作不会把素材直接标记为 clean，最终状态仍只接受平台扫描器的签名回调。"
+              title={scanBootstrap ? "申请首次安全扫描，不是人工放行" : "这是重新排队，不是人工放行"}
+              description={scanBootstrap ? "系统将为历史未扫描素材创建真实扫描事件，提交时重新核验权限、隔离对象和扫描服务。此操作不会人工放行，最终状态仍只接受平台扫描器的签名回调。" : "旧失败事件与错误证据会原样保留；系统将创建一个新事件。此操作不会把素材直接标记为 clean，最终状态仍只接受平台扫描器的签名回调。"}
             />
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label="素材 ID"><Typography.Text code copyable>{scanRetryTarget.asset.id}</Typography.Text></Descriptions.Item>
-              <Descriptions.Item label="旧 event_id"><Typography.Text code copyable>{scanRetryTarget.evidence.eventId}</Typography.Text></Descriptions.Item>
-              <Descriptions.Item label="失败错误">{scanRetryTarget.evidence.errorCode ?? "SCAN_FAILED"}{scanRetryTarget.evidence.errorMessage ? ` · ${scanRetryTarget.evidence.errorMessage}` : ""}</Descriptions.Item>
-              <Descriptions.Item label="可重试">{scanRetryTarget.evidence.retryable === true ? "true" : "false"}</Descriptions.Item>
+              {!scanBootstrap && <Descriptions.Item label="旧 event_id"><Typography.Text code copyable>{scanRetryTarget.evidence.eventId}</Typography.Text></Descriptions.Item>}
+              {!scanBootstrap && <Descriptions.Item label="失败错误">{scanRetryTarget.evidence.errorCode ?? "SCAN_FAILED"}{scanRetryTarget.evidence.errorMessage ? ` · ${scanRetryTarget.evidence.errorMessage}` : ""}</Descriptions.Item>}
+              {!scanBootstrap && <Descriptions.Item label="可重试">{scanRetryTarget.evidence.retryable === true ? "true" : "false"}</Descriptions.Item>}
               <Descriptions.Item label="expected revision">{scanRetryTarget.evidence.assetRevision}</Descriptions.Item>
             </Descriptions>
             {queuedEventId ? (

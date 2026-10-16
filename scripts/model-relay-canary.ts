@@ -183,6 +183,7 @@ export function relayProbeFailureReason(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
   const code = error instanceof Error && 'code' in error ? String(error.code) : ''
   if (code === 'EEXIST') return 'relay_evidence_path_exists'
+  if (code === 'EACCES' || code === 'EPERM') return 'relay_evidence_path_not_writable'
   // Keep operator output credential safe while preserving the actionable
   // failure class.  The old catch-all made a reachable relay look identical
   // to a missing key and forced a second run with ad-hoc instrumentation.

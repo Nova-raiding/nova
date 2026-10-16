@@ -53,6 +53,19 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
     if (settlementValidationErrors.length) settlementErrorSummaryRef.current?.focus();
   }, [settlementValidationErrors]);
   const unsettled = reconciliation?.model_usage?.unsettled ?? [];
+  const settlementDialogBlockReason = (() => {
+    if (!settlementDialog) return "";
+    if (!canModelSettlement) return "当前会话缺少模型结算权限，请取消后联系管理员。";
+    if (model.loading || reconciliationError) return "对账数据尚未完成读取，请取消并刷新后重试。";
+    const current = unsettled.find((record) => record.id === settlementDialog.record.id);
+    if (!current || current.revision === undefined || current.revision !== settlementDialog.record.revision) {
+      return "结算记录已变化或缺少版本，请取消并刷新后重新选择。";
+    }
+    if (!current.allowed_decisions?.includes(settlementDialog.decision)) return "当前记录已不允许此操作，请取消并重新核对结算状态。";
+    const callback = settlementDialog.decision === "retry" ? retryModelUsageSettlement
+      : settlementDialog.decision === "waive" ? waiveModelUsageSettlement : markModelUsageForManualAttention;
+    return Boolean(callback) ? "" : "模型结算操作暂不可用，请取消后重试。";
+  })();
   const settlementCounts = summarizeModelUsageSettlements(unsettled);
   const missingCostEvidenceCount = reconciliation?.model_usage?.missing_cost_evidence_count ?? 0;
   const externalStatementStatus = reconciliation?.model_usage?.external_provider_statement?.status;
@@ -108,7 +121,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
   };
 
   const runSettlementAction = async (values: { reason: string; evidenceRef: string }) => {
-    if (!settlementDialog) return;
+    if (!settlementDialog || settlementDialogBlockReason || settlementAction) return;
     const { decision, record } = settlementDialog;
     const callback =
       decision === "retry"
@@ -329,7 +342,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       )}
       <Modal title="账务与模型运行状态" open={showReadinessDetails} footer={null} onCancel={() => setShowReadinessDetails(false)}>
         {reconciliation?.model_usage && <Alert type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"} showIcon title={`模型用量对账：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "待确认状态（已阻断）"}`} description="状态来自服务端对账结果；供应商账户级核验仍以外部 statement 为准。" />}
-        {reconciliation?.provider && <Alert className="modal-alert" type={reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"} showIcon title={`支付 provider：${reconciliation.provider.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或待确认"}`} description={reconciliation.provider.reasons?.join("、") || "生产充值必须经服务端 provider 下单并等待签名回调"} />}
+        {reconciliation?.provider && <Alert className="modal-alert" type={reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"} showIcon title={reconciliation.provider.mode === "manual_transfer" ? "支付方式：人工转账收款（自动查单不可用）" : `支付 provider：${reconciliation.provider.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或待确认"}`} description={reconciliation.provider.mode === "manual_transfer" ? "人工收款和退款请在对应商业操作中核对凭证、分配及人工处理记录；此状态不代表测试收款。" : reconciliation.provider.reasons?.join("、") || "生产充值必须经服务端 provider 下单并等待签名回调"} />}
         {reconciliation?.model_usage?.external_provider_statement && <Alert className="modal-alert" type={externalStatementStatus === "balanced" ? "success" : externalStatementStatus === "not_applicable_personal_scope" ? "warning" : "error"} showIcon title={`外部中转站用量：${externalStatementStatus === "balanced" ? "已核对一致" : externalStatementStatus === "externally_unverified" ? "尚未核验" : externalStatementStatus === "needs_review" ? "存在差异（需复核）" : "状态不明确（已阻断）"}`} description={reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验。"} />}
         {missingCostEvidenceCount > 0 && <Alert className="modal-alert" type="error" showIcon title="Provider 成本证据不完整，成本合计已阻断" description="请先补齐中转站成本回执或转入人工处理。" />}
         {Boolean(reconciliation?.model_usage?.unsettled_records) && <Alert className="modal-alert" type="warning" showIcon title="存在模型未结算记录，禁止按已结算口径出账" description="待补成本需向中转站补取实际成本；等待钱包结算不能重复调用模型。" />}
@@ -351,10 +364,13 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         okText="确认提交"
         cancelText="取消"
         confirmLoading={Boolean(settlementAction)}
-        okButtonProps={{ danger: settlementDialog?.decision === "waive" }}
+        okButtonProps={{ danger: settlementDialog?.decision === "waive", disabled: Boolean(settlementDialogBlockReason) }}
         onCancel={() => { if (!settlementAction) { setSettlementDialog(undefined); settlementForm.resetFields(); } }}
         onOk={() => settlementForm.submit()}
       >
+        {settlementDialogBlockReason ? (
+          <Alert type="warning" showIcon role="alert" title="当前不能提交结算操作" description={settlementDialogBlockReason} />
+        ) : null}
         {settlementValidationErrors.length ? (
           <div
             ref={settlementErrorSummaryRef}
@@ -381,10 +397,10 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           }}
           aria-label="模型用量人工处理审计信息"
         >
-          <Form.Item name="reason" label="处理原因" rules={[{ required: true, whitespace: true, message: "请填写本次人工处理原因" }, { min: 4, message: "处理原因至少填写 4 个字符" }]}>
+          <Form.Item name="reason" label="处理原因" htmlFor="settlement-reason" rules={[{ required: true, whitespace: true, message: "请填写本次人工处理原因" }, { min: 4, message: "处理原因至少填写 4 个字符" }]}>
             <Input.TextArea id="settlement-reason" rows={3} placeholder="说明核对结果、异常原因和处理依据" autoFocus />
           </Form.Item>
-          <Form.Item name="evidenceRef" label="Evidence 引用" extra="填写工单、对账记录或中转站回执的可追溯引用。" rules={[{ required: true, whitespace: true, message: "请填写可追溯的 evidence 引用" }]}>
+          <Form.Item name="evidenceRef" label="Evidence 引用" htmlFor="settlement-evidence-ref" extra="填写工单、对账记录或中转站回执的可追溯引用。" rules={[{ required: true, whitespace: true, message: "请填写可追溯的 evidence 引用" }]}>
             <Input id="settlement-evidence-ref" placeholder="例如 ticket://OPS-123 或 relay://request-id" />
           </Form.Item>
         </Form>

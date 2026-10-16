@@ -259,7 +259,7 @@ export function dataSetErrorFor(
   const fatal = errors["*"];
   if (!failedMethods.length) return fatal;
   const messages = [...new Set(failedMethods.map((method) => errors[method]))];
-  return `部分数据集刷新失败（${failedMethods.join("、")}）。页面保留上次成功数据，这些值可能已过期：${messages.join("；")}`;
+  return `部分数据集刷新失败（${failedMethods.join("、")}）。相关内容尚未取得或可能已过期：${messages.join("；")}`;
 }
 
 /**
@@ -1093,7 +1093,7 @@ export function useOpsConsoleModel() {
       if (!loadCoordinatorRef.current.isCurrent(loadRequest)) return;
       setDataSetErrors(failedDataSetErrors);
       setDataSetErrorEvidence(failedDataSetErrorEvidence);
-      if (firstOptionalError) setError(`部分数据集刷新失败（${failedDataSets.join("、")}）。页面保留上次成功数据，这些值可能已过期：${describeOpsError(firstOptionalError)}`);
+      if (firstOptionalError) setError(`部分数据集刷新失败（${failedDataSets.join("、")}）。相关内容尚未取得或可能已过期：${describeOpsError(firstOptionalError)}`);
       applyLoadedValue(result, (value) => {
         setSettings(value?.settings);
         setPlatformRows(value?.platforms ?? []);
@@ -1627,7 +1627,15 @@ export function useOpsConsoleModel() {
         platform: row.platform,
         account_id: row.accountId,
       }),
-      onSuccess: () => message.success(storeRevocationCopy(row).successMessage),
+      onSuccess: () => {
+        // The revoke is committed even if the subsequent directory read fails.
+        // Keep that confirmed fact instead of leaving an actionable connected row.
+        setStoreDirectory(current => current.map(store =>
+          store.platform === row.platform && store.accountId === row.accountId && store.workspaceId === row.workspaceId
+            ? { ...store, state: "revoked", readable: false, writeEnabled: false }
+            : store));
+        message.success(storeRevocationCopy(row).successMessage);
+      },
       refresh: load,
     });
   };
@@ -3291,7 +3299,9 @@ export function useOpsConsoleModel() {
     saving,
     setSaving,
     refundSubmitting,
-    error,
+    error: error.startsWith("部分数据集刷新失败（")
+      ? dataSetErrorFor(dataSetErrors, Object.keys(dataSetErrors).filter((method) => method !== "*")) ?? ""
+      : error,
     setError,
     dataSetError,
     dataSetErrorEvidence,

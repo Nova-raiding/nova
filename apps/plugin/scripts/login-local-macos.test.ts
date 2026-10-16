@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error Native Node installer module intentionally has no build step.
 import { credentialFromResponse, launchChatGPTIfNotRunning, localPluginLoginCallbackFailureMessage, localPluginLoginFailureMessage, loginLocalPlugin, validateLoginTarget } from './login-local-macos.mjs'
@@ -383,6 +385,56 @@ describe('local plugin login installer runtime', () => {
 
   it('does not propagate secret-bearing transport errors', async () => {
     await expect(loginLocalPlugin({ baseUrl: 'https://example.test', workspaceId: 'ws_test', openBrowser: async () => { throw new Error('password=should-never-print') }, storeCredential: () => {}, configureSession: () => {} })).rejects.toThrow(/^LOCAL_PLUGIN_LOGIN_FAILED$/u)
+  })
+
+  for (const command of ['login', 'enroll']) {
+    for (const qa of [true, false]) {
+      it(`${command} CLI ${qa ? 'QA skips native helper' : 'native fails closed before controlled flow'}`, () => {
+        const root = realpathSync(mkdtempSync(join(tmpdir(), 'merchant-login-profile-')))
+        try {
+          for (const directory of ['scripts', 'mcp', '.codex-plugin']) mkdirSync(join(root, directory))
+          for (const script of ['login-local-macos.mjs', 'enroll-local-macos.mjs']) {
+            writeFileSync(join(root, 'scripts', script), readFileSync(new URL(script, import.meta.url), 'utf8'))
+          }
+          writeFileSync(join(root, 'package.json'), JSON.stringify({ version: 'test' }))
+          writeFileSync(join(root, '.codex-plugin/plugin.json'), JSON.stringify({ version: 'test' }))
+          const reached = join(root, 'controlled-flow')
+          const nativeCheck = join(root, 'native-check')
+          writeFileSync(join(root, 'mcp/keychain-credential.mjs'), `
+            import { writeFileSync } from 'node:fs';
+            export const isQaBrokerPackage = () => ${qa};
+            export const assertKeychainHelperReady = () => { writeFileSync(${JSON.stringify(nativeCheck)}, 'checked'); throw new Error('MCP_KEYCHAIN_HELPER_INVALID'); };
+            export const installationIdentityStore = () => { writeFileSync(${JSON.stringify(reached)}, 'enrollment'); throw new Error('CONTROLLED_STOP'); };
+            export const installationIdentitySeed = () => { throw new Error('UNEXPECTED_IDENTITY_WRITE'); };
+            export const writeKeychainCredential = () => { throw new Error('UNEXPECTED_CREDENTIAL_WRITE'); };
+            export const readKeychainCredential = () => { throw new Error('UNEXPECTED_CREDENTIAL_READ'); };
+            export const keychainCredentialSeed = () => { throw new Error('UNEXPECTED_SEED'); };
+          `)
+          writeFileSync(join(root, 'mcp/installation-identity.mjs'), 'export const loadOrCreateInstallationIdentity = () => { throw new Error("UNEXPECTED_IDENTITY"); };')
+          writeFileSync(join(root, 'scripts/launch-verified-chatgpt-macos.mjs'), `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(reached)}, 'login'); throw new Error('CONTROLLED_STOP');`)
+          // Force only the platform label; all credential and host modules are local throwing fakes.
+          const preload = join(root, 'platform.mjs')
+          writeFileSync(preload, "Object.defineProperty(process, 'platform', {value: 'darwin'}); globalThis.fetch = () => {throw new Error('NETWORK_FORBIDDEN')};")
+          const args = ['--import', preload, join(root, 'scripts', `${command}-local-macos.mjs`), '--base-url', 'https://example.test', '--workspace', 'ws_test']
+          if (command === 'enroll') args.push('--account-id', 'account_test')
+          const result = spawnSync(process.execPath, args, { encoding: 'utf8', timeout: 5000, env: { PATH: process.env.PATH } })
+          expect(result.status).toBe(1) // intentional controlled stop, never a real login
+          expect(existsSync(nativeCheck)).toBe(!qa)
+          expect(existsSync(reached)).toBe(qa)
+        } finally { rmSync(root, { recursive: true, force: true }) }
+      })
+    }
+  }
+
+  it('describes QA success as temporary and native success as saved', async () => {
+    // @ts-expect-error Native installer exports intentionally have no declaration file.
+    const { localPluginLoginSuccessMessage } = await import('./login-local-macos.mjs')
+    for (const launched of [true, false]) {
+      expect(localPluginLoginSuccessMessage({ chatgpt_launched: launched }, true)).toContain('仅保存在辅助进程内存')
+      expect(localPluginLoginSuccessMessage({ chatgpt_launched: launched }, true)).toContain('退出后需要重新授权')
+      expect(localPluginLoginSuccessMessage({ chatgpt_launched: launched }, true)).not.toContain('凭据已保存')
+    }
+    expect(localPluginLoginSuccessMessage({ chatgpt_launched: false }, false)).toContain('凭据已保存')
   })
 
   it('provides a runnable help command without touching credentials', () => {

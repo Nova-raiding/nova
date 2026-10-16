@@ -131,6 +131,56 @@ describe('scoped brand HTTP and task confirmation contracts', () => {
     expect(taskRepository.resolveForTask).toHaveBeenCalledOnce()
   })
 
+  it.each(['stores', 'series', 'images'] as const)('rejects omitted revoked-store %s settings before full replacement', async scopeKind => {
+    const workspaceId = 'ws_brand_omission'
+    const service = new MerchantService({ fixtureMode: true })
+    const inactive = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'old', credentialRef: 'vault://old' })
+    inactive.tokenState = 'revoked'
+    const entry = { enabled: true, values: { persona: '必须保留的旧店资料' } }
+    const prior = { schemaVersion: 1, [scopeKind]: scopeKind === 'stores'
+      ? { [inactive.id]: entry }
+      : scopeKind === 'series' ? { [inactive.id]: { series_old: entry } } : { asset_old: entry } }
+    const save = vi.fn(async () => ({ settings: { schemaVersion: 1 }, revision: 2 }))
+    const getAssetAssignment = vi.fn(async () => ({ accountId: inactive.id }))
+    const repository = { get: vi.fn(async () => ({ settings: prior, revision: 1 })), save, getAssetAssignment } as unknown as PostgresScopedBrandSettingsRepository
+    const deps = {
+      repository, body: async () => ({ expected_revision: 1, settings: { schemaVersion: 1 } }), resolveWorkspace: () => workspaceId,
+      enforceAccess: async () => undefined,
+      requireActionableStore: (scope: string, accountId: string) => { service.getActionablePlatformAccount(scope, accountId) },
+      assertAssetActive: vi.fn(async () => undefined), actor: () => 'merchant', send: vi.fn(),
+    }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).rejects.toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED', status: 409 })
+    expect(save).not.toHaveBeenCalled()
+    expect(deps.send).not.toHaveBeenCalled()
+    // Removing an image setting must check its store, without requiring that
+    // the old asset still be active (cleanup itself may be legitimate).
+    expect(deps.assertAssetActive).not.toHaveBeenCalled()
+    if (scopeKind === 'images') expect(getAssetAssignment).toHaveBeenCalledWith(workspaceId, 'asset_old')
+  })
+
+  it('allows authorized scope cleanup without reading removed asset bytes', async () => {
+    const workspaceId = 'ws_brand_cleanup'
+    const service = new MerchantService({ fixtureMode: true })
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'active', credentialRef: 'vault://active' })
+    const entry = { enabled: true, values: { persona: '待清理资料' } }
+    const settings = { schemaVersion: 1 }
+    const save = vi.fn(async () => ({ settings, revision: 2 }))
+    const repository = {
+      get: vi.fn(async () => ({ settings: { schemaVersion: 1, stores: { [account.id]: entry }, series: { [account.id]: { series_old: entry } }, images: { asset_old: entry } }, revision: 1 })),
+      getAssetAssignment: vi.fn(async () => ({ accountId: account.id })), save,
+    } as unknown as PostgresScopedBrandSettingsRepository
+    const requireActionableStore = vi.fn((scope: string, accountId: string) => { service.getActionablePlatformAccount(scope, accountId) })
+    const deps = {
+      repository, body: async () => ({ expected_revision: 1, settings }), resolveWorkspace: () => workspaceId,
+      enforceAccess: async () => undefined, requireActionableStore,
+      assertAssetActive: vi.fn(async () => { throw new Error('Removed asset must not be read') }), actor: () => 'merchant', send: vi.fn(),
+    }
+    await expect(routeScopedBrandHttp(request('PUT'), response(), '/v1/brand-scopes', deps)).resolves.toBe(true)
+    expect(requireActionableStore).toHaveBeenCalledExactlyOnceWith(workspaceId, account.id)
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId, settings, expectedRevision: 1 }))
+    expect(deps.assertAssetActive).not.toHaveBeenCalled()
+  })
+
   it('allows a manual store only while manual operations mode is active', async () => {
     let manualMode = true
     const service = new MerchantService({ fixtureMode: true, manualStoreRecords: () => manualMode })

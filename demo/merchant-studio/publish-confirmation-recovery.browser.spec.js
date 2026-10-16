@@ -24,7 +24,7 @@ const envelope = data => ({
 
 const task = {
   id: taskId, workspaceId, productId, platform: 'jd', accountId: storeId,
-  state: 'approved', version: 7, createdAt: '2026-10-11T00:00:00.000Z', requestText: '本地发布确认验收',
+  state: 'approved', contentVersionId: versionId, version: 7, createdAt: '2026-10-11T00:00:00.000Z', requestText: '本地发布确认验收',
 }
 
 const product = {

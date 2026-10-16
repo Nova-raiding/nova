@@ -146,6 +146,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   const createSubmissionController = useRef<AbortController | undefined>(undefined);
   const pendingCreate = useRef<{
     companyName: string;
+    workspaceId: string;
     record: CustomerDeliveryRecord;
     contract?: { sourceKey: File | string; assetRef: string };
   } | undefined>(undefined);
@@ -159,7 +160,32 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   currentCanRead.current = canRead;
   const currentCanUpdate = useRef(canUpdate);
   currentCanUpdate.current = canUpdate;
+  const createIdentityKey = `${model.opsSession?.actor_id ?? ""}:${model.opsSession?.session_id ?? ""}`;
+  const createScope = useRef({ workspaceId: targetWorkspaceId, identityKey: createIdentityKey, canRead, canUpdate, generation: 0 });
+  const previousCreateScope = createScope.current;
+  if (previousCreateScope.workspaceId !== targetWorkspaceId || previousCreateScope.identityKey !== createIdentityKey || previousCreateScope.canRead !== canRead || previousCreateScope.canUpdate !== canUpdate) {
+    createScope.current = { workspaceId: targetWorkspaceId, identityKey: createIdentityKey, canRead, canUpdate, generation: previousCreateScope.generation + 1 };
+  }
   const mounted = useRef(true);
+  useLayoutEffect(() => {
+    if (!canRead || !canUpdate || !targetWorkspaceId || previousCreateScope.workspaceId !== targetWorkspaceId || previousCreateScope.identityKey !== createIdentityKey) {
+      if (createSubmissionController.current) {
+        createSubmissionController.current.abort();
+        setMutationError("操作权限或目标企业已变化，已停止后续提交。此前已提交的步骤可能已保存，请恢复权限后刷新原企业档案核对，勿重复创建。");
+      }
+      if (previousCreateScope.workspaceId !== targetWorkspaceId || previousCreateScope.identityKey !== createIdentityKey) {
+        pendingCreate.current = undefined;
+        if (createPage) createForm.resetFields();
+        setCreatePage(false);
+        setCreateDraftDirty(false);
+        setUploadedContractFile(undefined);
+        setUploadedContractName("");
+        setIntegrationChecks([]);
+        setAcceptanceChecks([]);
+        setLeaveCreateConfirmOpen(false);
+      }
+    }
+  }, [canRead, canUpdate, targetWorkspaceId, createIdentityKey]);
   const reportMutationError = (cause: unknown) => {
     if (currentWorkspace.current === targetWorkspaceId) setMutationError(describeOpsError(cause));
   };
@@ -279,6 +305,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
   };
   const submitCreatePage = async (values: { companyName: string; contractNumber: string; paymentStatus: "paid" | "unpaid"; paymentDate: { format: (pattern: string) => string }; contractFile: string; owner: string; afterSalesOwner: string }) => {
     if (createSubmissionController.current) return;
+    if (!mounted.current || !currentCanRead.current || !currentCanUpdate.current || !targetWorkspaceId || currentWorkspace.current !== targetWorkspaceId) {
+      setMutationError("当前权限或目标企业已变化，请核对后再创建客户。");
+      return;
+    }
+    const submissionGeneration = createScope.current.generation;
     if (integrationChecks.length < INTEGRATION_ITEMS.length || acceptanceChecks.length < ACCEPTANCE_ITEMS.length) {
       message.error("请完成系统接入、功能验收全部勾选");
       return;
@@ -289,29 +320,39 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     const companyName = values.companyName.trim();
     const controller = new AbortController();
     createSubmissionController.current = controller;
+    const assertCreateScope = () => {
+      controller.signal.throwIfAborted();
+      if (!mounted.current || createScope.current.generation !== submissionGeneration || !currentCanRead.current || !currentCanUpdate.current || currentWorkspace.current !== targetWorkspaceId) {
+        throw new DOMException("建档操作范围已变化，已停止后续提交", "AbortError");
+      }
+    };
     setCreating(true);
     setMutationError("");
     try {
+      assertCreateScope();
       let attempt = pendingCreate.current;
-      if (!attempt || attempt.companyName !== companyName) {
+      if (!attempt || attempt.companyName !== companyName || attempt.workspaceId !== targetWorkspaceId) {
         // A previous attempt may already have created the draft before an
         // upload or scan failed. Resume that draft so a retry does not fail on
         // the unique company-name constraint.
         const existingDraft = records.find((record) => record.companyName.trim() === companyName && !record.profile);
         const record = existingDraft ?? await createRecord(companyName);
-        attempt = { companyName, record };
-        pendingCreate.current = attempt;
+        attempt = { companyName, workspaceId: targetWorkspaceId, record };
+        if (createScope.current.workspaceId === targetWorkspaceId && createScope.current.identityKey === createIdentityKey) pendingCreate.current = attempt;
+        assertCreateScope();
       }
+      assertCreateScope();
       const contractAssetRef = await ensureCustomerDeliveryContractAsset({
         attempt,
         source: contractSource,
         targetWorkspaceId,
         deliveryId: attempt.record.id,
         signal: controller.signal,
-        upload: customerDeliveryClient.uploadAsset.bind(customerDeliveryClient),
-        getAsset: customerDeliveryClient.getAsset.bind(customerDeliveryClient),
-        wait: waitForUsableDeliveryAsset,
+        upload: async (...args) => { assertCreateScope(); return customerDeliveryClient.uploadAsset(...args); },
+        getAsset: async (...args) => { assertCreateScope(); const asset = await customerDeliveryClient.getAsset(...args); assertCreateScope(); return asset; },
+        wait: async (...args) => { assertCreateScope(); const asset = await waitForUsableDeliveryAsset(...args); assertCreateScope(); return asset; },
       });
+      assertCreateScope();
       attempt.record = await saveProfile({
         ...attempt.record,
         companyName,
@@ -323,21 +364,27 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         afterSalesOwner: values.afterSalesOwner,
         profile: true,
       });
+      assertCreateScope();
       const integration = await customerDeliveryClient.updateChecklist({
         targetWorkspaceId, deliveryId: attempt.record.id, checklistKey: "system_integration",
         items: INTEGRATION_ITEMS.map(itemKey => ({ itemKey, completed: true, evidence: "", evidenceAssetRefs: [] })),
         expectedRevision: attempt.record.revision as number,
       }, controller.signal);
       attempt.record = { ...attempt.record, integration: true, revision: integration.revision ?? (attempt.record.revision as number) + 1 };
+      assertCreateScope();
       const acceptance = await customerDeliveryClient.updateChecklist({
         targetWorkspaceId, deliveryId: attempt.record.id, checklistKey: "functional_acceptance",
         items: ACCEPTANCE_ITEMS.map(itemKey => ({ itemKey, completed: true, evidence: "", evidenceAssetRefs: [] })),
         expectedRevision: attempt.record.revision as number,
       }, controller.signal);
       attempt.record = { ...attempt.record, acceptance: true, revision: acceptance.revision ?? (attempt.record.revision as number) + 1 };
+      assertCreateScope();
       await load();
+      assertCreateScope();
       pendingCreate.current = undefined;
       createForm.resetFields();
+      setIntegrationChecks([]);
+      setAcceptanceChecks([]);
       setUploadedContractFile(undefined);
       setUploadedContractName("");
       setCreateDraftDirty(false);
@@ -543,11 +590,12 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
     >
       {!canRead ? <Alert type="warning" showIcon title="当前会话没有客户交付读取权限" description="请切换到具备 customer.delivery.read 的平台运营工作区。" /> : null}
       {canRead && !canUpdate ? <Alert style={{ marginBottom: 16 }} type="info" showIcon title="当前会话仅可查看客户交付" description="保存、上传和流程变更需要 customer.delivery.update 权限。" /> : null}
+      {canRead && model.workspaceDirectoryError ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户企业目录读取失败" description={model.workspaceDirectoryError} action={<Button size="small" loading={model.workspaceDirectoryLoading} onClick={() => void model.loadWorkspaceDirectory({ status: "active", merchantOnly: true, page: 1, pageSize: 100 })}>重新读取企业目录</Button>} /> : null}
       {!targetWorkspaceId && canRead && createPage ? <Alert style={{ marginBottom: 16 }} type="warning" showIcon title="尚未选择客户工作区" description="请先选择目标企业工作区。选择后即可读取档案，并按权限执行建档、上传和验收。" /> : null}
       {error ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title="客户交付数据加载失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} /> : null}
       {mutationError && !createPage ? <Alert style={{ marginBottom: 16 }} type="error" showIcon title={archivedOnly ? "客户交付恢复失败" : "客户交付保存被阻断"} description={mutationError} closable onClose={() => setMutationError("")} /> : null}
       {createPage ? (<>
-        <Form id="customer-create-form" className="customer-delivery-create-form" form={createForm} layout="vertical" onFinish={submitCreatePage} onValuesChange={() => setCreateDraftDirty(true)}>
+        <Form id="customer-create-form" className="customer-delivery-create-form" disabled={!canRead || !canUpdate || !targetWorkspaceId || creating} form={createForm} layout="vertical" onFinish={submitCreatePage} onValuesChange={() => setCreateDraftDirty(true)}>
         <Card title="用户建档">
             <div className="customer-delivery-profile-fields">
             <Form.Item name="companyName" label="公司名称" rules={[{ required: true, message: "请输入公司名称" }]}>
@@ -560,7 +608,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
               <Form.Item name="contractFile" noStyle rules={[{ required: true, message: "请上传合同文件或填写 HTTPS 合同直链" }]}>
                 <Input placeholder="上传文件，或填写 HTTPS 合同直链" onChange={() => { if (uploadedContractFile) { setUploadedContractFile(undefined); setUploadedContractName(""); } }} suffix={<Button type="text" className="customer-delivery-upload-button" aria-label="上传合同文件" title="上传合同文件" icon={<UploadOutlined />} onClick={() => contractFileInput.current?.click()} />} />
               </Form.Item>
-              <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); setCreateDraftDirty(true); } }} />
+              <input ref={contractFileInput} hidden type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" onChange={(event) => { if (!currentCanRead.current || !currentCanUpdate.current || !currentWorkspace.current || creating) return; const file = event.target.files?.[0]; if (file) { createForm.setFieldValue("contractFile", file.name); setUploadedContractName(file.name); setUploadedContractFile(file); setCreateDraftDirty(true); } }} />
               {uploadedContractName ? <div className="customer-delivery-uploaded-file">已选择：{uploadedContractName}<Button type="text" size="small" className="customer-delivery-clear-upload" aria-label="取消已选合同文件" title="取消已选文件" icon={<CloseOutlined />} onClick={() => { createForm.setFieldValue("contractFile", ""); setUploadedContractName(""); setUploadedContractFile(undefined); if (contractFileInput.current) contractFileInput.current.value = ""; }} /></div> : null}
             </Form.Item>
             <Form.Item name="owner" label="项目负责人" rules={[{ required: true, message: "请输入项目负责人" }]}><Input placeholder="例如：姜伟" /></Form.Item>
@@ -592,7 +640,7 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         <div className="customer-delivery-create-actions">
           <Button disabled={creating} aria-haspopup="dialog" aria-expanded={leaveCreateConfirmOpen} onClick={leaveCreatePage}>返回客户建档</Button>
           <Space>
-            <Button type="primary" htmlType="submit" form="customer-create-form" loading={creating}>{creating ? "正在创建" : "创建客户"}</Button>
+            <Button type="primary" htmlType="submit" form="customer-create-form" disabled={!canRead || !canUpdate || !targetWorkspaceId} loading={creating}>{creating ? "正在创建" : "创建客户"}</Button>
           </Space>
         </div>
         </Form>
@@ -604,6 +652,11 @@ export function CustomerDeliveryPage({ model }: { model: OpsConsoleModel }) {
         archivedView={archivedOnly}
         loading={loading}
         records={records}
+        emptyStateMessage={!canRead ? "当前会话无权读取客户交付档案。"
+          : !targetWorkspaceId ? "客户交付档案尚未读取，请先选择目标企业。"
+            : loading ? "正在读取客户交付档案…"
+              : error ? "客户交付档案尚未取得，请重试。"
+                : listQuery.keyword || listQuery.owner || listQuery.afterSalesOwner ? "没有符合筛选条件的客户" : undefined}
         projectOwnerOptions={projectOwnerOptions}
         supportOwnerOptions={supportOwnerOptions}
         total={listTotal}

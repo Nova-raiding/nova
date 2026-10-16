@@ -258,14 +258,24 @@ export function RuleCenterSection({ model, platformOnly = false, onDraftsChanged
   const confirmRuleStatusChange = (row: Rule, status: "expired" | "inactive") => {
     const action = status === "expired" ? "标记过期" : "停用";
     const scope = row.scope === "platform" ? "所有商家" : "当前工作区";
-    statusConfirmation.confirm({
+    const description = `将对${scope}应用“${row.name}”（${row.packId} · ${row.version}）的状态变更。确认前请核对规则及版本。`;
+    const confirmation = statusConfirmation.confirm({
       title: `确认${action}？`,
-      content: `将对${scope}应用“${row.name}”（${row.packId} · ${row.version}）的状态变更。确认前请核对规则及版本。`,
+      content: description,
       okText: `确认${action}`,
       cancelText: "取消",
       okButtonProps: status === "inactive" ? { danger: true } : undefined,
-      onOk: () => updateRuleStatus(row, status),
+      onOk: async () => {
+        if (await updateRuleStatus(row, status)) return;
+        confirmation.update({ content: <><p>{description}</p><Alert type="error" showIcon role="alert" title="未确认规则状态变更" description="请核对服务端状态后重试，或取消本次操作。" /></> });
+        // Ant Design closes on any resolved value, including false.
+        // Reject only to retain this confirmation after a failed mutation.
+        throw new Error("未确认规则状态变更");
+      },
     });
+    // Use the hook's Promise mode so expected mutation rejection keeps the
+    // dialog open without surfacing as an unhandled browser rejection.
+    void confirmation.then(() => undefined, () => undefined);
   };
 
   const importMarkdownDocuments = async (documents: Array<{ name: string; text: string }>) => {

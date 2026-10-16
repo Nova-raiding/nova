@@ -364,7 +364,17 @@ describe('quality entrypoint coverage', () => {
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(65)
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(71)
+    const lifecycleBrowserTests = [
+      'apps/ops-console/src/components/users/UserDirectorySection.invitation-authorization.browser.test.tsx',
+      'apps/ops-console/src/pages/CustomerDeliveryCreateAuthorization.e2e.test.ts',
+    ]
+    const opsBrowserRunner = readFileSync(resolve(root, 'apps/ops-console/scripts/run-browser-tests.mjs'), 'utf8')
+    for (const file of lifecycleBrowserTests) {
+      expect(NON_HERMETIC_TEST_FILES, `${file} must not run in the root unit lane`).toContain(file)
+      expect(opsBrowserRunner, `${file} must have a runnable Ops browser owner`).toContain(`"${file.replace('apps/ops-console/', '')}"`)
+    }
+    expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/asset-scan-bootstrap-concurrency.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('packages/persistence/src/commercial-catalog-v3.release.postgres.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/kubernetes-release-gate.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/rendered-kubernetes-config.test.ts')

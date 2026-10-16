@@ -55,6 +55,7 @@ describe("workspace directory read failure", () => {
                 React.createElement('span', { 'data-testid': 'session' }, model.opsSession ? 'ready' : 'pending'),
                 React.createElement('span', { 'data-testid': 'error' }, model.workspaceDirectoryError || 'none'),
                 React.createElement('span', { 'data-testid': 'dataset-error' }, model.dataSetError('ops.workspaces.list') || 'none'),
+                React.createElement('span', { 'data-testid': 'global-error' }, model.error || 'none'),
                 React.createElement('span', { 'data-testid': 'rows' }, String(model.workspaceRows.length)),
                 React.createElement('button', { type: 'button', onClick: () => void model.loadWorkspaceDirectory() }, '刷新月费工作区'));
             }
@@ -107,7 +108,7 @@ describe("workspace directory read failure", () => {
 
   const text = (target: Page, testId: string) => target.getByTestId(testId).innerText();
 
-  it("records the failure instead of only toasting it, and clears it on a recovered read", async () => {
+  it.each([false, true])("clears recovered directory failures while preserving other failures (%s)", async (retainOtherFailure) => {
     const target = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     // The probe's own read is request #1; the console's bootstrap fan-out asks
     // for the same dataset ~1.5s later and is request #2. Both fail before the
@@ -117,7 +118,11 @@ describe("workspace directory read failure", () => {
     try {
       await target.route(`${baseUrl}/api/mcp`, async route => {
         const request = route.request().postDataJSON() as { id: string; method: string };
-        if (request.method === "ops.session") return respond(route, request.id, session);
+        if (request.method === "ops.session") return respond(route, request.id, { ...session, capabilities: [...session.capabilities, ...(retainOtherFailure ? ["storage.reconciliation.read"] : [])] });
+        if (request.method === "ops.storage.reconciliation.list" && retainOtherFailure) return route.fulfill({
+          status: 500, contentType: "application/json",
+          body: JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: "INTERNAL_ERROR", message: "存储对账仓储仍不可用" } }),
+        });
         if (request.method === "ops.workspaces.list") {
           requests += 1;
           if (requests <= 2) {
@@ -140,12 +145,19 @@ describe("workspace directory read failure", () => {
       // The console-wide fan-out recorded the same failure in the shared dataset
       // errors; wait for it so the retry below is unambiguous.
       await expect.poll(() => text(target, "dataset-error"), { timeout: 20_000 }).toContain("部分数据集刷新失败");
+      expect(await text(target, "global-error")).toContain("ops.workspaces.list");
 
       await target.getByRole("button", { name: "刷新月费工作区", exact: true }).click();
       await expect.poll(() => text(target, "rows"), { timeout: 20_000 }).toBe("1");
       expect(await text(target, "error")).toBe("none");
       // ...including the stale dataset error, which only this retry can clear.
       await expect.poll(() => text(target, "dataset-error"), { timeout: 20_000 }).toBe("none");
+      if (retainOtherFailure) {
+        await expect.poll(() => text(target, "global-error"), { timeout: 20_000 }).not.toContain("ops.workspaces.list");
+        expect(await text(target, "global-error")).toContain("ops.storage.reconciliation.list");
+      } else {
+        await expect.poll(() => text(target, "global-error"), { timeout: 20_000 }).toBe("none");
+      }
     } finally { await target.close(); }
   }, 60_000);
 });

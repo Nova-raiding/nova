@@ -33,6 +33,16 @@ describe('MCP method contract', () => {
     }
   })
 
+
+  it('requires a stable idempotency key for rendering while allowing script/storyboard planning', () => {
+    const method = 'multimodal.video.request'
+    const baseParams = { prompt: '生成无文字商品分镜', output: 'storyboard', context_json: '{"candidateOnly":true,"brand":null,"product":{"id":"product_1","version":"1"},"rules":[]}' }
+
+    expect(MCP_METHOD_SCHEMAS[method].required).toEqual(['prompt', 'output', 'context_json'])
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'video-without-idempotency', method, params: baseParams })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 'video-with-idempotency', method, params: { ...baseParams, idempotency_key: 'video-storyboard-20261014-v1' } })).toEqual({ valid: true, errors: [] })
+  })
+
   const productionEvidenceMethods = [
     'platform.media.spec.list',
     'platform.media.spec.get',
@@ -104,7 +114,7 @@ describe('MCP method contract', () => {
 
   it('keeps the legacy methods and exposes the complete merchant workflow', () => {
     expect(MCP_METHODS.filter(method => !['workspace.interactive.confirm', 'task.resume', 'catalog.title.accept', 'catalog.sku.update', 'catalog.product.update', 'ops.marketing.queue.assign', 'ops.marketing.visual.review', 'automation.tick', 'ops.session', 'brand-unit.list', 'brand-unit.create', 'brand-unit.bind-store', 'brand-unit.product.create', 'brand-unit.listing.create', 'brand-unit.listing.list', 'campaign.batch.create', 'campaign.batch.get', 'campaign.batch.generate'].includes(method)).filter(method => !method.startsWith('ops.commercial.model-markup.'))).toEqual(expect.arrayContaining([
-      'merchant.start', 'merchant.first_value', 'workspace.health', 'workspace.bootstrap', 'workspace.metrics', 'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.detail', 'ops.audit.export', 'ops.data.delete.list', 'ops.data.delete.cancel', 'ops.data.delete.approve', 'ops.members.list', 'ops.workspaces.list', 'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert', 'ops.commercial.coupons.list', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list', 'ops.commercial.rollout.upsert', 'ops.growth.funnel', 'ops.alerts.list', 'ops.alert.ack', 'ops.marketing.queue', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create', 'ops.member.upsert', 'ops.member.suspend', 'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation', 'billing.reconciliation.run', 'billing.export', 'platform.settings.get', 'platform.settings.update', 'platform.model.status', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.transactions', 'workspace.deactivate', 'workspace.activate', 'workspace.data.delete.request', 'platform.connect', 'platform.store.alias.set', 'catalog.search', 'catalog.categories', 'catalog.title.optimize', 'catalog.import', 'catalog.import.batch', 'catalog.facts.confirm', 'catalog.product.disable', 'catalog.product.enable', 'catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'rule.publish', 'rule.status', 'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.get', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'deliverable.list', 'task.history', 'task.clone', 'task.timeline', 'feedback.list', 'feedback.submit', 'platform.revoke', 'task.create', 'task.answer', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create',
+      'merchant.start', 'merchant.first_value', 'workspace.health', 'workspace.bootstrap', 'workspace.metrics', 'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.detail', 'ops.audit.export', 'ops.data.delete.list', 'ops.data.delete.cancel', 'ops.data.delete.approve', 'ops.members.list', 'ops.workspaces.list', 'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert', 'ops.commercial.coupons.list', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list', 'ops.commercial.rollout.upsert', 'ops.growth.funnel', 'ops.alerts.list', 'ops.alert.ack', 'ops.marketing.queue', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'ops.marketing.asset_scan.bootstrap', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create', 'ops.member.upsert', 'ops.member.suspend', 'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation', 'billing.reconciliation.run', 'billing.export', 'platform.settings.get', 'platform.settings.update', 'platform.model.status', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.transactions', 'workspace.deactivate', 'workspace.activate', 'workspace.data.delete.request', 'platform.connect', 'platform.store.alias.set', 'catalog.search', 'catalog.categories', 'catalog.title.optimize', 'catalog.import', 'catalog.import.batch', 'catalog.facts.confirm', 'catalog.product.disable', 'catalog.product.enable', 'catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'rule.publish', 'rule.status', 'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.get', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'deliverable.list', 'task.history', 'task.clone', 'task.timeline', 'feedback.list', 'feedback.submit', 'platform.revoke', 'task.create', 'task.answer', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create',
       'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.draft.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
       'content.versions', 'content.diff', 'content.export',
       'content.approve', 'content.modify', 'content.restore', 'publish.prepare', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'automation.policy.get', 'automation.policy.list', 'automation.policy.update', 'automation.scan', 'automation.pause', 'publish.confirm', 'publish.get', 'ops.marketing.publish.manual-evidence.record', 'publish.manual.get', 'publish.manual.list',
@@ -219,6 +229,15 @@ describe('MCP method contract', () => {
       },
     })
     expect(getMcpMethodContract('ops.marketing.asset_scan.retry')?.description).toMatch(/never marks an asset clean.*signed platform scanner callback/iu)
+    expect(MCP_METHOD_SCHEMAS['ops.marketing.asset_scan.bootstrap']).toMatchObject({
+      required: ['asset_id', 'expected_asset_revision', 'idempotency_key', 'reason'],
+      properties: { expected_asset_revision: { pattern: '^[1-9][0-9]*$' }, idempotency_key: { minLength: 8 } },
+    })
+    expect(getMcpMethodContract('ops.marketing.asset_scan.bootstrap')?.description).toMatch(/never marks an asset clean|never promotes/iu)
+    expect(validateMcpRequest({
+      jsonrpc: '2.0', id: 'scan-bootstrap-valid', method: 'ops.marketing.asset_scan.bootstrap',
+      params: { asset_id: 'asset_1', expected_asset_revision: '3', idempotency_key: 'asset-scan:bootstrap:1', reason: 'historical asset needs signed scan' },
+    })).toEqual({ valid: true, errors: [] })
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 'scan-retry-valid', method: 'ops.marketing.asset_scan.retry',
       params: { asset_id: 'asset_1', event_id: 'event_1', expected_asset_revision: '3', idempotency_key: 'asset-scan:retry:1', reason: 'scanner timeout recovered' },
@@ -593,9 +612,10 @@ describe('MCP method contract', () => {
 
     for (const method of ['multimodal.generate', 'multimodal.video.request'] as const) {
       const modality = method === 'multimodal.generate' ? { modality: 'video' } : {}
+      const idempotency = method === 'multimodal.video.request' ? { idempotency_key: 'video-confirmed-storyboard-1' } : {}
       const request = (output: 'script' | 'rendering', ticket: { confirmation_ticket_nonce_hash?: string; confirmation_ticket_intent_hash?: string } = {}) => validateMcpRequest({
         jsonrpc: '2.0', id: method, method,
-        params: { ...modality, prompt: 'Render the confirmed storyboard', output, context_json: '{}', ...ticket },
+        params: { ...modality, prompt: 'Render the confirmed storyboard', output, context_json: '{}', ...idempotency, ...ticket },
       })
       expect(MCP_METHOD_SCHEMAS[method]).toMatchObject({
         properties: {
@@ -776,6 +796,17 @@ describe('MCP method contract', () => {
   })
 })
 
+describe('candidate formalization contract', () => {
+  it('requires explicit candidate/task confirmation and never implies approval or publishing', () => {
+    const contract = getMcpMethodContract('content.draft.confirm')
+    expect(contract?.description).toContain('review-required formal content version')
+    expect(contract?.description).toContain('never approves or publishes')
+    expect(MCP_METHOD_SCHEMAS['content.draft.confirm'].required).toEqual(['task_id', 'body_json'])
+    const valid = validateMcpRequest({ jsonrpc: '2.0', id: 'candidate-confirm', method: 'content.draft.confirm', params: { task_id: 'task_1', body_json: '{}', reason: '商家确认候选并进入审核' } })
+    expect(valid).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({ jsonrpc: '2.0', id: 1, method: 'content.draft.confirm', params: { task_id: 'task_1', reason: '不确认' } }).valid).toBe(false)
+  })
+})
 describe('candidate formalization contract', () => {
   it('requires explicit candidate/task confirmation and never implies approval or publishing', () => {
     const contract = getMcpMethodContract('content.draft.confirm')

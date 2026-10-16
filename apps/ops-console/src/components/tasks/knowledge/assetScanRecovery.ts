@@ -108,3 +108,22 @@ export function parseAssetScanRetryResult(value: unknown): { newEventId: string;
     replayed: row?.replayed === true || row?.idempotentReplay === true || row?.idempotent_replay === true,
   };
 }
+
+/** No dead letter is fabricated for historical assets awaiting their first scan. */
+export function assetScanBootstrapEvidence(asset: UploadedAssetRisk): AssetScanRecoveryEvidence {
+  const assetRevision = positiveInteger(asset.revision);
+  const eligible = asset.scanStatus === "unscanned" && Boolean(assetRevision)
+    && asset.nextAction?.method === "ops.marketing.asset_scan.bootstrap"
+    && !asset.scanFailure?.eventId;
+  return { assetId: asset.id, assetRevision, eligible,
+    ...(!eligible ? { unavailableReason: "服务端尚未确认此版本素材可申请首次扫描" } : {}) };
+}
+
+export function assetScanBootstrapParams(input: { evidence: AssetScanRecoveryEvidence; reason: string; idempotencyKey: string }) {
+  if (!input.evidence.eligible || input.evidence.eventId || !input.evidence.assetRevision)
+    throw new Error("首次扫描资格或素材版本已失效");
+  const reason = input.reason.trim();
+  if (reason.length < 3 || reason.length > 1000) throw new Error("扫描原因需要 3 至 1000 个字符");
+  if (input.idempotencyKey.length < 8 || input.idempotencyKey.length > 200 || !/^[A-Za-z0-9._:-]+$/u.test(input.idempotencyKey)) throw new Error("扫描幂等键无效");
+  return { asset_id: input.evidence.assetId, expected_asset_revision: String(input.evidence.assetRevision), reason, idempotency_key: input.idempotencyKey };
+}

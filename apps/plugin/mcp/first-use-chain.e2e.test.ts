@@ -72,7 +72,7 @@ describe('first-use plugin → API/MCP chain', () => {
     expect(tools).not.toContain('workspace.content_setup.confirm')
     expect(tools).not.toContain('platform.connect')
     expect(tools).not.toContain('platform.store.list')
-    expect(tools.some((name: string) => name.startsWith('ops.'))).toBe(false)
+    expect(tools.filter((name: string) => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'onboarding.status', arguments: {} } })}\n`)
     const onboarding = await nextLine(child.stdout)

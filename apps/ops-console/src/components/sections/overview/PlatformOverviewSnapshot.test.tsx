@@ -150,10 +150,9 @@ describe("PlatformOverviewSnapshot money honesty", () => {
         growth: { orderCount: 2, workspaceCount: 1 },
         custom_bundle: { orderCount: 4, workspaceCount: 2 },
       },
+      // The legacy subscription aliases above are not duplicated as unknown
+      // commercial SKU codes; unclassified codes have their own regression.
       commercialOrderBySku: {
-        basic: { orderCount: 1, workspaceCount: 1 },
-        growth: { orderCount: 2, workspaceCount: 1 },
-        custom_bundle: { orderCount: 4, workspaceCount: 2 },
         "sku-monthly-basic": { orderCount: 1, workspaceCount: 1 },
         "sku-monthly-growth": { orderCount: 2, workspaceCount: 1 },
         "sku-monthly-custom": { orderCount: 4, workspaceCount: 2 },
@@ -236,4 +235,42 @@ describe("PlatformOverviewSnapshot money honesty", () => {
     expect(tile(html, "套餐销量")).toContain("—");
     expect(tile(html, "累计客户消耗创意点")).toContain("—");
   });
+
+  it("does not classify positive monthly orders without a readable SKU catalog", () => {
+    const html = render({ platformMonthlyFinanceSummary: {
+      subscriptionOrderCny: 880,
+      commercialOrderBySku: { basic: { orderCount: 7, workspaceCount: 1 } },
+    } });
+    expect(tile(html, "套餐销量")).toContain("—");
+    expect(tile(html, "2000 版本销量")).toContain("—");
+    expect(tile(html, "套餐销售额")).toContain("880");
+  });
+
+  it("does not reuse stale catalog classification after the catalog read failed", () => {
+    const html = render({ platformMonthlyFinanceSummary: {
+      subscriptionOrderCny: 880,
+      commercialOrderBySku: { basic: { orderCount: 7, workspaceCount: 1 } },
+    }, platformCommercialCatalog: [{ skuCode: "basic", type: "monthly" }],
+    dataSetError: (method: string) => method === "ops.commercial.catalog-v2.list" ? "catalog read failed" : undefined });
+    expect(tile(html, "套餐销量")).toContain("—");
+    expect(tile(html, "2000 版本销量")).toContain("—");
+    expect(tile(html, "套餐销售额")).toContain("880");
+  });
+
+  it("does not present a partial SKU classification as the complete bundle total", () => {
+    const html = render({ platformMonthlyFinanceSummary: { commercialOrderBySku: {
+      basic: { orderCount: 2, workspaceCount: 1 },
+      unclassified_historical_sku: { orderCount: 11, workspaceCount: 2 },
+    } }, platformCommercialCatalog: [{ skuCode: "basic", type: "monthly" }] });
+    expect(tile(html, "套餐销量")).toContain("—");
+    expect(tile(html, "2000 版本销量")).toContain("2");
+  });
+
+  it("preserves a genuine zero when all returned orders are known point packs", () => {
+    const html = render({ platformMonthlyFinanceSummary: { commercialOrderBySku: {
+      points: { orderCount: 7, workspaceCount: 1 },
+    } }, platformCommercialCatalog: [{ skuCode: "points", type: "point_pack" }] });
+    expect(tile(html, "套餐销量")).toContain("0");
+  });
+
 });

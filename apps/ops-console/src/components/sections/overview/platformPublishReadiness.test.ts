@@ -28,8 +28,8 @@ describe("production publish readiness", () => {
 
   it("never renders fixture read or media capability as green completion", () => {
     const fixtureRow = { ...readyRow, accountCount: 3, dataMode: "fixture", simulated: true };
-    expect(platformAuthorizationPresentation(fixtureRow)).toEqual({ color: "gold", label: "3 个演示店铺" });
-    expect(platformReadPresentation(fixtureRow)).toEqual({ color: "gold", label: "演示读取" });
+    expect(platformAuthorizationPresentation(fixtureRow)).toEqual({ color: "gold", label: "3 个测试店铺" });
+    expect(platformReadPresentation(fixtureRow)).toEqual({ color: "gold", label: "测试读取" });
     expect(platformMediaPresentation(fixtureRow)).toEqual({ color: "gold", label: "未验证（fixture）" });
     expect(platformReadPresentation(readyRow)).toEqual({ color: "green", label: "已开启" });
     expect(platformMediaPresentation(readyRow)).toEqual({ color: "green", label: "可上传" });

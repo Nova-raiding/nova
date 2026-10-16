@@ -86,6 +86,53 @@ describe('direct local plugin install runtime build', () => {
     expect(readFileSync(marketplaceScript, 'utf8')).toBe(readFileSync(script, 'utf8'))
   })
 
+  it('installs native local source by default without requiring an in-memory QA broker', () => {
+    const fixture = setup()
+    try {
+      rmSync(resolve(fixture.marketplacePlugin, 'bundle-profile.json'))
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
+      expect(result.status, result.stderr).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, package_profile: 'production' })
+      expect(existsSync(resolve(fixture.installed, 'bundle-profile.json'))).toBe(false)
+      const upgrade = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
+        '--source', source, '--local-source', fixture.localSource, '--marketplace', 'merchant-local-test',
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed, '--package-profile', 'production'], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
+      expect(upgrade.status, upgrade.stderr).toBe(0)
+      expect(JSON.parse(upgrade.stdout)).toMatchObject({ ok: true, plugin_version: version })
+      expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(fixture.localSource)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 180_000)
+
+  it('rejects an implicit QA mirror before changing the registry or cache', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed], { encoding: 'utf8', env: fixture.env, timeout: 30_000 })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN')
+      expect(codexCommands(fixture)).toEqual([])
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  })
+
+  it('rejects an implicit QA upgrade before changing the registry or cache', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
+        '--source', source, '--local-source', fixture.localSource, '--marketplace', 'merchant-local-test',
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed], { encoding: 'utf8', env: fixture.env, timeout: 30_000 })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN')
+      expect(codexCommands(fixture)).toEqual([])
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  })
+
   it('rejects duplicate package profile arguments before invoking Codex', () => {
     const fixture = setup()
     try {

@@ -17,6 +17,16 @@ describe("customer delivery completion", () => {
     const emptyHtml = renderToStaticMarkup(<CustomerDeliverySection records={[]} archivedView onRestore={async () => undefined} />);
     expect(emptyHtml).toContain("暂无已归档客户交付记录");
   });
+  it("does not turn an unread workspace into an empty customer directory", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection disabled records={[]} emptyStateMessage="客户交付档案尚未读取，请先选择目标企业。" />);
+    expect(html).toContain("客户交付档案尚未读取，请先选择目标企业。");
+    expect(html).not.toContain("暂无客户交付档案；请先创建客户档案");
+  });
+  it("does not tell read-only operators to create customer records", () => {
+    const html = renderToStaticMarkup(<CustomerDeliverySection readOnly records={[]} onCreate={async () => base} />);
+    expect(html).toContain("当前工作区暂无客户交付档案。");
+    expect(html).not.toContain("请先创建客户档案");
+  });
   it("keeps operator identity readable when an account name is unavailable", () => {
     expect(deliveryOperatorLabel({ updatedByActorId: " actor-42 " }, "actor-42", "运营账号")).toBe("运营账号");
     expect(deliveryOperatorLabel({ updatedByActorId: "actor-42" }, "other", "运营账号")).toBe("内部身份：actor-42");

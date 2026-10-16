@@ -63,7 +63,7 @@ describe("monthly workspace directory states", () => {
           : undefined,
     });
     expect(countLabel(markup)).toBe("工作区数量未知：目录读取失败");
-    expect(markup).toContain("1 个数据集刷新失败，页面已保留上次成功数据。");
+    expect(markup).toContain("1 个数据集读取失败；相关内容尚未取得或可能已过期。");
     expect(markup).toContain("重试加载运营数据");
     expect(markup).not.toContain("共 0 个工作区");
     expect(markup).not.toContain("暂无商家工作区记录");

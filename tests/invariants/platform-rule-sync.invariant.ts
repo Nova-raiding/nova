@@ -18,7 +18,7 @@ export const mutations: InvariantMutation[] = [
     },
     evidenceFailsWith: 'finds a signed public rule that carries its platform only in scopeValue',
     uniqueness: {
-      callers: ['apps/api/src/server.ts'],
+      callers: ['apps/api/src/server.ts', 'packages/review/src/rule-center.ts'],
       noSecondImplementation: [
         {
           pattern: 'targetId\\s*===',

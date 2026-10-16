@@ -153,9 +153,19 @@ export function localPluginAuthorizationHtml(input: LocalPluginAuthorizationRequ
   return `${localPluginAuthHead('确认插件授权')}<main>${localPluginBrand()}<p class="eyebrow">本地插件连接</p><h1>连接 Store Nova 插件</h1><p class="intro">确认后，已安装在本机的插件将获得当前工作区的商家 API 访问权限。</p><section class="summary" aria-label="授权账号与工作区"><div class="summary-item"><span class="label">登录账号</span><span class="value">${escapeLocalPluginHtml(account.login)}</span></div><div class="summary-item"><span class="label">授权工作区</span><span class="value">${escapeLocalPluginHtml(account.workspaceId)}</span></div></section><section class="permissions" aria-labelledby="permission-title"><h2 id="permission-title">授权范围</h2><ul><li><span class="check" aria-hidden="true">✓</span><span>仅连接此工作区的 Store Nova 本地插件</span></li><li><span class="check" aria-hidden="true">✓</span><span>不会连接第三方店铺或执行店铺操作</span></li><li><span class="check" aria-hidden="true">✓</span><span>不会因本次授权扣费或发布内容</span></li></ul></section><p class="notice">请确认账号和工作区属于你。授权凭据保存在这台电脑的系统凭据库中。</p><form method="post" action="/v1/auth/local-plugin/authorize" class="actions">${hidden}<button class="primary" type="submit">确认授权本地插件</button><a class="secondary" href="/">取消并返回商家后台</a></form></main></body></html>`
 }
 
-export function localPluginLoginRequiredHtml(input: LocalPluginAuthorizationRequest): string {
+function localPluginAuthorizationReturnPath(input: LocalPluginAuthorizationRequest): string {
   const query = new URLSearchParams({ response_type: 'code', client_id: input.clientId, redirect_uri: input.redirectUri, state: input.state, code_challenge: input.codeChallenge, code_challenge_method: 'S256', scope: input.scope, resource: input.resource, workspace_id: input.workspaceId, ...(input.requestId ? { connection_request_id: input.requestId } : {}), ...(input.installInstanceId ? { installation_id: input.installInstanceId, challenge_id: input.instanceChallengeId!, instance_signature: input.instanceSignature!, client_nonce: input.clientNonce!, server_nonce: input.serverNonce!, challenge_issued_at: input.challengeIssuedAt!, challenge_expires_at: input.challengeExpiresAt! } : {}) }).toString()
-  const returnPath = `/v1/auth/local-plugin/authorize?${query}`
+  return `/v1/auth/local-plugin/authorize?${query}`
+}
+
+export function localPluginWorkspaceMismatchHtml(input: LocalPluginAuthorizationRequest): string {
+  const returnPath = localPluginAuthorizationReturnPath(input)
+  const loginPath = `/?plugin_authorize=${encodeURIComponent(returnPath)}`
+  return `${localPluginAuthHead('切换商家账号后继续')}<main>${localPluginBrand()}<p class="eyebrow">工作区不匹配</p><h1>当前账号无法连接此插件</h1><p class="intro">为避免将本地插件连接到错误的商家工作区，授权已安全停止。请切换到拥有目标工作区权限的商家账号后重新继续。</p><div class="summary"><div class="summary-item"><span class="label">目标工作区</span><span class="value">${escapeLocalPluginHtml(input.workspaceId)}</span></div><div class="summary-item"><span class="label">本次状态</span><span class="value">未授权、未创建访问凭据</span></div></div><p class="notice">请先在商家后台退出当前账号，再登录拥有此工作区权限的账号。切换完成后可返回本页继续授权。</p><div class="login-actions"><a class="login-link" href="${escapeLocalPluginHtml(loginPath)}">切换商家账号</a><a class="secondary" href="/">返回商家后台</a></div></main></body></html>`
+}
+
+export function localPluginLoginRequiredHtml(input: LocalPluginAuthorizationRequest): string {
+  const returnPath = localPluginAuthorizationReturnPath(input)
   const loginPath = `/?plugin_authorize=${encodeURIComponent(returnPath)}`
   return `${localPluginAuthHead('登录 Store Nova 后继续')}<main>${localPluginBrand()}<p class="eyebrow">需要登录</p><h1>登录后继续授权</h1><p class="intro">使用商家账号登录后，将自动返回本次本地插件授权确认页。</p><div class="summary"><div class="summary-item"><span class="label">授权工作区</span><span class="value">${escapeLocalPluginHtml(input.workspaceId)}</span></div><div class="summary-item"><span class="label">访问范围</span><span class="value">商家工作区</span></div></div><div class="login-actions"><a class="login-link" href="${escapeLocalPluginHtml(loginPath)}">登录商家账号</a><a class="secondary" href="${escapeLocalPluginHtml(returnPath)}">我已登录，继续</a></div></main></body></html>`
 }

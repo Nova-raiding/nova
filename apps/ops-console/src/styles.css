@@ -24,6 +24,16 @@
   background: #f8fafc;
   font-synthesis: none;
 }
+
+/* Keep explanatory, keyboard-focusable disabled actions visibly unavailable. */
+.ops-shell .ant-btn[aria-disabled="true"],
+.ops-shell .ant-btn[aria-disabled="true"]:hover {
+  color: var(--ops-text-secondary);
+  background: #f1f5f9;
+  border-color: var(--ops-border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
 * { box-sizing: border-box; }
 .customer-delivery-payment-select.ant-select { height: 40px !important; }
 .customer-delivery-payment-select.ant-select .ant-select-selector { height: 40px !important; min-height: 40px !important; align-items: center; }

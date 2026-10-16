@@ -509,7 +509,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('marketing.alert.update', 'platform', 'platform_summary', ['ops.alert.ack']),
   read('marketing.queue.read', 'workspace', 'customer_metadata', ['ops.marketing.queue', 'ops.marketing.image.archive.audit', 'ops.marketing.image.billing.audit']),
   write('marketing.queue.update', 'workspace', 'customer_content', ['ops.marketing.queue.assign', 'ops.marketing.image.reconcile', 'ops.marketing.visual.review', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create']),
-  write('marketing.queue.update', 'workspace', 'customer_content', ['ops.marketing.asset_scan.retry'], 'allow_and_deny', ['reason', 'revision', 'idempotency']),
+  write('marketing.queue.update', 'workspace', 'customer_content', ['ops.marketing.asset_scan.retry', 'ops.marketing.asset_scan.bootstrap'], 'allow_and_deny', ['reason', 'revision', 'idempotency']),
   read('audit.export', 'workspace', 'customer_content', ['ops.marketing.image.evidence.export'], 'allow_and_deny'),
   read('storage.reconciliation.read', 'platform', 'platform_summary', ['ops.storage.reconciliation.list']),
   read('canonical.backfill.read', 'platform', 'customer_metadata', ['ops.canonical.backfill.get', 'ops.canonical.backfill.conflicts.list']),

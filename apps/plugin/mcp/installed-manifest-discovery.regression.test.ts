@@ -78,7 +78,7 @@ describe('installed local stdio manifest tool discovery', () => {
       expect(names).toContain('onboarding.status')
       expect(names).toContain('content.draft.generate')
       expect(names).not.toContain('platform.connect')
-      expect(names.some(name => name.startsWith('ops.'))).toBe(false)
+      expect(names.filter(name => name.startsWith('ops.'))).toEqual(['ops.marketing.generation.retry'])
     } finally {
       child?.kill()
       rmSync(temporaryRoot, { recursive: true, force: true })

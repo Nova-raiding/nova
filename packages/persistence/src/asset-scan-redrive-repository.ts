@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { requireWorkspaceScope, withWorkspaceTransaction, type OutboxEvent, type SqlPool } from './repository.js'
 
-const SCAN_EVENT_TYPES = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'])
+const SCAN_EVENT_TYPES = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', 'asset.scan_bootstrap_requested'])
 const RECOVERABLE_SCAN_FAILURE_CODES = new Set([
   'ASSET_NOT_FOUND',
   'ASSET_SCAN_RECEIPT_INVALID',
@@ -32,6 +32,12 @@ export type AssetScanRedriveErrorCode =
   | 'ASSET_SCAN_REDRIVE_NOT_DEAD_LETTER'
   | 'ASSET_SCAN_REDRIVE_BINDING_MISMATCH'
   | 'ASSET_SCAN_REDRIVE_IDEMPOTENCY_CONFLICT'
+  | 'ASSET_SCAN_BOOTSTRAP_INPUT_INVALID'
+  | 'ASSET_SCAN_BOOTSTRAP_ASSET_NOT_FOUND'
+  | 'ASSET_SCAN_BOOTSTRAP_REVISION_CONFLICT'
+  | 'ASSET_SCAN_BOOTSTRAP_BINDING_MISMATCH'
+  | 'ASSET_SCAN_BOOTSTRAP_NOT_UNSCANNED'
+  | 'ASSET_SCAN_BOOTSTRAP_IDEMPOTENCY_CONFLICT'
 
 export class AssetScanRedriveError extends Error {
   constructor(readonly code: AssetScanRedriveErrorCode) { super(code); this.name = 'AssetScanRedriveError' }
@@ -103,9 +109,30 @@ export interface AssetScanRedriveResult {
   event: OutboxEvent
 }
 
+/** Historical assets are re-enrolled for a real scan; this never promotes them. */
+export interface AssetScanBootstrapInput {
+  workspaceId: string
+  assetId: string
+  expectedAssetRevision: number
+  recoveryKey: string
+  actorId: string
+  reason: string
+  authorizationSnapshot: SerializedAssetScanAuthorizationSnapshot
+  commercialAccessSnapshot: SerializedAssetScanCommercialAccessSnapshot
+}
+
+export interface AssetScanBootstrapResult {
+  bootstrapId: string
+  auditId: string
+  replayed: boolean
+  asset: Record<string, unknown>
+  event: OutboxEvent
+}
+
 export interface AssetScanRedriveRepository {
   listRetryableFailures(workspaceId: string, options: ListAssetScanRetryableFailuresOptions): Promise<AssetScanRetryableFailure[]>
   redrive(input: AssetScanRedriveInput): Promise<AssetScanRedriveResult>
+  bootstrapUnscanned(input: AssetScanBootstrapInput): Promise<AssetScanBootstrapResult>
 }
 
 type SnapshotRow = { entity_version: number; payload: Record<string, unknown> | string }
@@ -206,6 +233,25 @@ function isRecoverableLegacyCommercialWiring(eventType: string, failure: Record<
   return SCAN_EVENT_TYPES.has(eventType)
     && failure?.code === 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID'
     && payload.commercial_access_snapshot === undefined
+}
+
+function validateBootstrap(input: AssetScanBootstrapInput): AssetScanBootstrapInput {
+  const text = (value: unknown, min: number, max: number) => typeof value === 'string' && value === value.trim() && value.length >= min && value.length <= max && !/[\u0000-\u001f\u007f]/u.test(value)
+  if (!input || !text(input.workspaceId, 1, 255) || !text(input.assetId, 1, 255) || !text(input.recoveryKey, 8, 255) || !text(input.actorId, 1, 255) || !text(input.reason, 3, 1000)
+    || !Number.isSafeInteger(input.expectedAssetRevision) || input.expectedAssetRevision < 1) {
+    throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_INPUT_INVALID')
+  }
+  try {
+    // Bootstrap carries the same worker authority and zero-charge commercial
+    // evidence as a redrive. Validate and copy both before opening a transaction.
+    return { ...input,
+      authorizationSnapshot: validateAuthorizationSnapshot(input.authorizationSnapshot, input),
+      commercialAccessSnapshot: validateCommercialAccessSnapshot(input.commercialAccessSnapshot, input),
+    }
+  } catch (error) {
+    if (error instanceof AssetScanRedriveError) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_INPUT_INVALID')
+    throw error
+  }
 }
 
 export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepository {
@@ -311,6 +357,53 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
       const redriveId = `scan_redrive_${randomUUID()}`
       await client.query(`INSERT INTO asset_scan_redrives (id,workspace_id,recovery_key,asset_id,old_outbox_event_id,new_outbox_event_id,expected_asset_revision,source_revision_before,source_revision_after,actor_id,reason,scan_max_attempts,audit_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [redriveId, input.workspaceId, input.recoveryKey, input.assetId, input.deadLetterOutboxEventId, eventId, input.expectedAssetRevision, oldSourceRevision, nextSourceRevision, input.actorId, input.reason, input.scanMaxAttempts, auditId])
       return { redriveId, auditId, replayed: false, asset: next, event: eventFromRow(newEvent) }
+    })
+  }
+
+  async bootstrapUnscanned(raw: AssetScanBootstrapInput): Promise<AssetScanBootstrapResult> {
+    const input = validateBootstrap(raw)
+    return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      // Recovery keys are workspace-wide, including requests for different
+      // assets. Lock the key before any asset row so replay/conflict checks
+      // observe the winner and never leak a unique-constraint error.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(['asset-scan-bootstrap', input.workspaceId, input.recoveryKey])])
+      const snapshotResult = await client.query<SnapshotRow>(`SELECT entity_version,payload FROM business_entity_snapshots WHERE workspace_id=$1 AND entity_type='asset' AND entity_id=$2 FOR UPDATE`, [input.workspaceId, input.assetId])
+      const snapshot = snapshotResult.rows[0]
+      if (!snapshot) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_ASSET_NOT_FOUND')
+      const replayResult = await client.query<{ id: string; asset_id: string; expected_asset_revision: number; actor_id: string; reason: string; new_outbox_event_id: string; audit_id: string }>(`SELECT id,asset_id,expected_asset_revision,actor_id,reason,new_outbox_event_id,audit_id FROM asset_scan_bootstraps WHERE workspace_id=$1 AND recovery_key=$2`, [input.workspaceId, input.recoveryKey])
+      const replay = replayResult.rows[0]
+      if (replay) {
+        if (replay.asset_id !== input.assetId || Number(replay.expected_asset_revision) !== input.expectedAssetRevision || replay.actor_id !== input.actorId || replay.reason !== input.reason) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_IDEMPOTENCY_CONFLICT')
+        const replayEvent = (await client.query<EventRow>(`SELECT ${eventProjection} FROM outbox_events WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, replay.new_outbox_event_id])).rows[0]
+        if (!replayEvent) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_BINDING_MISMATCH')
+        return { bootstrapId: replay.id, auditId: replay.audit_id, replayed: true, asset: object(snapshot.payload), event: eventFromRow(replayEvent) }
+      }
+      if (Number(snapshot.entity_version) !== input.expectedAssetRevision) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_REVISION_CONFLICT')
+      const current = object(snapshot.payload)
+      const storageKey = typeof current.storageKey === 'string' ? current.storageKey : ''
+      const sha256 = typeof current.sha256 === 'string' ? current.sha256 : ''
+      const sizeBytes = Number(current.sizeBytes)
+      const mimeType = typeof current.mimeType === 'string' ? current.mimeType.trim().toLowerCase() : ''
+      const sourceRevision = Number(current.sourceRevision ?? 1)
+      if (current.scanStatus !== 'unscanned') throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_NOT_UNSCANNED')
+      if (Number(current.revision) !== input.expectedAssetRevision || !storageKey.startsWith(`quarantine/${input.workspaceId}/`) || storageKey.includes('..') || !SHA256.test(sha256) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || !mimeType || !Number.isSafeInteger(sourceRevision) || sourceRevision < 1) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_BINDING_MISMATCH')
+      const nextRevision = input.expectedAssetRevision + 1
+      const nextSourceRevision = sourceRevision + 1
+      const next = structuredClone(current)
+      next.revision = nextRevision
+      next.sourceRevision = nextSourceRevision
+      next.scanStatus = 'quarantined'
+      for (const key of ['scanReceiptId', 'scanReceiptDigest', 'scanVerdict', 'scanCompletedAt', 'scanFindings', 'preview']) delete next[key]
+      const updated = await client.query<SnapshotRow>(`UPDATE business_entity_snapshots SET entity_version=$4,payload=$5::jsonb,updated_at=now() WHERE workspace_id=$1 AND entity_type='asset' AND entity_id=$2 AND entity_version=$3 RETURNING entity_version,payload`, [input.workspaceId, input.assetId, input.expectedAssetRevision, nextRevision, JSON.stringify(next)])
+      if (!updated.rows[0]) throw new AssetScanRedriveError('ASSET_SCAN_BOOTSTRAP_REVISION_CONFLICT')
+      const eventId = `evt_${randomUUID()}`
+      const eventPayload = { asset_id: input.assetId, storage_key: storageKey, sha256, size_bytes: sizeBytes, mime_type: mimeType, source_revision: nextSourceRevision, bootstrap_unscanned: true, recovery_key: input.recoveryKey, authorization_snapshot: input.authorizationSnapshot, commercial_access_snapshot: input.commercialAccessSnapshot }
+      const event = (await client.query<EventRow>(`INSERT INTO outbox_events (id,workspace_id,aggregate_id,event_type,sequence,payload) VALUES ($1,$2,$3,'asset.scan_bootstrap_requested',$4,$5::jsonb) RETURNING ${eventProjection}`, [eventId, input.workspaceId, input.assetId, nextRevision, JSON.stringify(eventPayload)])).rows[0]!
+      const auditId = randomUUID()
+      await client.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,'asset.scan.bootstrap_requested','asset',$4,$5::jsonb,$6::jsonb,$7)`, [auditId, input.workspaceId, input.actorId, input.assetId, JSON.stringify({ asset_revision: input.expectedAssetRevision, source_revision: sourceRevision, scan_status: 'unscanned' }), JSON.stringify({ asset_revision: nextRevision, source_revision: nextSourceRevision, outbox_event_id: eventId, authorization_decision_id: input.authorizationSnapshot.decision_id, commercial_decision_id: input.commercialAccessSnapshot.decision_id }), input.reason])
+      const bootstrapId = `scan_bootstrap_${randomUUID()}`
+      await client.query(`INSERT INTO asset_scan_bootstraps (id,workspace_id,recovery_key,asset_id,expected_asset_revision,source_revision_before,source_revision_after,actor_id,reason,new_outbox_event_id,audit_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [bootstrapId, input.workspaceId, input.recoveryKey, input.assetId, input.expectedAssetRevision, sourceRevision, nextSourceRevision, input.actorId, input.reason, eventId, auditId])
+      return { bootstrapId, auditId, replayed: false, asset: next, event: eventFromRow(event) }
     })
   }
 }

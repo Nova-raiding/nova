@@ -1,4 +1,6 @@
 import { MCP_PLATFORM_SUPPORT_METHODS, handleMcpPlatformSupport } from './mcp-platform-support-handler.js'
+import { paymentRuntimeMode } from './payment-runtime-mode.js'
+export { paymentRuntimeMode } from './payment-runtime-mode.js'
 import { recoverKnownPlatformAccountAdmissionRollback, requireKnownEffectiveStorageSnapshot } from './platform-account-persistence-recovery.js'
 import { BusinessSnapshotNotFoundError } from '../../../packages/persistence/src/business-repository.js'
 import { TaskFeedbackIdempotencyRepository } from '../../../packages/persistence/src/task-feedback-idempotency-repository.js'
@@ -62,7 +64,7 @@ import { MCP_OPS_USERS_METHODS, handleMcpOpsUsersMethod } from './mcp-ops-users-
 import { MCP_OPS_INCIDENTS_FLAGS_METHODS, handleMcpOpsIncidentsFlags } from './mcp-ops-incidents-flags-handlers.js'
 import { createCampaignRuntime } from './campaign-runtime.js'
 import { MCP_CANONICAL_METHODS, handleCanonicalMcpMethod } from './mcp-canonical-handlers.js'
-import { handleMerchantActivationRoute, inviteMerchantAccount, merchantActivationPath } from './http-merchant-activation-routes.js'
+import { handleMerchantActivationRoute, inviteMerchantAccount, merchantActivationPath, merchantPublicApiPathPrefix } from './http-merchant-activation-routes.js'
 import { handlePasswordAuthRoute } from './http-password-auth-routes.js'
 import { handleHttpHealthRoute } from './http-health-routes.js'
 import { listCampaignBatches, getCampaignBatch } from './mcp-campaign-handlers.js'
@@ -543,12 +545,6 @@ export function deploymentMode(source: NodeJS.ProcessEnv = process.env): Deploym
   const value = source.DEPLOYMENT_MODE?.trim().toLowerCase()
   return value === 'lean' || value === 'full' ? value : undefined
 }
-export function paymentRuntimeMode(source: NodeJS.ProcessEnv = process.env): 'provider' | 'manual_transfer' | 'fixture' {
-  const value = source.PAYMENT_MODE?.trim().toLowerCase()
-  if (value === 'provider') return 'provider'
-  if (value === 'manual_transfer' || source.COMMERCIAL_PAYMENT_PROVIDER?.trim().toLowerCase() === 'manual_transfer') return 'manual_transfer'
-  return 'fixture'
-}
 export function isManualTransferPayment(source: NodeJS.ProcessEnv = process.env): boolean {
   return deploymentMode(source) === 'lean' && paymentRuntimeMode(source) === 'manual_transfer'
 }
@@ -675,11 +671,11 @@ type ExecutionModality = 'content' | 'image' | 'image_edit' | 'ocr' | 'video'
  */
 export function executionContract(modality: ExecutionModality, providerExecuted: boolean, providerKind?: string) {
   const labels: Record<ExecutionModality, { provider: string; simulated: string }> = {
-    content: { provider: '已由配置的内容模型生成', simulated: '本地演示文案，未调用内容模型' },
-    image: { provider: '已由配置的图片模型生成', simulated: '本地演示图片，未调用图片模型' },
-    image_edit: { provider: '已由配置的图片编辑模型生成', simulated: '本地演示图片编辑结果，未调用图片编辑模型' },
+    content: { provider: '已由配置的内容模型生成', simulated: '本地测试文案，未调用内容模型' },
+    image: { provider: '已由配置的图片模型生成', simulated: '本地测试图片，未调用图片模型' },
+    image_edit: { provider: '已由配置的图片编辑模型生成', simulated: '本地测试图片编辑结果，未调用图片编辑模型' },
     ocr: { provider: '已由配置的 OCR 模型解析', simulated: '本地解析器结果，未调用 OCR 模型' },
-    video: { provider: '已由配置的视频模型执行', simulated: '视频脚本/分镜演示结果，未调用视频模型' },
+    video: { provider: '已由配置的视频模型执行', simulated: '视频脚本/分镜测试结果，未调用视频模型' },
   }
   const label = providerExecuted ? labels[modality].provider : labels[modality].simulated
   return {
@@ -2359,9 +2355,9 @@ export async function syncSignedPlatformRules(workspaceId: string, options: { fo
 }
 
 const catalogCategories = [
-  { code: '1312', name: '服装 / 防晒外套', fields: ['材质', '成分', '重量', '尺码', '颜色', '功能依据'], platforms: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], status: 'active', updatedAt: '今天' },
-  { code: '1408', name: '鞋靴 / 户外鞋', fields: ['鞋面材质', '闭合方式', '适用场景', '尺码'], platforms: ['jd', 'taobao', 'pinduoduo'], status: 'active', updatedAt: '昨天' },
-  { code: '1503', name: '运动 / 速干裤装', fields: ['面料', '版型', '弹性', '洗护', '尺码'], platforms: ['taobao', 'tmall'], status: 'active', updatedAt: '3 天前' },
+  { code: '1312', name: '服装 / 防晒外套', fields: ['材质', '成分', '重量', '尺码', '颜色', '功能依据'], platforms: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], status: 'active', updatedAt: null },
+  { code: '1408', name: '鞋靴 / 户外鞋', fields: ['鞋面材质', '闭合方式', '适用场景', '尺码'], platforms: ['jd', 'taobao', 'pinduoduo'], status: 'active', updatedAt: null },
+  { code: '1503', name: '运动 / 速干裤装', fields: ['面料', '版型', '弹性', '洗护', '尺码'], platforms: ['taobao', 'tmall'], status: 'active', updatedAt: null },
 ] as const
 
 async function persistedRules(workspaceId: string, fillMissingDefaults = false) {
@@ -3679,7 +3675,7 @@ const commercialAccessService = new CommercialAccessService({
       projection: {
         async listDemoEvaluationEntitlements({ workspace_id }: { workspace_id: string }) {
           await persistenceReady
-          if (!persistence.demoEvaluationEntitlements) throw new Error('demo evaluation projection unavailable')
+          if (!persistence.demoEvaluationEntitlements) throw new Error('evaluation entitlement projection unavailable')
           return persistence.demoEvaluationEntitlements.listDemoEvaluationEntitlements({ workspace_id })
         },
       },
@@ -4296,6 +4292,7 @@ const noChargeWorkerEventOperations: Readonly<Record<string, CriticalWorkerOpera
   'asset.generated_quarantined': 'asset.scan.execute',
   'asset.video_quarantined': 'asset.scan.execute',
   'asset.scan_redrive_requested': 'asset.scan.execute',
+  'asset.scan_bootstrap_requested': 'asset.scan.execute',
 }
 
 async function withCommercialWorkerSnapshot(workspaceId: string, eventType: string, payload: Record<string, unknown>) {
@@ -6626,7 +6623,13 @@ export function satisfiedAuthorizationObligations(params: Record<string, unknown
   if (verifiedApprovalActor(params, req, workspaceId)) satisfied.push('approval')
   const methodBoundActionKey = method === 'ops.marketing.generation.no_delivery.refund'
     && typeof params.action_key === 'string' && params.action_key.trim().length > 0
-  if ((typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim() || methodBoundActionKey) satisfied.push('idempotency')
+  // These entry points derive a deterministic key when the caller is asking
+  // for a non-rendering/fixture-safe operation; rendering still requires an
+  // explicit key so provider retries remain caller-controlled.
+  const derivedMultimodalKey = method === 'multimodal.generate'
+    || (method === 'catalog.image.generate')
+    || (method === 'multimodal.video.request' && params.output !== 'rendering')
+  if ((typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim() || methodBoundActionKey || derivedMultimodalKey) satisfied.push('idempotency')
   if ((typeof params.confirmation_hash === 'string' && params.confirmation_hash.trim()) || (typeof params.confirmations_json === 'string' && params.confirmations_json.trim())) satisfied.push('confirmation')
   if (principal?.mfaVerified) satisfied.push('mfa')
   return satisfied
@@ -7021,7 +7024,23 @@ function authenticationRuntime() {
 export type AuthenticationRuntime = ReturnType<typeof authenticationRuntime>
 
 async function authenticate(req: IncomingMessage) {
-  return authenticateRequest(req, authenticationRuntime())
+  let invitation: { method: string; workspaceId?: unknown } | undefined
+  if (req.method === 'POST' && req.url?.split('?')[0] === '/mcp'
+    && !header(req, 'authorization') && header(req, 'cookie')) {
+    if (isNativeMcpTransportWithHeader(req, undefined, header)) {
+      nativeMcpRequests.add(req)
+      nativeMcpRequestIds.set(req, null)
+    }
+    // Read the bounded, cached JSON body rather than trusting a method header.
+    // authenticateRequest still authorizes the exact invitation methods only.
+    const input = await body(req, MCP_BODY_LIMIT)
+    if (typeof input.method === 'string') {
+      const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+        ? input.params as Record<string, unknown> : undefined
+      invitation = { method: input.method, workspaceId: params?.workspace_id }
+    }
+  }
+  return authenticateRequest(req, authenticationRuntime(), invitation)
 }
 
 function requireRuleAdmin(req: IncomingMessage): RequestPrincipal {
@@ -8671,7 +8690,7 @@ async function applySignedAssetScanResult(workspaceId: string, asset: import('..
     ? await persistence.outbox.listAggregateEvents(workspaceId, asset.id, 1, receipt.scan_job_id)
     : (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.aggregateId === asset.id)
   const scanJob = scanEvents.find(event => event.id === receipt.scan_job_id)
-  const approvedEventTypes = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', CUSTOMER_DELIVERY_SCAN_EVENT])
+  const approvedEventTypes = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested', 'asset.scan_bootstrap_requested', CUSTOMER_DELIVERY_SCAN_EVENT])
   const scanJobSourceRevision = Number(scanJob?.payload.source_revision ?? 1)
   const scanJobMimeType = typeof scanJob?.payload.mime_type === 'string' ? scanJob.payload.mime_type.toLowerCase() : undefined
   if (!scanJob || !approvedEventTypes.has(scanJob.eventType) || scanJob.aggregateId !== asset.id
@@ -9072,9 +9091,9 @@ export function imageSelectionEventsForTests(workspaceId: string) {
   return (inMemoryTimelineEvents.get(workspaceId) ?? []).filter(event => event.eventType === 'image.candidate.preferred').map(timelineEvent)
 }
 
-export function assetScanJobIdForTests(workspaceId: string, assetId: string) {
+export function assetScanJobIdForTests(workspaceId: string, assetId: string, eventType = 'asset.uploaded') {
   if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('ASSET_SCAN_JOB_TEST_ONLY')
-  const event = (inMemoryTimelineEvents.get(workspaceId) ?? []).find(candidate => candidate.aggregateId === assetId && candidate.eventType === 'asset.uploaded')
+  const event = (inMemoryTimelineEvents.get(workspaceId) ?? []).find(candidate => candidate.aggregateId === assetId && candidate.eventType === eventType)
   if (!event) throw new Error('ASSET_SCAN_JOB_NOT_FOUND')
   return event.id
 }
@@ -10328,7 +10347,7 @@ function commercialOpsReadInput<T>(project: () => T): T {
   }
 }
 
-async function changeMemberStatusWithAudit(input: { workspaceId: string; externalSubject: string; targetStatus: MemberStatus; expectedRevision: number; actorId: string; action: string; reason: string }) {
+async function changeMemberStatusWithAudit(input: { workspaceId: string; externalSubject: string; targetStatus: MemberStatus; expectedRevision: number; actorId: string; action: string; reason: string; preserveActiveOwner?: boolean }) {
   const repository = persistence.members ?? memoryMembers
   const current = (await repository.list(input.workspaceId)).find(item => item.externalSubject === input.externalSubject)
   if (!current) throw new DomainError('MEMBER_NOT_FOUND', '用户在该工作区不存在', 404)
@@ -10343,6 +10362,7 @@ async function changeMemberStatusWithAudit(input: { workspaceId: string; externa
     if (repository === memoryMembers) await memoryOperations.append({ ...auditInput, after: changed.member as unknown as Record<string, unknown> })
     return changed.member
   } catch (error) {
+    if (error instanceof Error && error.message === 'LAST_WORKSPACE_OWNER_REQUIRED') throw new DomainError('LAST_WORKSPACE_OWNER_REQUIRED', '不能降级或停用最后一名有效工作区所有者', 409)
     if (error instanceof Error && error.message === 'MEMBER_REVISION_CONFLICT') throw new DomainError('MEMBER_REVISION_CONFLICT', '成员状态已变化，请刷新后重试', 409)
     throw error
   }
@@ -12742,7 +12762,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           sourceRevision: durableFailure.sourceRevision,
           failedAt: durableFailure.event.publishedAt ?? durableFailure.event.createdAt,
         } : null
-        const base = { id: asset.id, name: asset.name, mimeType: asset.mimeType, scanStatus: asset.scanStatus, parseStatus: asset.parseStatus, rightsStatus: asset.rightsStatus, rightsScope: asset.rightsScope ?? null, readiness: asset.readiness, revision: asset.revision, createdAt: asset.createdAt, scanFailure }
+        const base = { id: asset.id, workspaceId, name: asset.name, mimeType: asset.mimeType, scanStatus: asset.scanStatus, parseStatus: asset.parseStatus, rightsStatus: asset.rightsStatus, rightsScope: asset.rightsScope ?? null, readiness: asset.readiness, revision: asset.revision, createdAt: asset.createdAt, scanFailure }
+        if (asset.scanStatus === 'unscanned') {
+          const canEnroll = Boolean(persistence.assetScanRedrive) && Number.isSafeInteger(asset.revision) && asset.revision > 0
+            && asset.storageKey.startsWith(`quarantine/${workspaceId}/`) && !asset.storageKey.includes('..');
+          return { ...base, nextAction: canEnroll ? { method: 'ops.marketing.asset_scan.bootstrap', label: '申请首次安全扫描', requiredInputs: ['asset_id', 'expected_asset_revision', 'idempotency_key', 'reason'] } : null,
+            nextStep: canEnroll ? '历史素材尚未扫描；可申请进入真实安全扫描队列，提交时重新核验权限、扫描器与隔离对象' : '历史素材尚未扫描，缺少可验证的恢复条件，请联系管理员核查' }
+        }
         if (asset.scanStatus === 'quarantined') {
           const scanAutomation = conversationalAssetScanWaitingState()
           return { ...base, nextAction: null, scanAutomation, nextStep: scanAutomation.message }
@@ -13022,18 +13048,20 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         throw error
       }
     }
+    case 'ops.marketing.asset_scan.bootstrap':
     case 'ops.marketing.asset_scan.retry': {
+      const bootstrap = method === 'ops.marketing.asset_scan.bootstrap'
       const actorId = requireWorkspaceDataRole(req)
       const repository = persistence.assetScanRedrive
       if (!repository) throw new DomainError('ASSET_SCAN_REDRIVE_REPOSITORY_UNAVAILABLE', '素材扫描恢复仓储未配置，已拒绝重新排队', 503)
       const assetId = required(params, 'asset_id')
-      const eventId = required(params, 'event_id')
+      const eventId = bootstrap ? undefined : required(params, 'event_id')
       const expectedAssetRevision = Number(required(params, 'expected_asset_revision'))
       const recoveryKey = required(params, 'idempotency_key')
       const reason = required(params, 'reason').trim()
       if (!Number.isSafeInteger(expectedAssetRevision) || expectedAssetRevision < 1) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'expected_asset_revision 必须是正整数', 400)
       const asset = assetForWorkspace(workspaceId, assetId)
-      const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, assetId, 'asset.scan.execute', { method: 'ops.marketing.asset_scan.retry', asset_id: assetId, event_id: eventId, expected_asset_revision: expectedAssetRevision })
+      const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, assetId, 'asset.scan.execute', { method, asset_id: assetId, ...(eventId ? { event_id: eventId } : {}), expected_asset_revision: expectedAssetRevision })
       if (!authorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '素材扫描恢复缺少持久身份授权快照，已拒绝入队', 503)
 
       // A genuinely new redrive needs live dependency admission and a
@@ -13054,12 +13082,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
 
       try {
-        const commercialEnvelope = await withCommercialWorkerSnapshot(workspaceId, 'asset.scan_redrive_requested', {})
-        const redrive = await repository.redrive({ workspaceId, assetId, deadLetterOutboxEventId: eventId, expectedAssetRevision, recoveryKey, actorId, reason, scanMaxAttempts: configuredAssetScanMaxAttempts(), authorizationSnapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot), commercialAccessSnapshot: commercialEnvelope.commercial_access_snapshot as import('../../../packages/persistence/src/asset-scan-redrive-repository.js').SerializedAssetScanCommercialAccessSnapshot })
+        const commercialEnvelope = await withCommercialWorkerSnapshot(workspaceId, bootstrap ? 'asset.scan_bootstrap_requested' : 'asset.scan_redrive_requested', {})
+        const recoveryInput = { workspaceId, assetId, expectedAssetRevision, recoveryKey, actorId, reason, authorizationSnapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot), commercialAccessSnapshot: commercialEnvelope.commercial_access_snapshot as import('../../../packages/persistence/src/asset-scan-redrive-repository.js').SerializedAssetScanCommercialAccessSnapshot }
+        const redrive = bootstrap
+          ? await repository.bootstrapUnscanned(recoveryInput)
+          : await repository.redrive({ ...recoveryInput, deadLetterOutboxEventId: eventId!, scanMaxAttempts: configuredAssetScanMaxAttempts() })
         const durableAsset = redrive.asset as unknown as import('../../../packages/application/src/service.js').AssetMetadata
         service.assets.set(assetId, durableAsset)
         invalidateWorkspaceHydration(workspaceId)
-        return result({ requestStatus: redrive.replayed ? 'idempotent_replay' : 'accepted', replayed: redrive.replayed, redriveId: redrive.redriveId, auditId: redrive.auditId, newEventId: redrive.event.id, event: { id: redrive.event.id, eventType: redrive.event.eventType, createdAt: redrive.event.createdAt, publishedAt: redrive.event.publishedAt ?? null }, asset: { id: assetId, revision: durableAsset.revision, sourceRevision: durableAsset.sourceRevision, scanStatus: durableAsset.scanStatus }, message: redrive.replayed ? '已返回同一幂等恢复事件；请以当前素材状态和签名扫描回调为准' : '扫描请求已接受；旧失败证据保留，素材不会被人工标记为 clean' })
+        return result({ requestStatus: redrive.replayed ? 'idempotent_replay' : 'accepted', replayed: redrive.replayed, ...('bootstrapId' in redrive ? { bootstrapId: redrive.bootstrapId } : { redriveId: redrive.redriveId }), auditId: redrive.auditId, newEventId: redrive.event.id, event: { id: redrive.event.id, eventType: redrive.event.eventType, createdAt: redrive.event.createdAt, publishedAt: redrive.event.publishedAt ?? null }, asset: { id: assetId, revision: durableAsset.revision, sourceRevision: durableAsset.sourceRevision, scanStatus: durableAsset.scanStatus }, message: redrive.replayed ? '已返回同一幂等恢复事件；请以当前素材状态和签名扫描回调为准' : '扫描请求已接受；旧失败证据保留，素材不会被人工标记为 clean' })
       } catch (error) {
         if (!(error instanceof AssetScanRedriveError)) throw error
         const status = error.code.endsWith('_NOT_FOUND') ? 404 : error.code.endsWith('_INPUT_INVALID') ? 400 : 409
@@ -13125,11 +13156,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (current && expectedRevision === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '更新现有成员必须提供 expected_revision', 400)
       const reason = requiredStringValue(params, 'reason')
       try {
-        const changed = await repository.upsertWithAudit({ workspaceId, externalSubject: required(params, 'external_subject'), displayName: typeof params.display_name === 'string' ? params.display_name : current?.displayName ?? '', role, status, ...(expectedRevision !== undefined ? { expectedRevision } : {}), actorId, action: 'member.upsert', reason })
+        const changed = await repository.upsertWithAudit({ workspaceId, externalSubject: required(params, 'external_subject'), displayName: typeof params.display_name === 'string' ? params.display_name : current?.displayName ?? '', role, status, ...(expectedRevision !== undefined ? { expectedRevision } : {}), actorId, action: 'member.upsert', reason, preserveActiveOwner: !isPlatformOperations(req) })
         if (repository === memoryMembers) await memoryOperations.append({ workspaceId, actorId, action: 'member.upsert', resourceType: 'workspace_member', resourceId: changed.member.externalSubject, before: (current ?? {}) as unknown as Record<string, unknown>, after: changed.member as unknown as Record<string, unknown>, reason })
         return result(changed.member)
       } catch (error) {
         if (error instanceof Error && error.message === 'MEMBER_REVISION_CONFLICT') throw new DomainError('MEMBER_REVISION_CONFLICT', '成员信息已变化，请刷新后重试', 409)
+        if (error instanceof Error && error.message === 'LAST_WORKSPACE_OWNER_REQUIRED') throw new DomainError('LAST_WORKSPACE_OWNER_REQUIRED', '不能降级或停用最后一名有效工作区所有者', 409)
         throw error
       }
     }
@@ -13145,7 +13177,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!isPlatformOperations(req) && target?.role === 'workspace_owner' && target.status === 'active' && members.filter(item => item.role === 'workspace_owner' && item.status === 'active').length <= 1) throw new DomainError('LAST_WORKSPACE_OWNER_REQUIRED', '不能停用最后一名有效工作区所有者', 409)
       const expectedRevision = optionalNumberValue(params, 'expectedRevision', 'expected_revision')
       if (expectedRevision === undefined) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '停用成员必须提供 expected_revision', 400)
-      const member = await changeMemberStatusWithAudit({ workspaceId, externalSubject, targetStatus: 'suspended', expectedRevision, actorId, action: 'member.suspend', reason: required(params, 'reason') })
+      const member = await changeMemberStatusWithAudit({ workspaceId, externalSubject, targetStatus: 'suspended', expectedRevision, actorId, action: 'member.suspend', reason: required(params, 'reason'), preserveActiveOwner: !isPlatformOperations(req) })
       return result(member)
     }
     case 'ops.user.suspend': {
@@ -14684,7 +14716,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       const redirectUri = 'http://127.0.0.1/merchant-mcp-callback'
       const codeVerifier = randomBytes(48).toString('base64url')
       const context = { clientId, issuer: origin, audience: `${origin}/mcp`, resource: `${origin}/mcp`, scope: ['merchant'] }
-      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url'), workspaceId })
+      const issued = await passwordAuthRepository.issueMcpAuthorizationCode({ ...context, account: current.account, redirectUri, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url'), workspaceId }).catch(error => {
+        if ((error as { code?: string }).code === 'MCP_OAUTH_WORKSPACE_AMBIGUOUS') throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '当前工作区成员资格尚未激活，请到“成员与权限”核对并接受邀请', 409)
+        throw error
+      })
       const pair = await passwordAuthRepository.exchangeMcpAuthorizationCode({ ...context, redirectUri, code: issued.code, codeVerifier })
       return send(res, 200, workspaceId, { access_token: pair.accessToken, refresh_token: pair.refreshToken, token_type: 'Bearer', expires_in: pair.expiresIn, scope: pair.scope.join(' '), workspace_id: workspaceId, account_login: current.account.login }, null, req)
     }
@@ -14786,7 +14821,7 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
   else if (workerRoute) await requireWorkerAuthorization(req)
   else if (!infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch && !isPasswordAuthRoute) await authenticate(req)
   if (req.method === 'POST' && path === '/v1/ops/merchant-accounts') {
-    const invitation = await inviteMerchantAccount(req, { repository: passwordAuthRepository, requireOperationsRole, requestActor, readBody: limit => body(req, limit), publicOrigin: publicRequestOrigin(req), production: isProduction() })
+    const invitation = await inviteMerchantAccount(req, { repository: passwordAuthRepository, requireOperationsRole, requestActor, readBody: limit => body(req, limit), publicOrigin: publicRequestOrigin(req), production: isProduction(), publicApiPathPrefix: merchantPublicApiPathPrefix(process.env.PUBLIC_APP_API_PATH_PREFIX) })
     return send(res, invitation.status, 'unknown', invitation.data, null, req)
   }
   if (await handleHttpMerchantRegistrationRoute(req, res, path, url, { passwordAuthRepository, requireOperationsRole,
@@ -15423,10 +15458,10 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       // and repeat the event. The classification is
       // `packages/contracts/src/generation-job-state.ts`'s, not this demo path's.
       if (isGenerationJobFinished(job.state)) return
-      const failed = service.failGeneration({ workspaceId, jobId, code: error instanceof DomainError ? error.code : 'FIXTURE_GENERATION_FAILED', message: error instanceof Error ? error.message : '本地演示生成失败' })
+      const failed = service.failGeneration({ workspaceId, jobId, code: error instanceof DomainError ? error.code : 'FIXTURE_GENERATION_FAILED', message: error instanceof Error ? error.message : '本地测试生成失败' })
       await persistSnapshot(workspaceId, 'generation_job', failed, failed as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'FIXTURE_GENERATION_FAILED', error_message: failed.errorMessage ?? '本地演示生成失败' })
-      await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, 'fixture-worker', '本地演示内容生成失败')
+      await persistEvent(workspaceId, failed.id, 'generation.failed', failed.revision, { job_id: failed.id, task_id: failed.taskId, error_code: failed.errorCode ?? 'FIXTURE_GENERATION_FAILED', error_message: failed.errorMessage ?? '本地测试生成失败' })
+      await refundTaskUsage(workspaceId, failed.taskId, `generation:${failed.idempotencyKey}`, 'fixture-worker', '本地测试内容生成失败')
       await releaseDistributedJobSlot(workspaceId, `generation:${failed.idempotencyKey}`)
     }
   }

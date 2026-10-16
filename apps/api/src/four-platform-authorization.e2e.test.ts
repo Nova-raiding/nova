@@ -184,7 +184,7 @@ describe('four-platform fixture authorization lifecycle', () => {
       await (await import('./server.js')).workspaceMembers.upsert({ workspaceId: workspace, externalSubject: 'zero-balance-user', displayName: '零余额测试', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
       const auth = { authorization: 'Bearer zero-balance-token' }
       const statusBefore = await call(base, workspace, 'billing.status', {}, auth)
-      expect(statusBefore.data?.result).toMatchObject({ schema_version: 'commercial.billing-status.v2', balance_state: 'unknown', available_points: null, allowed: false })
+      expect(statusBefore.data?.result).toMatchObject({ schema_version: 'commercial.billing-status.v2', balance_state: 'unknown', available_points: null, allowed: null })
 
       const synced = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: account.id, mode: 'full' }, auth)
       expect(synced.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE', details: expect.objectContaining({ balance_state: 'unknown', available_points: null }) })

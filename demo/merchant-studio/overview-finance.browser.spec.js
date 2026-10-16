@@ -12,10 +12,12 @@ async function openIsolatedMerchant(path, entitlement, { failMetricsUntilRecover
   let allowMetricsRecovery = !failMetricsUntilRecovery
   let allowFinanceRecovery = !failFinanceReadsUntilRecovery
   let financeReads = 0
+  let syncReads = 0
   page.on('pageerror', error => console.error(`ISOLATED_PAGE_ERROR ${error.message}`))
   page.on('console', message => { if (message.type() === 'error') console.error(`ISOLATED_CONSOLE_ERROR ${message.text()}`) })
   await page.route('**/api/**', async route => {
     const pathname = new URL(route.request().url()).pathname.replace(/^\/api/u, '')
+    if (pathname === '/v1/sync-jobs' || pathname.startsWith('/v1/sync-jobs/')) syncReads += 1
     let data
     if (pathname === '/v1/auth/session') data = { account: { id: 'merchant_browser', login: 'demo@ys.com', accountType: 'merchant', displayName: '贵人鸟商家', enterpriseName: '贵人鸟服装', status: 'active', workspaceIds: ['ws_browser'] } }
     else if (pathname === '/v1/auth/mcp-token') data = { access_token: 'browser-fixture-access', refresh_token: 'browser-fixture-refresh', expires_in: 300 }
@@ -57,8 +59,22 @@ async function openIsolatedMerchant(path, entitlement, { failMetricsUntilRecover
   // The candidate URL ends with `/`; resolve the route so the browser never
   // receives a protocol-relative `//merchant/...` path.
   await page.goto(new URL(path, studioUrl).href, { waitUntil: 'domcontentloaded' })
-  return { browser, context, page, getMetricsReads: () => metricsReads, allowMetricsRecovery: () => { allowMetricsRecovery = true }, getFinanceReads: () => financeReads, allowFinanceRecovery: () => { allowFinanceRecovery = true } }
+  return { browser, context, page, getSyncReads: () => syncReads, getMetricsReads: () => metricsReads, allowMetricsRecovery: () => { allowMetricsRecovery = true }, getFinanceReads: () => financeReads, allowFinanceRecovery: () => { allowFinanceRecovery = true } }
 }
+
+test('manual operations never request synchronization or mount a misleading synchronization loader', async () => {
+  const { browser, context, page, getSyncReads } = await openIsolatedMerchant('/merchant/overview', { schema_version: 'commercial.entitlement.v2', status: 'unknown' })
+  try {
+    // Wait for the real overview to settle before asserting absence; the
+    // initial loading shell would also have no synchronization controls.
+    await expect(page.locator('.account-platform-block')).toContainText('人工登记（未授权）', { timeout: 25_000 })
+    await expect(page.locator('.activity-panel')).toHaveCount(0)
+    await expect(page.getByText('正在读取真实同步动态…', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.sync-failures-panel')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '同步全部店铺', exact: true })).toHaveCount(0)
+    expect(getSyncReads()).toBe(0)
+  } finally { await context.close(); await browser.close() }
+})
 
 test('overview connection action opens platform and store catalog', async () => {
   const { browser, context, page } = await openIsolatedMerchant('/merchant/overview', { schema_version: 'commercial.entitlement.v2', status: 'unknown' })

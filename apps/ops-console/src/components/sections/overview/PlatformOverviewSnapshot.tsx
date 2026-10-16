@@ -12,10 +12,12 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const directoryReadFailed = Boolean(model.dataSetError("ops.workspaces.list"));
   const financeReadFailed = Boolean(model.dataSetError("ops.finance.search"));
   const usageReadFailed = Boolean(model.dataSetError("ops.model-usage.summary"));
+  const catalogReadFailed = Boolean(model.dataSetError("ops.commercial.catalog-v2.list"));
   const failedOverviewSources = [
     directoryReadFailed ? "企业工作区" : undefined,
     financeReadFailed ? "财务指标" : undefined,
     usageReadFailed ? "模型成本" : undefined,
+    catalogReadFailed ? "商品目录" : undefined,
   ].filter(Boolean);
   // The directory is requested with merchant_only=true, so this total means
   // workspaces linked to active merchant accounts, not every platform workspace.
@@ -43,18 +45,21 @@ export function PlatformOverviewSnapshot({ model }: PlatformOverviewSnapshotProp
   const monthlySkuCodes = new Set(model.platformCommercialCatalog
     .filter((item) => item.type === "monthly")
     .map((item) => item.skuCode));
-  const monthlyBundleCount = monthlyBundleCounts
+  const catalogSkuCodes = new Set(model.platformCommercialCatalog.map((item) => item.skuCode));
+  const noCommercialOrders = monthlyBundleCounts && Object.values(monthlyBundleCounts).every((sku) => sku.orderCount === 0);
+  const completeSkuClassification = monthlyBundleCounts && !catalogReadFailed && Object.entries(monthlyBundleCounts)
+    .every(([skuCode, sku]) => sku.orderCount === 0 || catalogSkuCodes.has(skuCode));
+  const monthlyBundleCount = monthlyBundleCounts && (noCommercialOrders || completeSkuClassification)
     ? Object.entries(monthlyBundleCounts)
       .filter(([skuCode]) => monthlySkuCodes.has(skuCode))
       .reduce((total, [, sku]) => total + sku.orderCount, 0)
     : undefined;
   const skuOrdersFor = (aliases: readonly string[]) => {
-    if (!monthlyBundleCounts) return undefined;
+    if (!monthlyBundleCounts || catalogReadFailed) return undefined;
     const catalogCodes = model.platformCommercialCatalog
       .filter((item) => item.type === "monthly" && aliases.includes(item.skuCode))
       .map((item) => item.skuCode);
-    const codes = catalogCodes.length ? catalogCodes : aliases;
-    const matches = codes.flatMap((skuCode) => {
+    const matches = catalogCodes.flatMap((skuCode) => {
       const summary = monthlyBundleCounts[skuCode];
       return summary ? [summary.orderCount] : [];
     });

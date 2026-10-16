@@ -24,8 +24,8 @@ const localSourceRoot = resolve(args.get('local-source') ?? resolve(defaultRepos
 const codex = args.get('codex') ?? 'codex'
 const codexHome = resolve(args.get('codex-home') ?? process.env.CODEX_HOME ?? resolve(process.env.HOME ?? '', '.codex'))
 const requestedPackageProfile = args.get('package-profile') ?? null
-if (requestedPackageProfile !== 'qa-broker') {
-  throw new Error('local source installation requires --package-profile qa-broker and a separately staged QA package')
+if (requestedPackageProfile && !['production', 'qa-broker'].includes(requestedPackageProfile)) {
+  throw new Error('local source package profile must be production or qa-broker')
 }
 const manifest = JSON.parse(readFileSync(resolve(sourceRoot, '.codex-plugin/plugin.json'), 'utf8'))
 const packageJson = JSON.parse(readFileSync(resolve(sourceRoot, 'package.json'), 'utf8'))
@@ -58,7 +58,14 @@ function verifySameVersionRuntime(candidateRoot, label) {
   if (candidateManifest.id !== plugin || candidateManifest.version !== version || candidatePackage.version !== version) {
     throw new Error(`${label} manifest/package must match source plugin ${plugin} ${version}`)
   }
-  const result = spawnSync(process.execPath, [resolve(scriptDirectory, 'verify-installed-bridge.mjs'), '--source', sourceRoot, '--installed', candidateRoot, '--expected-version', version, '--expected-package-profile', requestedPackageProfile], {
+  const profilePath = resolve(candidateRoot, 'bundle-profile.json')
+  const profile = existsSync(profilePath) ? JSON.parse(readFileSync(profilePath, 'utf8')) : null
+  if (profile?.profile === 'qa-broker' && requestedPackageProfile !== 'qa-broker') {
+    throw new Error('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN: QA credentials are process-memory only. Use native local source for durable Keychain credentials, or explicitly select --package-profile qa-broker for temporary QA.')
+  }
+  const verifyArgs = [resolve(scriptDirectory, 'verify-installed-bridge.mjs'), '--source', sourceRoot, '--installed', candidateRoot, '--expected-version', version]
+  if (requestedPackageProfile === 'qa-broker' || profile) verifyArgs.push('--expected-package-profile', requestedPackageProfile ?? 'production')
+  const result = spawnSync(process.execPath, verifyArgs, {
     encoding: 'utf8', env: process.env, timeout: 20_000,
   })
   let evidence
@@ -151,11 +158,10 @@ try {
   if (install.error || install.status !== 0) throw new Error(install.stderr?.trim() || install.error?.message || 'local plugin installation failed')
 
   if (!existsSync(installedRoot)) throw new Error(`Codex reported success but the local install is missing: ${installedRoot}`)
-  const verifyArgs = [resolve(scriptDirectory, 'verify-installed-bridge.mjs'), '--source', sourceRoot, '--installed', installedRoot, '--expected-version', version, '--expected-package-profile', requestedPackageProfile]
-  const verify = spawnSync(process.execPath, verifyArgs, {
-    encoding: 'utf8', env: process.env, timeout: 20_000,
-  })
-  if (verify.error || verify.status !== 0) throw new Error(verify.stderr?.trim() || verify.error?.message || 'installed local plugin differs from its source package')
+  try { verifySameVersionRuntime(installedRoot, 'installed local plugin') }
+  catch (error) {
+    throw new Error(`installed local plugin differs from its source package: ${error instanceof Error ? error.message : 'runtime verification failed'}`)
+  }
 
   if (process.platform === 'darwin') {
   // Marketplace copies contain the Swift source but not the host-built binary.
@@ -243,6 +249,9 @@ if (rollbackDirectory) {
   }
 }
 
+if (requestedPackageProfile === 'qa-broker') {
+  process.stderr.write('QA 测试模式：凭据仅保存在辅助进程内存中，进程退出后需要重新授权；日常使用请安装原生钥匙串模式。\n')
+}
 process.stdout.write(`${JSON.stringify({
   ok: true,
   mode: 'local_stdio',
@@ -250,7 +259,7 @@ process.stdout.write(`${JSON.stringify({
   chatgpt_oauth_required: false,
   plugin,
   version,
-  package_profile: requestedPackageProfile,
+  package_profile: requestedPackageProfile ?? 'production',
   local_source: localSourceRoot,
   installed_root: installedRoot,
   restart_required: true,

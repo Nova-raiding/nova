@@ -40,6 +40,8 @@ export interface ImageGenerationInput {
     marketingLabels?: string[]
     /** Whether the caller explicitly requested a post-composed marketing layer. */
     marketingLayer?: boolean
+    /** Explicitly suppress all visible text for unbound, visual-only candidates. */
+    textPolicy?: 'none'
     /** Ordered long-page chapters, each with one buyer question. */
     detailSections?: string[]
     /** Confirmed direction intent and copy tone; guidance only, never product facts. */
@@ -266,7 +268,12 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const detailPlacement = /detail|详情|套图|长图|gallery/iu.test(`${input.direction} ${placement}`)
       const bannerRequested = brief?.outputVariant === 'banner' || /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${placement}`)
       const sceneRequested = /场景|户外|通勤|生活方式|lifestyle|environment|outdoor|commut/iu.test(`${input.direction} ${placement}`)
-      const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : bannerRequested
+      const pureVisualNoText = brief?.textPolicy === 'none'
+      const slotGuidance = isLongPage
+        ? pureVisualNoText
+          ? '槽位为未绑定纯视觉详情页长图：从上到下制作连续产品摄影画面，使用统一光影、背景和构图节奏；不得出现字体、图标、信息卡、规格、价格或任何可读元素，禁止只做一个模块或把内容缩成正方形。'
+          : '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。'
+        : bannerRequested
         ? '槽位为电商 Banner/活动头图：采用横向视觉层级，商品与核心利益点形成单一焦点，预留左右安全区和响应式裁切区；营销文案只使用已确认标签，最多一个主 CTA，不堆叠角标或长段落。'
         : sceneRequested
         ? '槽位为场景型商品主图：必须把商品置于与品类匹配的真实、简洁环境中，形成可见的前景、中景和背景层次；商品仍占画面主要视觉面积，款式、颜色、结构和材质严格跟随参考图。'
@@ -298,7 +305,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const contentPlatformMainImage = isMainImage && (platform === 'xiaohongshu' || platform === 'douyin')
       const sceneMainImage = isMainImage && sceneRequested
       const inferredMarketingLayer = Boolean(logoAssetIds.length || sellingPoints.length || trafficKeywords.length || marketingLabels.length || promotionLabels.length || copy.length)
-      const hasMarketingLayer = brief?.marketingLayer ?? inferredMarketingLayer
+      const hasMarketingLayer = pureVisualNoText ? false : (brief?.marketingLayer ?? inferredMarketingLayer)
       const effectiveHeroTemplate = sceneMainImage
         ? '模板=场景型搜索首屏 hero；构图=商品为唯一主角并占主要视觉面积，使用明确景深、环境层次和干净留白；光线=符合场景的自然商业光；背景=与品类匹配的真实简洁环境；禁止白底抠图复用、促销贴纸和虚构信息。'
         : heroTemplate
@@ -312,14 +319,17 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         competitorStructures.length || competitorThemes.length || differentiationAngles.length
           ? `同平台同类竞品研究（仅借鉴构图与表达趋势，不复制品牌、商品事实或原文）：结构=${competitorStructures.join('、') || '无'}；表达主题=${competitorThemes.join('、') || '无'}；差异化机会=${differentiationAngles.join('、') || '无'}。` : '',
         isLongPage
-          ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。${detailDirectionGuidance ? `已确认方向指导（核心思路与表达语气）：${detailDirectionGuidance}。它只决定章节组织和表达风格，不是商品事实或可直接展示的文案。` : ''}章节名称也只用于版式顺序；任何可见商品卖点、属性、效果或承诺都必须有已确认事实来源，缺少来源时省略，不得补造。每章只放一个有事实依据的结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
+          ? pureVisualNoText
+            ? `这是未绑定的纯视觉详情长图：仅按 ${detailSections.length ? detailSections.join(' → ') : '产品全景 → 可见结构近景 → 可见表面细节'} 组织连续产品摄影画面。绝对禁止可见文字、汉字、字母、数字、Logo、标签、图标、CTA、规格栏、价格、促销、信息卡和表格；不得把章节名称或方向说明绘制进画面。只能呈现参考图中可验证的颜色、轮廓和结构；任何不可见的材质、尺寸、容量、功能、配件、场景或承诺必须省略。`
+            : `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。${detailDirectionGuidance ? `已确认方向指导（核心思路与表达语气）：${detailDirectionGuidance}。它只决定章节组织和表达风格，不是商品事实或可直接展示的文案。` : ''}章节名称也只用于版式顺序；任何可见商品卖点、属性、效果或承诺都必须有已确认事实来源，缺少来源时省略，不得补造。每章只放一个有事实依据的结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。`
+          : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
         skuLabels.length ? hasReferenceInput ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : `已确认的 SKU 仅作为事实约束，不在概念图中绘制文字：${skuLabels.join('、')}。` : '',
         factLabels.length ? `已确认商品事实仅作为视觉约束，不作为营销排版或模型文字：${factLabels.join('；')}。` : '',
         sellingPoints.length ? hasMarketingLayer ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : `已确认卖点仅作为视觉层级约束，不作为模型文字：${sellingPoints.join('；')}。` : '',
         hasMarketingLayer && copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
         hasMarketingLayer && trafficKeywords.length ? `已确认的搜索/流量关键词只能作为短标签排版，不得扩展为排名、销量或功效承诺：${trafficKeywords.join('、')}。` : '',
-        logoAssetIds.length ? `品牌 Logo 已授权，引用素材 ID ${logoAssetIds.join('、')}；必须原样使用、保持比例与安全区，不得重绘、变形、改字或伪造 Logo。` : '未提供已授权品牌 Logo，不得臆造任何 Logo 或品牌标识。',
+        pureVisualNoText ? '纯视觉候选不展示品牌 Logo、品牌标识或任何文字标记。' : (logoAssetIds.length ? `品牌 Logo 已授权，引用素材 ID ${logoAssetIds.join('、')}；必须原样使用、保持比例与安全区，不得重绘、变形、改字或伪造 Logo。` : '未提供已授权品牌 Logo，不得臆造任何 Logo 或品牌标识。'),
         hasMarketingLayer && promotionLabels.length ? `已确认促销活动标签（仅原样排版，不得改价、补折扣或延长有效期）：${promotionLabels.join('｜')}。` : '',
         hasMarketingLayer && marketingLabels.length ? `已确认营销文案（仅原样排版，不得改写或补数字）：${marketingLabels.join('｜')}。` : '',
         isMainImage && hasMarketingLayer ? '这是营销版商品主图：在不遮挡商品的前提下，必须形成清晰的营销排版层——品牌 Logo 安全区、一个核心卖点/主标题、最多三个已确认短标签、已确认活动标签（若有）和一个克制 CTA（若有）；使用明确网格、字号层级和可读对比，不能只返回白底商品照。中文文字尽量短、整洁、可读；未确认的字段留空，不要自行补写。' : '',
@@ -338,9 +348,11 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
           ? '电商主图必须使用纯白无缝背景，但必须做出肉眼可识别的新构图设计：使用不同于参考图的主体尺度与留白比例、轻微三分之四视觉层次或结构化裁切、精致接触阴影与轮廓光，形成明确的新主图版式；禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。即使参考图已经是白底，也必须重新渲染一张具有新构图的图片：不得只做像素级复制、不得原样回传参考图像素。商品颜色、款式、材质、结构、Logo 和 SKU 必须与参考图完全一致，严禁改色、换款或重绘成另一件商品。'
           : isMainImage
           ? '这是无参考图的概念主图：使用无品牌、无文字、无标签的中性商品外观，主体完整居中并留出均衡留白；只表达品类和构图方向，不能暗示真实包装、颜色、材质、结构、Logo、认证或 SKU 已被还原。'
-          : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。信息卡片只承载已确认文案，采用清晰网格、统一圆角和 8px 倍数间距，避免廉价贴纸堆叠。',
+          : pureVisualNoText
+            ? '纯视觉长图只使用干净中性背景、产品全景和参考图可见细节的摄影式近景；禁止信息卡片、几何图形、图标、纹理、营销版式和任何非商品结构。'
+            : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。信息卡片只承载已确认文案，采用清晰网格、统一圆角和 8px 倍数间距，避免廉价贴纸堆叠。',
         hasReferenceInput ? '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。' : '本次没有可用于保真还原的商品参考图；不要把文字描述扩展成真实包装、品牌、颜色、材质、结构、Logo、认证或 SKU，输出只能作为概念候选。',
-        hasReferenceInput ? '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。' : '概念图不得生成可读的中文、英文、数字、品牌标识或包装标签；如果模型无法满足无文字要求，结果不得作为合格候选。',
+        pureVisualNoText ? '纯视觉候选的参考图是唯一视觉事实来源；不得生成可读中文、英文、数字、品牌标识、包装标签、图标、拉链、口袋或任何参考图不可见结构；无法满足时结果不得作为合格候选。' : (hasReferenceInput ? '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。' : '概念图不得生成可读的中文、英文、数字、品牌标识或包装标签；如果模型无法满足无文字要求，结果不得作为合格候选。'),
         '生成前自检：场景类型、平台比例、商品身份、颜色、结构、材质、Logo、SKU、主体完整性和可读性必须同时满足；任一项无法满足就不要把结果当作合格候选。',
         hasMarketingLayer ? '这是后置排版流程：模型只负责生成商品、场景、光影和构图，严禁在图片中绘制任何文字、中文、英文、数字、Logo、促销标签或水印；请在画面左侧或上方预留干净、连续、无纹理的文案安全区，准确文案将由程序后置排版。' : '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
         isMainImage && hasReferenceInput
@@ -358,7 +370,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const requestBody = JSON.stringify({
         model: this.options.model,
         prompt,
-        ...(isMainImage ? { negative_prompt: '文字，中文文字，英文文字，数字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，廉价促销海报，阴影过重，裁切，黑边，黑色竖栏，大面积空白遮挡主体，缺失袖子，变形衣物，改色，换款' } : {}),
+        ...((isMainImage || pureVisualNoText) ? { negative_prompt: '文字，中文文字，英文文字，数字，乱码，信息卡片，标签，图标，CTA，水印，臆造Logo，品牌标识，表格，规格栏，价格，促销，拉链，口袋，金属件，参考图不可见结构，边框，道具，人物，复杂场景，廉价促销海报，阴影过重，裁切，黑边，黑色竖栏，大面积空白遮挡主体，缺失袖子，变形衣物，改色，换款' } : {}),
         n: input.count,
         size: imageSize,
         ...(this.options.quality ? { quality: this.options.quality } : {}),

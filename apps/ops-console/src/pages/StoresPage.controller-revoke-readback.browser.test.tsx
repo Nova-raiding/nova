@@ -63,13 +63,14 @@ describe("StoresPage controller authorization revoke readback journey", () => {
     }
   }, 60_000);
 
-  it("requires explicit confirmation, revokes the scoped account once, and reads back revoked state", async () => {
+  for (const failReadback of [false, true]) it(`revokes the scoped account once and reads back revoked state (readback failure: ${failReadback})`, async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(20_000);
     const calls: RpcCall[] = [];
     const unexpectedRequests: string[] = [];
     const browserErrors: string[] = [];
     let revoked = false;
+    let allowReadback = !failReadback;
     const store = () => ({
       platform: "taobao", accountId: "account:sku-51", alias: "",
       label: "淘宝已授权店", state: revoked ? "revoked" : "connected", dataMode: "official_api", readable: !revoked, writeEnabled: false,
@@ -108,7 +109,10 @@ describe("StoresPage controller authorization revoke readback journey", () => {
             { capability: "store.connection.update", effect: "allow", scope: { type: "account", ids: ["account:sku-51"] } },
           ],
         };
-        else if (method === "ops.stores.list") result = { items: [store()], total: 1, offset: 0, limit: 20 };
+        else if (method === "ops.stores.list" && revoked && !allowReadback) {
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, error: { code: -32000, message: "店铺目录回读暂时不可用" } }) });
+        }
+        else if (method === "ops.stores.list") result = { items: [store(), { ...store(), accountId: "account:sku-52", label: "只读未变店铺", state: "connected", readable: true, revision: 4 }], total: 2, offset: 0, limit: 20 };
         else if (method === "ops.workspaces.list") result = { items: [], total: 0, offset: 0, limit: 20 };
         else if (method === "platform.revoke") { revoked = true; result = { success: true }; }
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: rpc.id ?? null, result }) });
@@ -136,6 +140,17 @@ describe("StoresPage controller authorization revoke readback journey", () => {
       const refreshedRow = page.getByRole("row").filter({ hasText: "淘宝已授权店" });
       await refreshedRow.getByText("已撤销", { exact: true }).waitFor({ state: "visible" });
       expect(await refreshedRow.getByRole("button", { name: "撤销", exact: true }).count()).toBe(0);
+      if (failReadback) {
+        await page.getByRole("group", { name: "店铺目录读取失败" }).waitFor({ state: "visible" });
+        await page.locator('[aria-label="平台汇总错误摘要"]').getByText("店铺目录回读暂时不可用", { exact: false }).waitFor({ state: "visible" });
+        allowReadback = true;
+        await page.getByRole("button", { name: "刷新连接", exact: true }).click();
+        await expectEventually(() => calls.filter(call => call.method === "ops.stores.list").length >= 3);
+        await refreshedRow.getByText("已撤销", { exact: true }).waitFor({ state: "visible" });
+      }
+      const untouchedRow = page.getByRole("row").filter({ hasText: "只读未变店铺" });
+      await untouchedRow.getByText("真实授权", { exact: true }).waitFor({ state: "visible" });
+      expect(await untouchedRow.getByRole("button", { name: "撤销", exact: true }).isDisabled()).toBe(true);
       expect(calls.filter(call => call.method === "platform.revoke")).toHaveLength(1);
       expect(unexpectedRequests).toEqual([]);
       expect(browserErrors).toEqual([]);

@@ -2,6 +2,41 @@ import { describe, expect, it } from 'vitest'
 import { assertRelayEvidence } from './relay-evidence.mjs'
 
 describe('relay evidence lifecycle', () => {
+  const deliveredOutputs = [
+    { method: 'content.generate', payload: { body: { title: '已生成文案', detail: '商品详情' } } },
+    { method: 'content.draft.generate', payload: { contentPreview: { body: { title: '候选文案' } } } },
+    { method: 'multimodal.generate', payload: { content: '已生成文本' } },
+    { method: 'catalog.image.generate', payload: { images: [{ url: 'https://assets.example.test/image.png' }] } },
+    { method: 'catalog.image.get', payload: { image_urls: ['https://assets.example.test/image.png'] } },
+    { method: 'multimodal.image.edit', payload: { images: ['https://assets.example.test/edit.png'] } },
+    { method: 'multimodal.video.request', payload: { plan: { shots: ['生成的分镜'] } } },
+    { method: 'multimodal.video.get', payload: { rendering: { status: 'queued', videoUrl: 'https://assets.example.test/video.mp4' } } },
+    { method: 'multimodal.video.get', payload: { download_path: '/v1/assets/video-1/download' } },
+    { method: 'multimodal.video.get', payload: { preview_path: '/v1/assets/video-1/download' } },
+    { method: 'catalog.image.get', payload: { download_urls: ['https://assets.example.test/image.png'] } },
+  ]
+
+  it.each(deliveredOutputs)('$method gates actual delivery even when all states are pending: $payload', ({ method, payload }) => {
+    for (const environment of ['production', 'staging', 'preview']) {
+      const pending = { status: 'pending', execution: { state: 'queued' }, ...payload }
+      expect(() => assertRelayEvidence(method, pending, { environment, fixtureFallback: false })).toThrowError(/relay evidence is incomplete/u)
+      expect(() => assertRelayEvidence(method, { ...pending, execution: { ...evidence.execution, state: 'queued' } }, { environment, fixtureFallback: false })).not.toThrow()
+      for (const incomplete of [
+        { providerExecuted: false }, { providerRequestId: '' }, { usage: {} },
+        { costCny: undefined }, { settlementStatus: 'pending' }, { simulated: true },
+      ]) {
+        expect(() => assertRelayEvidence(method, { ...pending, execution: { ...evidence.execution, state: 'queued', ...incomplete } }, { environment, fixtureFallback: false })).toThrowError(/relay evidence is incomplete/u)
+      }
+    }
+  })
+
+  it.each(['queued', 'generating', 'processing', 'running', 'pending', 'provider_reserved', 'provider_dispatching', 'provider_started'])('preserves pure %s receipts and empty output placeholders', state => {
+    const pending = { job_id: 'job-1', provider_job_id: 'provider-job-1', status: state, execution: { state }, images: [], image_urls: [], download_urls: [], content: '', body: {}, contentPreview: { body: {} }, plan: {}, rendering: { status: state, videoUrl: '' } }
+    for (const { method } of deliveredOutputs) {
+      expect(() => assertRelayEvidence(method, pending, { environment: 'production', fixtureFallback: false })).not.toThrow()
+    }
+  })
+
   it('treats queued execution envelopes as pending before provider evidence exists', () => {
     const result = {
       job_id: 'image-job-1',

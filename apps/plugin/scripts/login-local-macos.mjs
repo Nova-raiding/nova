@@ -279,6 +279,15 @@ function configureLaunchd(target) {
   for (const key of ['MERCHANT_MCP_TOKEN', 'MERCHANT_MCP_REFRESH_TOKEN']) execFileSync('/bin/launchctl', ['unsetenv', key], { stdio: 'ignore', timeout: 5000 })
 }
 
+export function localPluginLoginSuccessMessage(result, qaBroker) {
+  const verification = result.chatgpt_launched
+    ? 'ChatGPT 已打开；请在新会话调用 onboarding.status 验证。'
+    : '请打开或重启 ChatGPT，并在新会话调用 onboarding.status 验证。'
+  return qaBroker
+    ? `临时 QA 授权仅保存在辅助进程内存中，辅助进程退出后需要重新授权；日常使用请安装原生凭据模式。${verification}`
+    : `${result.chatgpt_launched ? '' : '凭据已保存；'}${verification}`
+}
+
 async function main() {
   const args = process.argv.slice(2)
   if (args.includes('--help')) {
@@ -303,7 +312,7 @@ async function main() {
   if (!manifest.version || manifest.version !== pkg.version) throw fail('PACKAGE_MISMATCH')
   const { writeKeychainCredential, readKeychainCredential, assertKeychainHelperReady, installationIdentityStore,
     isQaBrokerPackage, keychainCredentialSeed } = await import('../mcp/keychain-credential.mjs')
-  assertKeychainHelperReady()
+  if (!isQaBrokerPackage()) assertKeychainHelperReady()
   let createInstallationProof
   if (proofValues.every(Boolean)) {
     const { signInstallationTranscript } = await import('../mcp/installation-identity.mjs')
@@ -368,7 +377,7 @@ async function main() {
         if (persisted.access_token !== bundle.access_token || persisted.refresh_token !== bundle.refresh_token
           || persisted.expires_at !== bundle.expires_at) throw fail('KEYCHAIN_VERIFY_FAILED')
       }, launchChatGPT, signal: controller.signal })
-    process.stdout.write(`${JSON.stringify(result)}\n${result.chatgpt_launched ? 'ChatGPT 已打开；请在新会话调用 onboarding.status 验证。' : '凭据已保存；请打开或重启 ChatGPT，并在新会话调用 onboarding.status 验证。'}\n`)
+    process.stdout.write(`${JSON.stringify(result)}\n${localPluginLoginSuccessMessage(result, isQaBrokerPackage())}\n`)
   } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel) }
 }
 

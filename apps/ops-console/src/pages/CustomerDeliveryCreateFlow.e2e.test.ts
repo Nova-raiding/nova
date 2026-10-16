@@ -153,6 +153,7 @@ describe("Ops customer delivery create flow (local RPC fixture)", () => {
     await paymentSelect.press("Enter");
     await page.getByLabel("付款时间", { exact: true }).click();
     await page.locator(".ant-picker-cell-today").click();
+    expect(await page.getByLabel("付款时间", { exact: true }).inputValue(), "calendar selection must commit a payment date before submission").toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await page.getByLabel("项目负责人", { exact: true }).fill("负责人甲");
     await page.getByLabel("售后负责人", { exact: true }).fill("售后乙");
     await page.locator('input[type="file"][accept*=".pdf"]').setInputFiles({ name: "contract-flow.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 local test contract fixture") });

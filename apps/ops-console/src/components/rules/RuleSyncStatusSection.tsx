@@ -1,5 +1,5 @@
 import { CloudSyncOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { RuleSyncStatus } from "../../types/ops";
 
@@ -13,7 +13,7 @@ interface RuleSyncStatusSectionProps {
 }
 
 const statePresentation: Record<RuleSyncStatus["state"], { color: string; label: string }> = {
-  ready: { color: "green", label: "新鲜" },
+  ready: { color: "green", label: "已启用" },
   stale: { color: "orange", label: "已过期" },
   not_configured: { color: "red", label: "未配置" },
 };
@@ -27,6 +27,11 @@ export function RuleSyncStatusSection({
   onSyncNow,
 }: RuleSyncStatusSectionProps) {
   const blocked = statuses.filter((item) => item.state !== "ready").length;
+  const overdue = statuses.filter((item) => item.state === "ready" && item.stale).length;
+  const summary = statuses.length === 0 ? "规则同步状态尚未加载"
+    : blocked > 0 ? `${blocked} 个平台规则不可用${overdue > 0 ? `；${overdue} 个平台来源待复核` : ""}`
+      : overdue > 0 ? `${overdue} 个平台来源待复核，已审核启用版本继续生效`
+        : `${statuses.length} 个平台规则已启用，来源均在检查窗口内`;
   const errorRef = useRef<HTMLDivElement>(null);
   const errorTitleId = useId();
   const errorDescriptionId = useId();
@@ -120,16 +125,12 @@ export function RuleSyncStatusSection({
         />
       ) : null}
       <Alert
-        type={statuses.length > 0 && blocked === 0 ? "success" : "warning"}
+        type={!error && statuses.length > 0 && blocked === 0 && overdue === 0 ? "success" : "warning"}
         showIcon
         title={
-          statuses.length === 0
-            ? "规则同步状态尚未加载"
-            : blocked === 0
-              ? "六个平台规则均在检查窗口内"
-              : `${blocked} 个平台未通过规则新鲜度门禁`
+          `${error && statuses.length > 0 ? "上次读取：" : ""}${summary}`
         }
-        description="平台规则可以来自官方签名清单，也可以由运营上传官方依据并完成独立审批；服务端 worker 默认每 7 天检查签名清单。未配置、未审批或过期时必须保持阻断或人工复核，不能把旧规则视为有效。"
+        description="平台规则可以来自官方签名清单，也可以由运营上传官方依据并完成独立审批；服务端 worker 默认每 7 天检查签名清单。未配置或未审批时保持阻断；超过来源复核窗口会提示复核，已审核启用版本继续生效，直至被明确撤回或替换。"
       />
       <Table<RuleSyncStatus>
         rowKey="platform"
@@ -143,10 +144,10 @@ export function RuleSyncStatusSection({
           {
             title: "同步状态",
             dataIndex: "state",
-            width: 120,
-            render: (state: RuleSyncStatus["state"]) => {
+            width: 190,
+            render: (state: RuleSyncStatus["state"], row) => {
               const value = statePresentation[state];
-              return <Tag color={value.color}>{value.label}</Tag>;
+              return <Space wrap><Tag color={value.color}>{value.label}</Tag>{state === "ready" && row.stale ? <Tag color="orange">来源待复核</Tag> : null}</Space>;
             },
           },
           {

@@ -99,7 +99,7 @@ test('member list read failure can be retried without exposing invite controls o
   try {
     await page.goto(`${studioUrl}/__merchant-member-read-recovery`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('alert')).toContainText('成员列表读取失败')
-    await expect(page.getByRole('alert')).toContainText('成员目录暂不可用')
+    await expect(page.getByRole('alert')).toContainText('服务暂不可用')
     await expect(page.getByRole('button', { name: '刷新成员列表' })).toBeEnabled()
     await expect(page.getByRole('form', { name: '邀请工作区成员' })).toHaveCount(0)
     expect(calls.filter(call => call.method === 'ops.member.upsert' || call.method === 'ops.member.suspend')).toEqual([])

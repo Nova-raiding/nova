@@ -58,6 +58,7 @@ describe("support mutation uncertain result idempotency", () => {
               const model=useSupportDomain(client,'ws-1');
               return React.createElement('main',null,
                 React.createElement('button',{onClick:()=>void model.selectTicket('ticket-1')},'select'),
+                React.createElement('button',{onClick:()=>void model.reload()},'reload'),
                 React.createElement('button',{onClick:()=>void model.assign('support-owner').catch(()=>{})},'assign'),
                 React.createElement('button',{onClick:()=>void model.transition('in_progress','开始处理').catch(()=>{})},'transition'),
                 React.createElement('button',{onClick:()=>void model.comment('核对后的回复','customer').catch(()=>{})},'comment'),
@@ -97,6 +98,8 @@ describe("support mutation uncertain result idempotency", () => {
           commands: window.__commands,
           effects: window.__sideEffects,
         })), { timeout: 12_000 }).toContain(name + " response lost after commit");
+        await page.getByRole("button", { name: "reload", exact: true }).click();
+        await expect.poll(() => page.getByTestId("state").textContent()).toContain(name + " response lost after commit");
         await page.getByRole("button", { name }).click();
         await expect.poll(() => page.getByTestId("state").textContent(), { timeout: 12_000 }).not.toContain(name + " response lost after commit");
       }
