@@ -72,7 +72,20 @@ describe('deliverable.list MCP read-only contract', () => {
       })}\n`);
       const rejected = await nextLine(child.stdout);
       expect(rejected.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } });
+      for (const limit of ['0', '51', '100', '1.5', '-1', 'abc']) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: `invalid-${limit}`, method: 'tools/call',
+          params: { name: 'deliverable.list', arguments: { limit } } })}\n`);
+        const invalidLimit = await nextLine(child.stdout);
+        expect(invalidLimit.result).toMatchObject({ isError: true, structuredContent: { code: 'TOOL_ARGUMENTS_INVALID' } });
+      }
       expect(upstreamRequests).toBe(0);
+      for (const limit of ['1', '20', '50']) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: `valid-${limit}`, method: 'tools/call',
+          params: { name: 'deliverable.list', arguments: { limit } } })}\n`);
+        const validLimit = await nextLine(child.stdout);
+        expect(validLimit.result.isError).not.toBe(true);
+      }
+      expect(upstreamRequests).toBe(3);
     } finally {
       child.kill();
       await once(child, 'exit').catch(() => undefined);

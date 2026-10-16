@@ -14,7 +14,10 @@ try {
   const target = join(directory, 'keychain-credential-helper')
   const temporary = mkdtempSync(join(dirname(target), '.keychain-build-'))
   const output = join(temporary, 'keychain-credential-helper')
-  execFileSync('/usr/bin/xcrun', ['swiftc', '-O', source, '-o', output], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 })
+  // Keep the native helper identical to package-local-plugin.mjs builds.
+  // A host-default deployment target changes its ad-hoc Keychain identity.
+  const architecture = process.arch === 'x64' ? 'x86_64' : process.arch
+  execFileSync('/usr/bin/xcrun', ['swiftc', '-O', '-target', `${architecture}-apple-macos11.0`, source, '-o', output], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120000 })
   chmodSync(output, 0o700)
   renameSync(output, target)
   const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex')

@@ -972,7 +972,7 @@ const METHODS = {
   },
   'deliverable.list': {
     description: '分页查找已生成内容版本的虚拟交付索引。只返回摘要，不返回正文、图片、输入素材或预生成文件。只读。',
-    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, task_id: { type: 'string' }, state: { type: 'string', enum: ['draft', 'review_required', 'approved', 'delivered'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: { type: 'string' }, cursor: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_id: { type: 'string' }, task_id: { type: 'string' }, state: { type: 'string', enum: ['draft', 'review_required', 'approved', 'delivered'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: { type: 'string', pattern: '^(?:[1-9]|[1-4][0-9]|50)$', maxLength: 2, description: '每页 1–50 项；省略时默认 20 项。' }, cursor: { type: 'string' } }, additionalProperties: false },
   },
   'task.history': {
     description: '搜索当前工作区的历史营销任务。只读。',

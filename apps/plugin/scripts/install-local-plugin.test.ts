@@ -149,12 +149,16 @@ describe('direct local plugin install runtime build', () => {
   }, 30_000)
 
   // The macOS path builds the Keychain helper under its own 120s bound.
-  it('installs the checked-in marketplace mirror with its explicit QA-only package profile', () => {
+  it('installs the checked-in marketplace mirror with durable native credentials by default', () => {
     const fixture = setup(source, { marketplaceSourceRoot: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing') })
     try {
-      const result = runInstall(fixture)
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
       expect(result.status, result.stderr).toBe(0)
-      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true })
+      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true, package_profile: 'production' })
+      expect(existsSync(resolve(fixture.installed, 'bundle-profile.json'))).toBe(false)
       expect(codexCommands(fixture).some(command => command.slice(0, 3).join(' ') === 'plugin marketplace add')).toBe(true)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 180_000)
@@ -186,6 +190,16 @@ describe('direct local plugin install runtime build', () => {
       if (process.platform === 'darwin') {
         expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper'))).toBe(true)
         expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper.build.json'))).toBe(true)
+        // Match the archive builder's deployment target. Different targets
+        // change the ad-hoc code identity even when the Swift source is equal.
+        const packagedHelper = resolve(fixture.root, 'keychain-credential-helper')
+        const architecture = process.arch === 'x64' ? 'x86_64' : process.arch
+        const packagedBuild = spawnSync('/usr/bin/xcrun', ['swiftc', '-O', '-target',
+          `${architecture}-apple-macos11.0`, resolve(fixture.installed, 'mcp/keychain-credential-helper.swift'),
+          '-o', packagedHelper], { encoding: 'utf8', timeout: 120_000 })
+        expect(packagedBuild.status, packagedBuild.stderr).toBe(0)
+        expect(readFileSync(resolve(fixture.installed, 'mcp/keychain-credential-helper'))
+          .equals(readFileSync(packagedHelper))).toBe(true)
       }
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 150_000)
