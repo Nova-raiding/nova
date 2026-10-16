@@ -4,10 +4,12 @@ import { isTrustedCleanAsset, type MerchantService, type Platform } from '../../
 import { inspectStoreLinks } from '../../../packages/domain/src/onboarding.js'
 import { evaluatePlatformModelGate, evaluatePlatformModelRelayGate } from '../../../packages/ai/src/platform-model-gate.js'
 import type { ApiPersistence, WorkspaceOnboardingState, MerchantOnboardingProjection } from './server.js'
+import type { workspaceContentSummary } from './workspace-content-summary.js'
 
 type StoreDirectory = ReturnType<typeof import('./server.js').workspaceStoreDirectory>
 type CapabilityCard = { id: string; title: string; summary: string; entryMethod: string; readOnly: boolean }
 export interface McpWorkspaceOverviewDependencies {
+  contentSummary: (req: IncomingMessage, workspaceId: string) => ReturnType<typeof workspaceContentSummary>
   workspaceStoreDirectory: (workspaceId: string) => StoreDirectory
   workspaceOnboarding: (workspaceId: string, directory: StoreDirectory) => WorkspaceOnboardingState
   merchantOnboardingProjection: (state: WorkspaceOnboardingState) => MerchantOnboardingProjection
@@ -105,7 +107,7 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
       steps: onboardingV2.steps,
       binding: bindingByStep[current.id] ?? '按当前步骤完成配置。',
       next_action: current.primary_action,
-      summary: onboardingState.summary,
+      summary: await deps.contentSummary(req, workspaceId),
       ...(typeof params.store_links_text === 'string' ? { store_link_inspection: inspectStoreLinks(params.store_links_text) } : {}),
       initialization: { schema_version: 'store-nova.initialization.v1', status: initializationSteps.every(step => step.state === 'complete') ? 'ready' : initializationCurrent.state === 'blocked' ? 'blocked' : 'in_progress', completed: initializationSteps.filter(step => step.state === 'complete').length, total: 4, current_step: initializationCurrent, steps: initializationSteps, security_notice: '请通过平台官方页面授权，不要在对话中发送店铺密码或验证码。', brand_clues: brandClues, evidence: { official_stores: officialStores.length, successful_sync_stores: succeededSyncKeys.size, scanned_products: scannedProducts.length, confirmed_products: confirmedProducts.length, brand_candidate_count: brandClues.totalCandidates, sku_records: scannedProducts.reduce((sum, product) => sum + (product.skus?.length ?? 0), 0), image_references: scannedProducts.reduce((sum, product) => sum + (product.images?.length ?? 0), 0), products_missing_images: scannedProducts.filter(product => !product.images?.length).length, brand_profile_present: brandReady, content_workspace_confirmed: contentSetupStoreReady, points_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : pointsReady ? 'ready' : 'insufficient', rules_ready: rulesReady, relay_ready: relayReady, modalities_ready: modalitiesReady, cost_ready: costReady, storage_ready: storageReady } },
       guidance: '完成当前步骤后重新检查引导状态；未完成前不会执行生成或发布。',

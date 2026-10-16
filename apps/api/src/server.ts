@@ -53,6 +53,7 @@ import { productionReadinessDiagnostics as productionReadinessDiagnosticsCore, p
 import { runtimeHealth as runtimeHealthCore } from './health-runtime.js'
 import { setupDiagnostics as setupDiagnosticsCore } from './health-setup.js'
 import { handleMcpWorkspaceOverview } from './mcp-workspace-overview.js'
+import { workspaceContentSummary } from './workspace-content-summary.js'
 import { handleManualPublishMcpMethod } from './mcp-manual-publish-handlers.js'
 import { handlePublishMcpMethod } from './mcp-publish-handlers.js'
 import { createCampaignBatch, generateCampaignBatch, transitionCampaignBatch } from './mcp-campaign-write-handlers.js'
@@ -11815,7 +11816,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         nextPrompt,
         nextInstruction: `你可以直接说：“${nextPrompt}”。`,
         onboarding: onboarding.steps,
-        summary: onboarding.summary,
+        summary: await workspaceContentSummary(req, workspaceId, {
+          service, business: persistence.business, accessibleTaskBrandIds,
+          accessibleProductIds, accessibleAssetIds, filterActiveAssets,
+        }),
         creative_points: { balance_state: !canReadWorkspaceBilling ? 'restricted' : pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
         // Keep the merchant entry card aligned with the V2 commercial flow.
         // The legacy arbitrary-amount recharge endpoint is intentionally not
@@ -11859,6 +11863,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'onboarding.status':
     case 'workspace.health':
       return handleMcpWorkspaceOverview(method, params, req, workspaceId, {
+        contentSummary: (request, workspace) => workspaceContentSummary(request, workspace, {
+          service, business: persistence.business, accessibleTaskBrandIds,
+          accessibleProductIds, accessibleAssetIds, filterActiveAssets,
+        }),
         workspaceStoreDirectory,
         workspaceOnboarding,
         merchantOnboardingProjection,

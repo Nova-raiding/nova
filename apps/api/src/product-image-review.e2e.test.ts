@@ -446,6 +446,9 @@ describe('product image review API', () => {
     expect(unusable.data.result.rightsScope).toBe('unusable')
     const merchantStart = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'merchant.start', params: {} }) }).then(response => response.json()) as { data: { result: { summary: { readyAssets: number } } } }
     expect(merchantStart.data.result.summary.readyAssets).toBe(0)
+    const onboardingStatus = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'onboarding.status', params: {} }) }).then(response => response.json()) as { data: { result: { summary: Record<string, unknown> } } }
+    expect(onboardingStatus.data.result.summary).toEqual(merchantStart.data.result.summary)
+    expect(onboardingStatus.data.result.summary).toMatchObject({ scope: 'visible_workspace', assets: 1 })
   })
 
   it('rejects executable and signature-mismatched uploads before quarantine', async () => {
