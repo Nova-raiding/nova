@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-17T08:02:36.208Z",
+  "updated_at": "2026-10-17T08:52:06.100Z",
   "installed_version": "0.1.4+codex.20261017155812",
   "candidate_sha": "f338b1f9c9f0dd1aa506afebbb7151553116fb59",
   "current_app_reload_verified": false,
@@ -21,7 +21,7 @@
       "declared_read_only": true,
       "historical_stdio_result": "returned_without_error",
       "historical_stdio_evidence": "repacked-readonly-smoke.json",
-      "current_installed_stdio": "fresh_production_bridge_read_succeeded_after_install_without_reauthorization",
+      "current_installed_stdio": "three_fresh_production_bridge_reads_succeeded_after_install_without_reauthorization",
       "current_installed_evidence": "installed-read-0.1.4.json",
       "app_ui": "not_individually_verified",
       "required_dimensions": [

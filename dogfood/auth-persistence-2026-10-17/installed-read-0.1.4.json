@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "recorded_at": "2026-10-17T08:02:36.208Z",
+  "recorded_at": "2026-10-17T08:52:06.100Z",
   "installed_version": "0.1.4+codex.20261017155812",
   "package_profile": "production",
   "marketplace": {
@@ -24,7 +24,9 @@
     "tool": "onboarding.status",
     "result_returned": true,
     "is_error": false,
-    "business_writes": 0
+    "business_writes": 0,
+    "fresh_process_rounds_after_install": 3,
+    "each_round_returned_without_error": true
   },
   "invalid_credential_recovery": {
     "simulated": true,
@@ -46,5 +48,6 @@
     "bridge_tests": "207/207 passed",
     "local_content_e2e_tests": "2/2 passed",
     "typecheck": "passed"
-  }
+  },
+  "business_writes": 0
 }

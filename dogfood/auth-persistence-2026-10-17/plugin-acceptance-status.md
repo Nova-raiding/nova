@@ -2,7 +2,7 @@
 
 当前安装版本：`0.1.4+codex.20261017155812`。候选 API/worker 尚未部署。
 
-共 135 个工具；29 个有历史 stdio 检查记录。当前安装版通过 135 项工具面与源码逐项一致性校验，并在独立生产 bridge 进程中成功调用 `onboarding.status`；凭据来源为 Keychain，未要求重新授权。ChatGPT App 截图只作为部分只读响应证据，没有逐工具调用轨迹；App UI 逐工具通过数为 0。
+共 135 个工具；29 个有历史 stdio 检查记录。当前安装版通过 135 项工具面与源码逐项一致性校验，并在 3 个独立生产 bridge 进程中成功调用 `onboarding.status`；凭据来源为 Keychain，未要求重新授权。ChatGPT App 截图只作为部分只读响应证据，没有逐工具调用轨迹；App UI 逐工具通过数为 0。
 
 | 工具组 | 工具数 | 历史 stdio 已检查 | 当前安装版单独验证 |
 |---|---:|---:|---:|
@@ -54,4 +54,4 @@
 
 ## 0.1.4 本地安装复验
 
-安装版本：`0.1.4+codex.20261017155812`，本地 `merchant-local` 已启用。完整 bridge 文件清单 73/73 与源码一致，135 个工具的发现快照一致。全新生产 bridge 进程从 Keychain 读取既有授权后，`onboarding.status` 返回成功；另以无效凭据模拟验证了“先重启 ChatGPT，仍失败再本地登录”的恢复顺序，并确认 fail-closed。证据见 `installed-read-0.1.4.json`。ChatGPT App 当前未运行，App UI 单工具通过数仍为 0。
+安装版本：`0.1.4+codex.20261017155812`，本地 `merchant-local` 已启用。完整 bridge 文件清单 73/73 与源码一致，135 个工具的发现快照一致。3 个全新生产 bridge 进程均从 Keychain 读取既有授权，`onboarding.status` 每次都返回成功；另以无效凭据模拟验证了“先重启 ChatGPT，仍失败再本地登录”的恢复顺序，并确认 fail-closed。证据见 `installed-read-0.1.4.json`。ChatGPT App 当前未运行，App UI 单工具通过数仍为 0。
