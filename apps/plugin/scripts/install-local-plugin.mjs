@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -115,6 +115,49 @@ const describeRegistration = registration => registration
   ? `root=${registration.rawRoot ?? 'unreadable'}, source=${registration.rawSource ?? 'unreadable'}`
   : 'marketplace registration is missing'
 
+// Codex may evict the whole plugin cache during add, even while an old
+// bridge still uses its helper and profile. Restore those exact files after
+// the CLI returns; this does not replace the required host restart.
+const preservedCaches = []
+let previousCacheBackup
+const backupParent = resolve(codexHome, 'plugins')
+function preservePreviousCaches() {
+  const cacheRoot = dirname(installedRoot)
+  if (!existsSync(cacheRoot)) return
+  for (const entry of readdirSync(cacheRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+\.\d+\.\d+(?:[+-][0-9A-Za-z.-]+)?$/u.test(entry.name)) continue
+    const original = resolve(cacheRoot, entry.name)
+    if (original === installedRoot) continue
+    if (!previousCacheBackup) {
+      // Keep backups outside the subtree the CLI is allowed to evict.
+      mkdirSync(backupParent, { recursive: true })
+      previousCacheBackup = mkdtempSync(resolve(backupParent, '.storenova-previous-cache-'))
+    }
+    const backup = resolve(previousCacheBackup, entry.name)
+    cpSync(original, backup, { recursive: true })
+    preservedCaches.push({ original, backup })
+  }
+}
+function restorePreviousCaches() {
+  for (const { original, backup } of preservedCaches) {
+    if (existsSync(original)) continue
+    // Preserve concurrent installs unchanged. Keep the backup if copying fails.
+    cpSync(backup, original, { recursive: true, force: false, errorOnExist: true })
+  }
+}
+function finishPreviousCaches() {
+  try { restorePreviousCaches() }
+  catch (error) {
+    throw new Error(`LOCAL_PLUGIN_PREVIOUS_CACHE_RECOVERY_FAILED: previous runtime files could not be restored; backup remains at ${previousCacheBackup}: ${error instanceof Error ? error.message : 'copy failed'}`)
+  }
+  if (previousCacheBackup) {
+    try { rmSync(previousCacheBackup, { recursive: true, force: true }) }
+    catch (error) {
+      throw new Error(`LOCAL_PLUGIN_BACKUP_CLEANUP_FAILED: previous runtime files restored but backup could not be removed: ${error instanceof Error ? error.message : 'cleanup failed'}; backup directory=${previousCacheBackup}`)
+    }
+  }
+}
+
 const cacheExistedAtStart = existsSync(installedRoot)
 let rollbackDirectory = null
 let backupCachePath = null
@@ -128,8 +171,10 @@ try {
     throw new Error(`LOCAL_PLUGIN_UNKNOWN_MARKETPLACE: ${marketplaceName} already resolves to another or unreadable source (${describeRegistration(before)}); leaving it untouched`)
   }
 
+  preservePreviousCaches()
   if (cacheExistedAtStart) {
-    rollbackDirectory = mkdtempSync(resolve(dirname(installedRoot), '.storenova-local-install-rollback-'))
+    mkdirSync(backupParent, { recursive: true })
+    rollbackDirectory = mkdtempSync(resolve(backupParent, '.storenova-local-install-rollback-'))
     backupCachePath = resolve(rollbackDirectory, 'cache')
     cpSync(installedRoot, backupCachePath, { recursive: true })
     backupComplete = true
@@ -199,24 +244,15 @@ try {
 
 if (installError) {
   const rollbackErrors = []
-  if (cacheMayHaveBeenMutated) {
-    try {
-      if (cacheExistedAtStart && backupComplete && backupCachePath) {
-        if (existsSync(installedRoot)) rmSync(installedRoot, { recursive: true, force: true })
-        renameSync(backupCachePath, installedRoot)
-        verifySameVersionRuntime(installedRoot, 'restored pre-install cache')
-      } else if (!cacheExistedAtStart && existsSync(installedRoot)) {
-        rmSync(installedRoot, { recursive: true, force: true })
-        if (existsSync(installedRoot)) throw new Error('partial plugin cache remains after cleanup')
-      }
-    } catch (error) {
-      rollbackErrors.push(`LOCAL_PLUGIN_CACHE_ROLLBACK_FAILED: ${error instanceof Error ? error.message : String(error)}${backupCachePath && existsSync(backupCachePath) ? `; verified backup remains at ${backupCachePath}` : ''}`)
-    }
-  }
+  // Registry rollback may also evict caches. Finish every CLI mutation before
+  // restoring runtime files or deleting either kind of recovery backup.
   if (marketplaceMayHaveBeenAdded) {
     try {
       let state = inspectRegistration()
       for (let attempt = 0; isExpectedRegistration(state) && attempt < 3; attempt += 1) {
+        // Even if plugin add was never reached, removing a newly registered
+        // marketplace can evict the pre-existing target cache.
+        cacheMayHaveBeenMutated = true
         runCodex(['plugin', 'marketplace', 'remove', marketplaceName, '--json'])
         state = inspectRegistration()
       }
@@ -229,6 +265,23 @@ if (installError) {
       rollbackErrors.push(`LOCAL_PLUGIN_REGISTRY_ROLLBACK_FAILED: ${error instanceof Error ? error.message : String(error)}; inspect with codex plugin marketplace list --json before manually removing ${marketplaceName}`)
     }
   }
+  if (cacheMayHaveBeenMutated) {
+    try {
+      if (cacheExistedAtStart && backupComplete && backupCachePath) {
+        if (existsSync(installedRoot)) rmSync(installedRoot, { recursive: true, force: true })
+        mkdirSync(dirname(installedRoot), { recursive: true })
+        renameSync(backupCachePath, installedRoot)
+        verifySameVersionRuntime(installedRoot, 'restored pre-install cache')
+      } else if (!cacheExistedAtStart && existsSync(installedRoot)) {
+        rmSync(installedRoot, { recursive: true, force: true })
+        if (existsSync(installedRoot)) throw new Error('partial plugin cache remains after cleanup')
+      }
+    } catch (error) {
+      rollbackErrors.push(`LOCAL_PLUGIN_CACHE_ROLLBACK_FAILED: ${error instanceof Error ? error.message : String(error)}${backupCachePath && existsSync(backupCachePath) ? `; verified backup remains at ${backupCachePath}` : ''}`)
+    }
+  }
+  try { finishPreviousCaches() }
+  catch (error) { rollbackErrors.push(error instanceof Error ? error.message : String(error)) }
   if (rollbackDirectory) {
     const preserveBackup = cacheMayHaveBeenMutated && backupComplete && backupCachePath && existsSync(backupCachePath)
     if (preserveBackup) {
@@ -242,6 +295,7 @@ if (installError) {
   throw new Error([originalMessage, ...rollbackErrors].join('\nAdditional recovery status: '))
 }
 
+finishPreviousCaches()
 if (rollbackDirectory) {
   try { rmSync(rollbackDirectory, { recursive: true, force: true }) }
   catch (error) {

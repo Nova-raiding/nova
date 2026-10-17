@@ -30,6 +30,7 @@ function setup(sourceRoot = source, { marketplaceSourceRoot }: { marketplaceSour
 const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2)
 fs.appendFileSync(process.env.FAKE_CODEX_CALLS,JSON.stringify(args)+'\\n')
 if(args.join(' ')==='plugin marketplace list --json'){
+ if(process.env.FAKE_INVALID_LIST_AFTER_ADD==='1'&&fs.existsSync(process.env.FAKE_ADD_OCCURRED_FILE)){process.stdout.write('{not-json');process.exit(0)}
  const root=fs.existsSync(process.env.FAKE_ACTIVE_MARKETPLACE)?fs.readFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,'utf8'):null
  process.stdout.write(JSON.stringify({marketplaces:root?[{name:'merchant-local-test',root,marketplaceSource:{sourceType:'local',source:root}}]:[]}));process.exit(0)
 }
@@ -37,16 +38,20 @@ if(args[0]==='plugin'&&args[1]==='marketplace'&&args[2]==='add'){
  if(process.env.FAKE_UNKNOWN_ON_ADD==='1'){fs.writeFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,process.env.FAKE_UNKNOWN_ROOT);process.stderr.write('simulated unexpected registration');process.exit(2)}
  if(process.env.FAKE_FAIL_ADD_BEFORE==='1'){process.stderr.write('simulated marketplace add failure before mutation');process.exit(2)}
  fs.writeFileSync(process.env.FAKE_ACTIVE_MARKETPLACE,args[3])
+ if(process.env.FAKE_INVALID_LIST_AFTER_ADD==='1')fs.writeFileSync(process.env.FAKE_ADD_OCCURRED_FILE,'yes')
  if(process.env.FAKE_FAIL_ADD_AFTER==='1'){process.stderr.write('simulated marketplace add failure after mutation');process.exit(2)}
  process.stdout.write('{"ok":true}\\n');process.exit(0)
 }
 if(args[0]==='plugin'&&args[1]==='marketplace'&&args[2]==='remove'){
  if(process.env.FAKE_FAIL_REMOVE_BEFORE==='1'){process.stderr.write('simulated marketplace cleanup failure');process.exit(2)}
+ if(process.env.FAKE_EVICT_ON_MARKETPLACE_REMOVE==='1')fs.rmSync(path.dirname(process.env.FAKE_INSTALLED),{recursive:true,force:true})
  fs.rmSync(process.env.FAKE_ACTIVE_MARKETPLACE,{force:true})
  process.stdout.write('{"ok":true}\\n');process.exit(0)
 }
 if(args.join(' ')==='plugin add merchant-marketing@merchant-local-test --json'){
  if(process.env.FAKE_FAIL_INSTALL_BEFORE==='1'){process.stderr.write('simulated install failure before mutation');process.exit(2)}
+ if(process.env.FAKE_EVICT_OLD_CACHES==='1')fs.rmSync(path.dirname(process.env.FAKE_INSTALLED),{recursive:true,force:true})
+ if(process.env.FAKE_FAIL_AFTER_EVICTION==='1'){process.stderr.write('simulated install failure after cache eviction');process.exit(2)}
  fs.mkdirSync(path.dirname(process.env.FAKE_INSTALLED),{recursive:true});fs.cpSync(process.env.FAKE_SOURCE_ROOT,process.env.FAKE_INSTALLED,{recursive:true})
  if(process.env.FAKE_CORRUPT_INSTALL==='1')fs.writeFileSync(path.join(process.env.FAKE_INSTALLED,'mcp/bridge.mjs'),'corrupted install')
  if(process.env.FAKE_FAIL_INSTALL_AFTER==='1'){process.stderr.write('simulated install failure after mutation');process.exit(2)}
@@ -58,7 +63,7 @@ process.stderr.write('unexpected fake Codex command');process.exit(2)
   return {
     root, localSource, marketplacePlugin, fakeCodex, installed, calls, activeMarketplace,
     env: { ...process.env, FAKE_CODEX_CALLS: calls, FAKE_INSTALLED: installed, FAKE_SOURCE_ROOT: marketplacePlugin,
-      FAKE_ACTIVE_MARKETPLACE: activeMarketplace },
+      FAKE_ACTIVE_MARKETPLACE: activeMarketplace, FAKE_ADD_OCCURRED_FILE: resolve(root, 'marketplace-add-observed.txt') },
   }
 }
 
@@ -74,20 +79,142 @@ function codexCommands(fixture: ReturnType<typeof setup>) {
 }
 
 function rollbackDirectories(fixture: ReturnType<typeof setup>) {
-  const cacheParent = resolve(fixture.installed, '..')
+  const cacheParent = resolve(fixture.root, 'codex-home/plugins')
   return existsSync(cacheParent) ? readdirSync(cacheParent).filter(name => name.startsWith('.storenova-local-install-rollback-')) : []
 }
 
 describe('direct local plugin install runtime build', () => {
-  it('installs the checked-in marketplace mirror with its explicit QA-only package profile', () => {
+  it('keeps the local installer byte-identical to its installable marketplace mirror', () => {
+    const marketplaceScript = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing/scripts/install-local-plugin.mjs')
+    expect(readFileSync(marketplaceScript, 'utf8')).toBe(readFileSync(script, 'utf8'))
+  })
+
+  it.each([
+    { failAfterEviction: false, evictOnRegistryRollback: false },
+    { failAfterEviction: true, evictOnRegistryRollback: false },
+    { failAfterEviction: true, evictOnRegistryRollback: true },
+  ])('preserves older runtime files when Codex evicts caches (install failure=$failAfterEviction, rollback eviction=$evictOnRegistryRollback)', ({ failAfterEviction, evictOnRegistryRollback }) => {
+    const fixture = setup()
+    const previous = resolve(fixture.installed, '..', '0.0.1+prior-runtime')
+    mkdirSync(resolve(previous, 'mcp'), { recursive: true })
+    const helper = resolve(previous, 'mcp/keychain-credential-helper')
+    const profile = resolve(previous, 'bundle-profile.json')
+    writeFileSync(helper, 'original-reviewed-helper-bytes')
+    chmodSync(helper, 0o700)
+    writeFileSync(profile, '{"schema_version":"1","profile":"qa-broker"}')
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', timeout: 150_000,
+        env: { ...fixture.env, FAKE_EVICT_OLD_CACHES: '1', ...(failAfterEviction ? { FAKE_FAIL_AFTER_EVICTION: '1' } : {}),
+          ...(evictOnRegistryRollback ? { FAKE_EVICT_ON_MARKETPLACE_REMOVE: '1' } : {}) },
+      })
+      expect(result.status, result.stderr).toBe(failAfterEviction ? 1 : 0)
+      if (failAfterEviction) expect(result.stderr).toContain('simulated install failure after cache eviction')
+      expect(existsSync(helper), 'old running bridges still need their native helper').toBe(true)
+      expect(readFileSync(helper, 'utf8')).toBe('original-reviewed-helper-bytes')
+      expect(readFileSync(profile, 'utf8')).toBe('{"schema_version":"1","profile":"qa-broker"}')
+      const plugins = resolve(fixture.root, 'codex-home/plugins')
+      expect(readdirSync(plugins).filter(name => name.startsWith('.storenova-previous-cache-'))).toEqual([])
+      expect(existsSync(fixture.installed)).toBe(!failAfterEviction)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 180_000)
+
+  it('installs native local source by default without requiring an in-memory QA broker', () => {
+    const fixture = setup()
+    try {
+      rmSync(resolve(fixture.marketplacePlugin, 'bundle-profile.json'))
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
+      expect(result.status, result.stderr).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, package_profile: 'production' })
+      expect(existsSync(resolve(fixture.installed, 'bundle-profile.json'))).toBe(false)
+      const upgrade = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
+        '--source', source, '--local-source', fixture.localSource, '--marketplace', 'merchant-local-test',
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed, '--package-profile', 'production'], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
+      expect(upgrade.status, upgrade.stderr).toBe(0)
+      expect(JSON.parse(upgrade.stdout)).toMatchObject({ ok: true, plugin_version: version })
+      expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(fixture.localSource)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 180_000)
+
+  it('rejects an implicit QA mirror before changing the registry or cache', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed], { encoding: 'utf8', env: fixture.env, timeout: 30_000 })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN')
+      expect(codexCommands(fixture)).toEqual([])
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  })
+
+  it('rejects an implicit QA upgrade before changing the registry or cache', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [resolve(source, 'scripts/upgrade-installed-plugin.mjs'),
+        '--source', source, '--local-source', fixture.localSource, '--marketplace', 'merchant-local-test',
+        '--codex', fixture.fakeCodex, '--installed', fixture.installed], { encoding: 'utf8', env: fixture.env, timeout: 30_000 })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('QA_BROKER_REQUIRES_EXPLICIT_OPT_IN')
+      expect(codexCommands(fixture)).toEqual([])
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  })
+
+  it('rejects duplicate package profile arguments before invoking Codex', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'production', '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: fixture.env, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('argument may be specified only once: --package-profile')
+      expect(existsSync(fixture.calls)).toBe(false)
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
+  // The macOS path builds the Keychain helper under its own 120s bound.
+  it('installs the checked-in marketplace mirror with durable native credentials by default', () => {
     const fixture = setup(source, { marketplaceSourceRoot: resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing') })
     try {
-      const result = runInstall(fixture)
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed], {
+        encoding: 'utf8', env: fixture.env, timeout: 150_000,
+      })
       expect(result.status, result.stderr).toBe(0)
-      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true })
+      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, mode: 'local_stdio', restart_required: true, package_profile: 'production' })
+      expect(existsSync(resolve(fixture.installed, 'bundle-profile.json'))).toBe(false)
       expect(codexCommands(fixture).some(command => command.slice(0, 3).join(' ') === 'plugin marketplace add')).toBe(true)
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 180_000)
+
+  it('rejects a marketplace plugin path that escapes its canonical plugins directory', () => {
+    const fixture = setup()
+    try {
+      const escapedPlugin = resolve(fixture.root, 'escaped-plugin')
+      cpSync(fixture.marketplacePlugin, escapedPlugin, { recursive: true })
+      writeFileSync(resolve(fixture.localSource, 'marketplace.json'), JSON.stringify({
+        name: 'merchant-local-test',
+        plugins: [{ name: 'merchant-marketing', source: { source: 'local', path: '../escaped-plugin' } }],
+      }))
+
+      const result = runInstall(fixture)
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('local marketplace source for merchant-marketing must resolve to')
+      expect(existsSync(fixture.calls)).toBe(false)
+      expect(existsSync(fixture.installed)).toBe(false)
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
 
   it.skipIf(process.platform !== 'darwin')('builds and validates the macOS Keychain helper before reporting the installed bridge usable', () => {
     const fixture = setup()
@@ -98,6 +225,16 @@ describe('direct local plugin install runtime build', () => {
       if (process.platform === 'darwin') {
         expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper'))).toBe(true)
         expect(existsSync(resolve(fixture.installed, 'mcp/keychain-credential-helper.build.json'))).toBe(true)
+        // Match the archive builder's deployment target. Different targets
+        // change the ad-hoc code identity even when the Swift source is equal.
+        const packagedHelper = resolve(fixture.root, 'keychain-credential-helper')
+        const architecture = process.arch === 'x64' ? 'x86_64' : process.arch
+        const packagedBuild = spawnSync('/usr/bin/xcrun', ['swiftc', '-O', '-target',
+          `${architecture}-apple-macos11.0`, resolve(fixture.installed, 'mcp/keychain-credential-helper.swift'),
+          '-o', packagedHelper], { encoding: 'utf8', timeout: 120_000 })
+        expect(packagedBuild.status, packagedBuild.stderr).toBe(0)
+        expect(readFileSync(resolve(fixture.installed, 'mcp/keychain-credential-helper'))
+          .equals(readFileSync(packagedHelper))).toBe(true)
       }
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 150_000)
@@ -201,6 +338,29 @@ describe('direct local plugin install runtime build', () => {
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 30_000)
 
+  it('leaves registry state untouched when marketplace listing becomes unreadable after add', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: { ...fixture.env, FAKE_INVALID_LIST_AFTER_ADD: '1' }, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('LOCAL_PLUGIN_MARKETPLACE_ADD_STATE_UNKNOWN')
+      expect(result.stderr).toContain('LOCAL_PLUGIN_REGISTRY_ROLLBACK_FAILED')
+      expect(result.stderr).toContain('inspect with codex plugin marketplace list --json before manually removing merchant-local-test')
+      expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(fixture.localSource)
+      expect(existsSync(fixture.installed)).toBe(false)
+      expect(codexCommands(fixture)).toEqual([
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'add', fixture.localSource, '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+      ])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
   it('rolls back a partial cache and its newly added registry while preserving the install error', () => {
     const fixture = setup()
     try {
@@ -214,6 +374,31 @@ describe('direct local plugin install runtime build', () => {
       expect(existsSync(fixture.installed)).toBe(false)
       expect(existsSync(fixture.activeMarketplace)).toBe(false)
       expect(rollbackDirectories(fixture)).toEqual([])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
+  it('removes an install whose command succeeds but whose cached bridge fails verification', () => {
+    const fixture = setup()
+    try {
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', env: { ...fixture.env, FAKE_CORRUPT_INSTALL: '1' }, timeout: 30_000,
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('installed local plugin differs from its source package')
+      expect(existsSync(fixture.installed)).toBe(false)
+      expect(existsSync(fixture.activeMarketplace)).toBe(false)
+      expect(rollbackDirectories(fixture)).toEqual([])
+      expect(codexCommands(fixture)).toEqual([
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'add', fixture.localSource, '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'add', 'merchant-marketing@merchant-local-test', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+        ['plugin', 'marketplace', 'remove', 'merchant-local-test', '--json'],
+        ['plugin', 'marketplace', 'list', '--json'],
+      ])
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 30_000)
 
@@ -281,6 +466,37 @@ describe('direct local plugin install runtime build', () => {
       expect(readFileSync(resolve(fixture.installed, 'mcp/bridge.mjs'), 'utf8')).toBe(sourceBridge)
       expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(realpathSync(fixture.localSource))
       expect(codexCommands(fixture).some(args => args[2] === 'remove')).toBe(false)
+      expect(rollbackDirectories(fixture)).toEqual([])
+    } finally { rmSync(fixture.root, { recursive: true, force: true }) }
+  }, 30_000)
+
+  it.each([
+    { existingRegistry: false, failBeforePluginAdd: false },
+    { existingRegistry: true, failBeforePluginAdd: false },
+    { existingRegistry: false, failBeforePluginAdd: true },
+  ])('restores the same-version runtime after Codex evicts the entire cache and fails (existing registry=$existingRegistry, before plugin add=$failBeforePluginAdd)', ({ existingRegistry, failBeforePluginAdd }) => {
+    const fixture = setup()
+    try {
+      if (existingRegistry) writeFileSync(fixture.activeMarketplace, realpathSync(fixture.localSource))
+      mkdirSync(fixture.installed, { recursive: true })
+      cpSync(fixture.marketplacePlugin, fixture.installed, { recursive: true })
+      const originalBridge = readFileSync(resolve(fixture.installed, 'mcp/bridge.mjs'), 'utf8')
+      const result = spawnSync(process.execPath, [script, '--source', source, '--local-source', fixture.localSource,
+        '--codex', fixture.fakeCodex, '--codex-home', resolve(fixture.root, 'codex-home'), '--installed', fixture.installed,
+        '--package-profile', 'qa-broker'], {
+        encoding: 'utf8', timeout: 30_000,
+        env: { ...fixture.env, FAKE_EVICT_OLD_CACHES: '1', FAKE_EVICT_ON_MARKETPLACE_REMOVE: '1',
+          ...(failBeforePluginAdd ? { FAKE_FAIL_ADD_AFTER: '1' } : { FAKE_FAIL_AFTER_EVICTION: '1' }) },
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain(failBeforePluginAdd ? 'simulated marketplace add failure after mutation' : 'simulated install failure after cache eviction')
+      expect(codexCommands(fixture).some(args => args[0] === 'plugin' && args[1] === 'add')).toBe(!failBeforePluginAdd)
+      expect(result.stdout).not.toContain('"ok": true')
+      expect(existsSync(resolve(fixture.installed, 'mcp/bridge.mjs')), 'rollback backup must survive cache eviction').toBe(true)
+      expect(readFileSync(resolve(fixture.installed, 'mcp/bridge.mjs'), 'utf8')).toBe(originalBridge)
+      expect(existsSync(fixture.activeMarketplace)).toBe(existingRegistry)
+      if (existingRegistry) expect(readFileSync(fixture.activeMarketplace, 'utf8')).toBe(realpathSync(fixture.localSource))
+      expect(codexCommands(fixture).some(args => args[2] === 'remove')).toBe(!existingRegistry)
       expect(rollbackDirectories(fixture)).toEqual([])
     } finally { rmSync(fixture.root, { recursive: true, force: true }) }
   }, 30_000)
