@@ -247,7 +247,13 @@ describe('Codex stdio MCP bridge', () => {
       } else {
         expect(result.content[0].text).not.toContain('临时 QA 安装包')
         expect(result.structuredContent.recovery.credential_persistence).toBeUndefined()
-        expect(result.structuredContent.recovery.next_action.target).toBe('local_plugin_login')
+        if (state === 'invalid') {
+          expect(result.structuredContent.recovery.next_action).toMatchObject({ target: 'restart_chatgpt', fallback_target: 'local_plugin_login' })
+          expect(result.content[0].text).toContain('请先完全退出并重新打开 ChatGPT')
+          expect(result.content[0].text.indexOf('重新打开 ChatGPT')).toBeLessThan(result.content[0].text.indexOf('重新运行本地登录'))
+        } else {
+          expect(result.structuredContent.recovery.next_action.target).toBe('local_plugin_login')
+        }
       }
       if (state === 'invalid') expect(requests).toBe(0)
       expect(JSON.stringify(result)).not.toMatch(/inherited-stale|recovered-bearer|recovered-refresh/u)
@@ -723,10 +729,11 @@ describe('Codex stdio MCP bridge', () => {
         expect(response.result.structuredContent.code, tool.name).toBe('MCP_CREDENTIAL_SOURCE_INVALID')
         expect(response.result.structuredContent).toMatchObject({ recovery: {
           state: 'credential_unavailable', user_action_required: true,
-          next_action: { target: 'local_plugin_login', workspace_id: 'ws_test' },
+          next_action: { target: 'restart_chatgpt', fallback_target: 'local_plugin_login', workspace_id: 'ws_test' },
         } })
-        expect(response.result.content[0].text).toContain('确认当前登录账号有权访问目标工作区 ws_test')
-        expect(response.result.content[0].text).toContain('本机凭据保存成功后，完全退出并重新打开 ChatGPT')
+        expect(response.result.content[0].text).toContain('请先完全退出并重新打开 ChatGPT')
+        expect(response.result.content[0].text.indexOf('重新打开 ChatGPT')).toBeLessThan(response.result.content[0].text.indexOf('重新运行本地登录'))
+        expect(response.result.content[0].text).toContain('当前登录账号有权访问目标工作区 ws_test')
         expect(response.result.content[0].text).toContain('浏览器显示授权完成不等于本机绑定已经完成')
         expect(JSON.stringify(response)).not.toContain('stale-secret')
       }

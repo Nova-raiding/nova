@@ -271,13 +271,15 @@ describe('local stdio → loopback API merchant content workflow gates', { timeo
         expect(response.result.structuredContent.recovery, name).toMatchObject({
           state: 'credential_unavailable',
           user_action_required: true,
-          resume_message: '完全重启 ChatGPT 后在新对话中重试',
+          resume_message: '先完全重启 ChatGPT 并在新对话重试；若仍失败，再核对工作区权限并重新完成本地登录',
           next_action: {
-            target: 'local_plugin_login',
+            target: 'restart_chatgpt',
+            fallback_target: 'local_plugin_login',
             workspace_id: 'ws_missing_credential_fixture',
           },
         })
-        expect(response.result.content[0].text, name).toContain('重新运行本地登录并完成浏览器授权')
+        expect(response.result.content[0].text, name).toContain('请先完全退出并重新打开 ChatGPT')
+        expect(response.result.content[0].text, name).toContain('重新运行本地登录')
         expect(response.result.content[0].text, name).toContain('本次未向后端发送请求')
       }
       expect(requests).toEqual([])

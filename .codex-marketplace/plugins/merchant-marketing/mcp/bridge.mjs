@@ -59,15 +59,16 @@ function managedCredentialError() {
     : undefined
   const failure = {
     code: 'MCP_CREDENTIAL_SOURCE_INVALID',
-    message: `本地插件凭据暂不可用，本次未向后端发送请求。请在商家后台确认当前登录账号有权访问${workspaceId ? `目标工作区 ${workspaceId}` : '目标工作区'}，重新运行本地登录并完成浏览器授权；看到本机凭据保存成功后，完全退出并重新打开 ChatGPT，再在新对话中重试。浏览器显示授权完成不等于本机绑定已经完成。`,
+    message: `本地插件凭据暂不可用，本次未向后端发送请求。请先完全退出并重新打开 ChatGPT，在新对话中重试，以加载当前插件安装版本。若重启后仍提示凭据不可用，再确认商家后台当前登录账号有权访问${workspaceId ? `目标工作区 ${workspaceId}` : '目标工作区'}，并重新运行本地登录、完成浏览器授权及本机凭据保存。浏览器显示授权完成不等于本机绑定已经完成。`,
     recovery: {
       state: 'credential_unavailable',
       user_action_required: true,
       preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
-      resume_message: '完全重启 ChatGPT 后在新对话中重试',
+      resume_message: '先完全重启 ChatGPT 并在新对话重试；若仍失败，再核对工作区权限并重新完成本地登录',
       next_action: {
-        label: `确认商家后台账号可访问${workspaceId ? `工作区 ${workspaceId}` : '目标工作区'}，重新完成本地登录与凭据保存，然后完全重启 ChatGPT。`,
-        target: 'local_plugin_login',
+        label: `先完全退出并重启 ChatGPT，在新对话中重试；若仍提示凭据不可用，再确认账号可访问${workspaceId ? `工作区 ${workspaceId}` : '目标工作区'}并重新完成本地登录与凭据保存。`,
+        target: 'restart_chatgpt',
+        fallback_target: 'local_plugin_login',
         ...(workspaceId ? { workspace_id: workspaceId } : {}),
       },
     },
