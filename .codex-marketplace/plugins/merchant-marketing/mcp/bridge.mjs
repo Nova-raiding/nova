@@ -1981,7 +1981,7 @@ function merchantBillingProjection(method, result) {
     return {
       schema_version: 'merchant-billing-status.v1',
       available: true,
-      message: '账单详情请在商家运营后台查看；ChatGPT 插件不展示消耗明细。',
+      message: '账单详情请在商家运营后台查看；当前插件不展示消耗明细。',
       next_action: 'open_merchant_console',
     }
   }
@@ -1990,7 +1990,7 @@ function merchantBillingProjection(method, result) {
       schema_version: 'merchant-billing-status.v1',
       available: false,
       code: 'MERCHANT_BILLING_EXPORT_CONSOLE_ONLY',
-      message: '账单导出请在商家运营后台完成；ChatGPT 插件不导出财务明细。',
+      message: '账单导出请在商家运营后台完成；当前插件不导出财务明细。',
       next_action: 'open_merchant_console',
     }
   }

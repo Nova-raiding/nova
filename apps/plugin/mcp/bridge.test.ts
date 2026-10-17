@@ -1560,6 +1560,32 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each(['billing.model-usage.statement', 'billing.transactions', 'billing.export'])('preserves Chinese console-only billing guidance: %s', async method => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result: { items: [{ cost_cny: 123.456, provider: 'private-provider' }], download_url: 'https://private.example/ledger.csv' } }, warnings: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...TEST_PROCESS_ENV, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: { scope: 'workspace' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError ?? false).toBe(false)
+      expect(response.result.structuredContent.next_action).toBe('open_merchant_console')
+      expect(response.result.structuredContent.message).toContain('商家运营后台')
+      expect(response.result.structuredContent.message).toContain(method === 'billing.export' ? '当前插件不导出财务明细' : '当前插件不展示消耗明细')
+      expect(response.result.structuredContent.available).toBe(method !== 'billing.export')
+      expect(JSON.stringify(response.result)).not.toMatch(/123\.456|private-provider|private\.example/)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('returns standardized action cards in structuredContent with a concise user-facing next step', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
