@@ -1,0 +1,2450 @@
+{
+  "updated_at": "2026-10-17T08:02:36.208Z",
+  "installed_version": "0.1.4+codex.20261017155812",
+  "candidate_sha": "f338b1f9c9f0dd1aa506afebbb7151553116fb59",
+  "current_app_reload_verified": false,
+  "tool_count": 135,
+  "historical_stdio_tools_checked": 29,
+  "current_installed_stdio_tools_individually_verified": 1,
+  "individually_verified_app_tools": 0,
+  "app_screenshot_evidence": "Prior user screenshots show grouped read-only responses only; this installation has no new App UI call trace. Computer Use safety refusal prevents individual App UI verification.",
+  "blockers": [
+    "ChatGPT is not running after installing 0.1.4; host reload and a new conversation have not been verified in App UI",
+    "Computer Use refuses ChatGPT App for safety reasons; do not treat CLI or stdio checks as App UI evidence",
+    "Demo scanner definitions are stale; no deployment",
+    "Generation, export, charging, write, permission-denial, and recovery workflows have not been individually verified in App UI"
+  ],
+  "tools": [
+    {
+      "tool": "onboarding.status",
+      "family": "onboarding",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "fresh_production_bridge_read_succeeded_after_install_without_reauthorization",
+      "current_installed_evidence": "installed-read-0.1.4.json",
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.service-boundary.accept",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "merchant.start",
+      "family": "merchant",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "merchant.first_value",
+      "family": "merchant",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.list",
+      "family": "brand-unit",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.create",
+      "family": "brand-unit",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.bind-store",
+      "family": "brand-unit",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.product.create",
+      "family": "brand-unit",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.listing.create",
+      "family": "brand-unit",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.listing.list",
+      "family": "brand-unit",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand-unit.access.grant",
+      "family": "brand-unit",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "canonical.product.consistency",
+      "family": "canonical",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "campaign.batch.create",
+      "family": "campaign",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "campaign.batch.list",
+      "family": "campaign",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "campaign.batch.get",
+      "family": "campaign",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "campaign.batch.pause",
+      "family": "campaign",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "campaign.batch.resume",
+      "family": "campaign",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.health",
+      "family": "workspace",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.invitations.list",
+      "family": "workspace",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.invitation.accept",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.interactive.confirm",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.metrics",
+      "family": "workspace",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.access.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.catalog.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.upgrade.quote.create",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.upgrade.quote.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.subscription.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.notifications.list",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.notifications.mark-read",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.order.create",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.order.request.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.upgrade.quote.request.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.checkout.create",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.order.payment.create",
+      "family": "commercial",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.checkout.request.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "commercial.order.payment.get",
+      "family": "commercial",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "creative-points.balance.get",
+      "family": "creative-points",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "creative-points.statement.list",
+      "family": "creative-points",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "support.customer.replies.list",
+      "family": "support",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "ops.marketing.generation.retry",
+      "family": "ops",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "subscription.get",
+      "family": "subscription",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "subscription.orders.list",
+      "family": "subscription",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.export",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "console_only_boundary_verified",
+      "current_installed_evidence": "billing-copy-fix-verification.json",
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.data.export.request",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.data.export.get",
+      "family": "workspace",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "platform.mapping.preflight",
+      "family": "platform",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.status",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.model-usage.statement",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "console_only_boundary_verified",
+      "current_installed_evidence": "billing-copy-fix-verification.json",
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.recharge.get",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.recharge.list",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "billing.transactions",
+      "family": "billing",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "console_only_boundary_verified",
+      "current_installed_evidence": "billing-copy-fix-verification.json",
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.deactivate",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.activate",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "workspace.data.delete.request",
+      "family": "workspace",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "platform.store.alias.set",
+      "family": "platform",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.search",
+      "family": "catalog",
+      "declared_read_only": true,
+      "historical_stdio_result": "scope_guard_and_explicit_workspace_recovery_observed",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.categories",
+      "family": "catalog",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.title.optimize",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.title.accept",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.import",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.import.batch",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.sku.update",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.product.update",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.facts.confirm",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.product.disable",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.product.enable",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.image.generate",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.image.get",
+      "family": "catalog",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.image.select",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "catalog.image.review",
+      "family": "catalog",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "rule.list",
+      "family": "rule",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "rule.sync.status",
+      "family": "rule",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "rule.history",
+      "family": "rule",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.list",
+      "family": "asset",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.parse",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.facts.confirm",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.metadata.update",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.preference.update",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand.get",
+      "family": "brand",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand.extract",
+      "family": "brand",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "brand.upsert",
+      "family": "brand",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.upload",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.upload.batch",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.generation.confirm",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "asset.rights.update",
+      "family": "asset",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "deliverable.list",
+      "family": "deliverable",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.history",
+      "family": "task",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.resume",
+      "family": "task",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.clone",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.timeline",
+      "family": "task",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "feedback.list",
+      "family": "feedback",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "feedback.submit",
+      "family": "feedback",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.create",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.create.draft",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.answer",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.request.create",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.sku.split",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.group.create",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "creative.brief",
+      "family": "creative",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "creative.preview",
+      "family": "creative",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "creative.directions.update",
+      "family": "creative",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.select_direction",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "task.plan.confirm",
+      "family": "task",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.generate",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.draft.generate",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "generation.get",
+      "family": "generation",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.review",
+      "family": "content",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.review.decide",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.visual.select",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.versions",
+      "family": "content",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.diff",
+      "family": "content",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.export",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.approve",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.draft.confirm",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.modify",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "content.restore",
+      "family": "content",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.rule.create",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.rule.list",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.asset.create",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.asset.update",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.asset.list",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.product.list",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.product.update",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.brand.preference.get",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.brand.preference.update",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.feedback.record",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.learning.list",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.learning.confirm",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.learning.dismiss",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.competitor.create",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.competitor.list",
+      "family": "knowledge",
+      "declared_read_only": true,
+      "historical_stdio_result": "returned_without_error",
+      "historical_stdio_evidence": "repacked-readonly-smoke.json",
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "knowledge.competitor.reference",
+      "family": "knowledge",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "multimodal.image.edit",
+      "family": "multimodal",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "multimodal.video.request",
+      "family": "multimodal",
+      "declared_read_only": false,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    },
+    {
+      "tool": "multimodal.video.get",
+      "family": "multimodal",
+      "declared_read_only": true,
+      "historical_stdio_result": "not_tested",
+      "historical_stdio_evidence": null,
+      "current_installed_stdio": "not_individually_verified",
+      "current_installed_evidence": null,
+      "app_ui": "not_individually_verified",
+      "required_dimensions": [
+        "normal_workflow",
+        "invalid_input",
+        "workspace_and_permission_isolation",
+        "repeated_request_and_recovery",
+        "persistent_result_after_new_conversation"
+      ],
+      "full_workflow": "not_verified"
+    }
+  ],
+  "additional_previous_version_readonly_evidence": "readonly-gap-results.json"
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1",
+  "recorded_at": "2026-10-17T08:02:36.208Z",
+  "installed_version": "0.1.4+codex.20261017155812",
+  "package_profile": "production",
+  "marketplace": {
+    "name": "merchant-local",
+    "enabled": true,
+    "source": ".codex-marketplace"
+  },
+  "installed_runtime": {
+    "inventory_matches_source": true,
+    "source_file_count": 73,
+    "installed_file_count": 73,
+    "tool_count": 135,
+    "tool_snapshot_matches": true
+  },
+  "credentials": {
+    "source": "keychain",
+    "verified_by": "launchd configuration and fresh bridge process",
+    "reauthorization_required": false
+  },
+  "stdio": {
+    "tool": "onboarding.status",
+    "result_returned": true,
+    "is_error": false,
+    "business_writes": 0
+  },
+  "invalid_credential_recovery": {
+    "simulated": true,
+    "code": "MCP_CREDENTIAL_SOURCE_INVALID",
+    "backend_request_issued": false,
+    "next_action": "restart_chatgpt",
+    "fallback_target": "local_plugin_login",
+    "guidance_order_passed": true
+  },
+  "chatgpt_app_ui": {
+    "tested": false,
+    "running": false,
+    "individually_verified_tools": 0,
+    "blocker": "Computer Use safety refusal for ChatGPT App; no macOS authorization dialog was presented"
+  },
+  "validation": {
+    "release_metadata_gate": "passed",
+    "installer_upgrade_tests": "70/70 passed",
+    "bridge_tests": "207/207 passed",
+    "local_content_e2e_tests": "2/2 passed",
+    "typecheck": "passed"
+  }
+}
