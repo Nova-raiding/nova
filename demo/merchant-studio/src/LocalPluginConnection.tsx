@@ -171,6 +171,10 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
     ? { color: 'warning', label: '需安装已验证助手' }
     : oneClickState === 'auth_required'
       ? { color: 'error', label: '登录已失效' }
+      : oneClickState === 'workspace_mismatch'
+        ? { color: 'warning', label: '工作区不匹配' }
+        : oneClickState === 'workspace_required'
+          ? { color: 'warning', label: '需选择工作区' }
     : connectionStatePresentation[connectionState]
   const oneClickAvailable = oneClickState === 'available'
   // Keep the entry point actionable when the server has deliberately gated

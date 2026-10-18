@@ -53,6 +53,8 @@ describe('local plugin connection entry', () => {
     expect(component).toContain("oneClickState === 'auth_required' && <Button type=\"primary\" href=\"/merchant/login\">")
     expect(component).toContain("oneClickState === 'auth_required'\n      ? { color: 'error', label: '登录已失效' }")
     expect(component).toContain("oneClickState === 'auth_required' ? '需要重新登录' : '一键连接暂未开放'")
+    expect(component).toContain("oneClickState === 'workspace_mismatch'\n        ? { color: 'warning', label: '工作区不匹配' }")
+    expect(component).toContain("oneClickState === 'workspace_required'\n          ? { color: 'warning', label: '需选择工作区' }")
     expect(component).toContain("oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand")
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
