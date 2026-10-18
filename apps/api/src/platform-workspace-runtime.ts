@@ -364,6 +364,8 @@ export function createPlatformWorkspaceRuntime(deps: {
     }
     if (card.id === 'visuals') {
       if (!summary.products) return { method: 'asset.upload', arguments: {}, required_inputs: ['name', 'mime_type', 'file_path'], reason: '可直接上传商品图片生成未绑定候选图；结果仅供审阅，不可发布', blocked_by: [] as string[] }
+      if (!summary.confirmedProducts) return { method: 'catalog.facts.confirm', arguments: {}, required_inputs: ['product_id'], reason: '先确认商品、价格、库存和图片事实，再生成图片候选', blocked_by: ['product_facts_confirmation'] }
+      if (!summary.readyAssets) return { method: 'asset.list', arguments: {}, required_inputs: [], reason: '先完成素材扫描、权益和事实确认，再生成图片候选', blocked_by: ['asset_readiness'] }
       return { method: 'catalog.image.generate', arguments: {}, required_inputs: ['product_id'], reason: '使用已确认商品和素材生成图片候选；结果仍需审核', blocked_by: [] as string[] }
     }
     if (card.id === 'review-publish') return { method: summary.tasks ? 'publish.prepare' : 'task.history', arguments: {}, required_inputs: summary.tasks ? ['task_id'] : [], reason: summary.tasks ? '先查看发布前检查和店铺范围' : '先创建内容任务', blocked_by: summary.tasks ? [] : ['content_task'] }
