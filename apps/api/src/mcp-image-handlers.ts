@@ -654,8 +654,11 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const productId = required(params, 'product_id')
       const product = service.products.get(productId)
       if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
-      await enforceProductBrandAccess(req, workspaceId, product.id)
-      if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
+      const unboundCandidate = await isExemptUnboundImageCandidateProduct(workspaceId, product.id)
+      if (!unboundCandidate) {
+        await enforceProductBrandAccess(req, workspaceId, product.id)
+        if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
+      }
       let visualRefs: string[] | undefined
       if (typeof params.visual_refs_json === 'string' && params.visual_refs_json.trim()) {
         try {
