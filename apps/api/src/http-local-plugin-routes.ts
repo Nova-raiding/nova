@@ -54,12 +54,20 @@ export async function handleLocalPluginConnectionRoute(req: IncomingMessage, res
   if (req.method === 'GET' && path === '/v1/auth/local-plugin/connect-capability') {
     const current = await merchantSession()
     const workspaceIds = [...new Set(current.account.workspaceIds.map(value => value.trim()).filter(Boolean))]
+    const unavailableReason = process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
+      ? 'schema_upgrade'
+      : deps.production && deps.integrationMode !== 'local_stdio'
+        ? 'production_mode'
+        : process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED === 'true'
+          ? undefined
+          : 'release_gate'
     deps.send(200, workspaceIds.length === 1 ? workspaceIds[0]! : 'unknown', {
       one_click_available: !process.env.BRIDGE_SCHEMA_COMPATIBILITY_MODE
         && process.env.LOCAL_PLUGIN_ONE_CLICK_ENABLED === 'true'
         && (!deps.production || deps.integrationMode === 'local_stdio'),
       supported_platforms: ['macos'],
       workspace_selection_required: workspaceIds.length !== 1,
+      ...(unavailableReason ? { unavailable_reason: unavailableReason } : {}),
     })
     return true
   }

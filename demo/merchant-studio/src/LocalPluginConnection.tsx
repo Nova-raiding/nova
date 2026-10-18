@@ -67,17 +67,21 @@ export function pairingMatchesWorkspace(pairing: PairingReturn | null, workspace
 }
 
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
-type OneClickState = 'checking' | 'available' | 'release_gate' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
+type OneClickState = 'checking' | 'available' | 'release_gate' | 'schema_upgrade' | 'production_mode' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
 
 type CapabilityReadApi = <T>(baseUrl: string, path: string, init?: RequestInit, workspaceId?: string) => Promise<T>
 
 export async function readLocalPluginCapability(apiBaseUrl: string, workspaceId: string, readApi: CapabilityReadApi = requestApi) {
-  const result = await readApi<{ one_click_available: boolean; supported_platforms: string[] }>(
+  const result = await readApi<{ one_click_available: boolean; supported_platforms: string[]; unavailable_reason?: string }>(
     apiBaseUrl, '/v1/auth/local-plugin/connect-capability', {}, workspaceId,
   )
   return result.one_click_available === true && result.supported_platforms?.includes('macos') === true
     ? 'available' as const
-    : 'release_gate' as const
+    : result.unavailable_reason === 'schema_upgrade'
+      ? 'schema_upgrade' as const
+      : result.unavailable_reason === 'production_mode'
+        ? 'production_mode' as const
+        : 'release_gate' as const
 }
 
 export function LocalPluginCapabilityRetryButton({ visible, loading, onRetry }: {
@@ -155,8 +159,12 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   const oneClickAvailable = oneClickState === 'available'
   const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
   const oneClickUnavailableReason = oneClickState === 'release_gate'
-    ? '本地插件一键连接尚未开放，请联系平台管理员核对配置。'
-    : oneClickState === 'unsupported_platform'
+    ? '本地插件一键连接尚未开放，请联系平台管理员完成发布门禁。'
+    : oneClickState === 'schema_upgrade'
+      ? '当前服务正在升级，完成数据库升级后才能启用一键连接。'
+      : oneClickState === 'production_mode'
+        ? '当前部署未启用本地插件凭据，请联系管理员检查本地插件集成模式。'
+        : oneClickState === 'unsupported_platform'
       ? '一键连接目前仅支持 macOS 桌面端。'
       : oneClickState === 'workspace_required'
         ? '请先选择要连接的工作区。'
@@ -303,7 +311,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
-      {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
+      {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
       {!oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
       {!oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
       <LocalPluginCapabilityRetryButton visible={oneClickState === 'check_failed'} loading={oneClickState === 'checking'} onRetry={retryCapabilityRead} />

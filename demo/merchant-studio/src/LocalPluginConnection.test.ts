@@ -38,7 +38,7 @@ describe('local plugin connection entry', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('安装与故障帮助')
-    expect(component).toContain('本地插件一键连接尚未开放，请联系平台管理员核对配置')
+    expect(component).toContain('本地插件一键连接尚未开放，请联系平台管理员完成发布门禁')
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
     expect(component).toContain('本地验证恢复路径')
     expect(component).toContain('loginCommand')
