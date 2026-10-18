@@ -11,6 +11,16 @@ test('healthy pinned live inventory does not require Git labels on upstream data
   assert.deepEqual(assess(snapshot()), [])
   assert.deepEqual(inventoryWarnings(snapshot()), [])
 })
+test('stopped compatibility-only migration service does not block runtime inventory', () => {
+  const value = snapshot()
+  value.services.push({ service: 'migrate', state: 'exited', health: 'absent', image: `registry/postgres@sha256:${'a'.repeat(64)}`, git_sha: null })
+  assert.deepEqual(assess(value), [])
+})
+test('running migration service remains visible as an unexpected runtime service', () => {
+  const value = snapshot()
+  value.services.push({ service: 'migrate', state: 'running', health: 'healthy', image: `registry/postgres@sha256:${'a'.repeat(64)}`, git_sha: null })
+  assert.ok(assess(value).includes('service_unexpected:migrate'))
+})
 test('inventory status reports only the canonical Demo and candidate update state', () => {
   const result = inventoryStatus([])
   assert.deepEqual(result, {

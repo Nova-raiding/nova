@@ -15,7 +15,14 @@ export function assess(snapshot) {
   const blockers = []
   if (snapshot.free_bytes < 8 * 1024 ** 3) blockers.push('disk_free_below_8GiB')
   if (!snapshot.services.length) blockers.push('live_project_missing')
-  const names = snapshot.services.map(service => service.service)
+  // The migration service is declared in the candidate Compose file only as a
+  // compatibility contract. Component updates invoke it explicitly with
+  // `run --rm`; it is expected to be absent after a successful deployment.
+  // Treat only that exact stopped/absent state as non-runtime inventory so an
+  // exited compatibility service does not block otherwise healthy updates.
+  const runtimeServices = snapshot.services.filter(service =>
+    !(service.service === 'migrate' && service.state === 'exited' && service.health === 'absent'))
+  const names = runtimeServices.map(service => service.service)
   const actual = new Set(names)
   for (const name of CANONICAL_DEMO_SERVICES) {
     if (!actual.has(name)) blockers.push(`service_missing:${name}`)
@@ -26,7 +33,7 @@ export function assess(snapshot) {
   for (const name of actual) {
     if (names.filter(item => item === name).length > 1) blockers.push(`service_duplicate:${name}`)
   }
-  for (const service of snapshot.services) {
+  for (const service of runtimeServices) {
     if (service.state !== 'running' || service.health !== 'healthy') blockers.push(`service_not_healthy:${service.service}`)
     const repositoryDigest = /^.+@sha256:[a-f0-9]{64}$/u.test(service.image ?? '')
     const exactLocalImageId = /^sha256:[a-f0-9]{64}$/u.test(service.image ?? '') && service.image === service.image_id
