@@ -66,17 +66,17 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
     const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
     const pointsReady = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
     const configurationReady = knowledgeReady && brandReady && rulesReady && relayReady && modalitiesReady && costReady && storageReady && pointsReady
+    // Content candidates may start from workspace knowledge, a public link, or
+    // merchant-uploaded material. Store sync, brand rules, and a formal store
+    // setup are only required for platform-bound work and publishing.
+    const contentConfigurationReady = relayReady && modalitiesReady && costReady && storageReady && pointsReady
     const contentSetup = await (persistence.workspaceContentSetup ?? memoryWorkspaceContentSetup).get(workspaceId)
     const contentSetupStoreReady = Boolean(contentSetup && officialStores.some(store => store.platform === contentSetup.platform && store.accountId === contentSetup.accountId))
     const listedAssets = service.listAssets(workspaceId)
     const activeAssets = filterActiveAssets ? await filterActiveAssets(workspaceId, listedAssets) : listedAssets
     const trustedBrandMaterials = activeAssets.filter(asset => isTrustedCleanAsset(asset) && asset.parseStatus === 'succeeded')
-    const configurationNextAction = !allStoresSynced
-      ? officialStores.length
-        ? { method: 'catalog.sync.start', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] }
-        : { method: 'platform.connect', label: '先连接并授权店铺', required_inputs: ['platform'] }
-      : !knowledgeReady
-        ? { method: 'catalog.search', label: '核对商品事实', required_inputs: ['platform', 'account_id'] }
+    const configurationNextAction = !contentConfigurationReady
+      ? { method: 'workspace.health', label: '检查内容生成配置', required_inputs: [] }
       : !brandReady && trustedBrandMaterials.length
         ? { method: 'brand.extract', label: '核对品牌资料', required_inputs: [] }
         : !brandReady && brandClues.totalCandidates
@@ -85,12 +85,12 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
             ? { method: 'asset.upload', label: '补充品牌资料', required_inputs: ['name', 'mime_type'] }
             : { method: 'workspace.health', label: '检查并恢复系统配置', required_inputs: [] }
     const initializationSteps = [
-      { id: 'connect_stores', title: '连接平台及店铺', state: officialStores.length ? 'complete' : 'required', summary: officialStores.length ? `已核验 ${officialStores.length} 家官方授权、可读取的店铺` : '还没有可核验的官方授权店铺；店铺链接只用于识别', next_action: { method: 'platform.connect', label: '开始配置店铺', required_inputs: ['platform'] } },
-      { id: 'scan_catalog', title: '扫描商品至知识库', state: !officialStores.length ? 'pending' : allStoresSynced ? 'complete' : 'required', summary: !officialStores.length ? '等待店铺授权' : allStoresSynced ? `已完成 ${officialStores.length} 家店铺的官方同步，读取 ${scannedProducts.length} 件商品${scannedProducts.length ? '' : '；暂无可核验商品'}` : `已完成 ${succeededSyncKeys.size}/${officialStores.length} 家店铺的官方同步；待继续扫描`, next_action: { method: 'catalog.sync.start', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] } },
-      { id: 'check_configuration', title: '检查系统配置', state: !allStoresSynced ? 'pending' : configurationReady ? 'complete' : 'blocked', summary: !allStoresSynced ? '等待全部店铺商品扫描' : !scannedProducts.length ? '店铺同步已完成，但暂无可核验商品；请核对授权读取范围或补充商品，内容生产保持阻断' : configurationReady ? '商品事实、品牌档案、平台签名规则、创意点、中转模型、成本与存储门禁已核验；正式生成仍要检查实际调用' : `待处理：${!knowledgeReady ? `商品事实 ${confirmedProducts.length}/${scannedProducts.length}；` : ''}${!brandReady ? '品牌基础档案；' : ''}${!rulesReady ? '平台签名规则；' : ''}${!pointsReady ? '创意点；' : ''}${!relayReady ? '模型中转；' : ''}${!modalitiesReady ? '文案/图片/视频模型；' : ''}${!costReady ? '模型成本门禁；' : ''}${!storageReady ? '对象存储；' : ''}`.replace(/；$/u, ''), next_action: configurationNextAction },
-      { id: 'build_workspace', title: '建立工作区', state: !configurationReady || !allStoresSynced ? 'pending' : contentSetupStoreReady ? 'complete' : 'required', summary: configurationReady && allStoresSynced ? contentSetupStoreReady ? `「${contentSetup!.displayName}」已由商家确认，店铺范围已核验；可以选择首个商品任务` : `当前身份已安全绑定工作区；建议名称：${officialStores[0]?.label || '首家店铺'}内容工作区。请确认名称和对应店铺；未保存前不能宣称 4/4。` : '等待前述检查；已有工作区绑定会安全保留', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
+      { id: 'connect_stores', title: '连接平台及店铺（可选）', state: officialStores.length ? 'complete' : 'optional', summary: officialStores.length ? `已核验 ${officialStores.length} 家官方授权、可读取的店铺` : '店铺连接用于同步和发布，不是制作内容候选的前置条件', next_action: { method: 'platform.connect', label: '开始配置店铺', required_inputs: ['platform'] } },
+      { id: 'scan_catalog', title: '扫描商品至知识库（可选）', state: !officialStores.length || allStoresSynced ? 'optional' : 'optional', summary: !officialStores.length ? '可直接使用公开链接、工作区商品或上传资料' : allStoresSynced ? `已完成 ${officialStores.length} 家店铺的官方同步，读取 ${scannedProducts.length} 件商品` : `已完成 ${succeededSyncKeys.size}/${officialStores.length} 家店铺的官方同步；可稍后继续扫描`, next_action: { method: 'catalog.sync.start', label: '扫描店铺商品', required_inputs: ['platform', 'account_id'] } },
+      { id: 'check_configuration', title: '检查内容生成配置', state: contentConfigurationReady ? 'complete' : 'blocked', summary: contentConfigurationReady ? '图片/视频模型、中转、成本和存储门禁已核验；正式生成仍要检查商品事实和素材权益' : `待处理：${!pointsReady ? '创意点；' : ''}${!relayReady ? '模型中转；' : ''}${!modalitiesReady ? '文案/图片/视频模型；' : ''}${!costReady ? '模型成本门禁；' : ''}${!storageReady ? '对象存储；' : ''}`.replace(/；$/u, ''), next_action: configurationNextAction },
+      { id: 'build_workspace', title: '建立工作区（可选）', state: contentConfigurationReady ? 'optional' : 'optional', summary: contentSetupStoreReady ? `「${contentSetup!.displayName}」已由商家确认` : '内容候选可直接在当前工作区制作；店铺范围确认仅用于平台同步和发布', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
     ] as const
-    const initializationCurrent = initializationSteps.find(step => step.state !== 'complete') ?? initializationSteps.at(-1)!
+    const initializationCurrent = initializationSteps.find(step => step.state === 'required' || step.state === 'blocked') ?? initializationSteps.at(-1)!
     const current = onboardingV2.current_step
     const bindingByStep: Record<string, string> = {
       workspace: '工作区：绑定 MERCHANT_WORKSPACE_ID；身份由当前认证会话提供。',

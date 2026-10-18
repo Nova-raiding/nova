@@ -296,29 +296,33 @@ export function createPlatformWorkspaceRuntime(deps: {
     // demo data, never formal onboarding evidence.
     const eligibleDirectory = directory.filter(store => deps.storeGrantsPlatformScope(store.state) && store.dataMode !== 'fixture')
     const selectedStoreKeys = new Set(eligibleDirectory.map(store => `${store.platform}:${store.accountId}`))
+    // Content candidates can start from workspace knowledge, a public link, or
+    // merchant-uploaded material. Store binding remains required for sync and
+    // publishing paths only.
     const boundProducts = products.filter(product => product.accountId ? selectedStoreKeys.has(`${product.platform}:${product.accountId}`) : false)
+    const contentProducts = products
     const assets = deps.service.listAssets(workspaceId)
-    const tasks = deps.service.listTasks(workspaceId).filter(task => task.accountId ? selectedStoreKeys.has(`${task.platform}:${task.accountId}`) : false)
-    const confirmedProducts = boundProducts.filter(product => product.factsConfirmed)
+    const tasks = deps.service.listTasks(workspaceId).filter(task => !task.accountId || selectedStoreKeys.has(`${task.platform}:${task.accountId}`))
+    const confirmedProducts = contentProducts.filter(product => product.factsConfirmed)
     const readyAssets = assets.filter(asset => assetReadiness(asset).status === 'ready')
     const deliverableTasks = tasks.filter(task => deps.service.listContentVersions(workspaceId, task.id).some(version => version.state === 'approved' || version.state === 'delivered'))
     const steps = [
       { id: 'workspace', title: '工作区', summary: '当前工作区已建立，后续状态按工作区隔离', state: 'complete', entryMethod: 'workspace.health', nextMethod: 'workspace.health' },
-      { id: 'bind-store', title: manualOperations ? '确认运营店铺' : '连接店铺', summary: eligibleDirectory.length ? `已配置 ${eligibleDirectory.length} 家${manualOperations ? '人工运营' : '官方授权'}店铺` : manualOperations ? '请联系平台运营为当前商家建立不含凭据的店铺记录' : directory.length ? '当前只有测试店铺，正式商品任务需要先连接真实店铺' : '先选择平台并完成官方授权', state: eligibleDirectory.length ? 'complete' : 'required', entryMethod: manualOperations ? 'workspace.health' : 'platform.connect', nextMethod: manualOperations ? 'workspace.health' : 'platform.connect' },
-      { id: 'choose-product', title: '选择商品', summary: boundProducts.length ? `已找到 ${boundProducts.length} 个商品，可按店铺选择` : manualOperations ? '等待运营导入公开链接或商家提供的商品资料' : '绑定真实店铺后同步或导入商品', state: !eligibleDirectory.length ? 'blocked' : boundProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
-      { id: 'add-assets', title: '上传素材与资料', summary: readyAssets.length ? `已确认 ${readyAssets.length} 份可用素材` : assets.length ? '素材已上传，仍需完成扫描、权益和事实确认' : '添加商品图片、品牌资料和知识库文件', state: !boundProducts.length ? 'blocked' : readyAssets.length ? 'complete' : assets.length ? 'next' : 'required', entryMethod: 'asset.upload', nextMethod: 'asset.upload' },
-      { id: 'start-content', title: '生成并审核', summary: deliverableTasks.length ? `已有 ${deliverableTasks.length} 个内容交付` : confirmedProducts.length ? '商品事实已确认，可以开始文案、主图或视频分镜' : '先确认商品、价格、库存和图片事实', state: !boundProducts.length || !confirmedProducts.length ? 'blocked' : deliverableTasks.length ? 'complete' : 'next', entryMethod: 'task.understand', nextMethod: 'task.understand' },
+      { id: 'bind-store', title: manualOperations ? '确认运营店铺（可选）' : '连接店铺（可选）', summary: eligibleDirectory.length ? `已配置 ${eligibleDirectory.length} 家${manualOperations ? '人工运营' : '官方授权'}店铺` : '店铺连接用于同步和发布，不是制作商品内容的前置条件', state: eligibleDirectory.length ? 'complete' : 'optional', entryMethod: manualOperations ? 'workspace.health' : 'platform.connect', nextMethod: manualOperations ? 'workspace.health' : 'platform.connect' },
+      { id: 'choose-product', title: '选择商品或补充资料', summary: contentProducts.length ? `工作区已有 ${contentProducts.length} 个商品，可直接选择；也可以提供公开链接或上传资料` : '提供公开商品链接、上传商品图片或补充手工资料', state: contentProducts.length ? 'next' : 'required', entryMethod: 'catalog.search', nextMethod: 'catalog.search' },
+      { id: 'add-assets', title: '上传素材与资料', summary: readyAssets.length ? `已确认 ${readyAssets.length} 份可用素材` : assets.length ? '素材已上传，仍需完成扫描、权益和事实确认' : '可选：添加商品图片、品牌资料和知识库文件', state: readyAssets.length ? 'complete' : contentProducts.length || assets.length ? 'next' : 'pending', entryMethod: 'asset.upload', nextMethod: 'asset.upload' },
+      { id: 'start-content', title: '生成并审核', summary: deliverableTasks.length ? `已有 ${deliverableTasks.length} 个内容交付` : confirmedProducts.length ? '商品事实已确认，可以开始文案、主图或视频分镜' : '选择商品或确认素材事实后即可开始内容方案', state: !contentProducts.length || !confirmedProducts.length ? 'blocked' : deliverableTasks.length ? 'complete' : 'next', entryMethod: 'task.understand', nextMethod: 'task.understand' },
       { id: 'publish', title: '发布', summary: deliverableTasks.length ? '已有已批准交付物，可查看发布前预检' : '完成内容审核后才能进入发布预检', state: deliverableTasks.length ? 'next' : 'blocked', entryMethod: 'publish.prepare', nextMethod: 'publish.prepare' },
     ] as const
     const current = steps.find(step => step.state === 'required' || step.state === 'next' || step.state === 'blocked') ?? steps.at(-1)!
-    return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: eligibleDirectory.length, officialStores: realDirectory.length, manualStores: manualDirectory.length, fixtureStores: directory.length - realDirectory.length - manualDirectory.length, products: boundProducts.length, unboundProducts: products.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
+    return { steps, currentStep: { id: current.id, title: current.title, state: current.state, entryMethod: current.entryMethod }, summary: { stores: eligibleDirectory.length, officialStores: realDirectory.length, manualStores: manualDirectory.length, fixtureStores: directory.length - realDirectory.length - manualDirectory.length, products: contentProducts.length, boundProducts: boundProducts.length, unboundProducts: contentProducts.length - boundProducts.length, confirmedProducts: confirmedProducts.length, assets: assets.length, readyAssets: readyAssets.length, tasks: tasks.length, deliverableTasks: deliverableTasks.length } }
   }
 
   function onboardingPrimaryAction(step: ReturnType<typeof workspaceOnboarding>['steps'][number]) {
     const actions: Record<string, { label: string; requiredInputs: string[] }> = {
       'workspace.health': { label: '查看工作区状态', requiredInputs: [] },
       'platform.connect': { label: '连接平台店铺', requiredInputs: ['platform'] },
-      'catalog.search': { label: '选择或导入商品', requiredInputs: ['platform', 'account_id'] },
+      'catalog.search': { label: '选择商品或补充资料', requiredInputs: [] },
       'asset.upload': { label: '上传商品资料', requiredInputs: ['name', 'mime_type'] },
       'task.understand': { label: '开始生成并审核', requiredInputs: ['instruction', 'platform', 'account_id', 'product_id'] },
       'publish.prepare': { label: '查看发布预览', requiredInputs: ['task_id'] },
@@ -350,10 +354,10 @@ export function createPlatformWorkspaceRuntime(deps: {
       return { method: 'catalog.search', arguments: { scope: 'store' }, required_inputs: ['platform', 'account_id'], reason: '先选择具体平台和店铺，再查看商品', blocked_by: summary.products ? [] : ['product_sync_or_import'] }
     }
     if (card.id === 'knowledge-assets') {
-      return { method: 'asset.list', arguments: {}, required_inputs: [], reason: summary.products ? '查看素材状态；没有素材时再上传商品图片或品牌资料' : '先选择店铺商品', blocked_by: summary.products ? [] : ['store_product_selection'] }
+      return { method: 'asset.list', arguments: {}, required_inputs: [], reason: '查看工作区素材状态；没有素材时再上传商品图片或品牌资料', blocked_by: [] }
     }
     if (card.id === 'content') {
-      if (!summary.products) return { method: 'catalog.search', arguments: { scope: 'store' }, required_inputs: ['platform', 'account_id'], reason: '先选择商品', blocked_by: ['store_product_selection'] }
+      if (!summary.products) return { method: 'catalog.search', arguments: { scope: 'workspace' }, required_inputs: [], reason: '从工作区商品、公开链接或上传资料开始', blocked_by: [] }
       return { method: 'task.understand', arguments: {}, required_inputs: ['instruction', 'platform', 'account_id'], reason: summary.confirmedProducts ? '输入一句营销目标，开始创建内容任务' : '先确认商品、价格、库存和图片事实', blocked_by: summary.confirmedProducts ? [] : ['product_facts_confirmation'] }
     }
     if (card.id === 'visuals') {

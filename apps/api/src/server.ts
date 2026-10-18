@@ -11799,7 +11799,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const nextPrompt = current.id === 'bind-store'
         ? '选择一个平台连接我的店铺'
         : current.id === 'choose-product'
-          ? '查看我当前店铺的商品'
+          ? '选择工作区商品，或提供公开链接/上传商品资料'
           : current.id === 'add-assets'
             ? '上传我的商品图片和资料'
             : current.id === 'start-content'

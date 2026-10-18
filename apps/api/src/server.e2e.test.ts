@@ -1010,10 +1010,10 @@ describe('API HTTP vertical slice', () => {
       onboarding_v2: { current_step: { id: string }; steps: Array<{ id: string; state: string }> }
     }
     expect(result.storeDirectory).toEqual([expect.objectContaining({ dataMode: 'fixture', readable: true })])
-    expect(result.onboarding_v2.current_step).toMatchObject({ id: 'connect_store', state: 'required' })
+    expect(result.onboarding_v2.current_step).toMatchObject({ id: 'select_product', state: 'required' })
     expect(result.onboarding_v2.steps).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'connect_store', state: 'required' }),
-      expect.objectContaining({ id: 'select_product', state: 'blocked' }),
+      expect.objectContaining({ id: 'connect_store', state: 'optional' }),
+      expect.objectContaining({ id: 'select_product', state: 'required' }),
     ]))
     await grantCreativePointsForTests(workspaceId)
     grantContinuousFeatureEntitlementForTests(workspaceId)
@@ -1040,21 +1040,21 @@ describe('API HTTP vertical slice', () => {
     const health = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'workspace.health', params: { workspace_id: workspaceId } }) }).then(json)
     expect(health.error).toBeNull()
     expect((health.data as { result: { workspace: { id: string; status: string } } }).result.workspace).toMatchObject({ id: workspaceId, status: 'ready' })
-    expect((health.data as { result: { capabilityCards: { presentation: string; navigation: { presentation: string; selectionKey: string; items: Array<{ id: string; action: { method: string; arguments: { scope: string } } }> }; onboarding: Array<{ id: string; entryMethod: string; state: string }>; cards: Array<{ id: string }> } } }).result.capabilityCards).toMatchObject({ presentation: 'conversation_cards', navigation: { presentation: 'grouped_list', selectionKey: 'platform + accountId', items: expect.arrayContaining([expect.objectContaining({ id: 'all-stores', action: { method: 'catalog.search', arguments: { scope: 'workspace' } } })]) }, onboarding: expect.arrayContaining([expect.objectContaining({ id: 'workspace', entryMethod: 'workspace.health', state: 'complete' }), expect.objectContaining({ id: 'bind-store', title: '连接店铺', entryMethod: 'platform.connect', state: 'required' }), expect.objectContaining({ id: 'choose-product', entryMethod: 'catalog.search', state: 'blocked' }), expect.objectContaining({ id: 'start-content', title: '生成并审核', entryMethod: 'task.understand' }), expect.objectContaining({ id: 'publish', entryMethod: 'publish.prepare', state: 'blocked' })]), cards: expect.arrayContaining([expect.objectContaining({ id: 'first-value' }), expect.objectContaining({ id: 'stores-products' }), expect.objectContaining({ id: 'content' }), expect.objectContaining({ id: 'billing' })]) })
+    expect((health.data as { result: { capabilityCards: { presentation: string; navigation: { presentation: string; selectionKey: string; items: Array<{ id: string; action: { method: string; arguments: { scope: string } } }> }; onboarding: Array<{ id: string; entryMethod: string; state: string }>; cards: Array<{ id: string }> } } }).result.capabilityCards).toMatchObject({ presentation: 'conversation_cards', navigation: { presentation: 'grouped_list', selectionKey: 'platform + accountId', items: expect.arrayContaining([expect.objectContaining({ id: 'all-stores', action: { method: 'catalog.search', arguments: { scope: 'workspace' } } })]) }, onboarding: expect.arrayContaining([expect.objectContaining({ id: 'workspace', entryMethod: 'workspace.health', state: 'complete' }), expect.objectContaining({ id: 'bind-store', title: '连接店铺（可选）', entryMethod: 'platform.connect', state: 'optional' }), expect.objectContaining({ id: 'choose-product', entryMethod: 'catalog.search', state: 'required' }), expect.objectContaining({ id: 'start-content', title: '生成并审核' }), expect.objectContaining({ id: 'publish', entryMethod: 'publish.prepare', state: 'blocked' })]), cards: expect.arrayContaining([expect.objectContaining({ id: 'first-value' }), expect.objectContaining({ id: 'stores-products' }), expect.objectContaining({ id: 'content' }), expect.objectContaining({ id: 'billing' })]) })
     expect((health.data as { result: { capabilityCards: { cards: Array<{ id: string; readOnly: boolean; summary: string }> } } }).result.capabilityCards.cards.find(card => card.id === 'first-value')).toMatchObject({ readOnly: false, summary: expect.stringContaining('模型') })
     expect(((health.data as { result: { capabilityCards: { onboarding: unknown[] } } }).result.capabilityCards.onboarding)).toHaveLength(6)
     const onboarding = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.25, method: 'onboarding.status', params: { workspace_id: workspaceId } }) }).then(json)
     expect(onboarding.error).toBeNull()
-    expect((onboarding.data as { result: { schema_version: string; status: string; current_step: { id: string }; binding: string; next_action: { method: string } } }).result).toMatchObject({ schema_version: 'onboarding.status.v1', status: 'in_progress', current_step: { id: 'connect_store' }, next_action: { method: 'platform.connect' } })
+    expect((onboarding.data as { result: { schema_version: string; status: string; current_step: { id: string }; binding: string; next_action: { method: string } } }).result).toMatchObject({ schema_version: 'onboarding.status.v1', status: 'in_progress', current_step: { id: 'select_product' }, next_action: { method: 'catalog.search' } })
     expect((onboarding.data as { result: { initialization: unknown } }).result.initialization).toMatchObject({
-      schema_version: 'store-nova.initialization.v1', status: 'in_progress', completed: 0, total: 4,
+      schema_version: 'store-nova.initialization.v1', status: 'blocked', completed: 0, total: 4,
       brand_clues: { candidates: [], totalCandidates: 0, profileCreated: false },
-      current_step: { id: 'connect_stores', state: 'required' },
+      current_step: { id: 'check_configuration', state: 'blocked' },
       steps: [
-        { id: 'connect_stores', state: 'required' },
-        { id: 'scan_catalog', state: 'pending' },
-        { id: 'check_configuration', state: 'pending', next_action: { method: 'platform.connect', label: '先连接并授权店铺', required_inputs: ['platform'] } },
-        { id: 'build_workspace', state: 'pending' },
+        { id: 'connect_stores', state: 'optional' },
+        { id: 'scan_catalog', state: 'optional' },
+        { id: 'check_configuration', state: 'blocked', next_action: { method: 'workspace.health', label: '检查内容生成配置', required_inputs: [] } },
+        { id: 'build_workspace', state: 'optional' },
       ],
     })
     const links = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.26, method: 'onboarding.status', params: { workspace_id: workspaceId, store_links_text: '淘宝｜云朵女装店｜https://shop.m.taobao.com/shop/shop_index.htm?shop_id=123&token=secret' } }) }).then(json)
@@ -1071,7 +1071,7 @@ describe('API HTTP vertical slice', () => {
     const startCard = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     expect(startCard.error).toBeNull()
     const startResult = (startCard.data as { result: { greeting: string; currentStep: { id: string; entryMethod: string }; nextPrompt: string; modelAccess: { userKeyRequired: boolean }; brandNavigation: { presentation: string; hierarchy: string[]; items: unknown[] }; platformOptions: Array<{ platform: string; label: string; state: string; action: string; readiness: { mediaUpload: { ready: boolean; configured: boolean; evidence: boolean; reason?: string } } }>; cards: Array<{ id: string; state: string; cta: string; action: { method: string }; blocked_by: string[]; next_actions?: Array<{ required_inputs?: string[] }>; capabilityGate?: { unlocked: boolean; method: string; reason: string } }>; wallet: { balance_cny: string; unlocked: boolean; status_method: string; purchase_method: string; order_method: string; payment_status_method: string; payment_channels: string[]; message: string } } }).result
-    expect(startResult).toMatchObject({ greeting: '欢迎使用 Store Nova。', currentStep: { id: 'bind-store', entryMethod: 'platform.connect' }, nextPrompt: '选择一个平台连接我的店铺', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
+    expect(startResult).toMatchObject({ greeting: '欢迎使用 Store Nova。', currentStep: { id: 'choose-product', entryMethod: 'catalog.search' }, nextPrompt: '选择工作区商品，或提供公开链接/上传商品资料', modelAccess: { userKeyRequired: false }, wallet: { balance_cny: '0.00', unlocked: true } })
     expect(startResult.wallet).toMatchObject({ purchase_method: 'commercial.catalog.get', order_method: 'commercial.order.create', payment_status_method: 'commercial.order.payment.get', payment_channels: [] })
     expect(startResult.wallet).not.toHaveProperty('recharge_method', 'billing.recharge.create')
     expect(startResult.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
@@ -1079,8 +1079,8 @@ describe('API HTTP vertical slice', () => {
     expect(startResult.platformOptions).toEqual(expect.arrayContaining([expect.objectContaining({ platform: 'taobao', label: '淘宝', action: 'platform.connect' })]))
     expect(startResult.platformOptions.every(option => option.readiness.mediaUpload.ready === false && option.readiness.mediaUpload.reason)).toBe(true)
     expect(startResult.cards.find(card => card.id === 'first-value')).toMatchObject({ cta: '示例体验', action: { method: 'merchant.first_value', arguments: { example: 'true' } }, blocked_by: [] })
-    expect(startResult.cards.find(card => card.id === 'stores-products')).toMatchObject({ state: 'blocked', cta: '选择店铺并查看商品', action: { method: 'platform.connect' } })
-    expect(startResult.cards.find(card => card.id === 'content')).toMatchObject({ action: { method: 'catalog.search' }, blocked_by: ['store_product_selection'] })
+    expect(startResult.cards.find(card => card.id === 'stores-products')).toMatchObject({ state: 'required', cta: '选择店铺并查看商品', action: { method: 'platform.connect' } })
+    expect(startResult.cards.find(card => card.id === 'content')).toMatchObject({ action: { method: 'catalog.search', arguments: { scope: 'workspace' } }, blocked_by: [] })
     expect(startResult.cards.find(card => card.id === 'content')?.capabilityGate).toMatchObject({ method: 'billing.status' })
     expect(startResult.cards.find(card => card.id === 'bulk-publish')).toMatchObject({ action: { method: 'publish.batch.prepare' }, next_actions: [{ required_inputs: ['task_ids_json'] }] })
     const explicitStartParams = { workspace_id: workspaceId, requested_platform: 'jd', requested_goal: '生成京东白底主图', attachment_count: '1', idempotency_key: 'merchant-start-e2e-explicit-1' }
