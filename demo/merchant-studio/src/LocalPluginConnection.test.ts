@@ -38,7 +38,7 @@ describe('local plugin connection entry', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
     expect(markup).toContain('安装与故障帮助')
-    expect(component).toContain('本地插件一键连接尚未开放，请联系平台管理员完成发布门禁')
+    expect(component).toContain('一键连接需要已安装并通过验证的桌面连接助手；当前发布门禁尚未完成')
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
     expect(component).toContain('本地验证恢复路径')
     expect(component).toContain('loginCommand')
@@ -102,7 +102,7 @@ describe('local plugin connection entry', () => {
   it('keeps installation help brief', () => {
     const component = readFileSync(new URL('./LocalPluginConnection.tsx', import.meta.url), 'utf8')
     expect(component).toContain('点击连接并按浏览器提示打开本地插件')
-    expect(component).toContain('一键授权暂未开放')
+    expect(component).toContain('一键连接暂未开放')
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
     expect(component).toContain('优先重新运行平台提供的 macOS 安装包')
     expect(component).toContain('运行前请确认商家后台登录账号为 {account.login}')

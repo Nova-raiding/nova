@@ -157,9 +157,17 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   ) === 'macos'
   const presentation = connectionStatePresentation[connectionState]
   const oneClickAvailable = oneClickState === 'available'
+  // Keep the entry point actionable when the server has deliberately gated
+  // one-click.  Clicking it opens the recovery/help modal; it never creates a
+  // connection request unless the server has advertised the signed helper as
+  // available.  During capability discovery (or without a valid workspace),
+  // keep the button disabled so an incomplete target cannot be submitted.
+  const connectionButtonDisabled = !connectTargetAvailable
+    || ['checking', 'unsupported_platform', 'workspace_required'].includes(oneClickState)
+    || connectionState === 'requesting' || connectionState === 'launching'
   const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
   const oneClickUnavailableReason = oneClickState === 'release_gate'
-    ? '本地插件一键连接尚未开放，请联系平台管理员完成发布门禁。'
+    ? '一键连接需要已安装并通过验证的桌面连接助手；当前发布门禁尚未完成。请安装平台提供的签名版连接助手，或使用下方本地登录命令。'
     : oneClickState === 'schema_upgrade'
       ? '当前服务正在升级，完成数据库升级后才能启用一键连接。'
       : oneClickState === 'production_mode'
@@ -171,6 +179,14 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
         : oneClickState === 'check_failed'
           ? '暂时无法确认一键连接状态，请打开安装与故障帮助。'
           : '正在检查一键连接是否可用。'
+
+  const handleConnectClick = () => {
+    if (!oneClickAvailable) {
+      setOpenScope(scope)
+      return
+    }
+    void beginConnection()
+  }
 
   useEffect(() => {
     connectionAttempt.current += 1
@@ -308,7 +324,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
         options={account.workspaceIds.filter(id => /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(id)).map(id => ({ label: id, value: id }))}
         onChange={id => { connectionAttempt.current += 1; if (launchTimer.current) clearTimeout(launchTimer.current); onWorkspaceChange(id); setConnectionState('idle') }}
       />}
-      <Button type="primary" disabled={!oneClickAvailable || !connectTargetAvailable || connectionState === 'requesting' || connectionState === 'launching'} loading={connectionState === 'requesting'} onClick={() => { void beginConnection() }}>连接 ChatGPT 本地插件</Button>
+      <Button type="primary" disabled={connectionButtonDisabled} loading={connectionState === 'requesting'} onClick={handleConnectClick}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
       {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
@@ -333,7 +349,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
           ? <Alert type={pairingMatchesWorkspace(pairing, workspaceId) ? 'info' : 'warning'} title={pairingMatchesWorkspace(pairing, workspaceId) ? '确认连接这台电脑' : '请先切换到授权工作区'} showIcon description={pairingMatchesWorkspace(pairing, workspaceId) ? `将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。` : `该连接回调属于工作区 ${pairing.workspace_id}。关闭此窗口，在页面顶部切换到该工作区后再打开连接确认。`} />
           : oneClickAvailable
             ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
-            : <Alert type="warning" title="一键授权暂未开放" showIcon description={oneClickUnavailableReason} />}
+            : <Alert type="warning" title="一键连接暂未开放" showIcon description={oneClickUnavailableReason} />}
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
