@@ -169,6 +169,8 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   ) === 'macos'
   const presentation = oneClickState === 'release_gate'
     ? { color: 'warning', label: '需安装已验证助手' }
+    : oneClickState === 'auth_required'
+      ? { color: 'error', label: '登录已失效' }
     : connectionStatePresentation[connectionState]
   const oneClickAvailable = oneClickState === 'available'
   // Keep the entry point actionable when the server has deliberately gated
