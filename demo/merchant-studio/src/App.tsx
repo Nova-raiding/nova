@@ -5882,7 +5882,7 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
                   {baseUrl && modelStatusRead && <button className="secondary-button" type="button" onClick={onRefreshModelStatus} disabled={imageGenerationBusy}>重新检查模型中转</button>}
                 </div>
               )}
-              <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
+              <div className="info-notice" role="status">流程：选择商品 → 确认商品事实与素材 → 填写并确认生成方案 → 进入真实图片任务队列。完成后请在 ChatGPT 新会话中检查 Store Nova 连接；生成结果仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
               <label htmlFor="catalog-image-generation-direction">生成方向<textarea id="catalog-image-generation-direction" value={imageGenerationDirection} disabled={imageGenerationOutcomeUnknown} aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'catalog-image-generation-error' : undefined} data-dialog-initial-focus onChange={event => { if (!imageGenerationOutcomeUnknown) imageGenerationIntentKeyRef.current = null; setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
               <label htmlFor="catalog-image-generation-size">输出用途与画布尺寸<select id="catalog-image-generation-size" value={imageGenerationSize} disabled={imageGenerationOutcomeUnknown} onChange={event => { if (!imageGenerationOutcomeUnknown) imageGenerationIntentKeyRef.current = null; setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize) }}>
                 <option value="1024x1024">主图 / 方图 · 1024×1024</option>
@@ -9464,7 +9464,7 @@ export function Products({
                 )}
               </div>
             )}
-            <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
+            <div className="info-notice" role="status">流程：选择商品 → 确认商品事实与素材 → 填写并确认生成方案 → 进入真实图片任务队列。完成后请在 ChatGPT 新会话中检查 Store Nova 连接；生成结果仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
             <label htmlFor="image-generation-direction">生成方向<textarea id="image-generation-direction" aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} data-dialog-initial-focus value={imageGenerationDirection} onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
             <label htmlFor="image-generation-size">输出用途与画布尺寸<select id="image-generation-size" value={imageGenerationSize} onChange={event => setImageGenerationSize(event.target.value as import('./api.js').ProductImageSize)}>
               <option value="1024x1024">主图 / 方图 · 1024×1024</option>
