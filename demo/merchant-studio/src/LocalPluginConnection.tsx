@@ -370,7 +370,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
           ? <Alert type={pairingMatchesWorkspace(pairing, workspaceId) ? 'info' : 'warning'} title={pairingMatchesWorkspace(pairing, workspaceId) ? '确认连接这台电脑' : '请先切换到授权工作区'} showIcon description={pairingMatchesWorkspace(pairing, workspaceId) ? `将工作区 ${pairing.workspace_id} 授权给刚打开的 Store Nova 本地插件。` : `该连接回调属于工作区 ${pairing.workspace_id}。关闭此窗口，在页面顶部切换到该工作区后再打开连接确认。`} />
           : oneClickAvailable
             ? <Alert type="info" title="点击连接并按浏览器提示打开本地插件" showIcon description="首次连接需确认这台电脑。若浏览器提示没有应用可打开，请先安装平台提供的桌面插件包。" />
-            : <Alert type="warning" title="一键连接暂未开放" showIcon description={oneClickUnavailableReason} />}
+            : <Alert type={oneClickState === 'auth_required' ? 'error' : 'warning'} title={oneClickState === 'auth_required' ? '需要重新登录' : '一键连接暂未开放'} showIcon description={oneClickUnavailableReason} />}
         <Descriptions size="small" column={1} items={[
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
