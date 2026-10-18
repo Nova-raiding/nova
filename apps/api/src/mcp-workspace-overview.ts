@@ -90,7 +90,7 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
       { id: 'check_configuration', title: '检查内容生成配置', state: contentConfigurationReady ? 'complete' : 'blocked', summary: contentConfigurationReady ? '图片/视频模型、中转、成本和存储门禁已核验；正式生成仍要检查商品事实和素材权益' : `待处理：${!pointsReady ? '创意点；' : ''}${!relayReady ? '模型中转；' : ''}${!modalitiesReady ? '文案/图片/视频模型；' : ''}${!costReady ? '模型成本门禁；' : ''}${!storageReady ? '对象存储；' : ''}`.replace(/；$/u, ''), next_action: configurationNextAction },
       { id: 'build_workspace', title: '建立工作区（可选）', state: contentConfigurationReady ? 'optional' : 'optional', summary: contentSetupStoreReady ? `「${contentSetup!.displayName}」已由商家确认` : '内容候选可直接在当前工作区制作；店铺范围确认仅用于平台同步和发布', next_action: { method: 'workspace.content_setup.confirm', label: '确认内容工作区', required_inputs: ['display_name', 'platform', 'account_id'] } },
     ] as const
-    const initializationCurrent = initializationSteps.find(step => step.state === 'required' || step.state === 'blocked') ?? initializationSteps.at(-1)!
+    const initializationCurrent = initializationSteps.find(step => step.state === 'blocked') ?? initializationSteps.at(-1)!
     const current = onboardingV2.current_step
     const bindingByStep: Record<string, string> = {
       workspace: '工作区：绑定 MERCHANT_WORKSPACE_ID；身份由当前认证会话提供。',
