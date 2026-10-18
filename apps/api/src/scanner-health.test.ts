@@ -50,6 +50,12 @@ describe('scanner heartbeat API readiness', () => {
     expect(result).toMatchObject({ ready: false, code: 'SCANNER_HEARTBEAT_MISSING', summary: { live_instances: 0 } })
   })
 
+  it('ignores malformed heartbeats with negative queue counters', async () => {
+    const malformed = { ...heartbeat('scanner-malformed'), queue: { backlog: -1, deadLetter: 0 } }
+    const result = await evaluateScannerHeartbeatReadiness({ redis: { scannerHeartbeats: async () => [malformed] }, env: environment(), now })
+    expect(result).toMatchObject({ ready: false, code: 'SCANNER_HEARTBEAT_MISSING', summary: { live_instances: 0 } })
+  })
+
   it('requires at least two production replicas even when configured lower', async () => {
     const result = await evaluateScannerHeartbeatReadiness({
       redis: { scannerHeartbeats: async () => [heartbeat('scanner-1')] },

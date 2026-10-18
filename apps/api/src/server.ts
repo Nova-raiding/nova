@@ -7803,7 +7803,9 @@ function isScannerHeartbeat(value: unknown): value is ScannerHeartbeat {
     && Boolean(item.clamav && typeof item.clamav.reachable === 'boolean')
     && Boolean(item.eicar && typeof item.eicar.passed === 'boolean')
     && Boolean(item.callback && typeof item.callback.configured === 'boolean' && typeof item.callback.capable === 'boolean')
-    && Boolean(item.queue && Number.isFinite(item.queue.backlog) && Number.isFinite(item.queue.deadLetter))
+    && Boolean(item.queue
+      && Number.isSafeInteger(item.queue.backlog) && item.queue.backlog >= 0
+      && Number.isSafeInteger(item.queue.deadLetter) && item.queue.deadLetter >= 0)
 }
 
 export type ScannerReadinessCode = 'SCANNER_HEARTBEAT_MISSING' | 'SCANNER_READY_REPLICA_QUORUM_UNMET' | 'SCANNER_CALLBACK_PROOF_STALE' | 'SCANNER_NOT_READY'
