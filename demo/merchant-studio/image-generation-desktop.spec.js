@@ -188,7 +188,7 @@ test('renders an explicit empty state when no image jobs exist', async () => {
   try {
     await expect(page.getByRole('heading', { name: '图片任务' })).toBeVisible()
     await expect(page.getByText('暂无图片任务', { exact: true })).toBeVisible()
-    await expect(page.getByText('系统不会自动创建演示任务')).toBeVisible()
+    await expect(page.getByText('系统不会自动创建测试任务')).toBeVisible()
   } finally {
     await context.close(); await browser.close()
   }
