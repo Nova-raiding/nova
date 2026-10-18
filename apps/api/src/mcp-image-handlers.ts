@@ -607,9 +607,14 @@ export async function handleImageMcpMethod(method: string, params: Record<string
       const jobId = required(params, 'job_id')
       const visualRef = required(params, 'visual_ref')
       const current = service.getImageGenerationJob(workspaceId, jobId)
-      await enforceProductBrandAccess(req, workspaceId, current.productId, 'editor')
+      // Workspace-scoped, unbound candidates are valid content inputs before a
+      // store/brand binding exists. Keep the same exemption used by image.get
+      // and image generation; selection still requires the signed ticket,
+      // settlement evidence, scan/rights gates, and interactive confirmation.
+      const unboundCandidate = await isExemptUnboundImageCandidateProduct(workspaceId, current.productId)
+      if (!unboundCandidate) await enforceProductBrandAccess(req, workspaceId, current.productId, 'editor')
       if (!(await chargedImageCandidatesReadable(workspaceId, current))) throw new DomainError('IMAGE_GENERATION_SETTLEMENT_EVIDENCE_PENDING', '图片候选尚未通过原始用量、成本与创意点结算核验，禁止选择旧候选', 409, { reconciliation_required: true, retryable: false })
-      if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
+      if (!unboundCandidate && (await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') {
         const product = service.products.get(current.productId)
         if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
         await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
