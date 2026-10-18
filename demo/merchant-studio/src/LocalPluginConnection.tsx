@@ -161,7 +161,9 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
     typeof navigator === 'undefined' ? '' : navigator.userAgent,
     typeof navigator === 'undefined' ? '' : navigator.platform,
   ) === 'macos'
-  const presentation = connectionStatePresentation[connectionState]
+  const presentation = oneClickState === 'release_gate'
+    ? { color: 'warning', label: '需安装已验证助手' }
+    : connectionStatePresentation[connectionState]
   const oneClickAvailable = oneClickState === 'available'
   // Keep the entry point actionable when the server has deliberately gated
   // one-click.  Clicking it opens the recovery/help modal; it never creates a
@@ -367,6 +369,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
         {!oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
           <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
           <Typography.Text code copyable>{loginCommand}</Typography.Text>
+          <Typography.Text type="secondary">此命令使用本地 stdio 插件链路，不需要 ChatGPT OAuth 或插件市场授权。</Typography.Text>
           <Typography.Text type="secondary">运行前请确认商家后台登录账号为 {account.login}，授权页显示目标工作区 {workspaceId}。浏览器授权完成后，还要等待安装器确认本机凭据保存成功；然后完全退出并重新打开 ChatGPT。</Typography.Text>
         </Space>} />}
         <Typography.Paragraph style={{ margin: 0 }}>本机凭据保存成功后，完全退出并重新打开 ChatGPT。在新对话中说“检查 Store Nova 插件是否已连接”即可。</Typography.Paragraph>
