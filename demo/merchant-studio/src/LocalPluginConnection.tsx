@@ -336,6 +336,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
       {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
+      {oneClickState === 'auth_required' && <Button type="default" href="/merchant/login">重新登录商家后台</Button>}
       {!oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
       {!oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
       <LocalPluginCapabilityRetryButton visible={oneClickState === 'check_failed'} loading={oneClickState === 'checking'} onRetry={retryCapabilityRead} />

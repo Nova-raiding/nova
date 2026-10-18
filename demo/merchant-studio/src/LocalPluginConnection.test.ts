@@ -47,6 +47,7 @@ describe('local plugin connection entry', () => {
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
     expect(component).toContain('本地验证恢复路径')
     expect(component).toContain('loginCommand')
+    expect(component).toContain('重新登录商家后台')
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
     expect(component).toContain('检查 Store Nova 插件是否已连接')
