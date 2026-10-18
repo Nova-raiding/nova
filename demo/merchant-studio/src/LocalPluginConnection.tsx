@@ -163,10 +163,12 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   const workspaceId = candidateWorkspaceId && /^(?:ws_|workspace_)[A-Za-z0-9_-]{1,120}$/u.test(candidateWorkspaceId) ? candidateWorkspaceId : null
   const connectTargetAvailable = localPluginConnectUrl(apiBaseUrl, account.workspaceIds, undefined, workspaceId ?? undefined) !== null
   const origin = localLoginOrigin(apiBaseUrl)
-  const macosBrowser = detectLocalPluginPlatform(
+  const localPlatform = detectLocalPluginPlatform(
     typeof navigator === 'undefined' ? '' : navigator.userAgent,
     typeof navigator === 'undefined' ? '' : navigator.platform,
-  ) === 'macos'
+  )
+  const macosBrowser = localPlatform === 'macos'
+  const localPlatformLabel = localPlatform === 'windows' ? 'Windows' : 'macOS'
   const presentation = oneClickState === 'release_gate'
     ? { color: 'warning', label: '需安装已验证助手' }
     : oneClickState === 'auth_required'
@@ -195,7 +197,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   const connectionButtonDisabled = !connectTargetAvailable
     || ['checking', 'unsupported_platform', 'workspace_required', 'workspace_mismatch'].includes(oneClickState)
     || connectionState === 'requesting' || connectionState === 'launching'
-  const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
+  const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, localPlatform)
   const oneClickUnavailableReason = oneClickState === 'release_gate'
     ? '一键连接需要已安装并通过验证的桌面连接助手；当前发布门禁尚未完成。请安装平台提供的签名版连接助手，或使用下方本地登录命令。'
     : oneClickState === 'schema_upgrade'
@@ -392,7 +394,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
         {oneClickState === 'auth_required' && <Button type="primary" href="/merchant/login">重新登录商家后台</Button>}
         {pairing && <Button type="primary" disabled={!pairingMatchesWorkspace(pairing, workspaceId) || !installationKey} onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
         {oneClickState !== 'auth_required' && oneClickState !== 'workspace_mismatch' && !oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
-          <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
+          <Typography.Text>优先重新运行平台提供的 {localPlatformLabel} 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
           <Typography.Text code copyable>{loginCommand}</Typography.Text>
           <Typography.Text type="secondary">此命令使用本地 stdio 插件链路，不需要 ChatGPT OAuth 或插件市场授权。</Typography.Text>
           <Typography.Text type="secondary">运行前请确认商家后台登录账号为 {account.login}，授权页显示目标工作区 {workspaceId}。浏览器授权完成后，还要等待安装器确认本机凭据保存成功；然后完全退出并重新打开 ChatGPT。</Typography.Text>

@@ -119,7 +119,7 @@ describe('local plugin connection entry', () => {
     expect(component).toContain('点击连接并按浏览器提示打开本地插件')
     expect(component).toContain('一键连接暂未开放')
     expect(component).not.toContain('Developer ID 签名和 Apple 公证验证')
-    expect(component).toContain('优先重新运行平台提供的 macOS 安装包')
+    expect(component).toContain('优先重新运行平台提供的 {localPlatformLabel} 安装包')
     expect(component).toContain('运行前请确认商家后台登录账号为 {account.login}')
     expect(component).toContain('此命令使用本地 stdio 插件链路，不需要 ChatGPT OAuth 或插件市场授权')
     expect(component).toContain('浏览器授权完成后，还要等待安装器确认本机凭据保存成功')
