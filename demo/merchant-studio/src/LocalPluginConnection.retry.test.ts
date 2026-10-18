@@ -29,4 +29,9 @@ describe('local plugin capability read recovery', () => {
     const authRequired = vi.fn(async () => ({ one_click_available: false, supported_platforms: ['macos'], unavailable_reason: 'auth_required' }))
     await expect(readLocalPluginCapability('/api', 'ws_auth_fixture', authRequired as never)).resolves.toBe('auth_required')
   })
+
+  it('maps stale or foreign workspace responses to a non-actionable mismatch state', async () => {
+    const readApi = vi.fn(async () => { throw Object.assign(new Error('workspace mismatch'), { code: 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' }) })
+    await expect(readLocalPluginCapability('/api', 'ws_mismatch_fixture', readApi as never)).resolves.toBe('workspace_mismatch')
+  })
 })
