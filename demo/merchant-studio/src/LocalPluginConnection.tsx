@@ -78,11 +78,15 @@ export async function readLocalPluginCapability(apiBaseUrl: string, workspaceId:
     )
     return result.one_click_available === true && result.supported_platforms?.includes('macos') === true
       ? 'available' as const
-      : result.unavailable_reason === 'schema_upgrade'
-        ? 'schema_upgrade' as const
-        : result.unavailable_reason === 'production_mode'
-          ? 'production_mode' as const
-          : 'release_gate' as const
+      : result.unavailable_reason === 'auth_required'
+        ? 'auth_required' as const
+        : result.unavailable_reason === 'schema_upgrade'
+          ? 'schema_upgrade' as const
+          : result.unavailable_reason === 'production_mode'
+            ? 'production_mode' as const
+            : Array.isArray(result.supported_platforms) && !result.supported_platforms.includes('macos')
+              ? 'unsupported_platform' as const
+              : 'release_gate' as const
   } catch (error) {
     const code = (error as ApiError)?.code
     if (code === 'AUTH_SESSION_INVALID' || code === 'AUTH_SESSION_EXPIRED') return 'auth_required' as const
@@ -339,8 +343,8 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
       {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
       {oneClickState === 'auth_required' && <Button type="default" href="/merchant/login">重新登录商家后台</Button>}
-      {!oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
-      {!oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
+      {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
+      {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
       <LocalPluginCapabilityRetryButton visible={oneClickState === 'check_failed'} loading={oneClickState === 'checking'} onRetry={retryCapabilityRead} />
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={
@@ -366,7 +370,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
         ]} />
         {pairing && <Button type="primary" disabled={!pairingMatchesWorkspace(pairing, workspaceId) || !installationKey} onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
-        {!oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
+        {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
           <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
           <Typography.Text code copyable>{loginCommand}</Typography.Text>
           <Typography.Text type="secondary">此命令使用本地 stdio 插件链路，不需要 ChatGPT OAuth 或插件市场授权。</Typography.Text>

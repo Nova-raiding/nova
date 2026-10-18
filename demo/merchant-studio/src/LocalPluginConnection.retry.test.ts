@@ -21,4 +21,12 @@ describe('local plugin capability read recovery', () => {
     expect(readApi).toHaveBeenCalledOnce()
     expect(readApi).toHaveBeenCalledWith('/api', '/v1/auth/local-plugin/connect-capability', {}, 'ws_retry_fixture')
   })
+
+  it('keeps server diagnostics visible instead of labeling every refusal as a release gate', async () => {
+    const unsupported = vi.fn(async () => ({ one_click_available: false, supported_platforms: ['windows'], unavailable_reason: 'release_gate' }))
+    await expect(readLocalPluginCapability('/api', 'ws_unsupported_fixture', unsupported as never)).resolves.toBe('unsupported_platform')
+
+    const authRequired = vi.fn(async () => ({ one_click_available: false, supported_platforms: ['macos'], unavailable_reason: 'auth_required' }))
+    await expect(readLocalPluginCapability('/api', 'ws_auth_fixture', authRequired as never)).resolves.toBe('auth_required')
+  })
 })
