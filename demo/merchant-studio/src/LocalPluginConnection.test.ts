@@ -20,7 +20,7 @@ describe('local plugin connection entry', () => {
   it('renders installation guidance only for an active merchant', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
-    expect(markup).toContain('尚未验证')
+    expect(markup).toContain('正在检查连接')
     expect(markup).toContain('<button')
     expect(markup).not.toContain('access_token')
     expect(markup).not.toContain('refresh_token')
@@ -55,7 +55,8 @@ describe('local plugin connection entry', () => {
     expect(component).toContain("oneClickState === 'auth_required' ? '需要重新登录' : '一键连接暂未开放'")
     expect(component).toContain("oneClickState === 'workspace_mismatch'\n        ? { color: 'warning', label: '工作区不匹配' }")
     expect(component).toContain("oneClickState === 'workspace_required'\n          ? { color: 'warning', label: '需选择工作区' }")
-    expect(component).toContain("oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand")
+    expect(component).toContain("oneClickState === 'check_failed'\n            ? { color: 'error', label: '无法确认连接状态' }")
+    expect(component).toContain("oneClickState !== 'auth_required' && oneClickState !== 'workspace_mismatch' && !oneClickAvailable && loginCommand")
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
     expect(component).toContain('检查 Store Nova 插件是否已连接')
