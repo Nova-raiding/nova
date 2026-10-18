@@ -366,11 +366,11 @@ describe('manual operations store records', () => {
     expect(gated.body.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
     expect(gated.status).toBe(428)
 
-    // The onboarding view must agree: an official-API deployment does not treat
-    // the credential-free record as a bound store either.
+    // The content onboarding view keeps store binding optional; the platform
+    // task boundary above remains the authority for official store actions.
     const health = await mcpAt(base, ownerHeaders, 'workspace.health', {})
     const onboarding = health.body.data!.result.onboarding_v2 as { steps: Array<{ id: string; state: string }> }
-    expect(onboarding.steps.find(step => step.id === 'connect_store')?.state).toBe('required')
+    expect(onboarding.steps.find(step => step.id === 'connect_store')?.state).toBe('optional')
   })
 
   it('refuses the merchant, and refuses it for who it is rather than for a missing field', async () => {
