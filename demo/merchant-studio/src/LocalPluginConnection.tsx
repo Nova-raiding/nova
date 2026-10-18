@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Modal, Select, Space, Tag, Typography } from 'antd'
-import { requestApi, type MerchantAuthAccount } from './api.js'
+import { requestApi, type ApiError, type MerchantAuthAccount } from './api.js'
 
 function localLoginOrigin(apiBaseUrl: string): string | null {
   try {
@@ -67,21 +67,27 @@ export function pairingMatchesWorkspace(pairing: PairingReturn | null, workspace
 }
 
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
-type OneClickState = 'checking' | 'available' | 'release_gate' | 'schema_upgrade' | 'production_mode' | 'unsupported_platform' | 'workspace_required' | 'check_failed'
+type OneClickState = 'checking' | 'available' | 'release_gate' | 'schema_upgrade' | 'production_mode' | 'unsupported_platform' | 'workspace_required' | 'auth_required' | 'check_failed'
 
 type CapabilityReadApi = <T>(baseUrl: string, path: string, init?: RequestInit, workspaceId?: string) => Promise<T>
 
 export async function readLocalPluginCapability(apiBaseUrl: string, workspaceId: string, readApi: CapabilityReadApi = requestApi) {
-  const result = await readApi<{ one_click_available: boolean; supported_platforms: string[]; unavailable_reason?: string }>(
-    apiBaseUrl, '/v1/auth/local-plugin/connect-capability', {}, workspaceId,
-  )
-  return result.one_click_available === true && result.supported_platforms?.includes('macos') === true
-    ? 'available' as const
-    : result.unavailable_reason === 'schema_upgrade'
-      ? 'schema_upgrade' as const
-      : result.unavailable_reason === 'production_mode'
-        ? 'production_mode' as const
-        : 'release_gate' as const
+  try {
+    const result = await readApi<{ one_click_available: boolean; supported_platforms: string[]; unavailable_reason?: string }>(
+      apiBaseUrl, '/v1/auth/local-plugin/connect-capability', {}, workspaceId,
+    )
+    return result.one_click_available === true && result.supported_platforms?.includes('macos') === true
+      ? 'available' as const
+      : result.unavailable_reason === 'schema_upgrade'
+        ? 'schema_upgrade' as const
+        : result.unavailable_reason === 'production_mode'
+          ? 'production_mode' as const
+          : 'release_gate' as const
+  } catch (error) {
+    const code = (error as ApiError)?.code
+    if (code === 'AUTH_SESSION_INVALID' || code === 'AUTH_SESSION_EXPIRED') return 'auth_required' as const
+    throw error
+  }
 }
 
 export function LocalPluginCapabilityRetryButton({ visible, loading, onRetry }: {
@@ -176,6 +182,8 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       ? '一键连接目前仅支持 macOS 桌面端。'
       : oneClickState === 'workspace_required'
         ? '请先选择要连接的工作区。'
+        : oneClickState === 'auth_required'
+          ? '商家后台登录会话已失效，请先重新登录后再连接本地插件。'
         : oneClickState === 'check_failed'
           ? '暂时无法确认一键连接状态，请打开安装与故障帮助。'
           : '正在检查一键连接是否可用。'

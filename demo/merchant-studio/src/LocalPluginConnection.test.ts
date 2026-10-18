@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginEnrollUrl, localPluginLoginCommand, pairingMatchesWorkspace, parsePluginPairFragment } from './LocalPluginConnection'
+import { detectLocalPluginPlatform, LocalPluginConnection, localPluginConnectUrl, localPluginEnrollUrl, localPluginLoginCommand, pairingMatchesWorkspace, parsePluginPairFragment, readLocalPluginCapability } from './LocalPluginConnection'
 import type { MerchantAuthAccount } from './api'
 
 const account: MerchantAuthAccount = {
@@ -12,6 +12,11 @@ const account: MerchantAuthAccount = {
 const pluginProps = { apiBaseUrl: '/api', account, activeWorkspaceId: 'workspace_fixture', onWorkspaceChange: () => {} }
 
 describe('local plugin connection entry', () => {
+  it('shows an explicit re-login state when capability probing reports an expired session', async () => {
+    const error = Object.assign(new Error('会话已过期'), { code: 'AUTH_SESSION_INVALID', status: 401 })
+    await expect(readLocalPluginCapability('/api', 'workspace_fixture', async () => { throw error })).resolves.toBe('auth_required')
+  })
+
   it('renders installation guidance only for an active merchant', () => {
     const markup = renderToStaticMarkup(React.createElement(LocalPluginConnection, pluginProps))
     expect(markup).toContain('连接 ChatGPT 本地插件')
