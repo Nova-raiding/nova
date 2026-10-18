@@ -136,7 +136,7 @@ test('audits image purpose/size choices, validation error focus, and the generat
 
     await dialog.getByLabel('输出用途与画布尺寸').selectOption('1536x1024')
     await expect(dialog.getByLabel('输出用途与画布尺寸')).toHaveValue('1536x1024')
-    await expect(dialog.getByText('流程：选择商品 → 确认商品事实与素材 → 填写并确认生成方案 → 进入真实图片任务队列。完成后请在 ChatGPT 新会话中检查 Store Nova 连接；生成结果仍需安全扫描、人工审核和候选选择，不会直接发布。')).toBeVisible()
+    await expect(dialog.getByText('流程：选择商品 → 确认商品事实、商用权益和 AI 修改许可 → 填写并确认生成方案与平台用途 → 进入真实图片任务队列。完成后请在 ChatGPT 新会话中检查 Store Nova 连接；生成结果仍需安全扫描、人工审核和候选选择，不会直接发布。')).toBeVisible()
     await page.screenshot({ path: 'artifacts/visual-qa-image-dialog-banner.png', fullPage: true })
 
     await dialog.getByLabel('候选数量').fill('0')
