@@ -304,6 +304,8 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
       {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
+      {!oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
+      {!oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
       <LocalPluginCapabilityRetryButton visible={oneClickState === 'check_failed'} loading={oneClickState === 'checking'} onRetry={retryCapabilityRead} />
     </Space>
     <Modal title="连接本地插件" wrapClassName="merchant-local-plugin-modal" open={openScope === scope} onCancel={() => setOpenScope(null)} destroyOnHidden footer={

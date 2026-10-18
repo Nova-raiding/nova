@@ -226,7 +226,7 @@ import { hashPkceVerifier, OAuthStateError } from '../../../packages/security/sr
 import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSignature, type SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { verifyScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
-import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
+import { LOCAL_PLUGIN_CLIENT_ID, LocalPluginAuthorizationRequestError, localPluginAuthorizationHtml, localPluginLoginRequiredHtml, localPluginWorkspaceMismatchHtml, parseLocalPluginAuthorizationRequest, parseLocalPluginTokenRequest } from './local-plugin-auth.js'
 import { LocalPluginConnectionError, MemoryLocalPluginConnectionRepository, PostgresLocalPluginConnectionRepository, type LocalPluginConnectionRepository } from '../../../packages/persistence/src/local-plugin-connection-repository.js'
 import { LocalPluginInstallInstanceError, MemoryLocalPluginInstallInstanceRepository, PostgresLocalPluginInstallInstanceRepository, type LocalPluginInstallInstanceRepository } from '../../../packages/persistence/src/local-plugin-install-instance-repository.js'
 import { CreativeActionClaimError, PostgresCreativeActionClaimRepository, type CreativeActionClaimRepository, type LeasedCreativeAction } from '../../../packages/persistence/src/creative-point-action-claim-repository.js'
@@ -14630,7 +14630,20 @@ async function routeWithRequestContext(req: IncomingMessage, res: ServerResponse
       }
       const workspaceIds = [...new Set(current.account.workspaceIds.filter(Boolean))]
       const workspaceId = authorization.workspaceId ?? ''
-      if (!workspaceId || !workspaceIds.includes(workspaceId)) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      if (!workspaceId || !workspaceIds.includes(workspaceId)) {
+        // Keep the browser flow recoverable: an already signed-in account may
+        // be the wrong merchant account for the plugin's bound workspace.
+        // Show the safe account-switch page on GET instead of turning the
+        // browser step into an opaque JSON error. POST remains fail-closed.
+        if (req.method === 'GET') {
+          res.statusCode = 409
+          res.setHeader('content-type', 'text/html; charset=utf-8')
+          res.setHeader('content-security-policy', localPluginAuthorizationCsp(authorization.redirectUri))
+          res.end(localPluginWorkspaceMismatchHtml(authorization))
+          return
+        }
+        throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
+      }
       const origin = publicRequestOrigin(req)
       if (authorization.resource !== `${origin}/mcp` || authorization.workspaceId !== workspaceId) throw new DomainError('MCP_OAUTH_WORKSPACE_AMBIGUOUS', '本地插件请求与当前账号工作区不一致', 409)
       if (authorization.requestId && (isProduction() || process.env.LOCAL_PLUGIN_INSTANCE_BINDING_REQUIRED === 'true') && !authorization.installInstanceId) throw new DomainError('LOCAL_PLUGIN_INSTALL_INSTANCE_REQUIRED', '生产一键连接必须提供安装实例持有证明', 409)
