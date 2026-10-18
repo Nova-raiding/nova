@@ -11856,7 +11856,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const action = merchantCapabilityCardAction(card, onboarding, directory)
           const paidCapability = ['content', 'visuals', 'review-publish', 'bulk-publish'].includes(card.id)
           const capabilityGate = paidCapability ? { unlocked: pointAccessAllowed, method: 'billing.status', reason: pointAccessAllowed ? '创意点访问事实已通过；仍需具体操作的精确费率、事实、审核和交互确认门禁' : '创意点访问事实未通过；使用恢复读取确认余额、目录与下一步' } : undefined
-          return { id: card.id, title: card.title, summary: card.summary, entryMethod: card.entryMethod, readOnly: card.readOnly, state: onboardingState, cta, requiredScope: card.id === 'stores-products' || card.id === 'content' ? 'platform + accountId' : 'workspace', ...(capabilityGate ? { capabilityGate } : {}), action: { ...action, confirmation: card.readOnly ? 'none' : 'interactive_confirmation' }, blocked_by: action.blocked_by, next_actions: [{ method: action.method, arguments: action.arguments, reason: action.reason, required_inputs: action.required_inputs }] }
+          return { id: card.id, title: card.title, summary: card.summary, entryMethod: card.entryMethod, readOnly: card.readOnly, state: onboardingState, cta, requiredScope: card.id === 'stores-products' ? 'platform + accountId' : 'workspace', ...(capabilityGate ? { capabilityGate } : {}), action: { ...action, confirmation: card.readOnly ? 'none' : 'interactive_confirmation' }, blocked_by: action.blocked_by, next_actions: [{ method: action.method, arguments: action.arguments, reason: action.reason, required_inputs: action.required_inputs }] }
         }),
       })
     }

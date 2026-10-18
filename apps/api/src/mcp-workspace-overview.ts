@@ -95,7 +95,7 @@ export async function handleMcpWorkspaceOverview(method: 'onboarding.status' | '
     const bindingByStep: Record<string, string> = {
       workspace: '工作区：绑定 MERCHANT_WORKSPACE_ID；身份由当前认证会话提供。',
       connect_store: '店铺：选择平台后通过官方 OAuth 授权，不需要提供平台密码。',
-      select_product: '商品：绑定 platform + account_id 后同步或导入商品。',
+      select_product: '商品：从当前工作区选择商品，或提供公开链接/上传资料；店铺范围仅在同步和发布时需要。',
       add_assets: '素材：上传图片/资料，等待扫描、权益和事实确认。',
       generate_review: '内容：确认商品事实后创建任务，生成结果仍需审核。',
       publish: '发布：通过审核后查看预检，必须单独确认才能发布。',

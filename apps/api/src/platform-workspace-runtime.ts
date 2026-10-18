@@ -324,6 +324,8 @@ export function createPlatformWorkspaceRuntime(deps: {
       'platform.connect': { label: '连接平台店铺', requiredInputs: ['platform'] },
       'catalog.search': { label: '选择商品或补充资料', requiredInputs: [] },
       'asset.upload': { label: '上传商品资料', requiredInputs: ['name', 'mime_type'] },
+      // Formal task understanding remains store-scoped. Store-less workspaces
+      // use content.draft.generate or catalog.image.generate candidate paths.
       'task.understand': { label: '开始生成并审核', requiredInputs: ['instruction', 'platform', 'account_id', 'product_id'] },
       'publish.prepare': { label: '查看发布预览', requiredInputs: ['task_id'] },
     }
