@@ -50,6 +50,7 @@ describe('local plugin connection entry', () => {
     expect(component).toContain('需安装已验证助手')
     expect(component).toContain('loginCommand')
     expect(component).toContain('重新登录商家后台')
+    expect(component).toContain("oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand")
     expect(component).toContain('install-instances/pair')
     expect(component).toContain('installation_id: installationId')
     expect(component).toContain('检查 Store Nova 插件是否已连接')
