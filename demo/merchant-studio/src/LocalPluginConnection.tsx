@@ -67,7 +67,7 @@ export function pairingMatchesWorkspace(pairing: PairingReturn | null, workspace
 }
 
 type ConnectionUiState = 'idle' | 'requesting' | 'launching' | 'install_required' | 'confirmation_pending' | 'connected' | 'expired' | 'failed'
-type OneClickState = 'checking' | 'available' | 'release_gate' | 'schema_upgrade' | 'production_mode' | 'unsupported_platform' | 'workspace_required' | 'auth_required' | 'check_failed'
+type OneClickState = 'checking' | 'available' | 'release_gate' | 'schema_upgrade' | 'production_mode' | 'unsupported_platform' | 'workspace_required' | 'workspace_mismatch' | 'auth_required' | 'check_failed'
 
 type CapabilityReadApi = <T>(baseUrl: string, path: string, init?: RequestInit, workspaceId?: string) => Promise<T>
 
@@ -90,6 +90,8 @@ export async function readLocalPluginCapability(apiBaseUrl: string, workspaceId:
   } catch (error) {
     const code = (error as ApiError)?.code
     if (code === 'AUTH_SESSION_INVALID' || code === 'AUTH_SESSION_EXPIRED') return 'auth_required' as const
+    if (code === 'MCP_OAUTH_WORKSPACE_AMBIGUOUS' || code === 'API_WORKSPACE_CONTEXT_MISMATCH' || code === 'API_WORKSPACE_CONTEXT_CHANGED' || code === 'API_WORKSPACE_NOT_AUTHORIZED') return 'workspace_mismatch' as const
+    if (code === 'API_WORKSPACE_SCOPE_REQUIRED') return 'workspace_required' as const
     throw error
   }
 }
@@ -175,7 +177,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
   // available.  During capability discovery (or without a valid workspace),
   // keep the button disabled so an incomplete target cannot be submitted.
   const connectionButtonDisabled = !connectTargetAvailable
-    || ['checking', 'unsupported_platform', 'workspace_required'].includes(oneClickState)
+    || ['checking', 'unsupported_platform', 'workspace_required', 'workspace_mismatch'].includes(oneClickState)
     || connectionState === 'requesting' || connectionState === 'launching'
   const loginCommand = localPluginLoginCommand(apiBaseUrl, account.workspaceIds, workspaceId ?? undefined, 'macos')
   const oneClickUnavailableReason = oneClickState === 'release_gate'
@@ -188,6 +190,8 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       ? '一键连接目前仅支持 macOS 桌面端。'
       : oneClickState === 'workspace_required'
         ? '请先选择要连接的工作区。'
+        : oneClickState === 'workspace_mismatch'
+          ? '当前连接请求与所选工作区不一致，请切换到账号已授权的工作区后重试。'
         : oneClickState === 'auth_required'
           ? '商家后台登录会话已失效，请先重新登录后再连接本地插件。'
         : oneClickState === 'check_failed'
@@ -341,7 +345,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
       <Button type="primary" disabled={connectionButtonDisabled} loading={connectionState === 'requesting'} onClick={handleConnectClick}>连接 ChatGPT 本地插件</Button>
       <Tag color={presentation.color}>{presentation.label}</Tag>
       <Button type="link" onClick={() => setOpenScope(scope)}>安装与故障帮助</Button>
-      {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
+      {!oneClickAvailable && <Typography.Text type={oneClickState === 'release_gate' || oneClickState === 'schema_upgrade' || oneClickState === 'production_mode' || oneClickState === 'workspace_mismatch' || oneClickState === 'check_failed' ? 'warning' : 'secondary'}>{oneClickUnavailableReason}</Typography.Text>}
       {oneClickState === 'auth_required' && <Button type="default" href="/merchant/login">重新登录商家后台</Button>}
       {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Button type="default" onClick={() => setOpenScope(scope)}>使用本地登录命令</Button>}
       {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Typography.Text code copyable={{ text: loginCommand }} style={{ maxWidth: '100%' }}>{loginCommand}</Typography.Text>}
@@ -369,6 +373,7 @@ export function LocalPluginConnection({ apiBaseUrl, account, activeWorkspaceId, 
           { key: 'account', label: '当前登录账号', children: account.login },
           { key: 'workspace', label: '目标工作区', children: workspaceId ?? '请先选择当前账号已授权的工作区' },
         ]} />
+        {oneClickState === 'auth_required' && <Button type="primary" href="/merchant/login">重新登录商家后台</Button>}
         {pairing && <Button type="primary" disabled={!pairingMatchesWorkspace(pairing, workspaceId) || !installationKey} onClick={() => { void completePairing() }}>确认连接这台电脑</Button>}
         {oneClickState !== 'auth_required' && !oneClickAvailable && loginCommand && <Alert type="info" title="本地验证恢复路径" showIcon description={<Space orientation="vertical" size={4}>
           <Typography.Text>优先重新运行平台提供的 macOS 安装包。维护人员或旧版安装可在插件目录运行：</Typography.Text>
