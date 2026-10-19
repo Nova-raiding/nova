@@ -5861,7 +5861,9 @@ function StoreCatalogExperience({ baseUrl, apiMode, canWrite, modelStatus, model
               >
                 <ImageIcon size={16} />生成图片
               </button>
-              {!imageModelReady && <small className="catalog-detail-action-note">{imageModelBlocker || '正在检查模型中转配置'}</small>}
+              {(!baseUrl || !selectedApiProduct?.factsConfirmed || !imageModelReady) && <small className="catalog-detail-action-note">
+                {!baseUrl ? '尚未连接商家 API' : !selectedApiProduct?.factsConfirmed ? '请先确认商品事实' : imageModelBlocker || '正在检查模型中转配置'}
+              </small>}
             </div>
           </div>
         </section>

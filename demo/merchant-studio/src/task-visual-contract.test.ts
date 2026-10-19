@@ -55,6 +55,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('window.setInterval(() => load(false), 5_000)')
     expect(app).toContain('image-generation-dialog')
     expect(app).toContain('生成图片')
+    expect(app).toContain("请先确认商品事实")
     expect(app).toContain('submitImageGeneration')
     expect(app).toContain('不等于可发布')
     expect(api).toContain("'catalog.image.generate'")
