@@ -153,6 +153,37 @@ describe('product image review API', () => {
     expect(reviewedJson.data.result.findings).toEqual([])
   })
 
+  it('completes the unbound candidate generate, review, and select flow without a store grant', async () => {
+    const base = await start()
+    const workspaceId = `ws_unbound_review_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    vi.stubEnv('PUBLIC_ASSET_BASE_URL', base)
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_SECRET', 'test-asset-display-signing-secret-at-least-32-bytes')
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'test-primary')
+    const product = service.importProduct({ workspaceId, platform: 'taobao', title: '未绑定候选审核商品', stock: 2 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const call = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json()) as Promise<any>
+    const generated = await call(1, 'catalog.image.generate', { product_id: product.id, count: '1', direction: '保留商品本体，生成清爽白底主图', idempotency_key: `unbound-generate-${workspaceId}` })
+    expect(generated.error).toBeNull()
+    const jobId = generated.data.result.job_id as string
+    const candidate = generated.data.result.job.candidates[0] as { assetId: string; visualRef: string }
+    const scanned = await fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers, body: JSON.stringify({ scan_evidence_ref: `scanner://unbound-review/${candidate.assetId}` }) }).then(response => response.json())
+    expect(scanned.data.scanStatus).toBe('clean')
+    const readable = await call(2, 'catalog.image.get', { job_id: jobId })
+    expect(readable.error).toBeNull()
+    const ticket = readable.data.result.selection_tickets[0] as { nonce_hash: string; intent_hash: string }
+    const reviewed = await call(3, 'catalog.image.review', { product_id: product.id, visual_refs_json: JSON.stringify([candidate.visualRef]) })
+    expect(reviewed.error).toBeNull()
+    expect(reviewed.data.result).toMatchObject({ productId: product.id, visualRefs: [candidate.visualRef], persistedReviewStatus: 'passed' })
+    const refreshed = await call(3.5, 'catalog.image.get', { job_id: jobId })
+    const refreshedTicket = refreshed.data.result.selection_tickets[0] as { nonce_hash: string; intent_hash: string }
+    const selected = await call(4, 'catalog.image.select', { job_id: jobId, visual_ref: candidate.visualRef, expected_revision: String(refreshed.data.result.job.revision), idempotency_key: `unbound-select-${workspaceId}`, reason: '未绑定候选审核后选择', confirmation_ticket_nonce_hash: refreshedTicket.nonce_hash, confirmation_ticket_intent_hash: refreshedTicket.intent_hash })
+    expect(selected.error).toBeNull()
+    expect(selected.data.result).toMatchObject({ preference_status: 'selected', review_required: true, publishable: false, platformPublished: false })
+  })
+
   it('uses the same archive evidence gate for image reads and candidate selection', async () => {
     const base = await start()
     const workspaceId = `ws_image_integrity_${Date.now()}`
