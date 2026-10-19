@@ -58,6 +58,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain("请先确认商品事实")
     expect(app).toContain('submitImageGeneration')
     expect(app).toContain('不等于可发布')
+    expect(app).toContain('完成后请在 ChatGPT 新会话中检查 Store Nova 连接和图片状态')
     expect(api).toContain("'catalog.image.generate'")
     expect(app).toContain('A terminal read must clear the busy state too')
     expect(app).toContain('aria-busy={loading}')
