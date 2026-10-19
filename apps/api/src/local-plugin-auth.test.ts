@@ -67,6 +67,7 @@ describe('local plugin PKCE contract', () => {
     expect(html).toContain('merchant&lt;&amp;&gt;@example.test')
     expect(html).toContain('仅连接此工作区的 Store Nova 本地插件')
     expect(html).toContain('不会因本次授权扣费或发布内容')
+    expect(html).toContain('本次授权不会自动连接第三方店铺或执行店铺操作；后续任何店铺操作仍需单独的平台授权、规则确认和真实回执')
     expect(html).toContain('<button class="primary" type="submit">确认授权本地插件</button>')
     expect(html).toContain(`name="state" value="${state}"`)
     expect(html).not.toMatch(/access_token|refresh_token/u)
