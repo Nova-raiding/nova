@@ -153,6 +153,33 @@ describe('Demo UI mixed-component publication identity', () => {
     expect(JSON.parse(result.manifest_text).configuration_contract_sha256).toBe(hash(canonicalJson(normalizedCandidate)))
   })
 
+  it('uses fresh runtime provenance for an explicit first-install manifest recovery', () => {
+    const input = fixture()
+    const compose = JSON.parse(input.baseline.compose_text), legacy = JSON.parse(input.baseline.manifest_text)
+    legacy.image_set_digest = sha('legacy eight-image set')
+    legacy.configuration_contract_sha256 = sha('legacy rendered configuration')
+    for (const name of runtimeServices as string[]) {
+      legacy.services[name].git_sha = 'c'.repeat(40)
+      legacy.services[name].source_sha256 = sha('legacy source')
+    }
+    input.baseline.manifest_text = JSON.stringify(legacy) + '\n'
+    Object.assign(input.baseline.identity, {
+      RELEASE_MANIFEST_SHA256: hash(input.baseline.manifest_text),
+      RELEASE_IMAGE_SET_DIGEST: legacy.image_set_digest,
+    })
+    input.baseline.public_identity = structuredClone(input.baseline.identity)
+    for (const name of ['api', 'api-replica']) Object.assign(compose.services[name].environment, input.baseline.identity)
+    input.baseline.compose_text = JSON.stringify(compose) + '\n'
+    for (const name of runtimeServices as string[]) input.baseline.runtime_services[name].compose_service_sha256 = hash(canonicalJson(compose.services[name]))
+    input.baseline.manifest_semantics = 'legacy_first_install_v1'
+    expect(() => prepare({ ...input, baseline: { ...input.baseline, manifest_semantics: undefined } })).toThrow(/baseline image set differs/)
+    const result = prepare(input), manifest = JSON.parse(result.manifest_text)
+    expect(manifest.services.api.git_sha).toBe(previousGit)
+    expect(manifest.services.api.source_sha256).toBe(previousSource)
+    expect(manifest.migration_change_required).toBe(false)
+    expect(result.rollback_manifest_text).toBe(input.baseline.manifest_text)
+  })
+
   it.each([
     ['merchant-api', ['api', 'api-replica']],
     ['merchant-worker', ['api', 'api-replica', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync']],

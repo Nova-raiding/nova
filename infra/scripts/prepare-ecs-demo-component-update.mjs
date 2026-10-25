@@ -63,6 +63,8 @@ function migrations(rows, expectedVersion, label) {
 export function prepareDemoComponentUpdate(input) {
   assert(input?.schema_version === 'demo-component-update-input/1' && input.compose_project === project, 'only the reviewed Demo project is supported')
   const baseline = input.baseline
+  const legacyBaseline = baseline?.manifest_semantics === 'legacy_first_install_v1'
+  assert(baseline?.manifest_semantics === undefined || legacyBaseline, 'unsupported baseline manifest semantics')
   const original = parseDocument(baseline?.compose_text, 'baseline Compose')
   const prior = parseDocument(baseline?.manifest_text, 'baseline manifest')
   const priorIdentity = baseline?.identity
@@ -73,8 +75,12 @@ export function prepareDemoComponentUpdate(input) {
   exactNames(original.services, [...runtimeServices, 'migrate'], 'baseline Compose')
   exactNames(prior.services, runtimeServices, 'baseline manifest')
   exactNames(baseline.runtime_services, runtimeServices, 'actual runtime')
-  assert(imageSetDigest(prior.services) === prior.image_set_digest, 'baseline image set differs')
-  assert(sha(canonicalJson(stripIdentity(original))) === prior.configuration_contract_sha256, 'baseline configuration contract differs')
+  // The first-install renderer used an eight-image digest and did not bind
+  // every service's OCI provenance into the runtime manifest. A fresh runtime
+  // projection is the authority for that explicit recovery mode; ordinary
+  // component updates still require the current service-image digest contract.
+  assert(legacyBaseline || imageSetDigest(prior.services) === prior.image_set_digest, 'baseline image set differs')
+  assert(legacyBaseline || sha(canonicalJson(stripIdentity(original))) === prior.configuration_contract_sha256, 'baseline configuration contract differs')
   const migrationVersion = Array.isArray(input.target_migrations) ? input.target_migrations.length : 0
   migrations(input.target_migrations, migrationVersion, 'target source')
   migrations(baseline.migrations, migrationVersion, 'baseline')
@@ -84,7 +90,7 @@ export function prepareDemoComponentUpdate(input) {
     const current = baseline.runtime_services[name], record = prior.services[name], service = original.services[name]
     exactNames(current, ['container_id', 'reference', 'image_id', 'git_sha', 'source_sha256', 'running', 'health', 'restarts', 'oom_killed', 'compose_service_sha256'], `${name} safe runtime projection`)
     assert(/^[a-f0-9]{64}$/u.test(current.container_id ?? '') && digest(current.image_id) && current.running === true && current.health === 'healthy' && current.restarts === 0 && current.oom_killed === false, `${name} runtime is not a healthy frozen baseline`)
-    assert(current.reference === service.image && current.reference === record.reference && current.image_id === record.image_id && current.git_sha === record.git_sha, `${name} actual image identity differs`)
+    assert(current.reference === service.image && current.reference === record.reference && current.image_id === record.image_id && (legacyBaseline || current.git_sha === record.git_sha), `${name} actual image identity differs`)
     assert(current.compose_service_sha256 === sha(canonicalJson(service)), `${name} reviewed runtime configuration differs`)
     if (['postgres', 'redis', 'clamav'].includes(name)) {
       assert((current.git_sha === null || git(current.git_sha)) && (current.source_sha256 === null || digest(current.source_sha256)), `${name} upstream identity malformed`)
@@ -98,7 +104,7 @@ export function prepareDemoComponentUpdate(input) {
     }
     // Older manifests omitted source or recorded null as unknown. Enrich only
     // from the actual bound image labels; a recorded digest must still match.
-    if (record.source_sha256 !== undefined && record.source_sha256 !== null) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
+    if (!legacyBaseline && record.source_sha256 !== undefined && record.source_sha256 !== null) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
     baselineIds[name] = current.container_id
   }
   assert(new Set(Object.values(baselineIds)).size === runtimeServices.length, 'duplicate runtime container identity')

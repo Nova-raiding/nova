@@ -69,6 +69,8 @@ Migration 274/275 的维护窗口还必须满足具体数据库前置条件：27
 - `component_images` 的精确组件键集合与 `imported_components` 的精确镜像 inspect 投影集合必须相同；每项投影包含 `reference,image_id,repo_digests,labels,os,architecture`，并绑定同一不可变引用、候选标签与 `linux/amd64`。只更新 `merchant-ui` 时也兼容旧输入字段 `imported_ui`。不能拿本地 OCI index digest 冒充实际导入后的镜像 config ID。
 - 旧 Compose 的 API `DEMO_RUNTIME_MODE` 可缺省或为 `true`；显式设置成其他值会被拒绝。候选始终为 `api` 和 `api-replica` 设置 `DEMO_RUNTIME_MODE=true`，确保本轮更新后唯一 Demo 被健康接口识别为 Demo。原始基线 Compose 和回滚字节保持不变。
 
+若基线来自早期首装渲染器，且旧 manifest 的 image-set/configuration 摘要或服务 OCI provenance 与本轮新鲜 Docker projection 不一致，owner 必须在输入中显式标记 `baseline.manifest_semantics=legacy_first_install_v1`。该模式只放宽旧 manifest 的摘要和历史 provenance 比较，仍要求 Compose、API 发布四元组、实际镜像引用/ID、15 个健康容器、完整迁移链和回滚字节全部由本轮证据绑定；适配器会用新鲜 runtime projection 生成新的服务身份。没有这个显式标记时，旧 manifest 漂移必须继续 fail-closed。
+
 输出包含新完整 15 服务 manifest、四个 API `RELEASE_*` 输入、新 Compose、原始回滚 Compose/manifest 字节及旧身份、准备审查摘要。manifest 的候选 SHA 表示本次发布包；`services.*.git_sha/source_sha256/reference/image_id` 表示各组件自己的真实镜像身份。只有所选组件镜像与标签会更新；API、六个 worker、Ops UI、Merchant UI 分别映射到对应服务；API 双实例同时更新发布四字段和 Demo 标记。未选服务的配置、镜像、网络、挂载、healthcheck 与 migrate 声明完全保留。
 
 现有宿主自有 `pilot-gateway` 可使用精确 Docker config ID 引用，但仅当 `reference === image_id` 且值为合法 `sha256:<64hex>`；其他自有服务仍必须使用 `repository@sha256`。旧 manifest 未记录 `source_sha256` 或记录 null 时，owner 仍须从当前容器所绑定的实际镜像 ID 的 `com.storenova.release.source_sha256` 标签采集该字段，同时从同一镜像采集 Git 标签；不得从候选源码、全局发布 SHA 或其他组件推断。pilot/payment 的实际镜像标签均存在合法 source SHA，应填入并输出真实 digest。所有自有镜像（含 pilot）缺少合法 Git/source 标签将被拒绝；旧 manifest 已记录非 null source 时还须逐项相等。上游 Postgres/Redis/ClamAV 无标签时仍允许显式 `null`，并绑定其原 config ID。
