@@ -158,10 +158,6 @@ describe('Demo UI mixed-component publication identity', () => {
     const compose = JSON.parse(input.baseline.compose_text), legacy = JSON.parse(input.baseline.manifest_text)
     legacy.image_set_digest = sha('legacy eight-image set')
     legacy.configuration_contract_sha256 = sha('legacy rendered configuration')
-    for (const name of runtimeServices as string[]) {
-      legacy.services[name].git_sha = 'c'.repeat(40)
-      legacy.services[name].source_sha256 = sha('legacy source')
-    }
     input.baseline.manifest_text = JSON.stringify(legacy) + '\n'
     Object.assign(input.baseline.identity, {
       RELEASE_MANIFEST_SHA256: hash(input.baseline.manifest_text),

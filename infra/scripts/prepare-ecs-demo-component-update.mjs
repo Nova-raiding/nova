@@ -90,7 +90,7 @@ export function prepareDemoComponentUpdate(input) {
     const current = baseline.runtime_services[name], record = prior.services[name], service = original.services[name]
     exactNames(current, ['container_id', 'reference', 'image_id', 'git_sha', 'source_sha256', 'running', 'health', 'restarts', 'oom_killed', 'compose_service_sha256'], `${name} safe runtime projection`)
     assert(/^[a-f0-9]{64}$/u.test(current.container_id ?? '') && digest(current.image_id) && current.running === true && current.health === 'healthy' && current.restarts === 0 && current.oom_killed === false, `${name} runtime is not a healthy frozen baseline`)
-    assert(current.reference === service.image && current.reference === record.reference && current.image_id === record.image_id && (legacyBaseline || current.git_sha === record.git_sha), `${name} actual image identity differs`)
+    assert(current.reference === service.image && current.reference === record.reference && current.image_id === record.image_id && current.git_sha === record.git_sha, `${name} actual image identity differs`)
     assert(current.compose_service_sha256 === sha(canonicalJson(service)), `${name} reviewed runtime configuration differs`)
     if (['postgres', 'redis', 'clamav'].includes(name)) {
       assert((current.git_sha === null || git(current.git_sha)) && (current.source_sha256 === null || digest(current.source_sha256)), `${name} upstream identity malformed`)
@@ -104,7 +104,7 @@ export function prepareDemoComponentUpdate(input) {
     }
     // Older manifests omitted source or recorded null as unknown. Enrich only
     // from the actual bound image labels; a recorded digest must still match.
-    if (!legacyBaseline && record.source_sha256 !== undefined && record.source_sha256 !== null) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
+    if (record.source_sha256 !== undefined && record.source_sha256 !== null) assert(record.source_sha256 === current.source_sha256, `${name} source digest differs`)
     baselineIds[name] = current.container_id
   }
   assert(new Set(Object.values(baselineIds)).size === runtimeServices.length, 'duplicate runtime container identity')
