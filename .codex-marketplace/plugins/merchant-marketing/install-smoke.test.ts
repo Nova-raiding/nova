@@ -92,7 +92,6 @@ describe('Codex plugin installation package', () => {
         platform: 'darwin',
         architecture: process.arch,
         bundled_node_version: 'v22.16.0',
-        ready_to_install: false,
         connect_helper: {
           source_included: true,
           app_bundle_included: true,
@@ -104,7 +103,9 @@ describe('Codex plugin installation package', () => {
           },
         },
       })
-      expect(packageMetadata.release_status).toBe(packageMetadata.source_dirty ? 'dirty_source_candidate' : 'unsigned_candidate')
+      expect(packageMetadata.ready_to_install).toBe(packageMetadata.source_dirty !== true)
+      expect(packageMetadata.release_status).toBe(packageMetadata.source_dirty === true
+        ? 'dirty_source_candidate' : 'local_stdio_candidate')
       const listing = spawnSync('tar', ['-tzf', artifact], { encoding: 'utf8' })
       expect(listing.status, listing.stderr).toBe(0)
       const skillFiles: string[] = []
