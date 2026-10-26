@@ -78,13 +78,15 @@ export function objectStorageCanaryConfig(source: NodeJS.ProcessEnv) {
   if (!['aes256', 'aws:kms'].includes(mode)) throw new Error('ASSET_STORAGE_SSE_MODE_INVALID')
   const kmsKeyId = source.ASSET_STORAGE_KMS_KEY_ID?.trim()
   if (mode === 'aws:kms' && !kmsKeyId) throw new Error('ASSET_STORAGE_KMS_KEY_ID_REQUIRED')
+  const canaryPrefix = canaryKeyPrefix(source.OBJECT_STORAGE_CANARY_PREFIX?.trim() || 'merchant-assets')
+  if (canaryPrefix !== 'merchant-assets') throw new Error('OBJECT_STORAGE_CANARY_PREFIX_INVALID')
   return {
     releaseId,
     bucket: required(source, 'ASSET_STORAGE_BUCKET'),
     region: required(source, 'ASSET_STORAGE_REGION'),
     endpoint: parsedEndpoint.toString().replace(/\/$/u, ''),
     roleName: required(source, 'ASSET_STORAGE_ECS_RAM_ROLE'),
-    keyPrefix: canaryKeyPrefix(required(source, 'ASSET_STORAGE_PREFIX')),
+    keyPrefix: canaryPrefix,
     encryption: mode === 'aws:kms' ? 'aws:kms' as const : 'AES256' as const,
     kmsKeyId,
     forcePathStyle: source.ASSET_STORAGE_FORCE_PATH_STYLE === 'true',

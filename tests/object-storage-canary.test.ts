@@ -17,8 +17,11 @@ describe('object storage canary', () => {
     expect(() => objectStorageCanaryConfig({ ...env(), RELEASE_ID: '../prod' })).toThrow('RELEASE_ID_INVALID')
     expect(() => objectStorageCanaryConfig({ ...env(), ASSET_STORAGE_ENDPOINT: 'http://oss.example.test' })).toThrow('ASSET_STORAGE_ENDPOINT_INVALID')
     expect(() => objectStorageCanaryConfig({ ...env(), ASSET_STORAGE_SSE_MODE: 'aws:kms' })).toThrow('ASSET_STORAGE_KMS_KEY_ID_REQUIRED')
-    expect(() => objectStorageCanaryConfig({ ...env(), ASSET_STORAGE_PREFIX: '../merchant' })).toThrow('ASSET_STORAGE_PREFIX_INVALID')
-    expect(() => objectStorageCanaryConfig({ ...env(), ASSET_STORAGE_PREFIX: '/' })).toThrow('ASSET_STORAGE_PREFIX_INVALID')
+    expect(() => objectStorageCanaryConfig({ ...env(), OBJECT_STORAGE_CANARY_PREFIX: 'demo-candidate/release-1' })).toThrow('OBJECT_STORAGE_CANARY_PREFIX_INVALID')
+  })
+
+  it('keeps the canary prefix on the authorized merchant-assets scope', () => {
+    expect(objectStorageCanaryConfig({ ...env(), ASSET_STORAGE_PREFIX: 'demo-candidate/release-1' }).keyPrefix).toBe('merchant-assets')
   })
 
   it('rejects unsafe key prefixes before any remote write', async () => {
