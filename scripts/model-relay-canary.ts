@@ -832,11 +832,11 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       ? process.env.EMBEDDING_CANARY_INPUT ?? 'Embedding candidate canary: verify the configured model relay returns one vector with auditable usage and cost.'
       : undefined
     const body = modality === 'text'
-      ? { model, temperature: 0, max_tokens: 32, messages: [{ role: 'user', content: '只返回 OK' }] }
+      ? { model, temperature: 0, max_tokens: 32, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: '只返回 OK' }] }
       : modality === 'embedding'
         ? { model, input: embeddingInput, encoding_format: 'float', dimensions: 1024 }
       : modality === 'ocr'
-        ? { model, temperature: 0, max_tokens: 32, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: '只返回 JSON：{"ocr_text":"OK"}' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR4nGP4TyFgGDVg1IBRA4aLAQBdePwur/3haQAAAABJRU5ErkJggg==' } }] }] }
+        ? { model, temperature: 0, max_tokens: 32, thinking: { type: 'disabled' }, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: '只返回 JSON：{"ocr_text":"OK"}' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR4nGP4TyFgGDVg1IBRA4aLAQBdePwur/3haQAAAABJRU5ErkJggg==' } }] }] }
         : modality === 'image'
           ? { model, prompt: '生成一张纯白测试图，只用于中转站连通性验收', n: 1, size: '1024x1024', response_format: 'url' }
           : modality === 'image_edit'

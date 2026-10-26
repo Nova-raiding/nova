@@ -717,7 +717,13 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.AI_MODEL?.trim() || source.MODEL_ID?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
-  const thinkingMode = source.AI_THINKING_MODE?.trim()
+  // Structured content generation must leave room for the answer itself. The
+  // configured relay model may spend a small output budget on hidden
+  // reasoning when the switch is omitted, which produces an empty assistant
+  // content field and cannot satisfy the JSON contract. Keep the explicit env
+  // override for auditability, but make the safe production default match the
+  // local relay launcher.
+  const thinkingMode = source.AI_THINKING_MODE?.trim() || 'disabled'
   if (thinkingMode && thinkingMode !== 'disabled') throw new Error('AI_THINKING_MODE must be disabled when configured')
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined

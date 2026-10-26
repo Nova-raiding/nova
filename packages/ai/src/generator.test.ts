@@ -369,6 +369,17 @@ describe('content generator', () => {
     expect(requestBody.thinking).toEqual({ type: 'disabled' })
   })
 
+  it('defaults structured relay generation to thinking disabled when env is omitted', async () => {
+    let requestBody: Record<string, unknown> = {}
+    const generator = createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'reasoning-model' }, () => ({ recorded: true, costEvidence: true })) as OpenAICompatibleContentGenerator
+    Object.assign(generator as unknown as { fetchImpl: typeof fetch }, { fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ id: 'thinking-default', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 })
+    } })
+    await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })
+    expect(requestBody.thinking).toEqual({ type: 'disabled' })
+  })
+
   it('accepts a structured static brief without exposing provider secrets', async () => {
     const generator = new OpenAICompatibleContentGenerator({
       baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }),
