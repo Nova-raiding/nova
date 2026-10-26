@@ -836,7 +836,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
       : modality === 'embedding'
         ? { model, input: embeddingInput, encoding_format: 'float', dimensions: 1024 }
       : modality === 'ocr'
-        ? { model, temperature: 0, max_tokens: 32, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: '只返回 JSON：{"ocr_text":"OK"}' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAIAAADmAupWAAAAYklEQVR42u3YQQoAIAgEQP//6fqChUjk7N1yOggWa1gCGBh4CjgSue/j8JDrS4GBZ4H7+kgU1rwsMDBwJ7gECQwM3AouRwIDAxtawMDAlgdg4H6wX0tgH/AfwQYGBgY+OVsExDB8vmXIRAAAAAASUVORK5CYII=' } }] }] }
+        ? { model, temperature: 0, max_tokens: 32, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: '只返回 JSON：{"ocr_text":"OK"}' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAd0lEQVR42u3ZSwoAIAgFQO9/6TqDfaXmQctEpoVR0WQqgQAgQIAABzZGpNbSpidrr+wNIECAfwCWajpZa+thAgQIEGAxwJ1gAAECBFgN8CQYQIAAARoiAAECBOgxASBAgP8AZi+zPpUAAgT4MqAABAgQoAAEeDcd79A2NbE8/G8AAAAASUVORK5CYII=' } }] }] }
         : modality === 'image'
           ? { model, prompt: '生成一张纯白测试图，只用于中转站连通性验收', n: 1, size: '1024x1024', response_format: 'url' }
           : modality === 'image_edit'
