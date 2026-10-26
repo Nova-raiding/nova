@@ -55,6 +55,26 @@ describe('object storage canary', () => {
     expect(serialized).not.toMatch(/access.?key|secret.?key|session.?token/iu)
   })
 
+  it('reads Aliyun OSS version IDs from provider response headers', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'oss-canary-aliyun-version-'))
+    const payload = new TextEncoder().encode('canary payload')
+    let deleted = false
+    const client = { send: vi.fn(async (command: any) => {
+      const name = command.constructor.name
+      if (name === 'PutObjectCommand') return { $metadata: { httpHeaders: { 'x-oss-version-id': 'oss-version-1' } } }
+      if (name === 'HeadObjectCommand') {
+        if (deleted) throw Object.assign(new Error('NoSuchVersion'), { $metadata: { httpStatusCode: 404 } })
+        return { $metadata: { httpHeaders: { 'x-oss-version-id': 'oss-version-1' } }, ContentLength: payload.byteLength, ServerSideEncryption: 'AES256' }
+      }
+      if (name === 'GetObjectCommand') return { $metadata: { httpHeaders: { 'x-oss-version-id': 'oss-version-1' } }, Body: { transformToByteArray: async () => payload } }
+      if (name === 'DeleteObjectCommand') deleted = true
+      return {}
+    }) }
+    const evidence = await runObjectStorageCanary({ client, bucket: 'merchant', endpoint: 'https://oss-cn-test.aliyuncs.com', region: 'cn-test', releaseId: '0.1.2', encryption: 'AES256', artifactRoot: join(root, 'artifacts'), evidencePath: join(root, 'evidence.json'), uuid: () => uuid, payload })
+    expect(evidence.checks.map(check => check.id)).toEqual(['put', 'head', 'get_hash', 'encryption', 'delete', 'delete_verified'])
+    expect(client.send.mock.calls.slice(1, 4).every(([command]) => command.input.VersionId === 'oss-version-1')).toBe(true)
+  })
+
   it('attempts cleanup of only the exact random key after a failed read', async () => {
     const root = mkdtempSync(join(tmpdir(), 'oss-canary-fail-'))
     const keys: string[] = []

@@ -14,6 +14,7 @@ export class ObjectStorageCanaryCleanupError extends Error {
   readonly cleanupState = 'failed'
   readonly completedChecks: ObjectStorageCanaryEvidence['checks']
   readonly cleanupTarget: { bucket: string; key: string; version_id: string | null }
+  readonly primaryError?: unknown
 
   constructor(input: {
     cause: unknown
@@ -28,6 +29,7 @@ export class ObjectStorageCanaryCleanupError extends Error {
     this.dataPathState = input.primaryError ? 'failed' : 'passed'
     this.completedChecks = [...input.checks]
     this.cleanupTarget = { bucket: input.bucket, key: input.key, version_id: input.versionId ?? null }
+    this.primaryError = input.primaryError
   }
 }
 
@@ -97,6 +99,19 @@ async function bodyBytes(body: unknown): Promise<Uint8Array> {
   throw new Error('GET_BODY_INVALID')
 }
 
+function responseVersionId(response: unknown): string | undefined {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return undefined
+  const value = response as { VersionId?: unknown; $metadata?: { httpHeaders?: Record<string, unknown> } }
+  if (typeof value.VersionId === 'string' && value.VersionId) return value.VersionId
+  const headers = value.$metadata?.httpHeaders
+  if (!headers || typeof headers !== 'object') return undefined
+  for (const name of ['x-oss-version-id', 'x-amz-version-id']) {
+    const header = headers[name] ?? headers[name.toLowerCase()]
+    if (typeof header === 'string' && header) return header
+  }
+  return undefined
+}
+
 export async function runObjectStorageCanary(input: {
   client: S3Sender
   bucket: string
@@ -127,15 +142,15 @@ export async function runObjectStorageCanary(input: {
   try {
     putAttempted = true
     const put = await input.client.send(new PutObjectCommand({ Bucket: input.bucket, Key: key, Body: payload, ContentType: 'application/octet-stream', Metadata: { canary: 'true', release: input.releaseId }, ServerSideEncryption: input.encryption, ...(input.encryption === 'aws:kms' ? { SSEKMSKeyId: input.kmsKeyId } : {}) }))
-    versionId = typeof put.VersionId === 'string' && put.VersionId ? put.VersionId : undefined
+    versionId = responseVersionId(put)
     if (!versionId) throw new Error('OBJECT_VERSION_ID_MISSING')
     checks.push({ id: 'put', state: 'passed' })
     const head = await input.client.send(new HeadObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
-    if (head.VersionId !== versionId) throw new Error('HEAD_VERSION_ID_MISMATCH')
+    if (responseVersionId(head) !== versionId) throw new Error('HEAD_VERSION_ID_MISMATCH')
     if (Number(head.ContentLength) !== payload.byteLength) throw new Error('HEAD_CONTENT_LENGTH_MISMATCH')
     checks.push({ id: 'head', state: 'passed' })
     const get = await input.client.send(new GetObjectCommand({ Bucket: input.bucket, Key: key, VersionId: versionId }))
-    if (get.VersionId !== versionId) throw new Error('GET_VERSION_ID_MISMATCH')
+    if (responseVersionId(get) !== versionId) throw new Error('GET_VERSION_ID_MISMATCH')
     const downloadedHash = createHash('sha256').update(await bodyBytes(get.Body)).digest('hex')
     if (downloadedHash !== payloadHash) throw new Error('GET_HASH_MISMATCH')
     checks.push({ id: 'get_hash', state: 'passed' })
@@ -192,6 +207,23 @@ export async function main() {
   try {
     const config = objectStorageCanaryConfig(process.env)
     const client = new S3Client({ region: config.region, endpoint: config.endpoint, forcePathStyle: config.forcePathStyle, credentials: createAliyunEcsRoleCredentials(config.roleName) })
+    // AWS SDK's S3 parser only exposes x-amz-version-id as VersionId. Aliyun
+    // OSS returns the equivalent x-oss-version-id header, so preserve it in
+    // the normalized metadata consumed by the exact-version canary.
+    client.middlewareStack.add(next => async args => {
+      const result = await next(args) as unknown as { response?: { headers?: Headers | Record<string, string> }; output?: Record<string, unknown> }
+      const headers = result.response?.headers
+      const readHeader = (name: string) => headers && typeof (headers as Headers).get === 'function'
+        ? (headers as Headers).get(name) ?? undefined
+        : typeof headers === 'object' ? headers[name] : undefined
+      const versionId = readHeader('x-oss-version-id') ?? readHeader('x-amz-version-id')
+      if (versionId && result.output) {
+        const metadata = result.output.$metadata && typeof result.output.$metadata === 'object' && !Array.isArray(result.output.$metadata) ? result.output.$metadata as Record<string, unknown> : {}
+        const httpHeaders = metadata.httpHeaders && typeof metadata.httpHeaders === 'object' && !Array.isArray(metadata.httpHeaders) ? metadata.httpHeaders as Record<string, unknown> : {}
+        result.output.$metadata = { ...metadata, httpHeaders: { ...httpHeaders, 'x-oss-version-id': versionId } }
+      }
+      return result as unknown as Awaited<ReturnType<typeof next>>
+    }, { step: 'deserialize', name: 'captureObjectStorageVersionHeader', override: true })
     const evidence = await runObjectStorageCanary({ client, ...config })
     console.log(JSON.stringify(evidence, null, 2))
   } catch (error) {
@@ -203,6 +235,7 @@ export async function main() {
       orphan_possible: true,
       cleanup_target: error.cleanupTarget,
       cleanup_error: error.cause instanceof Error ? error.cause.message : 'DELETE_OBJECT_VERSION_FAILED',
+      ...(error.primaryError instanceof Error ? { primary_error: error.primaryError.message } : {}),
     } : undefined
     console.error(JSON.stringify({ state: 'blocked', reason: error instanceof Error ? error.message : 'OBJECT_STORAGE_CANARY_FAILED', ...(cleanup ?? {}) }))
     process.exitCode = 1
