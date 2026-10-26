@@ -654,7 +654,14 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   // The relay uses `SUCCESS` for its envelope and `SUCCEEDED` for the
   // upstream task. They describe the same terminal state and must not be
   // treated as contradictory evidence.
-  const normalizedStatuses = statuses.map(value => value === 'success' ? 'succeeded' : value)
+  const normalizedStatuses = statuses.map(value => {
+    if (value === 'success') return 'succeeded'
+    // Wormhole's outer task envelope uses IN_PROGRESS while the nested
+    // provider task reports RUNNING. Both are the same pending state; keep
+    // the conflict guard for genuinely contradictory terminal states.
+    if (value === 'in_progress') return 'running'
+    return value
+  })
   if (new Set(normalizedStatuses).size > 1) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_state_conflict' }
   const status = normalizedStatuses[0]
   // Relays have used both `data.metadata.url` and the wrapped
