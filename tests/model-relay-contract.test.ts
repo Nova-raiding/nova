@@ -40,6 +40,7 @@ describe('production model relay contract', () => {
     expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '' } }] })).toBe(false)
     expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '{"ocr_text":"  "}' } }] })).toBe(false)
     expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '{"ocr_text":"OK"}' } }] })).toBe(true)
+    expect(canaryResponseHasContent('ocr', { choices: [{ message: { content: '```json\n{"ocr_text":"OK"}\n```' } }] })).toBe(true)
     expect(canaryResponseHasContent('image', { data: [] })).toBe(false)
     expect(canaryResponseHasContent('image', { data: [{ b64_json: '' }] })).toBe(false)
     expect(canaryResponseHasContent('image', { data: [{ url: 'https://cdn.example/image.png' }] })).toBe(true)

@@ -38,11 +38,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function parseJsonContent(content: string): unknown {
+  const trimmed = content.trim()
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(trimmed)
+  return JSON.parse((fenced?.[1] ?? trimmed).trim()) as unknown
+}
+
 function readContent(payload: unknown): unknown {
   if (!isRecord(payload) || !Array.isArray(payload.choices)) return undefined
   const choice = payload.choices[0]
   if (!isRecord(choice) || !isRecord(choice.message) || typeof choice.message.content !== 'string') return undefined
-  try { return JSON.parse(choice.message.content) } catch { return undefined }
+  try { return parseJsonContent(choice.message.content) } catch { return undefined }
 }
 
 function normalizeFacts(value: unknown): Record<string, unknown> {

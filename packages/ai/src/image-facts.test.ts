@@ -46,6 +46,15 @@ describe('platform-relay image facts extraction', () => {
     await expect(extractor.extract({ name: 'test.png', mimeType: 'image/png', body: Buffer.from('png') })).resolves.toMatchObject({ label: 'test' })
   })
 
+  it('accepts a fenced JSON OCR response from an OpenAI-compatible relay', async () => {
+    const extractor = new OpenAICompatibleImageFactsExtractor({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'vision-v1',
+      usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async () => new Response(JSON.stringify({ usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost_cny: 0.01 }, choices: [{ message: { content: '```json\n{"ocr_text":"OK"}\n```' } }] }), { status: 200 }),
+    })
+    await expect(extractor.extract({ name: 'test.png', mimeType: 'image/png', body: Buffer.from('png') })).resolves.toMatchObject({ format: 'image_ocr', ocr_text: 'OK' })
+  })
+
   it('propagates an asset-parse cancellation signal to the relay request', async () => {
     const controller = new AbortController()
     let requestSignal: AbortSignal | undefined
