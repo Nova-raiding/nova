@@ -215,7 +215,7 @@ export async function main() {
       const headers = result.response?.headers
       const readHeader = (name: string) => headers && typeof (headers as Headers).get === 'function'
         ? (headers as Headers).get(name) ?? undefined
-        : typeof headers === 'object' ? headers[name] : undefined
+        : typeof headers === 'object' ? (headers as Record<string, string>)[name] : undefined
       const versionId = readHeader('x-oss-version-id') ?? readHeader('x-amz-version-id')
       if (versionId && result.output) {
         const metadata = result.output.$metadata && typeof result.output.$metadata === 'object' && !Array.isArray(result.output.$metadata) ? result.output.$metadata as Record<string, unknown> : {}
