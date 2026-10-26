@@ -121,6 +121,17 @@ describe('object storage canary', () => {
     expect(client.send).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves the primary PUT error when exact cleanup cannot be established', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'oss-canary-put-failure-'))
+    const client = { send: vi.fn(async (command: any) => {
+      if (command.constructor.name === 'PutObjectCommand') throw new Error('AccessDenied: bucket acl')
+      return {}
+    }) }
+    const failure = await runObjectStorageCanary({ client, bucket: 'merchant', endpoint: 'https://oss.example.test', region: 'cn-test', releaseId: '0.1.2', encryption: 'AES256', artifactRoot: join(root, 'artifacts'), evidencePath: join(root, 'evidence.json'), uuid: () => uuid }).catch(error => error)
+    expect(failure).toBeInstanceOf(ObjectStorageCanaryCleanupError)
+    expect(failure).toMatchObject({ dataPathState: 'failed', cleanupState: 'failed', primaryError: { message: 'AccessDenied: bucket acl' } })
+  })
+
   it('rejects a HEAD response for another version and cleans only the PUT version', async () => {
     const root = mkdtempSync(join(tmpdir(), 'oss-canary-version-mismatch-'))
     const commands: any[] = []
