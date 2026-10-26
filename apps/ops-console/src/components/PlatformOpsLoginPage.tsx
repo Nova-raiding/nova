@@ -41,7 +41,7 @@ export function PlatformOpsLoginPage({
       <section className="ops-login-form-panel">
         <Card className="ops-login-card" variant="borderless">
           <div className="ops-login-card-heading">
-            <Typography.Title id="ops-login-title" level={2}>欢迎回来</Typography.Title>
+            <Typography.Title id="ops-login-title" level={1}>欢迎回来</Typography.Title>
             <Typography.Paragraph type="secondary">
               请使用平台管理员分配的运营账号登录
             </Typography.Paragraph>
@@ -52,6 +52,7 @@ export function PlatformOpsLoginPage({
               className="ops-login-alert"
               type="warning"
               showIcon
+              role="status"
               title="当前尚未登录"
               description={error}
               action={<Button type="link" size="small" onClick={onRetry}>重试</Button>}

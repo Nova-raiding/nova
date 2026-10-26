@@ -78,6 +78,32 @@ describe('object storage canary', () => {
     expect(client.send.mock.calls.slice(1, 4).every(([command]) => command.input.VersionId === 'oss-version-1')).toBe(true)
   })
 
+  it.each(['PutObjectCommand', 'HeadObjectCommand', 'GetObjectCommand'] as const)('rejects a literal null version ID returned by %s', async (nullAt) => {
+    const root = mkdtempSync(join(tmpdir(), `oss-canary-null-${nullAt}-`))
+    const payload = new TextEncoder().encode('canary payload')
+    let deleted = false
+    const client = { send: vi.fn(async (command: any) => {
+      const name = command.constructor.name
+      if (name === 'PutObjectCommand') return nullAt === name ? { VersionId: 'null' } : { VersionId: 'version-1' }
+      if (name === 'HeadObjectCommand') {
+        if (deleted) throw Object.assign(new Error('NoSuchVersion'), { $metadata: { httpStatusCode: 404 } })
+        return nullAt === name ? { VersionId: 'null', ContentLength: payload.byteLength, ServerSideEncryption: 'AES256' } : { VersionId: 'version-1', ContentLength: payload.byteLength, ServerSideEncryption: 'AES256' }
+      }
+      if (name === 'GetObjectCommand') return nullAt === name ? { VersionId: 'null', Body: { transformToByteArray: async () => payload } } : { VersionId: 'version-1', Body: { transformToByteArray: async () => payload } }
+      if (name === 'DeleteObjectCommand') { deleted = true; return {} }
+      return {}
+    }) }
+    const failure = await runObjectStorageCanary({ client, bucket: 'merchant', endpoint: 'https://oss.example.test', region: 'cn-test', releaseId: '0.1.2', encryption: 'AES256', artifactRoot: join(root, 'artifacts'), evidencePath: join(root, 'evidence.json'), uuid: () => uuid, payload }).catch(error => error)
+    if (nullAt === 'PutObjectCommand') {
+      expect(failure).toBeInstanceOf(ObjectStorageCanaryCleanupError)
+      expect(failure).toMatchObject({ code: 'OBJECT_STORAGE_CANARY_CLEANUP_FAILED', cleanupTarget: { version_id: null }, primaryError: { message: 'OBJECT_VERSION_ID_MISSING' } })
+      expect(client.send).toHaveBeenCalledTimes(1)
+    } else {
+      expect(failure).toMatchObject({ message: nullAt === 'HeadObjectCommand' ? 'HEAD_VERSION_ID_MISMATCH' : 'GET_VERSION_ID_MISMATCH' })
+      expect(client.send.mock.calls.some(([command]) => command.constructor.name === 'DeleteObjectCommand')).toBe(true)
+    }
+  })
+
   it('attempts cleanup of only the exact random key after a failed read', async () => {
     const root = mkdtempSync(join(tmpdir(), 'oss-canary-fail-'))
     const keys: string[] = []

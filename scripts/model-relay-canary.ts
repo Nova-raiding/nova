@@ -610,7 +610,7 @@ export async function evaluateRelayUsageEvidence(
   const metering = usageObserved ? { usage, ...(parsed?.providerRequestId ? { usageProviderRequestId: parsed.providerRequestId } : {}) } : {}
   const rawCost = modality === 'embedding'
     ? parsed?.costCny ?? headers.get('x-model-cost-cny')
-    : parsed?.costCny ?? record.cost ?? headers.get('x-model-cost-cny')
+    : parsed?.costCny ?? headers.get('x-model-cost-cny')
   const providerCost = typeof rawCost === 'number'
     ? rawCost
     : typeof rawCost === 'string' && /^\d+(?:\.\d+)?$/u.test(rawCost.trim()) ? Number(rawCost) : undefined
@@ -791,13 +791,47 @@ export function canaryResponseHasContent(modality: ProbeResult['modality'], payl
     return true
   }
   if (modality === 'image' || modality === 'image_edit') {
-    const data = Array.isArray(root.data) ? root.data : undefined
-    if (!data || data.length === 0) return false
+    // Keep the canary's accepted image envelopes aligned with the provider
+    // adapters: OpenAI-compatible responses use root `data`/`images`, while
+    // New API relays wrap those arrays under `data.data`, `data.images`, or
+    // `data.result.data`. Inspect only these documented arrays so an
+    // unrelated nested URL cannot satisfy the artifact contract.
+    const dataNode = root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+      ? root.data as Record<string, unknown>
+      : undefined
+    const resultNode = dataNode?.result && typeof dataNode.result === 'object' && !Array.isArray(dataNode.result)
+      ? dataNode.result as Record<string, unknown>
+      : undefined
+    const metadataNode = root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata)
+      ? root.metadata as Record<string, unknown>
+      : undefined
+    const outputNode = metadataNode?.output && typeof metadataNode.output === 'object' && !Array.isArray(metadataNode.output)
+      ? metadataNode.output as Record<string, unknown>
+      : undefined
+    const choiceItems = Array.isArray(outputNode?.choices)
+      ? outputNode.choices.flatMap(choice => {
+        if (!choice || typeof choice !== 'object' || Array.isArray(choice)) return []
+        const message = (choice as Record<string, unknown>).message
+        if (!message || typeof message !== 'object' || Array.isArray(message)) return []
+        const content = (message as Record<string, unknown>).content
+        return Array.isArray(content) ? content : []
+      })
+      : []
+    const data = [
+      ...choiceItems,
+      ...(Array.isArray(root.data) ? root.data : []),
+      ...(Array.isArray(root.images) ? root.images : []),
+      ...(dataNode && Array.isArray(dataNode.data) ? dataNode.data : []),
+      ...(dataNode && Array.isArray(dataNode.images) ? dataNode.images : []),
+      ...(resultNode && Array.isArray(resultNode.data) ? resultNode.data : []),
+    ]
+    if (data.length === 0) return false
     return data.some(item => {
       if (typeof item === 'string') return isStrictHttpsUrl(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)
       if (!item || typeof item !== 'object' || Array.isArray(item)) return false
       const value = item as Record<string, unknown>
       return (typeof value.url === 'string' && isStrictHttpsUrl(value.url))
+        || (typeof value.image === 'string' && isStrictHttpsUrl(value.image))
         || (typeof value.b64_json === 'string' && value.b64_json.trim().length > 0)
     })
   }

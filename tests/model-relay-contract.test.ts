@@ -44,6 +44,13 @@ describe('production model relay contract', () => {
     expect(canaryResponseHasContent('image', { data: [] })).toBe(false)
     expect(canaryResponseHasContent('image', { data: [{ b64_json: '' }] })).toBe(false)
     expect(canaryResponseHasContent('image', { data: [{ url: 'https://cdn.example/image.png' }] })).toBe(true)
+    for (const modality of ['image', 'image_edit'] as const) {
+      expect(canaryResponseHasContent(modality, { data: { data: [{ url: 'https://cdn.example/nested.png' }] } })).toBe(true)
+      expect(canaryResponseHasContent(modality, { data: { images: [{ b64_json: 'aGVsbG8=' }] } })).toBe(true)
+      expect(canaryResponseHasContent(modality, { data: { result: { data: [{ url: 'https://cdn.example/result.png' }] } } })).toBe(true)
+      expect(canaryResponseHasContent(modality, { metadata: { output: { choices: [{ message: { content: [{ image: 'https://cdn.example/choice.png' }] } }] } } })).toBe(true)
+      expect(canaryResponseHasContent(modality, { metadata: { output: { choices: [{ message: { content: [{ b64_json: 'aGVsbG8=' }] } }] } } })).toBe(true)
+    }
   })
 
   it('loads an operator-captured recovery object without inventing recovery evidence', () => {
@@ -370,6 +377,21 @@ describe('production model relay contract', () => {
       'image',
       'image-v1',
     )).resolves.toEqual({ usageObserved: false, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
+  })
+
+  it.each([
+    ['text', { usage: { total_tokens: 3 } }],
+    ['image', { usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/image.png' }] }],
+    ['image_edit', { usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/edited.png' }] }],
+    ['ocr', { usage: { total_tokens: 3 } }],
+    ['video', { usage: { duration_seconds: 5 }, task_id: 'job-generic-cost' }],
+  ] as const)('does not treat generic root cost as CNY provider evidence for %s', async (modality, payload) => {
+    await expect(evaluateRelayUsageEvidence(
+      { ...payload, cost: 0.02 },
+      new Headers({ 'x-request-id': `req-generic-cost-${modality}` }),
+      modality,
+      `${modality}-v1`,
+    )).resolves.toMatchObject({ usageObserved: true, costObserved: false })
   })
 
   it('uses only provider reported image units as fixed-price usage evidence', async () => {

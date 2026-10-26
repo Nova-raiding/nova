@@ -8,6 +8,7 @@ describe("PlatformOpsLoginPage", () => {
       <PlatformOpsLoginPage managedSession={false} onAuthenticated={() => undefined} onRetry={() => undefined} />,
     );
     expect(markup).toContain("登录平台运营后台");
+    expect(markup).toMatch(/<h1 id="ops-login-title"[^>]*>欢迎回来<\/h1>/u);
     expect(markup).toContain('id="ops-login-account"');
     expect(markup).toContain('id="ops-login-password"');
     expect(markup).toContain("平台管理员分配的运营账号");

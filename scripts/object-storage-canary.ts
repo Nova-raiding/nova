@@ -104,12 +104,18 @@ async function bodyBytes(body: unknown): Promise<Uint8Array> {
 function responseVersionId(response: unknown): string | undefined {
   if (!response || typeof response !== 'object' || Array.isArray(response)) return undefined
   const value = response as { VersionId?: unknown; $metadata?: { httpHeaders?: Record<string, unknown> } }
-  if (typeof value.VersionId === 'string' && value.VersionId) return value.VersionId
+  const validVersionId = (candidate: unknown): string | undefined => {
+    if (typeof candidate !== 'string') return undefined
+    const normalized = candidate.trim()
+    return normalized && normalized.toLowerCase() !== 'null' ? normalized : undefined
+  }
+  const directVersionId = validVersionId(value.VersionId)
+  if (directVersionId) return directVersionId
   const headers = value.$metadata?.httpHeaders
   if (!headers || typeof headers !== 'object') return undefined
   for (const name of ['x-oss-version-id', 'x-amz-version-id']) {
-    const header = headers[name] ?? headers[name.toLowerCase()]
-    if (typeof header === 'string' && header) return header
+    const header = validVersionId(headers[name] ?? headers[name.toLowerCase()])
+    if (header) return header
   }
   return undefined
 }
