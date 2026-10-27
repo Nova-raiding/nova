@@ -12,6 +12,10 @@ const bundle = resolve(args[0])
 const output = resolve(args[1] ?? join(bundle, 'remote-review-source'))
 const alias = process.env.ECS_CANDIDATE_REMOTE_ALIAS ?? '101'
 const remoteRoot = process.env.ECS_CANDIDATE_REMOTE_ROOT ?? '/opt/merchant-deploy'
+const transferTimeoutRaw = process.env.ECS_REVIEW_SSH_TIMEOUT_MS ?? '120000'
+if (!/^\d+$/u.test(transferTimeoutRaw)) fail('ECS_REVIEW_SSH_TIMEOUT_MS must be an integer in milliseconds')
+const transferTimeoutMs = Number(transferTimeoutRaw)
+if (!Number.isSafeInteger(transferTimeoutMs) || transferTimeoutMs < 1_000 || transferTimeoutMs > 600_000) fail('ECS_REVIEW_SSH_TIMEOUT_MS must be between 1000 and 600000')
 if (!/^[A-Za-z0-9][A-Za-z0-9._@-]*$/u.test(alias)) fail('unsafe SSH alias')
 if (!/^\/[A-Za-z0-9._/-]+$/u.test(remoteRoot) || remoteRoot.includes('..') || remoteRoot.includes('//')) fail('unsafe remote root')
 if (!isAbsolute(output) || dirname(output) !== bundle || output === bundle) fail('output-dir must be a new direct child of the candidate bundle')
@@ -91,7 +95,7 @@ for path in paths:
         os.close(fd)`
 const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`
 const command = `cd -- ${shellQuote(remoteRoot)} && python3 -c ${shellQuote(python)} ${shellQuote(remoteRoot)}`
-const transfer = spawnSync('ssh', ['-o', 'BatchMode=yes', alias, command], { input: Buffer.from(`${eligible.join('\n')}\n`), maxBuffer: 256 * 1024 * 1024, timeout: 120_000 })
+const transfer = spawnSync('ssh', ['-o', 'BatchMode=yes', alias, command], { input: Buffer.from(`${eligible.join('\n')}\n`), maxBuffer: 256 * 1024 * 1024, timeout: transferTimeoutMs })
 if (transfer.error) fail(`SSH source acquisition failed: ${transfer.error.message}`)
 if (transfer.status !== 0) fail(`remote source acquisition rejected or failed (exit ${transfer.status}); stderr suppressed to avoid leaking host data`)
 const payload = transfer.stdout

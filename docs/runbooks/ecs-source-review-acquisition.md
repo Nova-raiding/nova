@@ -12,6 +12,16 @@ node infra/scripts/acquire-ecs-review-source.mjs \
   artifacts/deployment-candidates/ecs-<candidate-sha>
 ```
 
+The SSH transfer timeout defaults to 120000 ms. For a healthy host with a
+large source-only review set, an operator may raise it up to 600000 ms without
+changing the read-only protocol:
+
+```sh
+ECS_REVIEW_SSH_TIMEOUT_MS=600000 \
+  node infra/scripts/acquire-ecs-review-source.mjs \
+  artifacts/deployment-candidates/ecs-<candidate-sha>
+```
+
 The helper verifies the candidate identity bindings for `files.txt` and
 `sync-plan.tsv`. It only selects `review_required` entries under the source
 directories named in `ecs-review-source-policy.mjs` with source-code
