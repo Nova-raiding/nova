@@ -2151,9 +2151,21 @@ function validateToolArguments(name, args) {
       try { parsed = JSON.parse(value) } catch { return fail(`${path} 必须是 JSON 数组`) }
       if (!Array.isArray(parsed)) return fail(`${path} 必须是 JSON 数组`)
       if (propertySchema.contentSchema) {
-        for (const [index, item] of parsed.entries()) {
-          const itemIssue = validate(item, propertySchema.contentSchema, `${path}[${index}]`)
-          if (itemIssue) return itemIssue
+        const contentSchema = propertySchema.contentSchema
+        if (contentSchema.type === 'array') {
+          if (typeof contentSchema.minItems === 'number' && parsed.length < contentSchema.minItems) return fail(`${path} 项目数量不足`)
+          if (typeof contentSchema.maxItems === 'number' && parsed.length > contentSchema.maxItems) return fail(`${path} 项目数量过多`)
+          if (contentSchema.items) {
+            for (const [index, item] of parsed.entries()) {
+              const itemIssue = validate(item, contentSchema.items, `${path}[${index}]`)
+              if (itemIssue) return itemIssue
+            }
+          }
+        } else {
+          for (const [index, item] of parsed.entries()) {
+            const itemIssue = validate(item, contentSchema, `${path}[${index}]`)
+            if (itemIssue) return itemIssue
+          }
         }
       }
     }
