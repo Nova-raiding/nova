@@ -67,7 +67,9 @@ export function advanceCapabilityEvidence(current: CapabilityEvidence, next: Cap
   if (nextIndex < 0 || nextIndex > currentIndex + 1) throw new Error(`capability evidence cannot skip from ${current.state} to ${next}`)
   if (nextIndex < currentIndex) throw new Error(`capability evidence cannot regress from ${current.state} to ${next}`)
   if (nextIndex > currentIndex && (!proof.evidenceRef || !proof.verifiedBy || !proof.verifiedAt)) throw new Error('capability advancement requires evidenceRef, verifiedBy and verifiedAt')
-  return { ...current, ...proof, state: next }
+  if (proof.platform !== undefined && proof.platform !== current.platform) throw new Error(`capability evidence platform cannot change from ${current.platform} to ${proof.platform}`)
+  if (proof.capability !== undefined && proof.capability !== current.capability) throw new Error(`capability evidence capability cannot change from ${current.capability} to ${proof.capability}`)
+  return { ...current, ...proof, platform: current.platform, capability: current.capability, state: next }
 }
 
 export function isProductionCanaryReady(evidence: readonly CapabilityEvidence[], platform: Platform): boolean {

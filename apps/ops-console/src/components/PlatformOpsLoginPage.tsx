@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { describeOpsError, loginPlatformOps } from "../api/opsClient.js";
 import { storeNovaLogoUrl } from "../assets.js";
@@ -21,6 +21,11 @@ export function PlatformOpsLoginPage({
   const [form] = Form.useForm<{ login: string; password: string }>();
   const [loginError, setLoginError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const loginErrorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (loginError) loginErrorRef.current?.focus({ preventScroll: true });
+  }, [loginError]);
 
   const submit = async (values: { login: string; password: string }) => {
     setSubmitting(true);
@@ -59,14 +64,24 @@ export function PlatformOpsLoginPage({
             />
           ) : null}
           {loginError ? (
-            <Alert
-              className="ops-login-alert"
-              type="error"
-              showIcon
-              role="alert"
-              title="登录失败"
-              description={loginError}
-            />
+            <div
+              ref={loginErrorRef}
+              className="ops-login-error-summary"
+              tabIndex={-1}
+              role="group"
+              aria-labelledby="ops-login-error-title"
+              aria-describedby="ops-login-error-description"
+              data-focus-target="login-error"
+            >
+              <Alert
+                className="ops-login-alert"
+                type="error"
+                showIcon
+                role="alert"
+                title={<span id="ops-login-error-title">登录失败</span>}
+                description={<span id="ops-login-error-description">{loginError}</span>}
+              />
+            </div>
           ) : null}
 
           <Form

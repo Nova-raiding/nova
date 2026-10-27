@@ -326,6 +326,10 @@ function requireExpectedSize(value: number): number {
   return value
 }
 
+function assertReadableObjectSize(sizeBytes: number, maxObjectBytes: number): void {
+  if (sizeBytes > maxObjectBytes) throw new ObjectStorageError('OBJECT_TOO_LARGE', `对象不能超过 ${maxObjectBytes} bytes`, 413)
+}
+
 /** Local adapter metadata suffix. Object bodies may end with the same suffix,
  * so a suffix match alone never proves that a file is a metadata record. */
 const LOCAL_METADATA_SUFFIX = '.meta.json'
@@ -387,7 +391,7 @@ export function safeFileName(fileName: string): string {
   return normalized
 }
 
-function requireContentType(contentType: string): string {
+export function requireContentType(contentType: string): string {
   const value = contentType.trim()
   if (!value || value.length > 255 || !/^[\w.+-]+\/[\w.+-]+(?:\s*;.*)?$/u.test(value)) throw new ObjectStorageError('OBJECT_CONTENT_TYPE_INVALID', '素材 MIME 类型无效', 400)
   return value.toLowerCase()
@@ -491,6 +495,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
     const metadata = await this.readMetadata(workspaceId, parsed.relative)
+    assertReadableObjectSize(metadata.sizeBytes, this.maxObjectBytes)
     let body: Uint8Array
     try {
       body = new Uint8Array(await readFile(this.objectPath(parsed.relative)))
@@ -823,6 +828,7 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
     const metadata = await this.readMetadata(workspaceId, parsed.relative)
+    assertReadableObjectSize(metadata.sizeBytes, this.maxObjectBytes)
     let result: { body: Uint8Array }
     try { result = await this.transport.get(this.objectKey(parsed.relative)) } catch (error) { throw cloudStorageError(error) }
     this.verifyBody(metadata, result.body)

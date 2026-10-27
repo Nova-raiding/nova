@@ -80,3 +80,29 @@ it('takes keyboard users to each invalid login field without attempting authenti
     expect(writes).toEqual([]);
   } finally { await page.close(); }
 }, 60_000);
+
+it('moves focus to the named login error summary after authentication fails', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await page.route('**/v1/auth/login', async route => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: '账号或密码不正确' } }),
+    });
+  });
+  try {
+    await page.goto(`${baseUrl}/__login-validation`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await page.getByRole('textbox', { name: '平台运营账号', exact: true }).fill('fixture-account');
+    await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+    await page.getByRole('button', { name: '登录平台运营后台', exact: true }).click();
+
+    const alert = page.locator('[role="alert"]');
+    await alert.waitFor();
+    expect(await alert.innerText()).toContain('运营登录已失效或尚未登录');
+    const summary = page.locator('[data-focus-target="login-error"]');
+    expect(await summary.getAttribute('role')).toBe('group');
+    expect(await summary.getAttribute('aria-labelledby')).toBe('ops-login-error-title');
+    expect(await summary.getAttribute('aria-describedby')).toBe('ops-login-error-description');
+    await expect.poll(() => summary.evaluate(element => element === document.activeElement)).toBe(true);
+  } finally { await page.close(); }
+}, 60_000);

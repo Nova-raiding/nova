@@ -52,6 +52,9 @@ describe('native MCP transport', () => {
   it.each([
     { name: 'object id', id: {} },
     { name: 'array id', id: [] },
+    { name: 'null id', id: null },
+    { name: 'fractional id', id: 1.5 },
+    { name: 'unsafe integer id', id: Number.MAX_SAFE_INTEGER + 1 },
     { name: 'infinite id', id: Number.POSITIVE_INFINITY },
     { name: 'NaN id', id: Number.NaN },
   ])('rejects an invalid request id ($name)', async ({ id }) => {
@@ -60,6 +63,23 @@ describe('native MCP transport', () => {
       .rejects.toMatchObject({ code: 'MCP_NATIVE_INVALID_REQUEST' })
     expect(nativeMcpRequests.has(req)).toBe(true)
     expect(nativeMcpRequestIds.get(req)).toBeNull()
+  })
+
+  it.each([Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER])('accepts safe integer request id %s', async id => {
+    const req = request()
+    const deps = dependencies()
+    await routeNativeMcp(req, response(), { jsonrpc: '2.0', id, method: 'initialize' }, deps)
+    expect(deps.send).toHaveBeenCalledWith(expect.anything(), 200, expect.objectContaining({ id }), req)
+    expect(nativeMcpRequestIds.get(req)).toBe(id)
+  })
+
+  it.each(['initialize', 'tools/list'])('rejects non-object %s params', async method => {
+    const deps = dependencies()
+    for (const params of [null, [], 'bad', 42]) {
+      await expect(routeNativeMcp(request(), response(), { jsonrpc: '2.0', id: 1, method, params }, deps))
+        .rejects.toMatchObject({ code: ERROR_CODES.INVALID_REQUEST })
+    }
+    expect(deps.send).not.toHaveBeenCalled()
   })
 
   it.each([null, [], 'bad'])('rejects notification params that are not an object: %j', async params => {

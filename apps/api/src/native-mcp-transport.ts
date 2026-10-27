@@ -17,6 +17,18 @@ function isNativeMcpNotification(method: unknown): method is 'notifications/init
   return method === 'notifications/initialized'
 }
 
+function isNativeMcpRequestId(value: unknown): value is string | number {
+  // Keep the HTTP/native transport aligned with the installed stdio bridge.
+  // JSON numbers outside the safe-integer range (and fractional numbers) can
+  // be changed by a JavaScript host before they reach the request map, so they
+  // are invalid correlation identifiers at this boundary.
+  return typeof value === 'string' || (typeof value === 'number' && Number.isSafeInteger(value))
+}
+
+function hasObjectParams(value: unknown): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 function acceptsEventStream(value: string) {
   const [mediaType, ...parameters] = value.split(';')
   if (mediaType?.trim().toLowerCase() !== 'text/event-stream') return false
@@ -53,7 +65,7 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
   const hasId = Object.prototype.hasOwnProperty.call(input, 'id')
   const validId = !hasId
     ? isNativeMcpNotification(input.method)
-    : input.id === null || typeof input.id === 'string' || (typeof input.id === 'number' && Number.isFinite(input.id))
+    : isNativeMcpRequestId(input.id)
   const id = hasId && validId
     ? input.id as string | number | null
     : null
@@ -63,7 +75,7 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
     throw new DomainError('MCP_NATIVE_INVALID_REQUEST', '原生 MCP JSON-RPC 请求无效', 400)
   }
   if (isNativeMcpNotification(input.method)) {
-    if (input.params !== undefined && (!input.params || typeof input.params !== 'object' || Array.isArray(input.params))) {
+    if (input.params !== undefined && !hasObjectParams(input.params)) {
       throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'notifications/initialized params 必须是 JSON 对象', 400)
     }
     res.statusCode = 202
@@ -71,6 +83,7 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
     return
   }
   if (!isNativeMcpMethod(input.method)) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的原生 MCP 方法: ${input.method}`, 404)
+  if (input.params !== undefined && !hasObjectParams(input.params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${input.method} params 必须是 JSON 对象`, 400)
   if (input.method === 'initialize') {
     return deps.send(res, 200, { jsonrpc: '2.0', id, result: {
       protocolVersion: MCP_PROTOCOL_VERSION,
@@ -82,7 +95,7 @@ export async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, 
     return deps.send(res, 200, { jsonrpc: '2.0', id, result: { tools: listNativeMcpTools(deps.paymentReady) } }, req)
   }
   const params = input.params
-  if (!params || typeof params !== 'object' || Array.isArray(params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call params 必须是 JSON 对象', 400)
+  if (!hasObjectParams(params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call params 必须是 JSON 对象', 400)
   const name = (params as Record<string, unknown>).name
   if (typeof name !== 'string' || !name.trim()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call 必须提供工具名称', 400)
   if (NATIVE_MCP_INTERACTIVE_CONFIRMATION_REQUIRED_METHODS.has(name)) {

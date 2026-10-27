@@ -141,6 +141,15 @@ describe('MCP upload session part write recovery', () => {
     })
   })
 
+  it('maps upload filename and MIME validation errors to request validation', async () => {
+    const manager = new UploadSessionManager(new MemoryUploadSessionTransport())
+    const params = { content_type: 'text/plain', size_bytes: '3', sha256: createHash('sha256').update('abc').digest('hex') }
+    await expect(handleMcpUploadSessionMethod('upload.session.create', { ...params, file_name: '..' }, 'ws_test', { uploadSessions: manager, required }))
+      .rejects.toMatchObject({ code: 'UPLOAD_FILE_NAME_INVALID', status: 422 })
+    await expect(handleMcpUploadSessionMethod('upload.session.create', { ...params, file_name: 'x.txt', content_type: 'text/plain\r\nX-Injected: yes' }, 'ws_test', { uploadSessions: manager, required }))
+      .rejects.toMatchObject({ code: 'UPLOAD_CONTENT_TYPE_INVALID', status: 422 })
+  })
+
   it('fails closed on an unknown completion outcome without declaring transport missing or retryable', async () => {
     const manager = new UploadSessionManager({
       putPart: () => {},

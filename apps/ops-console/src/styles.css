@@ -216,7 +216,7 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-page-header { display: flex; min-height: 44px; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .ops-page-header-actions-only { justify-content: flex-end; }
 .ops-page-heading { min-width: 0; }
-.ops-page-eyebrow { display: block; margin-bottom: 4px; color: #64748b; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.ops-page-eyebrow { display: block; margin-bottom: 4px; color: var(--ops-text-secondary); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .ops-page-title { margin: 0; color: #0f172a; font-size: 28px; line-height: 1.18; font-weight: 800; letter-spacing: -.02em; }
 .ops-page-description { max-width: 980px; margin: 8px 0 0; color: #475569; line-height: 1.65; }
 .ops-page-next-step { display: block; margin-top: 8px; color: #1d4ed8; font-weight: 600; }

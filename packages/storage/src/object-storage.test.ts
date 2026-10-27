@@ -192,6 +192,19 @@ describe('LocalObjectStorage', () => {
       .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED', status: 500 })
   })
 
+  it('rejects an oversized local object before loading its body', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'merchant-object-storage-limit-'))
+    roots.push(root)
+    const store = new LocalObjectStorage(root, { maxObjectBytes: 2 })
+    const body = new Uint8Array([1])
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_read_limit', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const oversized = new Uint8Array([1, 2, 3])
+    await writeFile(join(store.rootDir, uploaded.key), oversized)
+    await writeFile(join(store.rootDir, `${uploaded.key}.meta.json`), JSON.stringify({ ...uploaded, sizeBytes: oversized.byteLength, sha256: digest(oversized) }))
+
+    await expect(store.get('ws_a', uploaded.key, { includeQuarantine: true })).rejects.toMatchObject({ code: 'OBJECT_TOO_LARGE', status: 413 })
+  })
+
   it('lists a body named like metadata as an object instead of reading it as another key', async () => {
     const store = await storage()
     const body = new TextEncoder().encode(JSON.stringify({ note: '普通 JSON 素材' }))
@@ -312,6 +325,34 @@ describe('S3CompatibleObjectStorage', () => {
     }
     const store = new S3CompatibleObjectStorage(transport)
     await expect(store.get('ws_cloud', 'clean/ws_cloud/asset_1/logo.png')).rejects.toMatchObject({ code: 'OBJECT_STORAGE_UNAVAILABLE', status: 503 })
+  })
+
+  it('rejects an oversized cloud object before requesting its body', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    let bodyReads = 0
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) {
+        const item = objects.get(key)
+        if (!item) throw new CloudObjectNotFoundError()
+        if (!key.endsWith('.merchant-meta.json')) bodyReads += 1
+        return { body: item.body, contentType: item.contentType, metadata: item.metadata }
+      },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant', maxObjectBytes: 2 })
+    const body = new Uint8Array([1])
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_read_limit', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const oversized = new Uint8Array([1, 2, 3])
+    const metadataKey = `merchant/${uploaded.key}.merchant-meta.json`
+    const existing = objects.get(metadataKey)!
+    const metadata = JSON.parse(new TextDecoder().decode(existing.body)) as Record<string, unknown>
+    objects.set(`merchant/${uploaded.key}`, { ...objects.get(`merchant/${uploaded.key}`)!, body: oversized })
+    objects.set(metadataKey, { ...existing, body: new TextEncoder().encode(JSON.stringify({ ...metadata, sizeBytes: oversized.byteLength, sha256: digest(oversized) })) })
+
+    await expect(store.get('ws_cloud', uploaded.key, { includeQuarantine: true })).rejects.toMatchObject({ code: 'OBJECT_TOO_LARGE', status: 413 })
+    expect(bodyReads).toBe(0)
   })
 
   it('recognizes AWS SDK and Aliyun OSS not-found shapes while probing metadata', async () => {

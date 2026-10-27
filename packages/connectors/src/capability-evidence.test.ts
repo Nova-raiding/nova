@@ -12,6 +12,15 @@ describe('platform capability evidence', () => {
     expect(() => advanceCapabilityEvidence(documented, 'fixture_verified')).toThrow('requires evidenceRef')
   })
 
+  it('keeps capability identity immutable while advancing evidence', () => {
+    const base: CapabilityEvidence = { platform: 'jd', capability: 'authorize', state: 'unverified' }
+    const proof = { evidenceRef: 'e1', verifiedBy: 'qa', verifiedAt: '2026-08-22T00:00:00Z' }
+    const advanced = advanceCapabilityEvidence(base, 'documented', { ...proof, platform: 'jd', capability: 'authorize' })
+    expect(advanced).toMatchObject({ platform: 'jd', capability: 'authorize', state: 'documented' })
+    expect(() => advanceCapabilityEvidence(base, 'documented', { ...proof, platform: 'douyin' })).toThrow('platform cannot change')
+    expect(() => advanceCapabilityEvidence(base, 'documented', { ...proof, capability: 'create' })).toThrow('capability cannot change')
+  })
+
   it('does not allow production evidence to regress', () => {
     const production: CapabilityEvidence = {
       platform: 'jd',

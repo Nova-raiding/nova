@@ -9,8 +9,10 @@ type Dependencies = {
 export const MCP_UPLOAD_SESSION_METHODS = new Set(['upload.session.create', 'upload.session.part', 'upload.session.complete'])
 
 const validationStatuses: Record<string, number> = {
+  UPLOAD_CONTENT_TYPE_INVALID: 422,
   UPLOAD_DIGEST_INVALID: 422,
   UPLOAD_DIGEST_MISMATCH: 422,
+  UPLOAD_FILE_NAME_INVALID: 422,
   UPLOAD_PART_INVALID: 422,
   UPLOAD_SESSION_EXPIRED: 410,
   UPLOAD_SESSION_NOT_FOUND: 404,

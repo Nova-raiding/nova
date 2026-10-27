@@ -552,6 +552,19 @@ export async function evaluateRelayUsageEvidence(
     model,
     ...(modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds, ...(options.resolution ? { resolution: options.resolution } : {}) } } : {}),
   })
+  // parseRelayUsage is the single authority for reconciling aliases and
+  // nested relay envelopes.  Do not rebuild usage from a preferred raw
+  // envelope after it has rejected a conflict or malformed claim: doing so
+  // would let a cheaper/partial alias become settlement evidence.  A valid
+  // cost-only receipt still has a parsed record with usage_observed=false and
+  // no invalid-evidence marker, so preserve that existing diagnostic path.
+  const parsedMetadata = parsed?.metadata ?? {}
+  const invalidParsedUsage = !parsed
+    || parsedMetadata.malformed_usage_envelope === true
+    || parsedMetadata.token_evidence_invalid === true
+    || parsedMetadata.billing_units_evidence_invalid === true
+    || parsedMetadata.duration_evidence_invalid === true
+  if (invalidParsedUsage) return { usageObserved: false, costObserved: false }
   const nonNegativeNumber = (value: unknown): number | undefined => {
     const number = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim()) ? Number(value) : undefined
     return number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined

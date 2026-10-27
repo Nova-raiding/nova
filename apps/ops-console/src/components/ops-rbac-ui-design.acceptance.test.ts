@@ -6,6 +6,7 @@ const styles = readFileSync(resolve(import.meta.dirname, "../styles.css"), "utf8
 const header = readFileSync(resolve(import.meta.dirname, "./OpsHeader.tsx"), "utf8");
 const roleScope = readFileSync(resolve(import.meta.dirname, "./authz/RoleScopeBar.tsx"), "utf8");
 const denied = readFileSync(resolve(import.meta.dirname, "./authz/AccessDeniedResult.tsx"), "utf8");
+const opsTextSecondary = styles.match(/--ops-text-secondary:\s*(#[a-f\d]{6})/iu)?.[1];
 
 function relativeLuminance(hex: string) {
   const channels = hex.match(/[a-f\d]{2}/giu)?.map((channel) => Number.parseInt(channel, 16) / 255) ?? [];
@@ -31,6 +32,12 @@ describe("ops RBAC desktop UI acceptance", () => {
     expect(contrast("#d6def0", "#12234f")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#93a4ca", "#12234f")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#0f172a", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps page eyebrows above AA contrast on the ops content surface", () => {
+    if (!opsTextSecondary) throw new Error("Missing --ops-text-secondary token");
+    expect(styles).toMatch(/\.ops-page-eyebrow\s*\{[^}]*color:\s*var\(--ops-text-secondary\)/s);
+    expect(contrast(opsTextSecondary, "#f3f6fb")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("exposes keyboard, async feedback, and recovery semantics", () => {

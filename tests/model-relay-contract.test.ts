@@ -390,6 +390,19 @@ describe('production model relay contract', () => {
   })
 
   it.each([
+    ['text', { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6, cost_cny: 0.01 }, { prompt_tokens: 50, completion_tokens: 1, total_tokens: 51, cost_cny: 0.01 }],
+    ['image', { output_image_count: 1, cost_cny: 0.12 }, { image_count: 2, cost_cny: 0.12 }],
+    ['video', { duration_seconds: 5, cost_cny: 0.5 }, { duration_seconds: 9, cost_cny: 0.5 }],
+  ] as const)('does not promote conflicting nested %s usage into settlement evidence', async (modality, rootUsage, nestedUsage) => {
+    const payload = modality === 'video'
+      ? { usage: rootUsage, data: { usage: nestedUsage }, task_id: 'job-conflicting-usage' }
+      : { usage: rootUsage, data: { usage: nestedUsage } }
+    const measured = await evaluateRelayUsageEvidence(payload, new Headers({ 'x-request-id': `conflict-${modality}` }), modality, `${modality}-v1`)
+    expect(measured).toEqual({ usageObserved: false, costObserved: false })
+    expect(finalizeSuccessfulProbe({ ...completeProbe(modality), ...measured })).toMatchObject({ state: 'blocked', detail: 'usage_evidence_missing' })
+  })
+
+  it.each([
     ['text', { usage: { total_tokens: 3 } }],
     ['image', { usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/image.png' }] }],
     ['image_edit', { usage: { output_image_count: 1 }, data: [{ url: 'https://cdn.example/edited.png' }] }],
