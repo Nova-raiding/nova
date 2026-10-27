@@ -10,6 +10,7 @@ describe('ECS source-only remote review policy', () => {
       'demo/merchant-studio/src/App.tsx', 'packages/ai/src/relay-usage.ts',
       'packages/persistence/src/migrations/245_local_plugin_authorized_timestamp.sql',
       'scripts/model-relay-recovery-evidence.ts',
+      'demo/merchant-studio/index.html', 'demo/merchant-studio/product-assets.test.ts',
     ]) expect(isAllowlistedReviewSource(path), path).toBe(true)
   })
 
@@ -17,6 +18,8 @@ describe('ECS source-only remote review policy', () => {
     expect(PROTECTED_OPS_PATHS).toContain('apps/ops-console/.env.example')
     expect(STRUCTURE_REVIEW_PATHS).toContain('apps/ops-console/README.md')
     expect(isAllowlistedReviewSource('apps/ops-console/vite.config.ts')).toBe(true)
+    expect(isAllowlistedReviewSource('demo/merchant-studio/index.html')).toBe(true)
+    expect(isAllowlistedReviewSource('demo/merchant-studio/product-assets.test.ts')).toBe(true)
     expect(isAllowlistedReviewSource('apps/ops-console/.env.example')).toBe(false)
     expect(isAllowlistedReviewSource('apps/ops-console/README.md')).toBe(false)
   })
