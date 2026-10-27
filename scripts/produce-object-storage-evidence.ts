@@ -86,7 +86,9 @@ export function produceObjectStorageEvidence(input: ObjectStorageEvidenceProduce
   const canaryArtifact = readArtifact(input.artifactRoot, input.canaryPath)
   const canary = canaryArtifact.value as ObjectStorageCanaryEvidence
   requireValue(canary.schema_version === '1' && canary.state === 'ready' && canary.environment === 'production' && canary.simulated === false, 'CANARY_NOT_REAL_READY')
+  requireValue(canary.provider === 'aliyun-oss', 'CANARY_PROVIDER_MISMATCH')
   requireValue(canary.release_id === input.releaseId && canary.bucket === input.bucket && canary.endpoint === input.endpoint && canary.encryption === input.encryption, 'CANARY_BINDING_MISMATCH')
+  requireValue(typeof canary.canary_prefix === 'string' && canary.canary_prefix.startsWith(`merchant-assets/canary/${input.releaseId}/`), 'CANARY_PREFIX_MISMATCH')
   requireValue(canary.region === input.region, 'CANARY_REGION_MISMATCH')
   requireFreshInstant(canary.observed_at, nowMs, 'CANARY')
   requireValue(Array.isArray(canary.checks) && ['put', 'head', 'get_hash', 'encryption', 'delete', 'delete_verified'].every(id => canary.checks.some(check => check.id === id && check.state === 'passed')), 'CANARY_CHECKS_INCOMPLETE')

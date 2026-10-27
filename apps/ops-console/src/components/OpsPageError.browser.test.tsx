@@ -69,6 +69,16 @@ describe("Ops permission error recovery", () => {
       const refresh = page.getByRole("button", { name: "刷新权限" });
       await refresh.waitFor();
       expect(await page.getByRole("alert").count()).toBe(1);
+      const errorSummary = page.locator(".ops-page-error");
+      await expect.poll(() => page.evaluate(() => document.activeElement?.className)).toBe("ops-page-error");
+      const labelledBy = await errorSummary.getAttribute("aria-labelledby");
+      const describedBy = await errorSummary.getAttribute("aria-describedby");
+      expect(labelledBy).toBeTruthy();
+      expect(describedBy).toBeTruthy();
+      expect(await page.evaluate(({ labelledBy: titleId, describedBy: descriptionId }) => ({
+        title: Boolean(titleId && document.getElementById(titleId)),
+        description: Boolean(descriptionId && document.getElementById(descriptionId)),
+      }), { labelledBy, describedBy })).toEqual({ title: true, description: true });
 
       await refresh.click();
       const pending = page.getByRole("button", { name: "正在刷新权限" });

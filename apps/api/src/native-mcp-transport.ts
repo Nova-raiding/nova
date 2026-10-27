@@ -17,9 +17,19 @@ function isNativeMcpNotification(method: unknown): method is 'notifications/init
   return method === 'notifications/initialized'
 }
 
+function acceptsEventStream(value: string) {
+  const [mediaType, ...parameters] = value.split(';')
+  if (mediaType?.trim().toLowerCase() !== 'text/event-stream') return false
+  const qualityParameter = parameters.find(parameter => /^q\s*=/iu.test(parameter.trim()))
+  if (!qualityParameter) return true
+  const quality = qualityParameter.slice(qualityParameter.indexOf('=') + 1).trim()
+  if (!/^(?:0(?:\.\d+)?|1(?:\.0+)?)$/u.test(quality)) return false
+  return Number(quality) > 0
+}
+
 export function isNativeMcpTransport(req: IncomingMessage, method: unknown, header: (req: IncomingMessage, name: string) => string | undefined) {
   if (isNativeMcpMethod(method)) return true
-  return (header(req, 'accept') ?? '').split(',').some(value => value.trim().toLowerCase() === 'text/event-stream')
+  return (header(req, 'accept') ?? '').split(',').some(acceptsEventStream)
 }
 
 export function nativeMcpErrorCode(error: unknown) {

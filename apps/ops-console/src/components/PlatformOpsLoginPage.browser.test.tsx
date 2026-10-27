@@ -68,6 +68,15 @@ it('takes keyboard users to each invalid login field without attempting authenti
     await page.getByText('请输入密码', { exact: true }).waitFor();
     await expect.poll(() => password.evaluate(element => element === document.activeElement)).toBe(true);
     expect(await password.getAttribute('aria-invalid')).toBe('true');
+    const passwordVisibility = page.locator('.ant-input-password-icon');
+    expect(await passwordVisibility.getAttribute('role')).toBe('button');
+    expect(await passwordVisibility.getAttribute('tabindex')).toBe('0');
+    expect(await passwordVisibility.getAttribute('aria-label')).toMatch(/\S/u);
+    expect(await passwordVisibility.evaluate(element => getComputedStyle(element).width)).toBe('44px');
+    expect(await passwordVisibility.evaluate(element => getComputedStyle(element).height)).toBe('44px');
+    await passwordVisibility.focus();
+    expect(await passwordVisibility.evaluate(element => getComputedStyle(element).outlineWidth)).toBe('3px');
+    expect(await passwordVisibility.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('solid');
     expect(writes).toEqual([]);
   } finally { await page.close(); }
 }, 60_000);

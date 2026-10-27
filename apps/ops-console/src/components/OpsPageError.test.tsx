@@ -18,6 +18,13 @@ describe("OpsPageError", () => {
     expect(markup).toContain('aria-label="重试加载运营数据"');
     expect(markup).toContain("min-height:44px");
     expect(markup).toContain("运营 API 请求超时");
+
+    const titleId = markup.match(/aria-labelledby="([^"]+)"/u)?.[1];
+    const descriptionId = markup.match(/aria-describedby="([^"]+)"/u)?.[1];
+    expect(titleId).toBeTruthy();
+    expect(descriptionId).toBeTruthy();
+    expect(markup).toContain(`id="${titleId}"`);
+    expect(markup).toContain(`id="${descriptionId}"`);
   });
 
   it("renders nothing when there is no error", () => {

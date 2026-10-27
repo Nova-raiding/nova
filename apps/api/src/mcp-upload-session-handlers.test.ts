@@ -36,13 +36,42 @@ describe('MCP upload sessions without a transport', () => {
 })
 
 describe('MCP upload session part write recovery', () => {
+  it('fails closed when remote session creation rejects and does not retain the session or idempotency key', async () => {
+    let createCalls = 0
+    let attemptedId = ''
+    const manager = new UploadSessionManager({
+      create: async session => {
+        createCalls += 1
+        attemptedId = session.id
+        throw new Error('remote create failed')
+      },
+      putPart: () => {},
+      complete: () => ({ sizeBytes: 3, sha256: createHash('sha256').update('abc').digest('hex') }),
+    })
+    const params = {
+      file_name: 'x.txt', content_type: 'text/plain', size_bytes: '3', sha256: createHash('sha256').update('abc').digest('hex'),
+      idempotency_key: 'remote-create-failure',
+    }
+
+    await expect(handleMcpUploadSessionMethod('upload.session.create', params, 'ws_test', { uploadSessions: manager, required })).rejects.toMatchObject({
+      code: 'UPLOAD_SESSION_CREATE_FAILED', status: 503, details: { retryable: false },
+    })
+    expect(attemptedId).toMatch(/^[0-9a-f-]{36}$/u)
+    expect(manager.belongsToWorkspace(attemptedId, 'ws_test')).toBe(false)
+
+    await expect(handleMcpUploadSessionMethod('upload.session.create', params, 'ws_test', { uploadSessions: manager, required })).rejects.toMatchObject({
+      code: 'UPLOAD_SESSION_CREATE_FAILED', status: 503,
+    })
+    expect(createCalls).toBe(2)
+  })
+
   it('rejects malformed base64 before storage and accepts standard unpadded base64', async () => {
     let writes = 0
     const manager = new UploadSessionManager({
       putPart: () => { writes += 1 },
       complete: () => ({ sizeBytes: 2, sha256: createHash('sha256').update('ab').digest('hex') }),
     })
-    const session = manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 2, sha256: createHash('sha256').update('ab').digest('hex') })
+    const session = await manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 2, sha256: createHash('sha256').update('ab').digest('hex') })
 
     await expect(handleMcpUploadSessionMethod('upload.session.part', {
       session_id: session.id, part_number: '1', content_base64: 'Y!WI',
@@ -71,7 +100,7 @@ describe('MCP upload session part write recovery', () => {
       },
       complete: session => remote.complete(session),
     })
-    const session = manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: digest })
+    const session = await manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: digest })
     const params = { session_id: session.id, part_number: '1', content_base64: 'YWJj' }
 
     await expect(handleMcpUploadSessionMethod('upload.session.part', params, 'ws_test', { uploadSessions: manager, required }))
@@ -86,7 +115,7 @@ describe('MCP upload session part write recovery', () => {
 
   it('preserves request validation errors instead of labeling them retryable storage failures', async () => {
     const manager = new UploadSessionManager({ putPart: () => {}, complete: () => ({ sizeBytes: 0, sha256: 'a'.repeat(64) }) })
-    const session = manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
+    const session = await manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
 
     await expect(handleMcpUploadSessionMethod('upload.session.part', {
       session_id: session.id, part_number: '1',
@@ -104,7 +133,7 @@ describe('MCP upload session part write recovery', () => {
       code: 'UPLOAD_SIZE_LIMIT_EXCEEDED', status: 422,
     })
 
-    const session = manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
+    const session = await manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
     await expect(handleMcpUploadSessionMethod('upload.session.complete', {
       session_id: session.id,
     }, 'ws_test', { uploadSessions: manager, required })).rejects.toMatchObject({
@@ -117,7 +146,7 @@ describe('MCP upload session part write recovery', () => {
       putPart: () => {},
       complete: () => { throw new Error('connection reset after completion') },
     })
-    const session = manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
+    const session = await manager.create({ workspaceId: 'ws_test', fileName: 'x.txt', contentType: 'text/plain', sizeBytes: 3, sha256: 'a'.repeat(64) })
 
     await expect(handleMcpUploadSessionMethod('upload.session.complete', {
       session_id: session.id,

@@ -86,6 +86,18 @@ describe('object storage schema v2 evidence producer', () => {
     expect(() => produceObjectStorageEvidence(stale.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CANARY_STALE')
   })
 
+  it('binds the signed evidence to the Aliyun provider and canonical release canary prefix', () => {
+    const wrongProvider = fixture()
+    const canary = JSON.parse(readFileSync(wrongProvider.input.canaryPath, 'utf8'))
+    writeFileSync(wrongProvider.input.canaryPath, JSON.stringify({ ...canary, provider: 'aws-s3' }))
+    expect(() => produceObjectStorageEvidence(wrongProvider.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CANARY_PROVIDER_MISMATCH')
+
+    const wrongPrefix = fixture()
+    const wrongPrefixCanary = JSON.parse(readFileSync(wrongPrefix.input.canaryPath, 'utf8'))
+    writeFileSync(wrongPrefix.input.canaryPath, JSON.stringify({ ...wrongPrefixCanary, canary_prefix: 'merchant-assets/other/release-oss-v2/run/' }))
+    expect(() => produceObjectStorageEvidence(wrongPrefix.input)).toThrow('OBJECT_STORAGE_EVIDENCE_CANARY_PREFIX_MISMATCH')
+  })
+
   it('rejects an old canary that only issued DELETE without verifying the exact version disappeared', () => {
     const value = fixture()
     const canary = JSON.parse(readFileSync(value.input.canaryPath, 'utf8'))

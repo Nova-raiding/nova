@@ -12,6 +12,19 @@ describe('platform capability evidence', () => {
     expect(() => advanceCapabilityEvidence(documented, 'fixture_verified')).toThrow('requires evidenceRef')
   })
 
+  it('does not allow production evidence to regress', () => {
+    const production: CapabilityEvidence = {
+      platform: 'jd',
+      capability: 'authorize',
+      state: 'production_canary',
+      evidenceRef: 'e1',
+      verifiedBy: 'qa',
+      verifiedAt: '2026-08-22T00:00:00Z',
+    }
+    expect(() => advanceCapabilityEvidence(production, 'documented')).toThrow('cannot regress')
+    expect(() => advanceCapabilityEvidence(production, 'unverified')).toThrow('cannot regress')
+  })
+
   it('does not mark a platform ready from partial evidence', () => {
     const evidence: CapabilityEvidence[] = [{ platform: 'taobao', capability: 'authorize', state: 'production_canary' }]
     expect(isProductionCanaryReady(evidence, 'taobao')).toBe(false)

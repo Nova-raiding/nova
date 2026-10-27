@@ -35,6 +35,21 @@ describe('native MCP transport', () => {
   })
 
   it.each([
+    'application/json, text/event-stream; q=0.9',
+    'text/event-stream; charset=utf-8',
+    'application/json, Text/Event-Stream; boundary=ignored',
+  ])('selects native transport when event-stream has media-type parameters: %s', accept => {
+    expect(isNativeMcpTransport(request(), 'unrelated/method', () => accept)).toBe(true)
+  })
+
+  it.each([
+    'text/event-stream; q=0',
+    'application/json, text/event-stream; q=0.000',
+  ])('does not select native transport when event-stream quality is zero: %s', accept => {
+    expect(isNativeMcpTransport(request(), 'unrelated/method', () => accept)).toBe(false)
+  })
+
+  it.each([
     { name: 'object id', id: {} },
     { name: 'array id', id: [] },
     { name: 'infinite id', id: Number.POSITIVE_INFINITY },

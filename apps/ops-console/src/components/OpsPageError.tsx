@@ -1,5 +1,5 @@
 import { Alert, Button } from "antd";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 import { opsLoadWarningPresentation, presentOpsError } from "./opsErrorPresentation.js";
 
 interface OpsPageErrorProps {
@@ -20,6 +20,8 @@ export function OpsPageError({
   onContactSupport,
 }: OpsPageErrorProps) {
   const errorRef = useRef<HTMLDivElement>(null);
+  const errorTitleId = useId();
+  const errorDescriptionId = useId();
   const presentation = useMemo(() => presentOpsError(error), [error]);
   useEffect(() => {
     if (presentation) errorRef.current?.focus({ preventScroll: true });
@@ -52,22 +54,22 @@ export function OpsPageError({
   const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length || presentation.findings?.length);
   const loadWarning = typeof error === "string" ? opsLoadWarningPresentation(error) : undefined;
   return (
-    <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error" data-recovery={presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) ? "permission" : presentation.recovery}>
+    <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error" data-recovery={presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) ? "permission" : presentation.recovery} aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId}>
       <Alert
         role="alert"
         aria-live="assertive"
         type="error"
         showIcon
-        title={presentation.title}
+        title={<span id={errorTitleId}>{presentation.title}</span>}
         description={
           <div>
             {loadWarning?.detail ? <>
-              <p>{loadWarning.summary}</p>
+              <p id={errorDescriptionId}>{loadWarning.summary}</p>
               <details>
                 <summary>查看失败数据集与原因</summary>
                 <p>{loadWarning.detail}</p>
               </details>
-            </> : <p>{presentation.description}</p>}
+            </> : <p id={errorDescriptionId}>{presentation.description}</p>}
             {hasDiagnostics ? (
               <details>
                 <summary>查看诊断信息</summary>

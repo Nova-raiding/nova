@@ -75,9 +75,19 @@
 @media (max-width: 600px) { .customer-delivery-profile-fields, .customer-delivery-check-grid-five { grid-template-columns: 1fr; } .customer-delivery-create-actions { align-items: stretch; flex-direction: column-reverse; } }
 html { height: 100%; scroll-padding-top: 16px; }
 /* Keep keyboard focus visible for AntD controls as well as custom desktop controls. */
-:where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {
+:where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-input-password-icon, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {
   outline: var(--ops-focus-width) solid var(--ops-focus-color);
   outline-offset: var(--ops-focus-offset);
+}
+:where(.ant-input-password-icon) {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
 }
 /* Focused content must not disappear below the persistent desktop header. */
 :where(button, input, textarea, select, a, [tabindex]):focus-visible { scroll-margin-block: 24px; }

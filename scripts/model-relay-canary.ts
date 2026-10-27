@@ -266,8 +266,17 @@ export function resolveBoundedInteger(value: string | undefined, fallback: numbe
 
 export function canaryIdempotencyKey(input: { releaseId: string; modality: ProbeResult['modality']; model: string; existingVideoTaskId?: string; requestBody?: string; candidateBinding?: { release_git_sha: string; image_set_digest: string; manifest_sha256: string; deployment_nonce_sha256: string } }): string {
   if (input.modality === 'embedding' && (typeof input.requestBody !== 'string' || !input.requestBody.trim())) throw new Error('embedding idempotency requires the canonical request body')
+  // Embedding keys already include the full binding object for backwards
+  // compatibility.  Every production modality must also derive its key from
+  // the exact candidate, otherwise a reused RELEASE_ID can replay a relay's
+  // idempotent response from a different image/manifest/nonce.
+  const candidateIdentity = input.modality === 'embedding'
+    ? [input.requestBody === undefined ? '' : createHash('sha256').update(input.requestBody).digest('hex'), input.candidateBinding ?? null]
+    : input.candidateBinding
+      ? [input.candidateBinding.release_git_sha, input.candidateBinding.image_set_digest, input.candidateBinding.manifest_sha256, input.candidateBinding.deployment_nonce_sha256]
+      : []
   const identity = JSON.stringify([input.releaseId.trim(), input.modality, input.model.trim(), input.existingVideoTaskId?.trim() ?? '',
-    ...(input.modality === 'embedding' ? [input.requestBody === undefined ? '' : createHash('sha256').update(input.requestBody).digest('hex'), input.candidateBinding ?? null] : [])])
+    ...candidateIdentity])
   return `model_relay_canary_${createHash('sha256').update(identity, 'utf8').digest('hex')}`
 }
 
@@ -902,7 +911,7 @@ async function probe(modality: ProbeResult['modality'], budget: CanaryBudget, ca
     const requestBody = !existingVideoTaskId ? videoRequest?.body ?? JSON.stringify(body) : usesVideoStatusPath ? undefined : JSON.stringify({ job_id: existingVideoTaskId })
     if (modality === 'embedding' && typeof requestBody !== 'string') throw new Error('embedding_request_body_missing')
     const idempotencyKey = canaryIdempotencyKey({ releaseId, modality, model, ...(existingVideoTaskId ? { existingVideoTaskId } : {}),
-      ...(modality === 'embedding' ? { requestBody: requestBody as string, ...(candidateBinding ? { candidateBinding } : {}) } : {}) })
+      ...(modality === 'embedding' ? { requestBody: requestBody as string } : {}), ...(candidateBinding ? { candidateBinding } : {}) })
     let response: Response | undefined
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       response = await fetch(`${base}${requestEndpoint}`, {

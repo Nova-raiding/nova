@@ -59,7 +59,7 @@ export async function handleMcpUploadSessionMethod(method: string, params: Recor
       ...(typeof params.idempotency_key === 'string' ? { idempotencyKey: params.idempotency_key } : {}),
     }
     try {
-      return uploadSessions.create(input)
+      return await uploadSessions.create(input)
     } catch (error) {
       const known = mapKnownUploadError(error)
       if (known) throw known

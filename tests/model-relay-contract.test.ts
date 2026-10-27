@@ -299,6 +299,16 @@ describe('production model relay contract', () => {
     expect(canaryIdempotencyKey({ releaseId: 'release-1', modality: 'video', model: 'video-v1', existingVideoTaskId: 'job-2' })).not.toBe(first)
   })
 
+  it('binds every production relay modality idempotency key to the exact candidate', () => {
+    const candidateBinding = { release_git_sha: 'a'.repeat(40), image_set_digest: `sha256:${'b'.repeat(64)}`, manifest_sha256: 'c'.repeat(64), deployment_nonce_sha256: 'd'.repeat(64) }
+    for (const modality of ['text', 'image', 'image_edit', 'ocr', 'video'] as const) {
+      const input = { releaseId: 'release-bound', modality, model: `${modality}-v1`, candidateBinding }
+      const first = canaryIdempotencyKey(input)
+      expect(canaryIdempotencyKey({ ...input, candidateBinding: { ...candidateBinding, image_set_digest: `sha256:${'e'.repeat(64)}` } })).not.toBe(first)
+      expect(canaryIdempotencyKey({ ...input, candidateBinding: { ...candidateBinding, deployment_nonce_sha256: 'f'.repeat(64) } })).not.toBe(first)
+    }
+  })
+
   it('binds embedding idempotency to the exact candidate and request body', () => {
     const candidateBinding = { release_git_sha: 'a'.repeat(40), image_set_digest: `sha256:${'b'.repeat(64)}`, manifest_sha256: 'c'.repeat(64), deployment_nonce_sha256: 'd'.repeat(64) }
     const input = { releaseId: 'release-embed', modality: 'embedding' as const, model: 'qwen3.7-text-embedding-flash', requestBody: '{"input":"one"}', candidateBinding }

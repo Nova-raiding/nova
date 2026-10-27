@@ -65,6 +65,7 @@ export function advanceCapabilityEvidence(current: CapabilityEvidence, next: Cap
   const currentIndex = order.indexOf(current.state)
   const nextIndex = order.indexOf(next)
   if (nextIndex < 0 || nextIndex > currentIndex + 1) throw new Error(`capability evidence cannot skip from ${current.state} to ${next}`)
+  if (nextIndex < currentIndex) throw new Error(`capability evidence cannot regress from ${current.state} to ${next}`)
   if (nextIndex > currentIndex && (!proof.evidenceRef || !proof.verifiedBy || !proof.verifiedAt)) throw new Error('capability advancement requires evidenceRef, verifiedBy and verifiedAt')
   return { ...current, ...proof, state: next }
 }
