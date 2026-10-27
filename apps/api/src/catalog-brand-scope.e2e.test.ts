@@ -153,8 +153,14 @@ describe('catalog brand scope on the HTTP surface', () => {
     expect(metrics.error).toBeNull()
     const data = (metrics as Envelope<{ result: any }>).data!.result as any
 
-    // The granted brand's publish job is still reported, so the assertions below
+    // Keep the aggregate counts first so both directions of the invariant
+    // (leaking every job and hiding every job) fail with the same attribution.
+    // The granted brand's publish job is still reported, so these assertions
     // prove a filter rather than an empty response.
+    expect(data.jobs.publish, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+    expect(data.dataCoverage.publishJobs, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+    expect(data.platformMetrics.taobao.publish.total, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
+
     expect(data.riskItems, 'visible publish risks must carry their exact task navigation identity').toContainEqual(expect.objectContaining({
       type: 'PUBLISH_REJECTED',
       entityType: 'publish_job',
@@ -170,9 +176,6 @@ describe('catalog brand scope on the HTTP surface', () => {
         expect(risk.evidence.taskId.trim()).not.toBe('')
       }
     }
-    expect(data.jobs.publish, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
-    expect(data.dataCoverage.publishJobs, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
-    expect(data.platformMetrics.taobao.publish.total, 'the metrics surface hides exactly the publish jobs the task scope hides').toBe(1)
 
     // The hidden brand's task id, publish job id and rejection code must not
     // appear anywhere in the payload — not in a risk item, a store aggregate or
