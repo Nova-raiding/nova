@@ -131,6 +131,13 @@ test('does not treat starting or absent Docker health as healthy for an expected
   }
 })
 
+test('preserves a stopped demo migration container as compatibility-only inventory', () => {
+  const migration = container('f', 'migrate', { state: 'exited', health: 'absent' })
+  const result = classifyInventory(snapshot([...allExpected(), migration]))
+  assert.equal(result.containers.at(-1).classification, 'compatibility_only_migration')
+  assert.equal(result.blockers.some(value => value.includes(migration.id)), false)
+})
+
 test('rejects malformed remote schemas, duplicate IDs, unknown fields, and invalid hashes', () => {
   assert.throws(() => validateRemoteInventory({ ...snapshot([]), secret: 'do-not-emit' }), /schema rejected/u)
   const duplicateId = container('a', 'api')

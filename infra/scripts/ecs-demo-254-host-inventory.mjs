@@ -135,8 +135,10 @@ export function classifyInventory(snapshot) {
     const service = item.compose['com.docker.compose.service']
     const isExpected = item.compose['com.docker.compose.project'] === DEMO_254_PROJECT && expected.has(service)
     if (isExpected) expected.get(service).push(item)
+    const isCompatibilityMigration = item.compose['com.docker.compose.project'] === DEMO_254_PROJECT
+      && service === 'migrate' && item.state === 'exited'
     const isSharedRegistry = !isExpected && matchesSharedBuildRegistry(item)
-    return { ...item, classification: isExpected ? 'expected_demo_role' : isSharedRegistry ? 'shared_build_infrastructure' : 'unclassified_external_consumer' }
+    return { ...item, classification: isExpected ? 'expected_demo_role' : isCompatibilityMigration ? 'compatibility_only_migration' : isSharedRegistry ? 'shared_build_infrastructure' : 'unclassified_external_consumer' }
   })
   const blockers = []
   for (const [service, matches] of expected) {
