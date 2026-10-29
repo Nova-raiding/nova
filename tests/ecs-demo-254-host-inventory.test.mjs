@@ -6,7 +6,7 @@ import { acquireInventory, classifyInventory, DEMO_254_EXPECTED_SERVICES,
 const sha = char => char.repeat(64)
 const registryImageId = 'sha256:26b2eb03618e749084668eaff68cff8f81dda12d06ac641be7a6398b82a6f25b'
 const registryContainerId = 'a77f0da8b0ee8a6607d521ed35c9dd40e3a70a8116b31f3cdffc451a93ada03f'
-const registryNetworkId = 'afd13a439d098d2ae47fcbe9e458f2abcb4404f9c9961eebd60f808010b36f80'
+const registryNetworkId = '6b680c2d8346f786501b1a76c6dd71c4745c817a36185472750149556ced220a'
 const registryHashes = {
   env_sha256: '1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7',
   config_sha256: '89790dac8b307c7a5e60af741f0035cfdcba0b370faae1e662e322dc30400804',

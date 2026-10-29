@@ -22,7 +22,7 @@ const SHARED_BUILD_REGISTRY = Object.freeze({
   imageId: 'sha256:26b2eb03618e749084668eaff68cff8f81dda12d06ac641be7a6398b82a6f25b',
   state: 'running',
   health: 'absent',
-  network: { name: 'bridge', id: 'afd13a439d098d2ae47fcbe9e458f2abcb4404f9c9961eebd60f808010b36f80', aliases: [] },
+  network: { name: 'bridge', id: '6b680c2d8346f786501b1a76c6dd71c4745c817a36185472750149556ced220a', aliases: [] },
   port: { container_port: '5000/tcp', host_ip: '127.0.0.1', host_port: '5000' },
   mount: { type: 'volume', name: 'storenova-registry-data', destination: '/var/lib/registry', read_write: true },
   envSha256: '1c24775fadba31bd348800df91e54a100f1b2e4936bd629e5a36e89c5c8f51f7',
