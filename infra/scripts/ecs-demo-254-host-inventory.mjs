@@ -11,7 +11,7 @@ export const DEMO_254_PROJECT = 'merchant-demo-85575f9c'
 export const DEMO_254_EXPECTED_SERVICES = Object.freeze([
   'api', 'api-replica', 'ops-ui', 'pilot-gateway', 'postgres', 'redis', 'ui',
   'payment-gateway', 'worker-automation', 'worker-generation', 'worker-publish',
-  'worker-reconcile', 'worker-sync',
+  'worker-reconcile', 'worker-scan', 'worker-sync', 'clamav',
 ])
 // This exact container fingerprint was reviewed on 101 and documented as
 // shared build infrastructure in ecs-101-single-environment-retirement.md.

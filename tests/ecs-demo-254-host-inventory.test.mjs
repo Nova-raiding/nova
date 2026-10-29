@@ -37,9 +37,9 @@ test('classifies exact demo project roles and always remains inventory-only', ()
 })
 
 test('flags all non-demo and unexpected services as unclassified external consumers', () => {
-  const unrelated = container('e', 'worker-scan', { compose: { ...container('f', 'api').compose,
+  const unrelated = container('f', 'worker-scan', { id: `${'f'.repeat(63)}0`, compose: { ...container('g', 'api').compose,
     'com.docker.compose.project': 'merchant-production', 'com.docker.compose.service': 'worker-scan' } })
-  const unlabeled = container('f', 'unknown', { compose: { 'com.docker.compose.project': '',
+  const unlabeled = container('f', 'unknown', { id: `${'f'.repeat(63)}1`, compose: { 'com.docker.compose.project': '',
     'com.docker.compose.service': '', 'com.docker.compose.project.config_files': '',
     'com.docker.compose.project.working_dir': '' }, state: 'exited', health: 'absent' })
   const result = classifyInventory(snapshot([...allExpected(), unrelated, unlabeled]))
@@ -86,7 +86,7 @@ test('a registry-like container with any changed fingerprint remains an external
     health: 'absent',
   })
   for (const override of [
-    { id: sha('d') },
+    { id: `${'f'.repeat(63)}2` },
     { name: '/renamed-registry' }, { image_id: `sha256:${sha('9')}` },
     { state: 'exited' }, { health: 'unhealthy' },
     { networks: [{ name: 'merchant-demo-85575f9c_default', id: registryNetworkId, aliases: [] }] },
@@ -111,7 +111,7 @@ test('a registry-like container with any changed fingerprint remains an external
 
 test('reports missing, duplicate, stopped, and explicitly unhealthy expected roles', () => {
   const values = allExpected().filter(item => item.compose['com.docker.compose.service'] !== 'worker-sync')
-  values.push(container('e', 'api'))
+  values.push(container('f', 'api', { id: `${'f'.repeat(63)}3` }))
   values.find(item => item.compose['com.docker.compose.service'] === 'worker-publish').state = 'exited'
   values.find(item => item.compose['com.docker.compose.service'] === 'worker-publish').health = 'unhealthy'
   const result = classifyInventory(snapshot(values))
